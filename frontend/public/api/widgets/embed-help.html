@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code d'intégration - Widget DJ Profile</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            background: #0f1117;
+            color: #e0e0e0;
+            padding: 40px 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { color: #FF6600; font-size: 24px; margin-bottom: 8px; }
+        h2 { color: #FF6600; font-size: 18px; margin: 30px 0 10px; }
+        p { line-height: 1.6; margin-bottom: 12px; color: #aaa; font-size: 14px; }
+        .step { background: #1a1d27; border-radius: 8px; padding: 20px; margin-bottom: 20px; border-left: 3px solid #FF6600; }
+        .step-num { color: #FF6600; font-weight: 800; font-size: 14px; margin-bottom: 8px; }
+        .code-block {
+            background: #0a0c10;
+            border: 1px solid #2a2d37;
+            border-radius: 6px;
+            padding: 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #c9cdd3;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            position: relative;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #FF6600;
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .copy-btn:hover { background: #e55b00; }
+        .highlight { color: #FF6600; font-weight: 700; }
+        .note { background: rgba(255,102,0,0.1); border: 1px solid rgba(255,102,0,0.3); border-radius: 6px; padding: 12px 16px; font-size: 13px; color: #ffaa66; }
+        #dj-id-input {
+            background: #1a1d27;
+            border: 1px solid #FF6600;
+            color: white;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 300px;
+            margin-right: 10px;
+        }
+        #generate-btn {
+            background: #FF6600;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        #generate-btn:hover { background: #e55b00; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Widget Profil DJ - Code d'intégration</h1>
+        <p>Generez le code a coller dans le bloc <strong>"Entrer le code"</strong> du Hostinger Website Builder.</p>
+
+        <h2>1. Generez votre code</h2>
+        <div class="step">
+            <div class="step-num">Entrez l'ID du profil DJ :</div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px;">
+                <input type="text" id="dj-id-input" placeholder="Ex: 6543abcd1234ef5678901234">
+                <button id="generate-btn" onclick="generateCode()">Generer le code</button>
+            </div>
+        </div>
+
+        <h2>2. Copiez ce code</h2>
+        <div class="step">
+            <div class="step-num">Code complet a coller dans Hostinger :</div>
+            <div class="code-block" id="embed-code" style="margin-top:10px;">
+                <button class="copy-btn" onclick="copyCode()">Copier</button>
+                <span style="color:#666;">Entrez un ID ci-dessus pour generer le code...</span>
+            </div>
+        </div>
+
+        <h2>3. Instructions</h2>
+        <div class="step">
+            <div class="step-num">Dans Hostinger Website Builder :</div>
+            <p style="margin-top:8px;">
+                1. Cliquez sur <strong>"+ Ajouter une section"</strong> ou ajoutez un element <strong>"Code personnalise"</strong><br>
+                2. Cliquez sur <strong>"Entrer le code"</strong><br>
+                3. Collez le code genere ci-dessus<br>
+                4. Validez et publiez
+            </p>
+        </div>
+
+        <div class="note">
+            <strong>Note :</strong> L'iframe se redimensionne automatiquement selon le contenu. Le bouton "Lire la suite..." agrandit la carte, puis "Reduire" la referme. Aucun espace vide ne restera en dessous.
+        </div>
+    </div>
+
+    <script>
+        var SITE_URL = window.location.origin;
+
+        function generateCode() {
+            var djId = document.getElementById('dj-id-input').value.trim();
+            if (!djId) { alert('Veuillez entrer un ID de profil DJ'); return; }
+
+            var iframeId = 'rkey-dj-' + djId.substring(0, 8);
+            var widgetUrl = SITE_URL + '/widgets/dj-profile.html?id=' + djId;
+
+            var code = '<iframe id="' + iframeId + '" src="' + widgetUrl + '" style="width:100%;border:none;display:block;overflow:hidden;" scrolling="no" height="220"></iframe>\n<script>\n(function(){\n  var f=document.getElementById(\'' + iframeId + '\');\n  window.addEventListener(\'message\',function(e){\n    if(e.data&&e.data.type===\'rkey-widget-resize\'&&e.source===f.contentWindow){\n      f.style.height=e.data.height+\'px\';\n    }\n  });\n})();\n</' + 'script>';
+
+            document.getElementById('embed-code').innerHTML =
+                '<button class="copy-btn" onclick="copyCode()">Copier</button>' +
+                escapeHtml(code);
+        }
+
+        function escapeHtml(text) {
+            var div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function copyCode() {
+            var codeEl = document.getElementById('embed-code');
+            var text = codeEl.textContent.replace('Copier', '').trim();
+            if (!text || text.startsWith('Entrez')) { alert('Generez le code d\'abord'); return; }
+            navigator.clipboard.writeText(text).then(function() {
+                var btn = codeEl.querySelector('.copy-btn');
+                btn.textContent = 'Copie !';
+                setTimeout(function() { btn.textContent = 'Copier'; }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>

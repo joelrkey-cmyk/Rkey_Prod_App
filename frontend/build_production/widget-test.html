@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Widget Google Reviews Simplifié</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .widget-container {
+            margin: 20px 0;
+        }
+        .info {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .info h3 {
+            margin: 0 0 10px 0;
+            color: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌟 Test Widget Google Reviews Simplifié</h1>
+        
+        <div class="info">
+            <h3>Version Simplifiée</h3>
+            <p>Cette version affiche uniquement les 5 premiers avis sans pagination, slider ou contrôles de défilement.</p>
+        </div>
+        
+        <div class="widget-container">
+            <div id="google-reviews-widget"></div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+      console.log('🎯 Début chargement widget');
+      
+      // Configuration du widget
+      const config = {
+        businessId: '',
+        maxWidth: 'none',
+        theme: 'light',
+        containerId: 'google-reviews-widget'
+      };
+      
+      // URL du backend (détection automatique basée sur l'URL actuelle)
+      const currentUrl = window.location.origin;
+      console.log('🌍 URL détectée:', currentUrl);
+      
+      // Chargement du CSS
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = currentUrl + '/api/widget/css';
+      document.head.appendChild(link);
+      console.log('📄 CSS chargé:', link.href);
+      
+      // Chargement du script
+      const script = document.createElement('script');
+      script.src = currentUrl + '/api/widget/js';
+      script.onload = function() {
+        console.log('📜 JavaScript chargé');
+        if (window.GoogleReviewsWidget) {
+          console.log('✅ GoogleReviewsWidget trouvé, initialisation...');
+          window.GoogleReviewsWidget.init(config);
+        } else {
+          console.error('❌ GoogleReviewsWidget non trouvé');
+        }
+      };
+      script.onerror = function() {
+        console.error('❌ Erreur chargement JavaScript');
+      };
+      document.body.appendChild(script);
+      console.log('📜 JavaScript en cours de chargement:', script.src);
+    })();
+    </script>
+</body>
+</html>

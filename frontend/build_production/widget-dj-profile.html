@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profil DJ - R'Key Prod</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            background: transparent;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .profile-container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .profile-card {
+            background: #1a2332;
+            border-radius: 16px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: row;
+            min-height: 400px;
+        }
+        
+        /* Photo section */
+        .profile-photo-section {
+            position: relative;
+            width: 240px;
+            min-width: 240px;
+            flex-shrink: 0;
+        }
+        
+        .profile-photo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .profile-photo-placeholder {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #2a3a4d 0%, #1a2332 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 80px;
+        }
+        
+        .profile-badge {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background: #f97316;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .profile-badge::before {
+            content: "👤";
+            font-size: 12px;
+        }
+        
+        /* Content section */
+        .profile-content {
+            padding: 30px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .profile-subtitle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #f97316;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+        
+        .profile-subtitle::before {
+            content: "🎵";
+            font-size: 14px;
+        }
+        
+        .profile-name {
+            font-size: 32px;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 20px;
+            line-height: 1.2;
+        }
+        
+        .profile-bio {
+            color: #9ca3af;
+            font-size: 15px;
+            line-height: 1.7;
+            margin-bottom: 30px;
+            flex: 1;
+        }
+        
+        .specialites-section {
+            margin-top: auto;
+        }
+        
+        .specialites-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #6b7280;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+        
+        .specialites-title::before {
+            content: "👥";
+            font-size: 13px;
+        }
+        
+        .specialites-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .specialite-tag {
+            padding: 8px 16px;
+            border: 1px solid #f9731650;
+            background: transparent;
+            color: #f97316;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #f97316;
+            font-size: 18px;
+            font-weight: 600;
+            background: #1a2332;
+            border-radius: 16px;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 60px 20px;
+            color: #dc2626;
+            font-size: 16px;
+            background: #1a2332;
+            border-radius: 16px;
+        }
+        
+        /* Responsive - Mobile */
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            
+            .profile-card {
+                flex-direction: column;
+                min-height: auto;
+            }
+            
+            .profile-photo-section {
+                width: 100%;
+                min-width: 100%;
+                height: 300px;
+            }
+            
+            .profile-content {
+                padding: 24px;
+            }
+            
+            .profile-name {
+                font-size: 26px;
+            }
+            
+            .profile-bio {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="profile-container">
+        <div id="profile-content" class="loading">
+            ⏳ Chargement du profil...
+        </div>
+    </div>
+
+    <script>
+        // URL de l'API R'Key Prod - détection automatique
+        var BASE_URL = window.location.origin;
+        var API_URL = BASE_URL + '/api/dj-fiches/public';
+        
+        // Lire le paramètre "id" depuis l'URL
+        var urlParams = new URLSearchParams(window.location.search);
+        var profileId = urlParams.get('id');
+
+        // Fonction pour communiquer la hauteur au parent (iframe)
+        function sendHeightToParent() {
+            if (window.parent !== window) {
+                var height = document.body.scrollHeight;
+                window.parent.postMessage({
+                    type: 'rkey-widget-resize',
+                    height: height
+                }, '*');
+            }
+        }
+
+        async function loadProfile() {
+            var container = document.getElementById('profile-content');
+            
+            if (!profileId) {
+                container.innerHTML = '<div class="error">❌ Aucun profil spécifié.</div>';
+                setTimeout(sendHeightToParent, 100);
+                return;
+            }
+            
+            try {
+                var response = await fetch(API_URL + '/' + profileId);
+                
+                if (!response.ok) {
+                    throw new Error('Profil non trouvé');
+                }
+                
+                var profile = await response.json();
+                renderProfile(profile);
+                
+                setTimeout(sendHeightToParent, 100);
+            } catch (error) {
+                console.error('Erreur:', error);
+                container.innerHTML = '<div class="error">❌ Impossible de charger le profil.<br>Veuillez réessayer plus tard.</div>';
+                setTimeout(sendHeightToParent, 100);
+            }
+        }
+
+        function renderProfile(profile) {
+            var container = document.getElementById('profile-content');
+            
+            // Déterminer le badge (titre)
+            var badgeText = profile.titre || 'Animateur DJ';
+            
+            var html = '<div class="profile-card">';
+            
+            // Photo section
+            html += '<div class="profile-photo-section">';
+            if (profile.photo_url) {
+                html += '<img src="' + profile.photo_url + '" alt="' + profile.nom_artistique + '" class="profile-photo">';
+            } else {
+                html += '<div class="profile-photo-placeholder">🎧</div>';
+            }
+            html += '<div class="profile-badge">' + badgeText + '</div>';
+            html += '</div>';
+            
+            // Content section
+            html += '<div class="profile-content">';
+            
+            // Subtitle
+            var subtitle = profile.sous_titre || 'Animateur DJ';
+            html += '<div class="profile-subtitle">' + subtitle + '</div>';
+            
+            // Name
+            html += '<h1 class="profile-name">' + profile.nom_artistique + '</h1>';
+            
+            // Bio
+            if (profile.biographie) {
+                html += '<p class="profile-bio">' + profile.biographie + '</p>';
+            }
+            
+            // Spécialités
+            if (profile.specialites && profile.specialites.length > 0) {
+                html += '<div class="specialites-section">';
+                html += '<div class="specialites-title">Spécialités</div>';
+                html += '<div class="specialites-tags">';
+                profile.specialites.forEach(function(spec) {
+                    html += '<span class="specialite-tag">' + spec + '</span>';
+                });
+                html += '</div></div>';
+            }
+            
+            html += '</div></div>';
+            
+            container.innerHTML = html;
+            container.classList.remove('loading');
+            
+            setTimeout(sendHeightToParent, 100);
+        }
+
+        // Charger le profil au démarrage
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadProfile);
+        } else {
+            loadProfile();
+        }
+        
+        // Envoyer la hauteur quand la fenêtre est redimensionnée
+        window.addEventListener('resize', sendHeightToParent);
+    </script>
+</body>
+</html>

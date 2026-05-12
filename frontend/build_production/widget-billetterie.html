@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Événements R'Key Prod</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            background: transparent;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .widget-container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .filter-btn {
+            padding: 12px 24px;
+            border: 2px solid #f97316;
+            background: white;
+            color: #f97316;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .filter-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .filter-btn.active {
+            background: #f97316;
+            color: white;
+        }
+        
+        .events-list {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        
+        /* Card horizontale */
+        .event-card {
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: row;
+            min-height: 280px;
+        }
+        
+        .event-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.15);
+        }
+        
+        /* Image en format portrait (affiche) */
+        .event-image-container {
+            flex-shrink: 0;
+            width: 200px;
+            min-height: 280px;
+            overflow: hidden;
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+        }
+        
+        .event-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .event-content {
+            padding: 24px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        
+        .event-header {
+            flex: 1;
+        }
+        
+        .event-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+        
+        .badge-dj {
+            background: #f97316;
+            color: white;
+        }
+        
+        .badge-hypnose {
+            background: #a855f7;
+            color: white;
+        }
+        
+        .event-title {
+            font-size: 22px;
+            font-weight: 700;
+            margin: 8px 0 16px 0;
+            color: #1f2937;
+            line-height: 1.3;
+        }
+        
+        .event-details {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .event-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        /* Description avec expand/collapse */
+        .event-desc-container {
+            position: relative;
+        }
+        
+        .event-desc {
+            color: #4b5563;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            white-space: pre-line;
+        }
+        
+        .event-desc.collapsed {
+            max-height: 66px;
+        }
+        
+        .event-desc.expanded {
+            max-height: 2000px;
+        }
+        
+        .voir-plus-btn {
+            background: none;
+            border: none;
+            color: #f97316;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 8px 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: color 0.2s ease;
+        }
+        
+        .voir-plus-btn:hover {
+            color: #ea580c;
+            text-decoration: underline;
+        }
+        
+        .voir-plus-btn .arrow {
+            transition: transform 0.3s ease;
+            font-size: 10px;
+        }
+        
+        .voir-plus-btn.expanded .arrow {
+            transform: rotate(180deg);
+        }
+        
+        .event-footer {
+            margin-top: 16px;
+        }
+        
+        .reserve-btn {
+            display: inline-block;
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 15px;
+            text-align: center;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+        }
+        
+        .reserve-btn:hover {
+            background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(249, 115, 22, 0.4);
+        }
+        
+        .no-events {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+            font-size: 18px;
+            background: white;
+            border-radius: 16px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #f97316;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 60px 20px;
+            color: #dc2626;
+            font-size: 16px;
+            background: white;
+            border-radius: 16px;
+        }
+        
+        /* Responsive - Mobile */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .event-card {
+                flex-direction: column;
+                min-height: auto;
+            }
+            
+            .event-image-container {
+                width: 100%;
+                height: 300px;
+                min-height: 300px;
+            }
+            
+            .filter-btn {
+                flex: 1;
+                min-width: 100px;
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+            
+            .event-title {
+                font-size: 18px;
+            }
+            
+            .event-details {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <script>
+        // Détecter immédiatement le type pour masquer la barre de filtres via CSS
+        var urlParams = new URLSearchParams(window.location.search);
+        var filterType = urlParams.get('type');
+        if (filterType === 'dj' || filterType === 'hypnose') {
+            document.write('<style>#filter-bar{display:none!important}</style>');
+        }
+    </script>
+    
+    <div class="widget-container">
+        <div id="filter-bar" class="filter-bar">
+            <button class="filter-btn active" onclick="filterEvents('all', this)">
+                Tous les événements
+            </button>
+            <button class="filter-btn" onclick="filterEvents('dj', this)">
+                🎵 Soirées DJ
+            </button>
+            <button class="filter-btn" onclick="filterEvents('hypnose', this)">
+                🎭 Shows Hypnose
+            </button>
+        </div>
+        
+        <div id="events-container" class="loading">
+            ⏳ Chargement des événements...
+        </div>
+    </div>
+
+    <script>
+        // URL de l'API R'Key Prod - détection automatique
+        var BASE_URL = window.location.origin;
+        var API_URL = BASE_URL + '/api/billetterie/events/public';
+        
+        var allEvents = [];
+
+        // Fonction pour communiquer la hauteur au parent (iframe)
+        function sendHeightToParent() {
+            if (window.parent !== window) {
+                var height = document.body.scrollHeight;
+                window.parent.postMessage({
+                    type: 'rkey-widget-resize',
+                    height: height
+                }, '*');
+            }
+        }
+
+        // Fonction pour toggle "Voir plus" / "Voir moins"
+        function toggleDescription(eventId) {
+            var desc = document.getElementById('desc-' + eventId);
+            var btn = document.getElementById('btn-' + eventId);
+            
+            if (desc.classList.contains('collapsed')) {
+                desc.classList.remove('collapsed');
+                desc.classList.add('expanded');
+                btn.classList.add('expanded');
+                btn.innerHTML = 'Voir moins <span class="arrow">▼</span>';
+            } else {
+                desc.classList.remove('expanded');
+                desc.classList.add('collapsed');
+                btn.classList.remove('expanded');
+                btn.innerHTML = 'Voir plus <span class="arrow">▼</span>';
+            }
+            
+            // Mettre à jour la hauteur après l'animation
+            setTimeout(sendHeightToParent, 350);
+        }
+
+        async function loadEvents() {
+            try {
+                var response = await fetch(API_URL);
+                
+                if (!response.ok) {
+                    throw new Error('Erreur lors du chargement');
+                }
+                
+                allEvents = await response.json();
+                console.log('Événements chargés:', allEvents.length);
+                
+                // Appliquer le filtre si un type est pré-défini dans l'URL
+                var eventsToShow = allEvents;
+                if (filterType === 'dj' || filterType === 'hypnose') {
+                    eventsToShow = allEvents.filter(function(event) {
+                        return event.type === filterType;
+                    });
+                    console.log('Filtre appliqué:', filterType, '- Événements:', eventsToShow.length);
+                }
+                
+                renderEvents(eventsToShow);
+                
+                // Envoyer la hauteur après le rendu
+                setTimeout(sendHeightToParent, 100);
+            } catch (error) {
+                console.error('Erreur:', error);
+                document.getElementById('events-container').innerHTML = 
+                    '<div class="error">' +
+                        '❌ Impossible de charger les événements.<br>' +
+                        'Veuillez réessayer plus tard.' +
+                    '</div>';
+                setTimeout(sendHeightToParent, 100);
+            }
+        }
+
+        function renderEvents(events) {
+            var container = document.getElementById('events-container');
+            
+            if (events.length === 0) {
+                container.innerHTML = 
+                    '<div class="no-events">' +
+                        '📅 Aucun événement à venir pour le moment.<br>' +
+                        'Revenez bientôt pour découvrir nos prochaines dates !' +
+                    '</div>';
+                setTimeout(sendHeightToParent, 100);
+                return;
+            }
+            
+            var html = '<div class="events-list">';
+            
+            events.forEach(function(event, index) {
+                var eventDate = new Date(event.date);
+                var formattedDate = eventDate.toLocaleDateString('fr-FR', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+                
+                var badgeClass = event.type === 'dj' ? 'badge-dj' : 'badge-hypnose';
+                var badgeText = event.type === 'dj' ? '🎵 SOIRÉE DJ' : '🎭 SHOW HYPNOSE';
+                var eventId = 'event-' + index;
+                
+                html += '<div class="event-card" data-type="' + event.type + '">';
+                
+                // Image container (format portrait/affiche)
+                html += '<div class="event-image-container">';
+                if (event.photo_url) {
+                    html += '<img src="' + event.photo_url + '" alt="' + event.titre + '" class="event-image">';
+                }
+                html += '</div>';
+                
+                // Contenu
+                html += '<div class="event-content">';
+                html += '<div class="event-header">';
+                html += '<span class="event-badge ' + badgeClass + '">' + badgeText + '</span>';
+                html += '<h2 class="event-title">' + event.titre + '</h2>';
+                
+                html += '<div class="event-details">';
+                html += '<div class="event-info">📅 ' + formattedDate + '</div>';
+                if (event.heure) {
+                    html += '<div class="event-info">🕐 ' + event.heure + '</div>';
+                }
+                if (event.duree) {
+                    html += '<div class="event-info">⏱️ ' + event.duree + '</div>';
+                }
+                html += '<div class="event-info">📍 ' + event.lieu + '</div>';
+                html += '</div>';
+                
+                // Description avec bouton "Voir plus"
+                if (event.descriptif) {
+                    var needsExpand = event.descriptif.length > 150;
+                    
+                    html += '<div class="event-desc-container">';
+                    html += '<p id="desc-' + eventId + '" class="event-desc ' + (needsExpand ? 'collapsed' : '') + '">' + event.descriptif + '</p>';
+                    
+                    if (needsExpand) {
+                        html += '<button id="btn-' + eventId + '" class="voir-plus-btn" onclick="toggleDescription(\'' + eventId + '\')">';
+                        html += 'Voir plus <span class="arrow">▼</span>';
+                        html += '</button>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+                
+                // Footer avec bouton
+                html += '<div class="event-footer">';
+                html += '<a href="' + event.lien_reservation + '" target="_blank" class="reserve-btn">🎫 Réserver ma place</a>';
+                html += '</div>';
+                
+                html += '</div></div>';
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+            
+            // Envoyer la hauteur après le rendu
+            setTimeout(sendHeightToParent, 100);
+        }
+
+        function filterEvents(type, button) {
+            // Mettre à jour les boutons actifs
+            var buttons = document.querySelectorAll('.filter-btn');
+            buttons.forEach(function(btn) { btn.classList.remove('active'); });
+            if (button) button.classList.add('active');
+            
+            // Filtrer les événements
+            var filteredEvents = type === 'all' 
+                ? allEvents 
+                : allEvents.filter(function(event) { return event.type === type; });
+            
+            renderEvents(filteredEvents);
+        }
+
+        // Charger les événements au démarrage
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadEvents);
+        } else {
+            loadEvents();
+        }
+
+        // Actualiser automatiquement toutes les 2 minutes
+        setInterval(loadEvents, 120000);
+        
+        // Envoyer la hauteur quand la fenêtre est redimensionnée
+        window.addEventListener('resize', sendHeightToParent);
+    </script>
+</body>
+</html>

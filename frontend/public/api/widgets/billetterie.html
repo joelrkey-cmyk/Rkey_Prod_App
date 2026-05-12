@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Événements R'Key Prod</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            background: transparent;
+            height: auto !important;
+            min-height: auto !important;
+            overflow: hidden;
+        }
+        
+        body {
+            padding: 20px;
+        }
+        
+        .widget-container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .filter-btn {
+            padding: 12px 24px;
+            border: 2px solid #f97316;
+            background: white;
+            color: #f97316;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .filter-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .filter-btn.active {
+            background: #f97316;
+            color: white;
+        }
+        
+        .events-list {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        
+        .event-card {
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: row;
+            min-height: 280px;
+            position: relative;
+        }
+        
+        .event-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0,0,0,0.15);
+        }
+        
+        .event-image-container {
+            flex-shrink: 0;
+            width: 200px;
+            min-height: 280px;
+            overflow: hidden;
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+        }
+        
+        .event-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+        
+        .event-image:hover {
+            transform: scale(1.05);
+        }
+        
+        /* Lightbox styles */
+        .lightbox {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .lightbox.active {
+            display: flex;
+        }
+        
+        .lightbox-content {
+            position: relative;
+            max-width: 90%;
+            max-height: 90%;
+        }
+        
+        .lightbox-image {
+            max-width: 100%;
+            max-height: 85vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        
+        .lightbox-close {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 32px;
+            cursor: pointer;
+            padding: 10px;
+            line-height: 1;
+            transition: transform 0.2s ease;
+        }
+        
+        .lightbox-close:hover {
+            transform: scale(1.2);
+        }
+        
+        .lightbox-caption {
+            color: white;
+            text-align: center;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .event-content {
+            padding: 24px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        
+        .event-header {
+            flex: 1;
+        }
+        
+        .event-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+        
+        .badge-dj {
+            background: #f97316;
+            color: white;
+        }
+        
+        .badge-hypnose {
+            background: #a855f7;
+            color: white;
+        }
+        
+        .badge-formation {
+            background: #10b981;
+            color: white;
+        }
+        
+        .event-title {
+            font-size: 22px;
+            font-weight: 700;
+            margin: 8px 0 16px 0;
+            color: #1f2937;
+            line-height: 1.3;
+        }
+        
+        .event-details {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .event-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+        
+        .event-desc-container {
+            position: relative;
+        }
+        
+        .event-desc {
+            color: #4b5563;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            white-space: pre-line;
+        }
+        
+        .event-desc.collapsed {
+            max-height: 66px;
+        }
+        
+        .event-desc.expanded {
+            max-height: 2000px;
+        }
+        
+        .voir-plus-btn {
+            background: none;
+            border: none;
+            color: #f97316;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 8px 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: color 0.2s ease;
+        }
+        
+        .voir-plus-btn:hover {
+            color: #ea580c;
+            text-decoration: underline;
+        }
+        
+        .voir-plus-btn .arrow {
+            transition: transform 0.3s ease;
+            font-size: 10px;
+        }
+        
+        .voir-plus-btn.expanded .arrow {
+            transform: rotate(180deg);
+        }
+        
+        .event-footer {
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .reserve-btn {
+            display: inline-block;
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 15px;
+            text-align: center;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+        }
+        
+        .reserve-btn:hover {
+            background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(249, 115, 22, 0.4);
+        }
+        
+        .phone-btn {
+            display: inline-block;
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 15px;
+            text-align: center;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        
+        .phone-btn:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+        }
+        
+        .phone-btn-secondary {
+            display: inline-block;
+            padding: 10px 24px;
+            background: white;
+            color: #f97316;
+            text-decoration: none;
+            border: 2px solid #f97316;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 14px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .phone-btn-secondary:hover {
+            background: #fff7ed;
+            transform: translateY(-2px);
+        }
+        
+        .event-label-container {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            width: 130px;
+            height: 130px;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .event-label {
+            position: absolute;
+            top: 28px;
+            right: -42px;
+            transform: rotate(45deg);
+            background: linear-gradient(135deg, #ef4444 0%, #ec4899 100%);
+            color: white;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 6px 0;
+            width: 180px;
+            text-align: center;
+            text-transform: uppercase;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            letter-spacing: 0.5px;
+        }
+        
+        .no-events {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6b7280;
+            font-size: 18px;
+            background: white;
+            border-radius: 16px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #f97316;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 60px 20px;
+            color: #dc2626;
+            font-size: 16px;
+            background: white;
+            border-radius: 16px;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .event-card {
+                flex-direction: column;
+                min-height: auto;
+            }
+            
+            .event-image-container {
+                width: 100%;
+                height: 300px;
+                min-height: 300px;
+            }
+            
+            .filter-btn {
+                flex: 1;
+                min-width: 100px;
+                padding: 10px 16px;
+                font-size: 14px;
+            }
+            
+            .event-title {
+                font-size: 18px;
+            }
+            
+            .event-details {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+    </style>
+    <script>
+        // Masquer la barre de filtres immédiatement si type spécifié
+        (function() {
+            var urlParams = new URLSearchParams(window.location.search);
+            var filterType = urlParams.get('type');
+            if (filterType === 'dj' || filterType === 'hypnose' || filterType === 'formation') {
+                document.write('<style>#filter-bar{display:none!important}</style>');
+            }
+        })();
+    </script>
+</head>
+<body>
+    <div class="widget-container">
+        <div id="filter-bar" class="filter-bar">
+            <button class="filter-btn active" onclick="filterEvents('all', this)">
+                Tous les événements
+            </button>
+            <button class="filter-btn" onclick="filterEvents('dj', this)">
+                🎵 Soirées DJ
+            </button>
+            <button class="filter-btn" onclick="filterEvents('hypnose', this)">
+                🎭 Shows Hypnose
+            </button>
+            <button class="filter-btn" onclick="filterEvents('formation', this)">
+                📚 Formations
+            </button>
+        </div>
+        
+        <div id="events-container" class="loading">
+            ⏳ Chargement des événements...
+        </div>
+    </div>
+
+    <!-- Lightbox -->
+    <div id="lightbox" class="lightbox" onclick="closeLightbox(event)">
+        <div class="lightbox-content" onclick="event.stopPropagation()">
+            <button class="lightbox-close" onclick="closeLightbox(event)">&times;</button>
+            <img id="lightbox-image" class="lightbox-image" src="" alt="">
+            <div id="lightbox-caption" class="lightbox-caption"></div>
+        </div>
+    </div>
+
+    <script>
+        // Détecter l'URL de base (fonctionne en local et en production)
+        var BASE_URL = window.location.origin;
+        var API_URL = BASE_URL + '/api/billetterie/events/public';
+        
+        var allEvents = [];
+        
+        // Lire le paramètre "type" depuis l'URL
+        var urlParams = new URLSearchParams(window.location.search);
+        var filterType = urlParams.get('type');
+
+        // --- Robust resize logic (getBoundingClientRect + throttle) ---
+        var _lastSentHeight = 0;
+        var _resizeTimer = null;
+        var _firstResizeDone = false;
+
+        function sendHeightToParent() {
+            if (window.parent === window) return;
+            var container = document.querySelector('.widget-container');
+            if (!container) return;
+
+            function send() {
+                var rect = container.getBoundingClientRect();
+                var h = rect.height > 0 ? Math.ceil(rect.height) + 2 : container.scrollHeight;
+                if (h < 50) return;
+                if (Math.abs(h - _lastSentHeight) < 3 && _firstResizeDone) return;
+                _lastSentHeight = h;
+                _firstResizeDone = true;
+                window.parent.postMessage({ type: 'rkey-widget-resize', height: h }, '*');
+            }
+
+            if (!_firstResizeDone) {
+                send();
+            } else {
+                if (_resizeTimer) clearTimeout(_resizeTimer);
+                _resizeTimer = setTimeout(function() {
+                    _resizeTimer = null;
+                    send();
+                }, 80);
+            }
+        }
+
+        function toggleDescription(eventId) {
+            var desc = document.getElementById('desc-' + eventId);
+            var btn = document.getElementById('btn-' + eventId);
+            
+            if (desc.classList.contains('collapsed')) {
+                desc.classList.remove('collapsed');
+                desc.classList.add('expanded');
+                btn.classList.add('expanded');
+                btn.innerHTML = 'Voir moins <span class="arrow">▼</span>';
+            } else {
+                desc.classList.remove('expanded');
+                desc.classList.add('collapsed');
+                btn.classList.remove('expanded');
+                btn.innerHTML = 'Voir plus <span class="arrow">▼</span>';
+            }
+            
+            setTimeout(sendHeightToParent, 350);
+        }
+
+        // Lightbox functions
+        function openLightbox(imageUrl, caption) {
+            var lightbox = document.getElementById('lightbox');
+            var lightboxImage = document.getElementById('lightbox-image');
+            var lightboxCaption = document.getElementById('lightbox-caption');
+            
+            lightboxImage.src = imageUrl;
+            lightboxCaption.textContent = caption;
+            lightbox.classList.add('active');
+            
+            // Bloquer le scroll du body
+            document.body.style.overflow = 'hidden';
+        }
+        
+        function closeLightbox(event) {
+            var lightbox = document.getElementById('lightbox');
+            lightbox.classList.remove('active');
+            
+            // Réactiver le scroll du body
+            document.body.style.overflow = '';
+        }
+        
+        // Fermer avec la touche Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeLightbox();
+            }
+        });
+
+        async function loadEvents() {
+            try {
+                var response = await fetch(API_URL);
+                
+                if (!response.ok) {
+                    throw new Error('Erreur lors du chargement');
+                }
+                
+                allEvents = await response.json();
+                
+                // Filtrer pour n'afficher que les événements à venir (date >= aujourd'hui)
+                var today = new Date();
+                today.setHours(0, 0, 0, 0);
+                allEvents = allEvents.filter(function(event) {
+                    var eventEnd = event.date_fin ? new Date(event.date_fin) : new Date(event.date);
+                    eventEnd.setHours(23, 59, 59, 999);
+                    return eventEnd >= today;
+                });
+                
+                // Trier par date croissante (prochain événement en premier)
+                allEvents.sort(function(a, b) {
+                    return new Date(a.date) - new Date(b.date);
+                });
+                
+                var eventsToShow = allEvents;
+                if (filterType === 'dj' || filterType === 'hypnose' || filterType === 'formation') {
+                    eventsToShow = allEvents.filter(function(event) {
+                        return event.type === filterType;
+                    });
+                }
+                
+                renderEvents(eventsToShow);
+                setTimeout(sendHeightToParent, 100);
+            } catch (error) {
+                console.error('Erreur:', error);
+                document.getElementById('events-container').innerHTML = 
+                    '<div class="error">' +
+                        '❌ Impossible de charger les événements.<br>' +
+                        'Veuillez réessayer plus tard.' +
+                    '</div>';
+                setTimeout(sendHeightToParent, 100);
+            }
+        }
+
+        function renderEvents(events) {
+            var container = document.getElementById('events-container');
+            
+            if (events.length === 0) {
+                container.innerHTML = 
+                    '<div class="no-events">' +
+                        '📅 Aucun événement à venir pour le moment.<br>' +
+                        'Revenez bientôt pour découvrir nos prochaines dates !' +
+                    '</div>';
+                setTimeout(sendHeightToParent, 100);
+                return;
+            }
+            
+            var html = '<div class="events-list">';
+            
+            events.forEach(function(event, index) {
+                var eventDate = new Date(event.date);
+                var formattedDate;
+                
+                // Gérer les périodes (date_fin)
+                if (event.date_fin) {
+                    var endDate = new Date(event.date_fin);
+                    var startStr = eventDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+                    var endStr = endDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                    formattedDate = 'Du ' + startStr + ' au ' + endStr;
+                } else {
+                    formattedDate = eventDate.toLocaleDateString('fr-FR', { 
+                        weekday: 'long', 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                    });
+                }
+                
+                var badgeClass = event.type === 'dj' ? 'badge-dj' : (event.type === 'formation' ? 'badge-formation' : 'badge-hypnose');
+                var badgeText = event.type === 'dj' ? '🎵 SOIRÉE DJ' : (event.type === 'formation' ? '📚 FORMATION' : '🎭 SHOW HYPNOSE');
+                var eventId = 'event-' + index;
+                
+                html += '<div class="event-card" data-type="' + event.type + '">';
+                
+                // Étiquette en diagonale avec container
+                if (event.etiquette) {
+                    html += '<div class="event-label-container"><div class="event-label">' + event.etiquette + '</div></div>';
+                }
+                
+                html += '<div class="event-image-container">';
+                if (event.photo_url) {
+                    // Gérer les URLs relatives (uploadées) et absolues
+                    var imageUrl = event.photo_url;
+                    if (imageUrl.startsWith('/api/')) {
+                        imageUrl = API_URL.replace('/api/billetterie/events/public', '') + imageUrl;
+                    }
+                    // Échapper les apostrophes pour le onclick
+                    var escapedTitle = event.titre.replace(/'/g, "\\'");
+                    html += '<img src="' + imageUrl + '" alt="' + event.titre + '" class="event-image" onclick="openLightbox(\'' + imageUrl + '\', \'' + escapedTitle + '\')">';
+                }
+                html += '</div>';
+                
+                html += '<div class="event-content">';
+                html += '<div class="event-header">';
+                html += '<span class="event-badge ' + badgeClass + '">' + badgeText + '</span>';
+                html += '<h2 class="event-title">' + event.titre + '</h2>';
+                
+                html += '<div class="event-details">';
+                html += '<div class="event-info">📅 ' + formattedDate + '</div>';
+                if (event.heure) {
+                    html += '<div class="event-info">🕐 ' + event.heure + '</div>';
+                }
+                if (event.duree) {
+                    html += '<div class="event-info">⏱️ ' + event.duree + '</div>';
+                }
+                html += '<div class="event-info">📍 ' + event.lieu + '</div>';
+                html += '</div>';
+                
+                if (event.descriptif) {
+                    var needsExpand = event.descriptif.length > 150;
+                    
+                    html += '<div class="event-desc-container">';
+                    html += '<p id="desc-' + eventId + '" class="event-desc ' + (needsExpand ? 'collapsed' : '') + '">' + event.descriptif + '</p>';
+                    
+                    if (needsExpand) {
+                        html += '<button id="btn-' + eventId + '" class="voir-plus-btn" onclick="toggleDescription(\'' + eventId + '\')">';
+                        html += 'Voir plus <span class="arrow">▼</span>';
+                        html += '</button>';
+                    }
+                    html += '</div>';
+                }
+                html += '</div>';
+                
+                // Footer avec boutons conditionnels
+                html += '<div class="event-footer">';
+                
+                var hasLink = event.lien_reservation && event.lien_reservation.trim() !== '';
+                var hasPhone = event.telephone_reservation && event.telephone_reservation.trim() !== '';
+                
+                if (hasLink) {
+                    html += '<a href="' + event.lien_reservation + '" target="_blank" class="reserve-btn">🎫 Réserver en ligne</a>';
+                }
+                
+                if (hasPhone) {
+                    if (hasLink) {
+                        // Si on a aussi un lien, afficher le téléphone en secondaire
+                        html += '<a href="tel:' + event.telephone_reservation.replace(/\s/g, '') + '" class="phone-btn-secondary">📞 ' + event.telephone_reservation + '</a>';
+                    } else {
+                        // Si pas de lien, mettre le téléphone en avant
+                        html += '<a href="tel:' + event.telephone_reservation.replace(/\s/g, '') + '" class="phone-btn">📞 Réserver par téléphone : ' + event.telephone_reservation + '</a>';
+                    }
+                }
+                
+                if (!hasLink && !hasPhone) {
+                    html += '<span class="reserve-btn" style="opacity: 0.5; cursor: default; background: #9ca3af;">Voir plus</span>';
+                }
+                
+                html += '</div>';
+                
+                html += '</div></div>';
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+            
+            setTimeout(sendHeightToParent, 100);
+        }
+
+        function filterEvents(type, button) {
+            var buttons = document.querySelectorAll('.filter-btn');
+            buttons.forEach(function(btn) { btn.classList.remove('active'); });
+            if (button) button.classList.add('active');
+            
+            var filteredEvents = type === 'all' 
+                ? allEvents 
+                : allEvents.filter(function(event) { return event.type === type; });
+            
+            renderEvents(filteredEvents);
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadEvents);
+        } else {
+            loadEvents();
+        }
+
+        // ResizeObserver on widget container
+        var _wc = document.querySelector('.widget-container');
+        if (typeof ResizeObserver !== 'undefined' && _wc) {
+            new ResizeObserver(sendHeightToParent).observe(_wc);
+        }
+
+        // Initial resize fires
+        sendHeightToParent();
+        requestAnimationFrame(function() {
+            sendHeightToParent();
+            requestAnimationFrame(sendHeightToParent);
+        });
+
+        // Aggressive periodic checks for images/fonts (first 5 seconds)
+        var _checkCount = 0;
+        var _checkInterval = setInterval(function() {
+            sendHeightToParent();
+            if (++_checkCount >= 20) clearInterval(_checkInterval);
+        }, 250);
+
+        setInterval(loadEvents, 120000);
+    </script>
+</body>
+</html>
