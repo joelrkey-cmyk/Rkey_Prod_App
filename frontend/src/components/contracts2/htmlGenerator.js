@@ -104,7 +104,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
           </thead>
           <tbody>
             <tr>
-              <td><strong>Prestation artistique</strong></td>
+              <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
               <td><strong>${(contract.base_price || 0).toFixed(2)} €</strong></td>
             </tr>
             ${contract.selected_options.filter(opt => opt.selected).map(option => `
@@ -147,7 +147,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
           </thead>
           <tbody>
             <tr>
-              <td><strong>Prestation artistique</strong></td>
+              <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
               <td><strong>${(contract.base_price || 0).toFixed(2)} €</strong></td>
             </tr>
             ${contract.discount_amount > 0 ? `

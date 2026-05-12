@@ -55,6 +55,8 @@ const DevisEnvoiApp = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [numPages, setNumPages] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [endTime, setEndTime] = useState('');
+  const [unlimitedTime, setUnlimitedTime] = useState(false);
   const [showPageManagement, setShowPageManagement] = useState(false);
   const [editingPage, setEditingPage] = useState(null);
   const [pageForm, setPageForm] = useState({ label: '', category: 'artiste', is_tarif: false });
@@ -375,7 +377,13 @@ const DevisEnvoiApp = () => {
       setGeneratingPdf(true);
       if (pdfBlobUrl) { URL.revokeObjectURL(pdfBlobUrl); setPdfBlobUrl(null); }
       const orderedSelectedPages = getOrderedSelectedPages();
-      const response = await api.post('/devis2/generate-pdf', { selected_pages: orderedSelectedPages, price_amount: priceAmount || null, price_type: priceType });
+      const response = await api.post('/devis2/generate-pdf', { 
+        selected_pages: orderedSelectedPages, 
+        price_amount: priceAmount || null, 
+        price_type: priceType,
+        end_time: endTime,
+        unlimited_time: unlimitedTime
+      });
       if (response.data.success) {
         setPdfPreview(response.data.pdf_base64);
         const byteCharacters = atob(response.data.pdf_base64); const byteNumbers = new Array(byteCharacters.length);
@@ -405,7 +413,17 @@ const DevisEnvoiApp = () => {
       };
       const finalSubject = replaceVariables(emailSubject, variableData);
       const finalBody = replaceVariables(emailBody, variableData);
-      const response = await api.post('/devis2/send-email', { selected_pages: orderedSelectedPages, price_amount: priceAmount || null, price_type: priceType, event_date: formattedEventDate, recipient_email: recipientEmail, email_subject: finalSubject, email_body: finalBody });
+      const response = await api.post('/devis2/send-email', { 
+        selected_pages: orderedSelectedPages, 
+        price_amount: priceAmount || null, 
+        price_type: priceType, 
+        end_time: endTime,
+        unlimited_time: unlimitedTime,
+        event_date: formattedEventDate, 
+        recipient_email: recipientEmail, 
+        email_subject: finalSubject, 
+        email_body: finalBody 
+      });
       if (response.data.success) { toast.success(response.data.message); setRecipientEmail(''); setEmailSubject(''); setEmailBody(signatureHtml); }
     } catch (error) { console.error('Error sending email:', error); toast.error(error.response?.data?.detail || 'Erreur lors de l\'envoi de l\'email'); }
     finally { setSendingEmail(false); }
@@ -515,6 +533,30 @@ const DevisEnvoiApp = () => {
                           <Input id="eventDate" type="number" min="2024" max="2100" placeholder="2026" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={`mt-1 ${!eventDate ? 'border-red-300' : ''}`} data-testid="event-year-input" required />
                         )}
                         {!eventDate && <p className="text-xs text-red-500 mt-1">Champ obligatoire</p>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border-t pt-4">
+                    <div className="flex gap-4 items-center">
+                      <div className="flex-1">
+                        <Label htmlFor="endTime">Heure de fin</Label>
+                        <Input 
+                          id="endTime" 
+                          type="time" 
+                          value={endTime} 
+                          onChange={(e) => setEndTime(e.target.value)} 
+                          className="mt-1"
+                          disabled={unlimitedTime}
+                        />
+                      </div>
+                      <div className="flex items-center space-x-2 pt-6">
+                        <Checkbox 
+                          id="unlimited" 
+                          checked={unlimitedTime} 
+                          onCheckedChange={(val) => setUnlimitedTime(!!val)} 
+                          data-testid="unlimited-checkbox"
+                        />
+                        <Label htmlFor="unlimited" className="cursor-pointer">Sans limite horaire</Label>
                       </div>
                     </div>
                   </div>

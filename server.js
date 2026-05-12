@@ -10,9 +10,10 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const sharp = require('sharp');
 
-async function addPriceToTarifImage(imageBuffer, priceAmount, priceType) {
+async function addPriceToTarifImage(imageBuffer, priceAmount, priceType, endTime, unlimitedTime) {
   const metadata = await sharp(imageBuffer).metadata();
   const imgW = metadata.width;
+  const imgH = metadata.height;
   
   let priceNum;
   try { priceNum = parseFloat(String(priceAmount).replace(/\s/g, '').replace(',', '.')); }
@@ -22,29 +23,31 @@ async function addPriceToTarifImage(imageBuffer, priceAmount, priceType) {
     : String(priceAmount);
   const typeText = (priceType && priceType !== 'NONE') ? ` ${priceType}` : '';
   
-  const priceFontSize = 80;
-  const typeFontSize = 40;
-  const yPosition = 630;
-
-  // Install fonts for Hostinger environment
-  const fontsDir = path.join(__dirname, 'fonts');
-  const homeDir = require('os').homedir();
-  const homeFonts = path.join(homeDir, '.fonts');
-  const fs = require('fs');
-  if (fs.existsSync(fontsDir) && !fs.existsSync(path.join(homeFonts, 'Poppins-Bold.ttf'))) {
-    try {
-      fs.mkdirSync(homeFonts, { recursive: true });
-      fs.copyFileSync(path.join(fontsDir, 'Poppins-Bold.ttf'), path.join(homeFonts, 'Poppins-Bold.ttf'));
-      fs.copyFileSync(path.join(fontsDir, 'Poppins-Regular.ttf'), path.join(homeFonts, 'Poppins-Regular.ttf'));
-      try { require('child_process').execSync('fc-cache -f', { timeout: 5000 }); } catch {}
-    } catch {}
-  }
+  // Hourly limit text
+  const limitText = unlimitedTime ? "sans limite horaire" : (endTime ? `jusqu'à ${endTime}` : "");
   
-  // Build SVG overlay matching production: white Poppins text, y=630, centered with +30px offset
-  const svgOverlay = `<svg width="${imgW}" height="${metadata.height}">
-    <text x="${Math.floor(imgW / 2) + 30}" y="${yPosition + priceFontSize}" text-anchor="middle" 
-          font-family="Poppins, sans-serif" font-weight="bold" font-size="${priceFontSize}" 
-          fill="white" letter-spacing="-3">${priceText.replace(/&/g,'&amp;')}<tspan font-weight="normal" font-size="${typeFontSize}" dx="2">${typeText}</tspan></text>
+  const priceFontSize = Math.floor(imgH * 0.041); // Reduced size
+  const typeFontSize = Math.floor(priceFontSize * 0.5);
+  const limitFontSize = Math.floor(priceFontSize * 0.4);
+  
+  // New positions calibrated on original_tarif.png
+  const yPrice = Math.floor(imgH * 0.355) - 2; // Moved up by 2 pixels total
+  const yLimit = Math.floor(imgH * 0.635) + 2; // Moved down by 2 pixels
+  const xLimit = Math.floor(imgW * 0.725); // Horizontal position moved slightly to the right
+
+  // Simple and robust SVG overlay
+  const svgOverlay = `<svg width="${imgW}" height="${imgH}">
+    <text x="${Math.floor(imgW / 2) + 25}" y="${yPrice}" text-anchor="middle" 
+          font-family="Poppins, Arial, sans-serif" font-weight="bold" font-size="${priceFontSize}" 
+          fill="white" letter-spacing="-2">
+      ${priceText.replace(/&/g,'&amp;')}
+      <tspan font-weight="normal" font-size="${typeFontSize}" dx="-10" dy="-11">${typeText.replace(/&/g,'&amp;')}</tspan>
+    </text>
+    ${limitText ? `<text x="${xLimit}" y="${yLimit}" text-anchor="middle" 
+          font-family="Poppins, Arial, sans-serif" font-weight="600" font-size="${limitFontSize}" 
+          fill="white">
+      ${limitText.replace(/&/g,'&amp;')}
+    </text>` : ''}
   </svg>`;
   
   return sharp(imageBuffer)
@@ -2211,7 +2214,7 @@ api.delete('/devis2/pages/orphaned', authMiddleware, (req, res) => res.json({ re
 // DEVIS PDF & SENT
 api.post('/devis2/generate-pdf', authMiddleware, async (req, res) => {
   try {
-    const { selected_pages, price_amount, price_type } = req.body;
+    const { selected_pages, price_amount, price_type, end_time, unlimited_time } = req.body;
     if (!selected_pages || !selected_pages.length) return res.status(400).json({ detail: 'Aucune page sélectionnée' });
 
     const pdfDoc = await PDFDocument.create();
@@ -2224,8 +2227,11 @@ api.post('/devis2/generate-pdf', authMiddleware, async (req, res) => {
       let imgBytes = Buffer.from(page.image_data, 'base64');
 
       // Apply price overlay on tarif page (like production: white Poppins text at y=630)
-      if (page.is_tarif && price_amount) {
-        try { imgBytes = await addPriceToTarifImage(imgBytes, price_amount, price_type); }
+      const labelLower = (page.label || '').toLowerCase();
+      const isTarifPage = page.is_tarif || labelLower.includes('tarif') || labelLower.includes('horaire');
+      
+      if (isTarifPage && price_amount) {
+        try { imgBytes = await addPriceToTarifImage(imgBytes, price_amount, price_type, end_time, unlimited_time); }
         catch (e) { console.error('Price overlay error:', e.message); }
       }
 
@@ -2247,7 +2253,7 @@ api.post('/devis2/generate-pdf', authMiddleware, async (req, res) => {
 });
 api.post('/devis2/send-email', authMiddleware, async (req, res) => {
   try {
-    const { selected_pages, price_amount, price_type, event_date, recipient_email, email_subject, email_body } = req.body;
+    const { selected_pages, price_amount, price_type, end_time, unlimited_time, event_date, recipient_email, email_subject, email_body } = req.body;
     if (!selected_pages || !selected_pages.length) return res.status(400).json({ detail: 'Aucune page sélectionnée' });
     if (!recipient_email) return res.status(400).json({ detail: 'Email destinataire manquant' });
 
@@ -2258,8 +2264,11 @@ api.post('/devis2/send-email', authMiddleware, async (req, res) => {
       if (!page) page = await db.collection('devis2_pages').findOne({ key: pageId });
       if (!page || !page.image_data) continue;
       let imgBytes = Buffer.from(page.image_data, 'base64');
-      if (page.is_tarif && price_amount) {
-        try { imgBytes = await addPriceToTarifImage(imgBytes, price_amount, price_type); } catch (e) { console.error('Price overlay:', e.message); }
+      const labelLower = (page.label || '').toLowerCase();
+      const isTarifPage = page.is_tarif || labelLower.includes('tarif') || labelLower.includes('horaire');
+
+      if (isTarifPage && price_amount) {
+        try { imgBytes = await addPriceToTarifImage(imgBytes, price_amount, price_type, end_time, unlimited_time); } catch (e) { console.error('Price overlay:', e.message); }
       }
       const isPng = imgBytes[0] === 0x89 && imgBytes[1] === 0x50;
       let img;
