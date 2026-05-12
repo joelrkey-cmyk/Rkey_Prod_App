@@ -2186,9 +2186,24 @@ api.post('/devis2/pages/reorder', authMiddleware, async (req, res) => {
 });
 api.post('/devis2/pages/upload', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'No file' });
-  const page = { id: uuidv4(), type: 'image', content: `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`, name: req.file.originalname, created_at: new Date().toISOString() };
-  await db.collection('devis2_pages').insertOne(page);
-  res.json(clean(page));
+  try {
+    const { label, category, is_tarif } = req.body;
+    const page = { 
+      id: uuidv4(), 
+      label: label || req.file.originalname,
+      category: category || 'artiste',
+      is_tarif: is_tarif === 'true' || is_tarif === true,
+      image_data: req.file.buffer.toString('base64'),
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+      created_at: new Date().toISOString() 
+    };
+    await db.collection('devis2_pages').insertOne(page);
+    res.json({ success: true, ...clean(page) });
+  } catch (error) {
+    console.error('Error uploading devis2 page:', error);
+    res.status(500).json({ success: false, detail: 'Erreur lors de l\'enregistrement de la page' });
+  }
 });
 api.post('/devis2/pages/migrate-to-mongodb', authMiddleware, (req, res) => res.json({ migrated: 0 }));
 api.delete('/devis2/pages/orphaned', authMiddleware, (req, res) => res.json({ removed: 0 }));

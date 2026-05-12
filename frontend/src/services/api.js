@@ -244,6 +244,10 @@ class APIService {
   async getArchivedContracts() { return await this.request('/contracts2/archived'); }
   async updateContractStatus(id, status) { return await this.put(`/contracts2/${id}/status`, { status }); }
   async permanentlyDeleteContract(id) { return await this.delete(`/contracts2/${id}/permanent`); }
+  
+  async uploadDevisPage(formData) {
+    return await this.requestFormData('/devis2/pages/upload', formData);
+  }
 }
 
 export default new APIService();

@@ -332,12 +332,25 @@ const DevisEnvoiApp = () => {
     if (!newPageFile || !pageForm.label) { toast.error('Veuillez sélectionner un fichier et saisir un nom'); return; }
     try {
       setUploadingPage(true);
-      const formData = new FormData(); formData.append('file', newPageFile); formData.append('label', pageForm.label); formData.append('category', pageForm.category); formData.append('is_tarif', pageForm.is_tarif);
-      const response = await fetch(`${(window.location.hostname === 'rkeyprodapp.fr' || window.location.hostname === 'www.rkeyprodapp.fr') ? window.location.origin : (process.env.REACT_APP_BACKEND_URL || window.location.origin)}/api/devis2/pages/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }, body: formData });
-      const data = await response.json();
-      if (data.success) { toast.success('Page ajoutée avec succès'); fetchPages(); setShowAddPageDialog(false); setNewPageFile(null); setPageForm({ label: '', category: 'options', is_tarif: false }); }
+      const formData = new FormData(); 
+      formData.append('file', newPageFile); 
+      formData.append('label', pageForm.label); 
+      formData.append('category', pageForm.category); 
+      formData.append('is_tarif', pageForm.is_tarif);
+      
+      const data = await api.uploadDevisPage(formData);
+      if (data.success) { 
+        toast.success('Page ajoutée avec succès'); 
+        fetchPages(); 
+        setShowAddPageDialog(false); 
+        setNewPageFile(null); 
+        setPageForm({ label: '', category: 'options', is_tarif: false }); 
+      }
       else { toast.error(data.detail || 'Erreur lors de l\'ajout'); }
-    } catch (error) { console.error('Error uploading page:', error); toast.error('Erreur lors de l\'upload'); }
+    } catch (error) { 
+      console.error('Error uploading page:', error); 
+      toast.error(error.message || 'Erreur lors de l\'upload'); 
+    }
     finally { setUploadingPage(false); }
   };
 
