@@ -2526,7 +2526,7 @@ api.get('/quotes', authMiddleware, async (req, res) => {
 // MOUNT API + STATIC FILES
 // ═══════════════════════════════════════════
 // Serve widget HTML files (BEFORE api router so /api/widgets/* is served as static files)
-app.use('/api/widgets', express.static(path.join(__dirname, 'backend', 'static', 'widgets')));
+app.use('/api/widgets', express.static(path.join(__dirname, 'frontend', 'public', 'api', 'widgets')));
 
 // Catch unregistered API routes
 api.use((req, res) => {

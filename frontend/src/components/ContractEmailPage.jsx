@@ -427,7 +427,7 @@ const ContractEmailPage = () => {
         
         toast.success(response.data.message);
         // Navigate back to contracts
-        navigate('/contracts');
+        navigate('/contracts2');
       }
     } catch (error) {
       console.error('Error sending email:', error);
@@ -448,7 +448,7 @@ const ContractEmailPage = () => {
               <FileText className="w-16 h-16 mx-auto text-gray-400 mb-4" />
               <h2 className="text-xl font-semibold mb-2">Aucun contrat sélectionné</h2>
               <p className="text-gray-500 mb-6">Veuillez d'abord créer un contrat depuis l'application Contrats DJ.</p>
-              <Button onClick={() => navigate('/contracts')}>
+              <Button onClick={() => navigate('/contracts2')}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Retour aux contrats
               </Button>
@@ -466,11 +466,11 @@ const ContractEmailPage = () => {
         <div className="flex items-center justify-between">
           <Button 
             variant="outline" 
-            onClick={() => navigate('/contracts')}
+            onClick={() => navigate(-1)}
             className="gap-2"
           >
             <ArrowLeft className="w-4 h-4" />
-            Retour aux contrats
+            Retour au contrat
           </Button>
         </div>
 
@@ -675,7 +675,7 @@ const ContractEmailPage = () => {
             <div className="flex justify-end gap-4 pt-6 border-t">
               <Button 
                 variant="outline" 
-                onClick={() => navigate('/contracts')}
+                onClick={() => navigate(-1)}
                 size="lg"
               >
                 Annuler

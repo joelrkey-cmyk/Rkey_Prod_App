@@ -206,7 +206,7 @@ const MobileHome = () => {
           const allowedApps = user?.allowed_apps || ['rental', 'delivery'];
           const MOBILE_APPS = [
             { key: 'devis', route: '/devis', label: 'Envoi de Devis', desc: 'Envoyer des devis', icon: Send, bg: 'bg-orange-500 hover:bg-orange-600' },
-            { key: 'contracts', route: '/contracts', label: 'Contrats', desc: 'Contrats artistiques', icon: FileCheck, bg: 'bg-blue-500 hover:bg-blue-600' },
+            { key: 'contracts', route: '/contracts2', label: 'Contrats' , desc: 'Contrats artistiques', icon: FileCheck, bg: 'bg-blue-500 hover:bg-blue-600' },
             { key: 'location', route: '/location', label: 'Location', desc: 'Gestion du matériel', icon: Package, bg: 'bg-purple-500 hover:bg-purple-600' },
             { key: 'rental', route: '/rental', label: 'Retrait / Retour', desc: 'Retrait et retour du matériel', icon: Handshake, bg: 'bg-slate-900 hover:bg-slate-800' },
             { key: 'delivery', route: '/delivery', label: 'Livraison', desc: 'Livrer le matériel au client', icon: Truck, bg: 'bg-blue-600 hover:bg-blue-700' },
