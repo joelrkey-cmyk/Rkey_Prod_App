@@ -50,8 +50,27 @@ async function initGoogleCalendar() {
 }
 initGoogleCalendar();
 
+api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
+  let serviceAccountEmail = null;
+  if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
+    try {
+      const creds = JSON.parse(fs.readFileSync(GOOGLE_CREDENTIALS_PATH, 'utf8'));
+      serviceAccountEmail = creds.client_email;
+    } catch (e) {
+      console.error('Failed to read credentials file', e);
+    }
+  }
+  
+  res.json({
+    initialized: !!calendar,
+    locationCalendarFound: locationCalendarId !== null && locationCalendarId !== 'primary',
+    serviceAccountEmail: serviceAccountEmail
+  });
+});
+
+
 async function syncReservationToCalendar(reservation) {
-  if (!calendar) return null;
+  if (!calendar) throw new Error('Google Calendar integration is not initialized (check credentials).');
   
   // Wait to make sure the calendar ID is fetched if not ready yet
   if (!locationCalendarId) {
@@ -60,7 +79,7 @@ async function syncReservationToCalendar(reservation) {
 
   const bType = (reservation.booking_type || '').toLowerCase();
   if (bType !== 'client' && bType !== 'livraison') {
-    return null; // Ignore other types
+    throw new Error(`Booking type "${reservation.booking_type}" cannot be synced. Only "Client" or "Livraison" types are allowed.`);
   }
 
   try {
@@ -68,6 +87,9 @@ async function syncReservationToCalendar(reservation) {
     
     let startDateObj = new Date(reservation.start_date);
     let endDateObj = new Date(reservation.end_date);
+    
+    if (isNaN(startDateObj.getTime())) throw new Error(`Invalid start date: ${reservation.start_date}`);
+    if (isNaN(endDateObj.getTime())) throw new Error(`Invalid end date: ${reservation.end_date}`);
     
     // Google Calendar all-day events require the end date to be exclusive.
     // If end_date is the same as start_date, or even if it's multiple days,
@@ -147,7 +169,7 @@ async function syncReservationToCalendar(reservation) {
       }
     }
     console.error('Error syncing reservation to Google Calendar:', error);
-    return null;
+    throw error;
   }
 }
 // -----------------------------
@@ -1554,13 +1576,22 @@ api.post('/location/reservations/:id/sync-google', authMiddleware, async (req, r
         { id: req.params.id }, 
         { $set: { google_event_id: googleEventId } }
       );
-      res.json({ success: true, googleEventId });
+      
+      if (locationCalendarId === 'primary') {
+        res.json({ 
+          success: true, 
+          googleEventId,
+          warning: 'Événement créé dans le calendrier interne. Partagez un calendrier nommé "LOCATION" avec le compte de service pour le voir.'
+        });
+      } else {
+        res.json({ success: true, googleEventId });
+      }
     } else {
-      res.status(500).json({ error: 'Failed to sync with Google Calendar' });
+      res.status(500).json({ error: 'Failed to sync with Google Calendar for unknown reasons' });
     }
   } catch (error) {
     console.error('Error in manual Google sync:', error);
-    res.status(500).json({ error: 'Internal server error during sync' });
+    res.status(500).json({ error: error.message || 'Internal server error during sync' });
   }
 });
 
@@ -1579,19 +1610,29 @@ api.post('/location/sync-all-google', authMiddleware, async (req, res) => {
 
     let successCount = 0;
     for (const res of reservations) {
-      const googleEventId = await syncReservationToCalendar(res);
-      if (googleEventId) {
-        await db.collection('location_reservations').updateOne(
-          { id: res.id },
-          { $set: { google_event_id: googleEventId } }
-        );
-        successCount++;
+      try {
+        const googleEventId = await syncReservationToCalendar(res);
+        if (googleEventId) {
+          await db.collection('location_reservations').updateOne(
+            { id: res.id },
+            { $set: { google_event_id: googleEventId } }
+          );
+          successCount++;
+        }
+      } catch (syncErr) {
+        console.error(`Failed to sync reservation ${res.id}:`, syncErr.message);
       }
     }
-    res.json({ success: true, count: successCount, total: reservations.length });
+    
+    const responsePayload = { success: true, count: successCount, total: reservations.length };
+    if (locationCalendarId === 'primary') {
+      responsePayload.warning = 'Les événements ont été créés dans le calendrier interne du compte de service. Partagez un calendrier nommé "LOCATION" avec le compte de service pour les voir.';
+    }
+    
+    res.json(responsePayload);
   } catch (error) {
     console.error('Error in batch Google sync:', error);
-    res.status(500).json({ error: 'Internal server error during batch sync' });
+    res.status(500).json({ error: error.message || 'Internal server error during batch sync' });
   }
 });
 

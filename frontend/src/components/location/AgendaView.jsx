@@ -684,7 +684,11 @@ function AgendaView({ stats, setCurrentView }) {
       setIsLoading(true);
       const response = await axios.post(`${API}/reservations/${reservation.id}/sync-google`);
       if (response.data.success) {
-        toast.success('Synchronisation Google Agenda réussie !');
+        if (response.data.warning) {
+          toast.warning(response.data.warning, { autoClose: 10000 });
+        } else {
+          toast.success('Synchronisation Google Agenda réussie !');
+        }
         await fetchReservations();
       }
     } catch (error) {
@@ -702,7 +706,11 @@ function AgendaView({ stats, setCurrentView }) {
       toast.info('Synchronisation globale en cours...');
       const response = await axios.post(`${API}/sync-all-google`);
       if (response.data.success) {
-        toast.success(`Synchronisation terminée ! ${response.data.count} événements mis à jour.`);
+        if (response.data.warning) {
+          toast.warning(`Synchronisation terminée (${response.data.count}) : ${response.data.warning}`, { autoClose: 10000 });
+        } else {
+          toast.success(`Synchronisation terminée ! ${response.data.count} événements mis à jour.`);
+        }
         await fetchReservations();
       }
     } catch (error) {
