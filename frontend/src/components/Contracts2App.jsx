@@ -24,6 +24,7 @@ import { ConfigurationPage } from "./contracts2/ConfigurationPage";
 import { ContractPreview } from "./contracts2/ContractPreview";
 import { ContractHistory } from "./contracts2/ContractHistory";
 import { SignaturePadModal } from "./contracts2/SignaturePadModal";
+import ErrorBoundary from "./ErrorBoundary";
 import { generateMandatHTML, generateArtisteHTML, generateEntrepriseHTML } from "./contracts2/mandatHtmlGenerator";
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -356,6 +357,73 @@ function Contracts2App() {
   // ═══════════════════════════════════════════════════
   // CRUD OPERATIONS
   // ═══════════════════════════════════════════════════
+
+  // PERSISTENCE: Save/Load form state to handle "Back" button from email page
+  useEffect(() => {
+    const saved = sessionStorage.getItem('contracts2_form_state');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setClientInfo(parsed.clientInfo || { name: "", company: "", address: "", phone: "", phone2: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, guest_count: "" });
+        setBasePrice(parsed.basePrice || 0);
+        setDiscountAmount(parsed.discountAmount || 0);
+        setSelectedOptions(parsed.selectedOptions || []);
+        setSelectedDjProfile(parsed.selectedDjProfile || "");
+        setSignatureImages(parsed.signatureImages || {});
+        setInvoiceNumber(parsed.invoiceNumber || "");
+        setNoDepositRequired(parsed.noDepositRequired || false);
+        setCustomDepositAmount(parsed.customDepositAmount || 0);
+        setContractMode(parsed.contractMode || 'mandataire');
+        setFraisMandat(parsed.fraisMandat || 0);
+        setCachetArtiste(parsed.cachetArtiste || 0);
+        setPackSonorisation(parsed.packSonorisation || false);
+        setPackLumiere(parsed.packLumiere || false);
+        setOptionsTarifNotes(parsed.optionsTarifNotes || "");
+        setSelectedNotes(parsed.selectedNotes || []);
+        setSelectedMusicStyles(parsed.selectedMusicStyles || []);
+        setDjNotes(parsed.djNotes || "");
+        setBlacklist(parsed.blacklist || "");
+        setGuestIntervention(parsed.guestIntervention || "");
+        setCateringNotes(parsed.cateringNotes || "");
+        setCateringDrinks(parsed.cateringDrinks || false);
+        setSelectedEvents(parsed.selectedEvents || []);
+        setCustomRepasEvents(parsed.customRepasEvents || []);
+        setCustomMusiqueEvents(parsed.customMusiqueEvents || []);
+        setEventNotes(parsed.eventNotes || "");
+        setEventOrder(parsed.eventOrder || []);
+        setHypnosisProgram(parsed.hypnosisProgram || defaultHypnosisProgram);
+        setSelectedRIB(parsed.selectedRIB || "");
+        setDepositPaid(parsed.depositPaid || false);
+        setDepositPaymentMethod(parsed.depositPaymentMethod || "");
+        setDepositPaidDate(parsed.depositPaidDate || "");
+        setBackgroundMusicAperitif(parsed.backgroundMusicAperitif || "");
+        setHasLimiteurSon(parsed.hasLimiteurSon || false);
+        setHasDetecteurFumee(parsed.hasDetecteurFumee || false);
+        setHasNoLimiteurNiDetecteur(parsed.hasNoLimiteurNiDetecteur || false);
+        setTechnicianContact(parsed.technicianContact || { name: "", email: "", phone: "" });
+        setSelectedPdfNotes(parsed.selectedPdfNotes || ['__deroulement_soiree']);
+        setCgvText(parsed.cgvText || "");
+      } catch (e) {
+        console.error('Failed to restore state:', e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const state = {
+      clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, 
+      signatureImages, invoiceNumber, noDepositRequired, customDepositAmount,
+      contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, 
+      optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, 
+      guestIntervention, cateringNotes, cateringDrinks, selectedEvents, 
+      customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, 
+      hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, 
+      depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, 
+      hasDetecteurFumee, hasNoLimiteurNiDetecteur, technicianContact,
+      selectedPdfNotes, cgvText
+    };
+    sessionStorage.setItem('contracts2_form_state', JSON.stringify(state));
+  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, guestIntervention, cateringNotes, cateringDrinks, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, technicianContact, selectedPdfNotes, cgvText]);
 
   const loadContracts = async () => {
     try {
@@ -1746,30 +1814,34 @@ function Contracts2App() {
           {/* PREVIEW TAB (composant extrait)                */}
           {/* ═══════════════════════════════════════════════ */}
           <TabsContent value="preview">
-            <ContractPreview
-              generatedContract={generatedContract}
-              generateContractHTMLForPreview={(mode) => generateContractHTMLLocal(buildCurrentContractData(), null, signatureImages, { mode })}
-              onExportPDF={() => generateContractAndGuide(buildCurrentContractData(), generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService)}
-              onSendEmail={() => openContractEmailModal({
-                id: generatedContract?.id || editingContract?.id,
-                ...buildCurrentContractData()
-              })}
-              selectedPdfNotes={selectedPdfNotes}
-              onGetCompiledGuideBlob={() => getCompiledGuideBlob(buildCurrentContractData(), generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService)}
-              isMandatMode={!isDirigeant() && contractMode === 'mandataire'}
-              isEntrepriseMode={!isDirigeant() && contractMode === 'entreprise'}
-              generateMandatHTMLForPreview={() => generateMandatHTML(buildCurrentContractData(), companySettings)}
-              generateArtisteHTMLForPreview={() => generateArtisteHTML(buildCurrentContractData(), resolveProfile)}
-              generateEntrepriseHTMLForPreview={() => generateEntrepriseHTML(buildCurrentContractData(), companySettings)}
-              onExportMandatPDF={handleExportMandatPDF}
-              onExportArtistePDF={handleExportArtistePDF}
-              onExportEntreprisePDF={handleExportEntreprisePDF}
-              artisteName={(() => { const p = getProfileData(selectedDjProfile); return p.nom_artistique || p.nom_complet || ''; })()}
-              totalMandat={(() => { const opts = selectedOptions.filter(o => o.selected).reduce((s, o) => s + o.price, 0); return Math.max(0, fraisMandat + opts - discountAmount); })()}
-              totalArtiste={cachetArtiste}
-              totalEntreprise={(() => { const opts = selectedOptions.filter(o => o.selected).reduce((s, o) => s + o.price, 0); return Math.max(0, basePrice + opts - discountAmount); })()}
-              cachetInterne={cachetArtiste}
-            />
+            <ErrorBoundary>
+              <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden min-h-[600px]">
+                <ContractPreview
+                  generatedContract={generatedContract}
+                  generateContractHTMLForPreview={(mode) => generateContractHTMLLocal(buildCurrentContractData(), null, signatureImages, { mode })}
+                  onExportPDF={() => generateContractAndGuide(buildCurrentContractData(), generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService)}
+                  onSendEmail={() => openContractEmailModal({
+                    id: generatedContract?.id || editingContract?.id,
+                    ...buildCurrentContractData()
+                  })}
+                  selectedPdfNotes={selectedPdfNotes}
+                  onGetCompiledGuideBlob={() => getCompiledGuideBlob(buildCurrentContractData(), generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService)}
+                  isMandatMode={!isDirigeant() && contractMode === 'mandataire'}
+                  isEntrepriseMode={!isDirigeant() && contractMode === 'entreprise'}
+                  generateMandatHTMLForPreview={() => generateMandatHTML(buildCurrentContractData(), companySettings)}
+                  generateArtisteHTMLForPreview={() => generateArtisteHTML(buildCurrentContractData(), resolveProfile)}
+                  generateEntrepriseHTMLForPreview={() => generateEntrepriseHTML(buildCurrentContractData(), companySettings)}
+                  onExportMandatPDF={handleExportMandatPDF}
+                  onExportArtistePDF={handleExportArtistePDF}
+                  onExportEntreprisePDF={handleExportEntreprisePDF}
+                  artisteName={(() => { const p = getProfileData(selectedDjProfile); return p.nom_artistique || p.nom_complet || ''; })()}
+                  totalMandat={(() => { const opts = selectedOptions.filter(o => o.selected).reduce((s, o) => s + o.price, 0); return Math.max(0, fraisMandat + opts - discountAmount); })()}
+                  totalArtiste={cachetArtiste}
+                  totalEntreprise={(() => { const opts = selectedOptions.filter(o => o.selected).reduce((s, o) => s + o.price, 0); return Math.max(0, basePrice + opts - discountAmount); })()}
+                  cachetInterne={cachetArtiste}
+                />
+              </div>
+            </ErrorBoundary>
           </TabsContent>
 
           {/* ═══════════════════════════════════════════════ */}

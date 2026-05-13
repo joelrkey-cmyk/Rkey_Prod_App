@@ -9,6 +9,148 @@ const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const sharp = require('sharp');
+const { google } = require('googleapis');
+const fs = require('fs');
+
+// --- Google Calendar Setup ---
+const GOOGLE_CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json');
+let calendar = null;
+let locationCalendarId = null;
+
+async function initGoogleCalendar() {
+  if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
+    try {
+      const auth = new google.auth.GoogleAuth({
+        keyFile: GOOGLE_CREDENTIALS_PATH,
+        scopes: ['https://www.googleapis.com/auth/calendar'],
+      });
+      calendar = google.calendar({ version: 'v3', auth });
+      console.log('Google Calendar integration initialized.');
+      
+      try {
+        const res = await calendar.calendarList.list();
+        const targetCalendar = res.data.items.find(c => c.summary === 'LOCATION');
+        if (targetCalendar) {
+          locationCalendarId = targetCalendar.id;
+          console.log(`Found LOCATION calendar with ID: ${locationCalendarId}`);
+        } else {
+          locationCalendarId = 'primary';
+          console.warn('Calendar named "LOCATION" not found. Falling back to primary.');
+        }
+      } catch (err) {
+        console.error('Error fetching calendar list:', err);
+        locationCalendarId = 'primary';
+      }
+    } catch (err) {
+      console.error('Failed to initialize Google Calendar integration:', err);
+    }
+  } else {
+    console.warn('google-credentials.json not found, Google Calendar sync is disabled.');
+  }
+}
+initGoogleCalendar();
+
+async function syncReservationToCalendar(reservation) {
+  if (!calendar) return null;
+  
+  // Wait to make sure the calendar ID is fetched if not ready yet
+  if (!locationCalendarId) {
+    locationCalendarId = 'primary';
+  }
+
+  const bType = (reservation.booking_type || '').toLowerCase();
+  if (bType !== 'client' && bType !== 'livraison') {
+    return null; // Ignore other types
+  }
+
+  try {
+    const title = `Location: ${reservation.client_name || reservation.dj_name || 'Client'}`;
+    
+    let startDateObj = new Date(reservation.start_date);
+    let endDateObj = new Date(reservation.end_date);
+    
+    // Google Calendar all-day events require the end date to be exclusive.
+    // If end_date is the same as start_date, or even if it's multiple days,
+    // we must add 1 day to the end date for an all-day event.
+    endDateObj.setDate(endDateObj.getDate() + 1);
+    
+    const startFormat = startDateObj.toISOString().split('T')[0];
+    const endFormat = endDateObj.toISOString().split('T')[0];
+
+    let description = `📦 MATÉRIEL LOUÉ :\n`;
+    const items = reservation.items || reservation.equipment_items || [];
+    if (items && items.length > 0) {
+      for (const item of items) {
+        description += `• ${item.quantity || 1} x ${item.name || item.equipment_name || 'Matériel'}\n`;
+      }
+    }
+    
+    description += `\n-----------------\n`;
+    description += `📝 INFOS CLIENT & NOTES :\n`;
+    description += `Statut : ${reservation.status || 'N/A'}\n`;
+    if (reservation.client_phone) description += `Téléphone : ${reservation.client_phone}\n`;
+    if (reservation.client_email) description += `Email : ${reservation.client_email}\n`;
+    if (reservation.notes) description += `Notes : ${reservation.notes}\n`;
+    
+    description += `\n-----------------\n`;
+    description += `💰 TOTAL : ${reservation.total_amount || 0} €`;
+
+    // colorId 9 = Bleu (Blueberry), 3 = Violet (Grape)
+    const colorId = bType === 'client' ? '9' : '3';
+
+    const event = {
+      summary: title,
+      description: description,
+      colorId: colorId,
+      start: {
+        date: startFormat,
+        timeZone: 'Europe/Paris',
+      },
+      end: {
+        date: endFormat,
+        timeZone: 'Europe/Paris',
+      },
+    };
+
+    if (reservation.google_event_id) {
+      const response = await calendar.events.update({
+        calendarId: locationCalendarId,
+        eventId: reservation.google_event_id,
+        resource: event,
+      });
+      console.log(`Event updated in Google Calendar: ${response.data.htmlLink}`);
+      return reservation.google_event_id;
+    } else {
+      const response = await calendar.events.insert({
+        calendarId: locationCalendarId,
+        resource: event,
+      });
+      console.log(`Event created in Google Calendar: ${response.data.htmlLink}`);
+      return response.data.id;
+    }
+  } catch (error) {
+    if (error.response && error.response.status === 404 && reservation.google_event_id) {
+      console.log('Event not found on update, it might have been deleted manually. Trying to create a new one...');
+      try {
+        const response = await calendar.events.insert({
+          calendarId: locationCalendarId,
+          resource: {
+            summary: `Location: ${reservation.client_name || reservation.dj_name || 'Client'}`,
+            description: `📦 MATÉRIEL LOUÉ...\n(Re-created after missing)`,
+            start: { date: new Date(reservation.start_date).toISOString().split('T')[0], timeZone: 'Europe/Paris' },
+            end: { date: new Date(new Date(reservation.end_date).getTime() + 86400000).toISOString().split('T')[0], timeZone: 'Europe/Paris' }
+          },
+        });
+        return response.data.id;
+      } catch (err2) {
+        console.error('Failed to recreate deleted event:', err2);
+      }
+    }
+    console.error('Error syncing reservation to Google Calendar:', error);
+    return null;
+  }
+}
+// -----------------------------
 
 async function addPriceToTarifImage(imageBuffer, priceAmount, priceType, endTime, unlimitedTime) {
   const metadata = await sharp(imageBuffer).metadata();
@@ -41,7 +183,7 @@ async function addPriceToTarifImage(imageBuffer, priceAmount, priceType, endTime
           font-family="Poppins, Arial, sans-serif" font-weight="bold" font-size="${priceFontSize}" 
           fill="white" letter-spacing="-2">
       ${priceText.replace(/&/g,'&amp;')}
-      <tspan font-weight="normal" font-size="${typeFontSize}" dx="-10" dy="-11">${typeText.replace(/&/g,'&amp;')}</tspan>
+      <tspan font-weight="normal" font-size="${typeFontSize}" dx="-12" dy="-14">${typeText.replace(/&/g,'&amp;')}</tspan>
     </text>
     ${limitText ? `<text x="${xLimit}" y="${yLimit}" text-anchor="middle" 
           font-family="Poppins, Arial, sans-serif" font-weight="600" font-size="${limitFontSize}" 
@@ -57,8 +199,6 @@ async function addPriceToTarifImage(imageBuffer, priceAmount, priceType, endTime
 }
 
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
-
-const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1314,12 +1454,26 @@ api.post('/location/reservations/direct', authMiddleware, async (req, res) => {
     resolvedItems.push({ ...item, equipment_name: eqName, name: eqName, reference: eqRef, daily_price: eqPrice });
   }
   const r = { id: uuidv4(), ...req.body, items: resolvedItems, equipment_items: resolvedItems, status: req.body.status || 'active', created_at: new Date().toISOString() };
+  
+  // Sync to Google Calendar
+  const googleEventId = await syncReservationToCalendar(r);
+  if (googleEventId) {
+    r.google_event_id = googleEventId;
+  }
+
   await db.collection('location_reservations').insertOne(r);
   res.json(clean(r));
 });
 api.put('/location/reservations/:id', authMiddleware, async (req, res) => {
   await db.collection('location_reservations').updateOne({ id: req.params.id }, { $set: req.body });
-  res.json(await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  
+  if (updatedReservation && updatedReservation.google_event_id) {
+    // Only update sync if we already created an event for it (or we can always try to sync)
+    await syncReservationToCalendar(updatedReservation);
+  }
+  
+  res.json(updatedReservation);
 });
 api.delete('/location/reservations/:id', authMiddleware, async (req, res) => {
   await db.collection('location_reservations').deleteOne({ id: req.params.id });
@@ -1347,6 +1501,12 @@ api.put('/location/reservations/:id/change-status', authMiddleware, async (req, 
     }
   }
   await db.collection('location_reservations').updateOne({ id: req.params.id }, { $set: updateFields });
+  
+  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  if (updatedReservation && updatedReservation.google_event_id) {
+     await syncReservationToCalendar(updatedReservation);
+  }
+  
   res.json({ success: true });
 });
 api.patch('/location/reservations/:id/status', authMiddleware, async (req, res) => {
@@ -1364,7 +1524,75 @@ api.patch('/location/reservations/:id/status', authMiddleware, async (req, res) 
     }
   }
   await db.collection('location_reservations').updateOne({ id: req.params.id }, { $set: updateFields });
-  res.json(await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  
+  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  if (updatedReservation && updatedReservation.google_event_id) {
+     await syncReservationToCalendar(updatedReservation);
+  }
+  
+  res.json(updatedReservation);
+});
+
+api.post('/location/reservations/:id/sync-google', authMiddleware, async (req, res) => {
+  try {
+    const reservation = await db.collection('location_reservations').findOne({ id: req.params.id });
+    if (!reservation) {
+      return res.status(404).json({ error: 'Reservation not found' });
+    }
+    
+    // Always call sync function, which will handle updates for existing ones or create new ones
+    // We update the bType condition so manual syncs work for the approved types
+    const bType = (reservation.booking_type || '').toLowerCase();
+    if (bType !== 'client' && bType !== 'livraison') {
+      return res.status(400).json({ error: 'Only Client and Livraison reservations can be synced' });
+    }
+
+    const googleEventId = await syncReservationToCalendar(reservation);
+    
+    if (googleEventId) {
+      await db.collection('location_reservations').updateOne(
+        { id: req.params.id }, 
+        { $set: { google_event_id: googleEventId } }
+      );
+      res.json({ success: true, googleEventId });
+    } else {
+      res.status(500).json({ error: 'Failed to sync with Google Calendar' });
+    }
+  } catch (error) {
+    console.error('Error in manual Google sync:', error);
+    res.status(500).json({ error: 'Internal server error during sync' });
+  }
+});
+
+api.post('/location/sync-all-google', authMiddleware, async (req, res) => {
+  try {
+    const reservations = await db.collection('location_reservations').find({
+      status: { $nin: ['Annulée'] },
+      $or: [
+        { booking_type: 'client' },
+        { booking_type: 'livraison' },
+        { booking_type: 'Livraison' },
+        { booking_type: 'Client' },
+      ],
+      // only sync upcoming or recent events maybe? Let's just sync all for now since it handles up to what's defined.
+    }).toArray();
+
+    let successCount = 0;
+    for (const res of reservations) {
+      const googleEventId = await syncReservationToCalendar(res);
+      if (googleEventId) {
+        await db.collection('location_reservations').updateOne(
+          { id: res.id },
+          { $set: { google_event_id: googleEventId } }
+        );
+        successCount++;
+      }
+    }
+    res.json({ success: true, count: successCount, total: reservations.length });
+  } catch (error) {
+    console.error('Error in batch Google sync:', error);
+    res.status(500).json({ error: 'Internal server error during batch sync' });
+  }
 });
 
 // ══════════ DELIVERY WORKFLOW ══════════

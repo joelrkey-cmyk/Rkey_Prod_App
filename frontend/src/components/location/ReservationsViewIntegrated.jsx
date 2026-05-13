@@ -31,6 +31,7 @@ import { API, BACKEND_URL, formatDateLocal, axios } from './helpers';
 import { generateWithdrawalPDF, getDefaultCGV } from './withdrawalPdf';
 import { WithdrawalSlipModal, WithdrawalSignatureModal, WithdrawalViewModal } from './WithdrawalModals';
 import { EditReservationModal } from './EditReservationModal';
+import { cn } from '../../lib/utils';
 
 function ReservationsViewIntegrated({ setCurrentView, onOpenAddReservation = () => {} }) {
   const [reservations, setReservations] = useState([]);
@@ -104,6 +105,41 @@ function ReservationsViewIntegrated({ setCurrentView, onOpenAddReservation = () 
       setReservations(response.data || []);
     } catch (error) {
       toast.error('Erreur lors du chargement des réservations');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSyncGoogle = async (reservation) => {
+    try {
+      setIsLoading(true);
+      const response = await axios.post(`${API}/reservations/${reservation.id}/sync-google`);
+      if (response.data.success) {
+        toast.success('Synchronisation Google Agenda réussie !');
+        await fetchReservations();
+      }
+    } catch (error) {
+      console.error('Error syncing with Google:', error);
+      const errorMsg = error.response?.data?.error || 'Erreur lors de la synchronisation';
+      toast.error(errorMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSyncAllGoogle = async () => {
+    try {
+      setIsLoading(true);
+      toast.info('Synchronisation globale en cours...');
+      const response = await axios.post(`${API}/sync-all-google`);
+      if (response.data.success) {
+        toast.success(`Synchronisation terminée ! ${response.data.count} événements mis à jour.`);
+        await fetchReservations();
+      }
+    } catch (error) {
+      console.error('Error syncing all with Google:', error);
+      const errorMsg = error.response?.data?.error || 'Erreur lors de la synchronisation globale';
+      toast.error(errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -524,6 +560,16 @@ function ReservationsViewIntegrated({ setCurrentView, onOpenAddReservation = () 
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-gray-900">Gestion des Réservations</h2>
         <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={handleSyncAllGoogle}
+            disabled={isLoading}
+            className="border-emerald-500 hover:bg-emerald-50 text-emerald-600"
+            title="Synchroniser toutes les réservations avec Google Agenda"
+          >
+            <RefreshCw className={cn("w-4 h-4 mr-2", isLoading && "animate-spin")} />
+            Sync. Google
+          </Button>
           <Button onClick={() => onOpenAddReservation && onOpenAddReservation()} className="bg-green-600 hover:bg-green-700">
             <Plus className="w-4 h-4 mr-2" />
             Nouvelle Réservation
@@ -715,6 +761,21 @@ function ReservationsViewIntegrated({ setCurrentView, onOpenAddReservation = () 
                             >
                               <FolderOpen className="w-3 h-3 md:w-4 md:h-4 text-amber-600" />
                             </Button>
+                            
+                            {/* Bouton Synchroniser avec Google */}
+                            {(reservation.booking_type === 'client' || reservation.booking_type?.toLowerCase() === 'livraison') && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSyncGoogle(reservation)}
+                                disabled={isLoading}
+                                className="border-emerald-500 hover:bg-emerald-50 p-1 md:p-2"
+                                title="Synchroniser avec Google Agenda"
+                              >
+                                <RefreshCw className={cn("w-3 h-3 md:w-4 md:h-4 text-emerald-600", isLoading && "animate-spin")} />
+                              </Button>
+                            )}
                             
                             <Button 
                               type="button"

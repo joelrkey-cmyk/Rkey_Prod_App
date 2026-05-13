@@ -679,6 +679,41 @@ function AgendaView({ stats, setCurrentView }) {
     }
   };
 
+  const handleSyncGoogle = async (reservation) => {
+    try {
+      setIsLoading(true);
+      const response = await axios.post(`${API}/reservations/${reservation.id}/sync-google`);
+      if (response.data.success) {
+        toast.success('Synchronisation Google Agenda réussie !');
+        await fetchReservations();
+      }
+    } catch (error) {
+      console.error('Error syncing with Google:', error);
+      const errorMsg = error.response?.data?.error || 'Erreur lors de la synchronisation';
+      toast.error(errorMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSyncAllGoogle = async () => {
+    try {
+      setIsLoading(true);
+      toast.info('Synchronisation globale en cours...');
+      const response = await axios.post(`${API}/sync-all-google`);
+      if (response.data.success) {
+        toast.success(`Synchronisation terminée ! ${response.data.count} événements mis à jour.`);
+        await fetchReservations();
+      }
+    } catch (error) {
+      console.error('Error syncing all with Google:', error);
+      const errorMsg = error.response?.data?.error || 'Erreur lors de la synchronisation globale';
+      toast.error(errorMsg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const updateEquipmentQuantityEdit = (equipmentId, newQuantity) => {
     if (newQuantity <= 0) {
       removeEquipmentFromReservationEdit(equipmentId);
@@ -762,6 +797,16 @@ function AgendaView({ stats, setCurrentView }) {
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-gray-900">Agenda</h2>
           <div className="flex gap-2">
+            <Button 
+              variant="outline"
+              onClick={handleSyncAllGoogle}
+              disabled={isLoading}
+              className="border-emerald-500 hover:bg-emerald-50 text-emerald-600"
+              title="Synchroniser toutes les réservations avec Google Agenda"
+            >
+              <RefreshCw className={cn("w-4 h-4 mr-2", isLoading && "animate-spin")} />
+              Sync. Google
+            </Button>
             <Button 
               onClick={() => handleAddReservationClick()}
               className="bg-green-600 hover:bg-green-700 text-white"
@@ -1413,6 +1458,22 @@ function AgendaView({ stats, setCurrentView }) {
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
+
+                          {/* Bouton Synchroniser avec Google */}
+                          {(reservation.booking_type === 'client' || reservation.booking_type?.toLowerCase() === 'livraison') && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleSyncGoogle(reservation)}
+                              className="border-emerald-500 hover:bg-emerald-50 text-emerald-600"
+                              title="Synchroniser avec Google"
+                              disabled={isLoading}
+                            >
+                              <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
+                              <span className="ml-1 hidden sm:inline">Synchro Google</span>
+                            </Button>
+                          )}
                         </div>
                         
                         <div className="text-sm text-gray-600 space-y-1">
