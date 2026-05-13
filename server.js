@@ -50,25 +50,6 @@ async function initGoogleCalendar() {
 }
 initGoogleCalendar();
 
-api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
-  let serviceAccountEmail = null;
-  if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
-    try {
-      const creds = JSON.parse(fs.readFileSync(GOOGLE_CREDENTIALS_PATH, 'utf8'));
-      serviceAccountEmail = creds.client_email;
-    } catch (e) {
-      console.error('Failed to read credentials file', e);
-    }
-  }
-  
-  res.json({
-    initialized: !!calendar,
-    locationCalendarFound: locationCalendarId !== null && locationCalendarId !== 'primary',
-    serviceAccountEmail: serviceAccountEmail
-  });
-});
-
-
 async function syncReservationToCalendar(reservation) {
   if (!calendar) throw new Error('Google Calendar integration is not initialized (check credentials).');
   
@@ -401,6 +382,24 @@ function createTransporter(cfg) {
 // API ROUTES - all prefixed with /api
 // ═══════════════════════════════════════════
 const api = express.Router();
+
+api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
+  let serviceAccountEmail = null;
+  if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
+    try {
+      const creds = JSON.parse(fs.readFileSync(GOOGLE_CREDENTIALS_PATH, 'utf8'));
+      serviceAccountEmail = creds.client_email;
+    } catch (e) {
+      console.error('Failed to read credentials file', e);
+    }
+  }
+  
+  res.json({
+    initialized: !!calendar,
+    locationCalendarFound: locationCalendarId !== null && locationCalendarId !== 'primary',
+    serviceAccountEmail: serviceAccountEmail
+  });
+});
 
 // Middleware: Check if DB is connected
 api.use((req, res, next) => {
