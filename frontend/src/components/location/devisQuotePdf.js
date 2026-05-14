@@ -353,14 +353,18 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     
     let depositAmount = quoteData.deposit_amount || 0;
     let guaranteeAmount = quoteData.guarantee_amount || 0;
-    const isTrustedClient = quoteData.trusted_client || false;
+    const isTrustedNoGuarantee = quoteData.trusted_no_guarantee || quoteData.trusted_client || false;
+    const isTrustedNoDeposit = quoteData.trusted_no_deposit || false;
 
     // Encadré jaune compact pour acompte + caution (hauteur dynamique)
     const boxTopY = yRight - 4;
     // Pre-calculate height
-    let calcHeight = 7; // acompte
-    if (isTrustedClient) {
-      calcHeight += 5 + 5 + 4; // caution + confiance + pièce identité
+    let calcHeight = 7; // acompte height base
+    if (isTrustedNoDeposit) {
+      calcHeight += 4; // client de confiance mention for acompte
+    }
+    if (isTrustedNoGuarantee) {
+      calcHeight += 5 + 5 + 4; // caution base + confiance + pièce identité
     } else {
       doc.setFontSize(6.5);
       const tempLines = doc.splitTextToSize("Caution par chèque (non encaissé sauf litige). Pièce d'identité obligatoire.", colRightWidth - 6);
@@ -379,10 +383,28 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
     doc.text("Acompte :", colRightX + 3, yRight + 1);
-    doc.text(`${depositAmount.toFixed(2)}€`, colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
-    yRight += 7;
+    
+    if (isTrustedNoDeposit) {
+      doc.setTextColor(34, 139, 34);
+      doc.text("0.00€", colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      yRight += 5;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7);
+      doc.setTextColor(34, 139, 34);
+      doc.text("Client de confiance (pas d'acompte)", colRightX + 3, yRight + 1);
+      doc.setTextColor(0, 0, 0);
+      yRight += 5;
+    } else {
+      let acompteText = `${depositAmount.toFixed(2)}€`;
+      if (quoteData.deposit_paid && depositAmount > 0) {
+        acompteText += ` (Versé)`;
+      }
+      doc.text(acompteText, colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
+      yRight += 7;
+    }
 
-    if (isTrustedClient) {
+    if (isTrustedNoGuarantee) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       doc.text("Caution :", colRightX + 3, yRight + 1);
@@ -393,7 +415,7 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(7);
       doc.setTextColor(34, 139, 34);
-      doc.text("Client de confiance", colRightX + 3, yRight + 1);
+      doc.text("Client de confiance (pas de caution)", colRightX + 3, yRight + 1);
       doc.setTextColor(0, 0, 0);
       yRight += 5;
       doc.setFont('helvetica', 'italic');

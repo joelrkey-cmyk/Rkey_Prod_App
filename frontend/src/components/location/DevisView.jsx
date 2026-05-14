@@ -85,7 +85,11 @@ function DevisView({ setCurrentView }) {
     // Acompte et caution (calculés auto mais modifiables)
     deposit_amount: 0,      // Acompte demandé (30% du sous-total)
     guarantee_amount: 0,    // Caution à verser
-    trusted_client: false,  // Client de confiance (pas de caution)
+    trusted_client: false,  // Client de confiance (legacy)
+    trusted_no_deposit: false,
+    trusted_no_guarantee: false,
+    deposit_paid: false,
+    deposit_payment_method: '',
     // Nouveau champ pour dégressivité
     force_weekend: null     // null = auto-détection, true/false = forçage manuel
   });
@@ -146,10 +150,10 @@ function DevisView({ setCurrentView }) {
     const autoGuarantee = parseFloat(summary.autoGuarantee) || 0;
 
     const updates = {};
-    if (formData.deposit_amount === 0 && autoDeposit > 0) {
+    if (formData.deposit_amount === 0 && !formData.trusted_no_deposit && autoDeposit > 0) {
       updates.deposit_amount = autoDeposit;
     }
-    if (formData.guarantee_amount === 0 && !formData.trusted_client && autoGuarantee > 0) {
+    if (formData.guarantee_amount === 0 && !formData.trusted_no_guarantee && !formData.trusted_client && autoGuarantee > 0) {
       updates.guarantee_amount = autoGuarantee;
     }
 
@@ -303,6 +307,10 @@ function DevisView({ setCurrentView }) {
       deposit_amount: 0,
       guarantee_amount: 0,
       trusted_client: false,
+      trusted_no_deposit: false,
+      trusted_no_guarantee: false,
+      deposit_paid: false,
+      deposit_payment_method: '',
       force_weekend: null
     });
     setSelectedEquipment([]);
@@ -403,6 +411,10 @@ function DevisView({ setCurrentView }) {
         deposit_amount: formData.deposit_amount || 0,
         guarantee_amount: formData.guarantee_amount || 0,
         trusted_client: formData.trusted_client || false,
+        trusted_no_deposit: formData.trusted_no_deposit || false,
+        trusted_no_guarantee: formData.trusted_no_guarantee || formData.trusted_client || false,
+        deposit_paid: formData.deposit_paid || false,
+        deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote,
         subtotal: Math.round(computedSubtotal * 100) / 100,
         total_amount: Math.round(computedTotal * 100) / 100,
@@ -547,6 +559,10 @@ function DevisView({ setCurrentView }) {
         deposit_amount: formData.deposit_amount || 0,
         guarantee_amount: formData.guarantee_amount || 0,
         trusted_client: formData.trusted_client || false,
+        trusted_no_deposit: formData.trusted_no_deposit || false,
+        trusted_no_guarantee: formData.trusted_no_guarantee || formData.trusted_client || false,
+        deposit_paid: formData.deposit_paid || false,
+        deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote,
         subtotal: Math.round(computedSubtotal * 100) / 100,
         total_amount: Math.round(computedTotal * 100) / 100,
@@ -668,6 +684,10 @@ function DevisView({ setCurrentView }) {
         deposit_amount: formData.deposit_amount || 0,
         guarantee_amount: formData.guarantee_amount || 0,
         trusted_client: formData.trusted_client || false,
+        trusted_no_deposit: formData.trusted_no_deposit || false,
+        trusted_no_guarantee: formData.trusted_no_guarantee || formData.trusted_client || false,
+        deposit_paid: formData.deposit_paid || false,
+        deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote || (!formData.client_id && !formData.dj_id),
         subtotal: Math.round(computedSubtotal * 100) / 100,
         total_amount: Math.round(computedTotal * 100) / 100,
@@ -790,6 +810,10 @@ function DevisView({ setCurrentView }) {
       deposit_amount: Math.round((quote.deposit_amount || 0) * 100) / 100,
       guarantee_amount: Math.round((quote.guarantee_amount || 0) * 100) / 100,
       trusted_client: quote.trusted_client || false,
+      trusted_no_deposit: quote.trusted_no_deposit || false,
+      trusted_no_guarantee: quote.trusted_no_guarantee || quote.trusted_client || false,
+      deposit_paid: quote.deposit_paid || false,
+      deposit_payment_method: quote.deposit_payment_method || '',
       // Dégressivité - garder null si c'était null, sinon utiliser la valeur
       force_weekend: quote.force_weekend === true ? true : (quote.force_weekend === false ? false : null),
       internal_notes: quote.internal_notes || ''
@@ -1782,8 +1806,8 @@ function DevisView({ setCurrentView }) {
                       const summary = calculateLiveTotal();
                       setFormData({
                         ...formData,
-                        deposit_amount: parseFloat(summary.autoDeposit),
-                        guarantee_amount: formData.trusted_client ? 0 : parseFloat(summary.autoGuarantee)
+                        deposit_amount: formData.trusted_no_deposit ? 0 : parseFloat(summary.autoDeposit),
+                        guarantee_amount: (formData.trusted_no_guarantee || formData.trusted_client) ? 0 : parseFloat(summary.autoGuarantee)
                       });
                     }}
                     className="text-purple-600 border-purple-300 hover:bg-purple-50"
@@ -1805,7 +1829,8 @@ function DevisView({ setCurrentView }) {
                       value={formData.deposit_amount}
                       onChange={(e) => setFormData({...formData, deposit_amount: parseFloat(e.target.value) || 0})}
                       placeholder="0"
-                      className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      disabled={formData.trusted_no_deposit}
+                      className={`[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${formData.trusted_no_deposit ? 'opacity-50 bg-gray-100' : ''}`}
                     />
                   </div>
                   <div>
@@ -1820,33 +1845,89 @@ function DevisView({ setCurrentView }) {
                       value={formData.guarantee_amount}
                       onChange={(e) => setFormData({...formData, guarantee_amount: parseFloat(e.target.value) || 0})}
                       placeholder="0"
-                      disabled={formData.trusted_client}
-                      className={`[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${formData.trusted_client ? 'opacity-50 bg-gray-100' : ''}`}
+                      disabled={formData.trusted_no_guarantee || formData.trusted_client}
+                      className={`[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${(formData.trusted_no_guarantee || formData.trusted_client) ? 'opacity-50 bg-gray-100' : ''}`}
                     />
                   </div>
                 </div>
                 
-                {/* Case Client de confiance */}
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-green-200 bg-green-50/50">
-                  <input
-                    type="checkbox"
-                    id="trusted_client"
-                    checked={formData.trusted_client || false}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      setFormData({
-                        ...formData, 
-                        trusted_client: checked,
-                        guarantee_amount: checked ? 0 : formData.guarantee_amount
-                      });
-                    }}
-                    className="w-4 h-4 text-green-600 border-green-300 rounded focus:ring-green-500"
-                    data-testid="trusted-client-checkbox"
-                  />
-                  <label htmlFor="trusted_client" className="text-sm font-medium text-green-800 cursor-pointer">
-                    Client de confiance (pas de caution)
-                  </label>
+                {/* Cases Client de confiance */}
+                <div className="flex flex-col gap-3 p-3 rounded-lg border border-green-200 bg-green-50/50">
+                  <div className="text-sm font-medium text-green-800 border-b border-green-200 pb-2">Client de confiance</div>
+                  
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.trusted_no_deposit || false}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          const summary = calculateLiveTotal();
+                          setFormData({
+                            ...formData, 
+                            trusted_no_deposit: checked,
+                            deposit_amount: checked ? 0 : parseFloat(summary.autoDeposit),
+                            deposit_paid: checked ? false : formData.deposit_paid
+                          });
+                        }}
+                        className="w-4 h-4 text-green-600 border-green-300 rounded focus:ring-green-500"
+                      />
+                      <span className="text-sm text-green-700">Pas d'acompte</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.trusted_no_guarantee || formData.trusted_client || false}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          const summary = calculateLiveTotal();
+                          setFormData({
+                            ...formData, 
+                            trusted_no_guarantee: checked,
+                            trusted_client: checked, // legacy compatibility
+                            guarantee_amount: checked ? 0 : parseFloat(summary.autoGuarantee)
+                          });
+                        }}
+                        className="w-4 h-4 text-green-600 border-green-300 rounded focus:ring-green-500"
+                      />
+                      <span className="text-sm text-green-700">Pas de caution</span>
+                    </label>
+                  </div>
                 </div>
+
+                {/* État de l'acompte */}
+                {!formData.trusted_no_deposit && formData.deposit_amount > 0 && (
+                  <div className="flex items-center gap-4 p-3 rounded-lg border border-blue-200 bg-blue-50/50 mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.deposit_paid || false}
+                        onChange={(e) => setFormData({ ...formData, deposit_paid: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 border-blue-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm font-medium text-blue-800">Acompte versé</span>
+                    </label>
+
+                    {formData.deposit_paid && (
+                      <div className="flex items-center gap-2 flex-1">
+                        <Label className="text-xs text-blue-600 whitespace-nowrap">Moyen :</Label>
+                        <select
+                          value={formData.deposit_payment_method || ''}
+                          onChange={(e) => setFormData({ ...formData, deposit_payment_method: e.target.value })}
+                          className="flex-1 text-sm border-blue-200 rounded py-1 px-2"
+                        >
+                          <option value="">Sélectionner...</option>
+                          <option value="Espèce">Espèce</option>
+                          <option value="Chèque">Chèque</option>
+                          <option value="Virement">Virement</option>
+                          <option value="Carte">Carte</option>
+                          <option value="Lien de paiement">Lien de paiement</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {/* Info calcul automatique */}
                 {selectedEquipment.length > 0 && formData.start_date && formData.end_date && (() => {
@@ -2087,8 +2168,8 @@ function DevisView({ setCurrentView }) {
                 <TableRow>
                   <TableHead>Client/DJ</TableHead>
                   <TableHead>Date début</TableHead>
-                  <TableHead>Date fin</TableHead>
                   <TableHead>Montant</TableHead>
+                  <TableHead>Acompte</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -2132,11 +2213,17 @@ function DevisView({ setCurrentView }) {
                         <TableCell>
                           {startDate}
                         </TableCell>
-                        <TableCell>
-                          {endDate}
-                        </TableCell>
                         <TableCell className="font-semibold text-green-600">
                           {calculateTotal(quote)}€
+                        </TableCell>
+                        <TableCell>
+                          {quote.deposit_paid && quote.deposit_amount > 0 ? (
+                            <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded">
+                              Versé ({quote.deposit_amount}€)
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">Non versé</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <select
