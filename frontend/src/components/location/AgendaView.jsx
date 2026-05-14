@@ -40,6 +40,7 @@ import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { Toaster } from '../ui/sonner';
 import { API, BACKEND_URL, formatDateLocal, axios } from './helpers';
+import { ContractEventAutocomplete } from './ContractEventAutocomplete';
 
 function AgendaView({ stats, setCurrentView }) {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -1227,13 +1228,11 @@ function AgendaView({ stats, setCurrentView }) {
               {addReservationForm.booking_type === 'dj' && (
                 <div>
                   <Label htmlFor="event">Évènement (optionnel)</Label>
-                  <Input
+                  <ContractEventAutocomplete
                     id="event"
-                    type="text"
                     value={addReservationForm.event}
-                    onChange={(e) => setAddReservationForm({...addReservationForm, event: e.target.value})}
+                    onChange={(val) => setAddReservationForm({...addReservationForm, event: val})}
                     placeholder="Ex: Mariage, Anniversaire, Soirée d'entreprise..."
-                    maxLength={100}
                   />
                 </div>
               )}
@@ -1602,11 +1601,10 @@ function AgendaView({ stats, setCurrentView }) {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Évènement
                 </label>
-                <input
-                  type="text"
+                <ContractEventAutocomplete
+                  id="edit-event"
                   value={editFormData.event}
-                  onChange={(e) => setEditFormData(prev => ({...prev, event: e.target.value}))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(val) => setEditFormData(prev => ({...prev, event: val}))}
                   placeholder="Type d'événement (mariage, anniversaire, etc.)"
                 />
               </div>

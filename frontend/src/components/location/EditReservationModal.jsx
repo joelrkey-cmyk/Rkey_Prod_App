@@ -2,6 +2,7 @@
 import React from 'react';
 import { Button } from '../ui/button';
 import { Edit } from 'lucide-react';
+import { ContractEventAutocomplete } from './ContractEventAutocomplete';
 
 export function EditReservationModal({
   showEditModal,
@@ -67,13 +68,11 @@ export function EditReservationModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Évènement
             </label>
-            <input
-              type="text"
+            <ContractEventAutocomplete
               value={editFormData.event}
-              onChange={(e) => setEditFormData(prev => ({...prev, event: e.target.value}))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(value) => setEditFormData(prev => ({...prev, event: value}))}
               placeholder="Type d'événement (mariage, anniversaire, etc.)"
-              data-testid="edit-event"
+              id="edit-event"
             />
           </div>
 

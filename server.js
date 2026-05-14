@@ -1422,10 +1422,43 @@ api.delete('/location/clients/:id', authMiddleware, async (req, res) => {
 
 // Location DJs
 api.get('/location/djs', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('location_djs').find({}, { projection: { _id: 0 } }).toArray()));
+  try {
+    const djProfiles = await db.collection('dj_profiles').find({}, { projection: { _id: 0, id: 1, nom_artistique: 1, nom_complet: 1 } }).toArray();
+    const locationDjsList = await db.collection('location_djs').find({}, { projection: { _id: 0 } }).toArray();
+    
+    const colorMap = {};
+    locationDjsList.forEach(dj => {
+      colorMap[dj.id] = dj.color;
+    });
+
+    const result = djProfiles.map(p => ({
+      id: p.id,
+      name: p.nom_artistique || p.nom_complet || 'DJ Inconnu',
+      color: colorMap[p.id] || '#f97316'
+    }));
+
+    // Include legacy DJs just in case they exist
+    const profileIds = new Set(djProfiles.map(p => p.id));
+    const legacyDJs = locationDjsList.filter(dj => !profileIds.has(dj.id) && (dj.name || dj.nom_artistique));
+    
+    const finalResult = [...result, ...legacyDJs.map(dj => ({
+      id: dj.id,
+      name: dj.name || dj.nom_artistique || 'DJ Inconnu',
+      color: dj.color || '#f97316'
+    }))];
+
+    res.json(cleanList(finalResult));
+  } catch (err) {
+    console.error('Error fetching location djs:', err);
+    res.status(500).json({ detail: 'Internal Server Error' });
+  }
 });
 api.put('/location/djs/:id', authMiddleware, async (req, res) => {
-  await db.collection('location_djs').updateOne({ id: req.params.id }, { $set: req.body });
+  await db.collection('location_djs').updateOne(
+    { id: req.params.id }, 
+    { $set: { id: req.params.id, ...req.body } },
+    { upsert: true }
+  );
   res.json(await db.collection('location_djs').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
 });
 
