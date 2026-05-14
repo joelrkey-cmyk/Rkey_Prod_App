@@ -267,7 +267,24 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     doc.setFontSize(12);
     doc.text("TOTAL TTC:", labelX, yPos);
     doc.text(`${finalTotal.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
-    yPos += 12;
+    yPos += 8;
+
+    if (quoteData.deposit_paid && quoteData.deposit_amount > 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(10);
+      const depositMethod = quoteData.deposit_payment_method ? ` (par ${quoteData.deposit_payment_method})` : '';
+      doc.text(`Acompte versé le ${quoteData.deposit_date ? new Date(quoteData.deposit_date).toLocaleDateString('fr-FR') : ''}${depositMethod}:`, labelX, yPos);
+      doc.text(`-${quoteData.deposit_amount.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
+      yPos += 8;
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text("RESTE À PAYER:", labelX, yPos);
+      doc.text(`${(finalTotal - quoteData.deposit_amount).toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
+      yPos += 10;
+    } else {
+      yPos += 4;
+    }
 
     // ==============================
     // LAYOUT 2 COLONNES : Livraison (gauche) + Caution/Signature (droite)
@@ -280,7 +297,8 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     let yRight = yPos;
 
     // --- COLONNE GAUCHE : Livraison & Retour ---
-    const hasDeliveryInfo = quoteData.delivery_address || quoteData.pickup_by_us || quoteData.pickup_by_client;
+    const showDeliveryAddress = !!quoteData.delivery_zone && !!quoteData.delivery_address;
+    const hasDeliveryInfo = showDeliveryAddress || quoteData.pickup_by_us || quoteData.pickup_by_client;
     
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
@@ -296,7 +314,7 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     if (hasDeliveryInfo) {
       doc.setFontSize(9);
       
-      if (quoteData.delivery_address) {
+      if (showDeliveryAddress) {
         doc.setFont('helvetica', 'bold');
         doc.text("Adresse de livraison :", colLeftX, yLeft);
         yLeft += 4;
@@ -318,7 +336,7 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
         doc.text("Retrait par nos soins", colLeftX + 3, yLeft);
         yLeft += 5;
         
-        const pickupAddr = quoteData.pickup_address || quoteData.delivery_address;
+        const pickupAddr = quoteData.pickup_address || (showDeliveryAddress ? quoteData.delivery_address : '');
         if (pickupAddr) {
           doc.setFont('helvetica', 'bold');
           doc.text("Adresse de retrait :", colLeftX, yLeft);
@@ -358,10 +376,15 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
 
     // Encadré jaune compact pour acompte + caution (hauteur dynamique)
     const boxTopY = yRight - 4;
+    const hideAcompte = quoteData.deposit_paid && depositAmount > 0;
+    
     // Pre-calculate height
-    let calcHeight = 7; // acompte height base
-    if (isTrustedNoDeposit) {
-      calcHeight += 4; // client de confiance mention for acompte
+    let calcHeight = 0; 
+    if (!hideAcompte) {
+      calcHeight += 7; // acompte height base
+      if (isTrustedNoDeposit) {
+        calcHeight += 4; // client de confiance mention for acompte
+      }
     }
     if (isTrustedNoGuarantee) {
       calcHeight += 5 + 5 + 4; // caution base + confiance + pièce identité
@@ -382,26 +405,25 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(0, 0, 0);
-    doc.text("Acompte :", colRightX + 3, yRight + 1);
     
-    if (isTrustedNoDeposit) {
-      doc.setTextColor(34, 139, 34);
-      doc.text("0.00€", colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
-      doc.setTextColor(0, 0, 0);
-      yRight += 5;
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(7);
-      doc.setTextColor(34, 139, 34);
-      doc.text("Client de confiance (pas d'acompte)", colRightX + 3, yRight + 1);
-      doc.setTextColor(0, 0, 0);
-      yRight += 5;
-    } else {
-      let acompteText = `${depositAmount.toFixed(2)}€`;
-      if (quoteData.deposit_paid && depositAmount > 0) {
-        acompteText += ` (Versé)`;
+    if (!hideAcompte) {
+      doc.text("Acompte :", colRightX + 3, yRight + 1);
+      
+      if (isTrustedNoDeposit) {
+        doc.setTextColor(34, 139, 34);
+        doc.text("0.00€", colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
+        doc.setTextColor(0, 0, 0);
+        yRight += 5;
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(7);
+        doc.setTextColor(34, 139, 34);
+        doc.text("Client de confiance (pas d'acompte)", colRightX + 3, yRight + 1);
+        doc.setTextColor(0, 0, 0);
+        yRight += 5;
+      } else {
+        doc.text(`${depositAmount.toFixed(2)}€`, colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
+        yRight += 7;
       }
-      doc.text(acompteText, colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
-      yRight += 7;
     }
 
     if (isTrustedNoGuarantee) {

@@ -1,11 +1,12 @@
 // Onglet Historique des contrats (Actifs, Archives, Corbeille)
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Input } from '../ui/input';
 import { 
   FileText, Calendar, MapPin, Music, Printer, Edit, Send, 
-  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw 
+  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter 
 } from 'lucide-react';
 
 export const ContractHistory = ({
@@ -28,7 +29,43 @@ export const ContractHistory = ({
   onMarkArchivedAsUnsigned,
   onDeleteArchived
 }) => {
-  const currentContracts = showTrash ? deletedContracts : showArchive ? archivedContracts : contracts;
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterYear, setFilterYear] = useState('All');
+
+  const archiveYears = useMemo(() => {
+    const years = new Set();
+    archivedContracts.forEach(c => {
+      if (c.client_info?.event_date) {
+        const year = new Date(c.client_info.event_date).getFullYear();
+        if (!isNaN(year)) years.add(year);
+      }
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [archivedContracts]);
+
+  const currentContracts = useMemo(() => {
+    let list = showTrash ? deletedContracts : showArchive ? archivedContracts : contracts;
+    
+    if (showArchive) {
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        list = list.filter(c => 
+          c.client_info?.name?.toLowerCase().includes(query) || 
+          c.client_info?.email?.toLowerCase().includes(query)
+        );
+      }
+      
+      if (filterYear !== 'All') {
+        list = list.filter(c => {
+          if (!c.client_info?.event_date) return false;
+          const year = new Date(c.client_info.event_date).getFullYear().toString();
+          return year === filterYear;
+        });
+      }
+    }
+    
+    return list;
+  }, [showTrash, showArchive, deletedContracts, archivedContracts, contracts, searchQuery, filterYear]);
 
   return (
     <div className="space-y-6" data-testid="contract-history">
@@ -75,20 +112,52 @@ export const ContractHistory = ({
       {/* Contracts List */}
       <Card className="shadow-lg">
         <CardHeader className="bg-gradient-to-r from-slate-50 to-blue-50">
-          <CardTitle className="flex items-center space-x-2">
-            {showTrash ? (
-              <><Trash2 className="h-5 w-5 text-red-600" /><span>Corbeille</span></>
-            ) : showArchive ? (
-              <><Archive className="h-5 w-5 text-green-600" /><span>Contrats Archivés</span></>
-            ) : (
-              <><FileText className="h-5 w-5 text-blue-600" /><span>Contrats Actifs</span></>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center space-x-2">
+                {showTrash ? (
+                  <><Trash2 className="h-5 w-5 text-red-600" /><span>Corbeille</span></>
+                ) : showArchive ? (
+                  <><Archive className="h-5 w-5 text-green-600" /><span>Contrats Archivés</span></>
+                ) : (
+                  <><FileText className="h-5 w-5 text-blue-600" /><span>Contrats Actifs</span></>
+                )}
+              </CardTitle>
+              <CardDescription>
+                {showTrash ? "Contrats supprimés - récupérables ou suppression définitive" :
+                 showArchive ? "Contrats signés et archivés par ordre chronologique" :
+                 "Tous vos contrats en cours classés du plus récent au plus ancien"}
+              </CardDescription>
+            </div>
+            
+            {showArchive && (
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+                  <Input
+                    type="text"
+                    placeholder="Chercher (nom, email)..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 w-64 bg-white"
+                  />
+                </div>
+                <div className="flex items-center gap-2 bg-white rounded-md border px-3 py-2">
+                  <Filter className="h-4 w-4 text-gray-500" />
+                  <select
+                    value={filterYear}
+                    onChange={(e) => setFilterYear(e.target.value)}
+                    className="bg-transparent border-none text-sm outline-none cursor-pointer"
+                  >
+                    <option value="All">Toutes les années</option>
+                    {archiveYears.map(year => (
+                      <option key={year} value={year.toString()}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             )}
-          </CardTitle>
-          <CardDescription>
-            {showTrash ? "Contrats supprimés - récupérables ou suppression définitive" :
-             showArchive ? "Contrats signés et archivés par ordre chronologique" :
-             "Tous vos contrats en cours classés du plus récent au plus ancien"}
-          </CardDescription>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {currentContracts.length > 0 ? (

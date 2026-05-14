@@ -89,6 +89,7 @@ function DevisView({ setCurrentView }) {
     trusted_no_deposit: false,
     trusted_no_guarantee: false,
     deposit_paid: false,
+    deposit_date: '',
     deposit_payment_method: '',
     // Nouveau champ pour dégressivité
     force_weekend: null     // null = auto-détection, true/false = forçage manuel
@@ -310,6 +311,7 @@ function DevisView({ setCurrentView }) {
       trusted_no_deposit: false,
       trusted_no_guarantee: false,
       deposit_paid: false,
+      deposit_date: '',
       deposit_payment_method: '',
       force_weekend: null
     });
@@ -401,7 +403,7 @@ function DevisView({ setCurrentView }) {
         delivery_cost: finalDeliveryCost,
         delivery_zone: formData.delivery_zone || '',
         delivery_km: formData.delivery_km || 0,
-        delivery_address: formData.delivery_address || '',
+        delivery_address: formData.delivery_zone ? (formData.delivery_address || '') : '',
         pickup_by_us: formData.pickup_by_us || false,
         pickup_by_client: formData.pickup_by_client || false,
         pickup_address: formData.pickup_address || '',
@@ -414,6 +416,7 @@ function DevisView({ setCurrentView }) {
         trusted_no_deposit: formData.trusted_no_deposit || false,
         trusted_no_guarantee: formData.trusted_no_guarantee || formData.trusted_client || false,
         deposit_paid: formData.deposit_paid || false,
+        deposit_date: formData.deposit_paid ? (formData.deposit_date || new Date().toISOString().split('T')[0]) : '',
         deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote,
         subtotal: Math.round(computedSubtotal * 100) / 100,
@@ -549,7 +552,7 @@ function DevisView({ setCurrentView }) {
         delivery_cost: finalDeliveryCost,
         delivery_zone: formData.delivery_zone || '',
         delivery_km: formData.delivery_km || 0,
-        delivery_address: formData.delivery_address || '',
+        delivery_address: formData.delivery_zone ? (formData.delivery_address || '') : '',
         pickup_by_us: formData.pickup_by_us || false,
         pickup_by_client: formData.pickup_by_client || false,
         pickup_address: formData.pickup_address || '',
@@ -562,6 +565,7 @@ function DevisView({ setCurrentView }) {
         trusted_no_deposit: formData.trusted_no_deposit || false,
         trusted_no_guarantee: formData.trusted_no_guarantee || formData.trusted_client || false,
         deposit_paid: formData.deposit_paid || false,
+        deposit_date: formData.deposit_paid ? (formData.deposit_date || new Date().toISOString().split('T')[0]) : '',
         deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote,
         subtotal: Math.round(computedSubtotal * 100) / 100,
@@ -674,7 +678,7 @@ function DevisView({ setCurrentView }) {
         delivery_cost: finalDeliveryCost,
         delivery_zone: formData.delivery_zone || '',
         delivery_km: formData.delivery_km || 0,
-        delivery_address: formData.delivery_address || '',
+        delivery_address: formData.delivery_zone ? (formData.delivery_address || '') : '',
         pickup_by_us: formData.pickup_by_us || false,
         pickup_by_client: formData.pickup_by_client || false,
         pickup_address: formData.pickup_address || '',
@@ -687,6 +691,7 @@ function DevisView({ setCurrentView }) {
         trusted_no_deposit: formData.trusted_no_deposit || false,
         trusted_no_guarantee: formData.trusted_no_guarantee || formData.trusted_client || false,
         deposit_paid: formData.deposit_paid || false,
+        deposit_date: formData.deposit_paid ? (formData.deposit_date || new Date().toISOString().split('T')[0]) : '',
         deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote || (!formData.client_id && !formData.dj_id),
         subtotal: Math.round(computedSubtotal * 100) / 100,
@@ -813,6 +818,7 @@ function DevisView({ setCurrentView }) {
       trusted_no_deposit: quote.trusted_no_deposit || false,
       trusted_no_guarantee: quote.trusted_no_guarantee || quote.trusted_client || false,
       deposit_paid: quote.deposit_paid || false,
+      deposit_date: quote.deposit_date || '',
       deposit_payment_method: quote.deposit_payment_method || '',
       // Dégressivité - garder null si c'était null, sinon utiliser la valeur
       force_weekend: quote.force_weekend === true ? true : (quote.force_weekend === false ? false : null),
@@ -1910,20 +1916,31 @@ function DevisView({ setCurrentView }) {
                     </label>
 
                     {formData.deposit_paid && (
-                      <div className="flex items-center gap-2 flex-1">
-                        <Label className="text-xs text-blue-600 whitespace-nowrap">Moyen :</Label>
-                        <select
-                          value={formData.deposit_payment_method || ''}
-                          onChange={(e) => setFormData({ ...formData, deposit_payment_method: e.target.value })}
-                          className="flex-1 text-sm border-blue-200 rounded py-1 px-2"
-                        >
-                          <option value="">Sélectionner...</option>
-                          <option value="Espèce">Espèce</option>
-                          <option value="Chèque">Chèque</option>
-                          <option value="Virement">Virement</option>
-                          <option value="Carte">Carte</option>
-                          <option value="Lien de paiement">Lien de paiement</option>
-                        </select>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-1">
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-blue-600 whitespace-nowrap">Moyen :</Label>
+                          <select
+                            value={formData.deposit_payment_method || ''}
+                            onChange={(e) => setFormData({ ...formData, deposit_payment_method: e.target.value })}
+                            className="text-sm border-blue-200 rounded py-1 px-2"
+                          >
+                            <option value="">Sélectionner...</option>
+                            <option value="Espèce">Espèce</option>
+                            <option value="Chèque">Chèque</option>
+                            <option value="Virement">Virement</option>
+                            <option value="Carte">Carte</option>
+                            <option value="Lien de paiement">Lien de paiement</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs text-blue-600 whitespace-nowrap">Le :</Label>
+                          <input
+                            type="date"
+                            value={formData.deposit_date || ''}
+                            onChange={(e) => setFormData({ ...formData, deposit_date: e.target.value })}
+                            className="text-sm border-blue-200 border rounded py-1 px-2 h-7 w-[120px]"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2214,15 +2231,19 @@ function DevisView({ setCurrentView }) {
                           {startDate}
                         </TableCell>
                         <TableCell className="font-semibold text-green-600">
-                          {calculateTotal(quote)}€
+                          {quote.deposit_paid && quote.deposit_amount > 0 ? (
+                            <span>{Math.round((calculateTotal(quote) - quote.deposit_amount) * 100) / 100}€ <span className="text-xs text-gray-400 font-normal line-through ml-1">{calculateTotal(quote)}€</span></span>
+                          ) : (
+                            <span>{calculateTotal(quote)}€</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           {quote.deposit_paid && quote.deposit_amount > 0 ? (
                             <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-800 rounded">
-                              Versé ({quote.deposit_amount}€)
+                              {quote.deposit_amount}€
                             </span>
                           ) : (
-                            <span className="text-xs text-gray-400">Non versé</span>
+                            <span className="text-xs text-gray-400">-</span>
                           )}
                         </TableCell>
                         <TableCell>
