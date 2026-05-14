@@ -244,7 +244,7 @@ const InlineWidgetPreview = ({ categoryName }) => {
   const [previewSize, setPreviewSize] = useState('desktop');
   const iframeRef = useRef(null);
 
-  const baseUrl = 'https://rkeyprodapp.fr';
+  const baseUrl = window.location.origin;
   const widgetUrl = `${baseUrl}/api/widgets/partners-widget.html?category=${encodeURIComponent(categoryName)}`;
   const pUid = 'rkey-part-' + Date.now().toString(36);
 

@@ -576,7 +576,7 @@ function ReservationsViewIntegrated({ setCurrentView, onOpenAddReservation = () 
             title="Synchroniser toutes les réservations avec Google Agenda"
           >
             <RefreshCw className={cn("w-4 h-4 mr-2", isLoading && "animate-spin")} />
-            Sync. Google
+            Tout synchroniser
           </Button>
           <Button onClick={() => onOpenAddReservation && onOpenAddReservation()} className="bg-green-600 hover:bg-green-700">
             <Plus className="w-4 h-4 mr-2" />

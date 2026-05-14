@@ -6,7 +6,7 @@ import { DEFAULT_STYLES } from './constants';
  */
 export const generateEmbedCode = (form) => {
   if (!form?.id) return '';
-  const baseUrl = 'https://rkeyprodapp.fr';
+  const baseUrl = window.location.origin;
   const uid = 'rkey-form-' + form.id.substring(0, 8);
   const src = `${baseUrl}/api/widgets/form.html?id=${form.id}`;
 

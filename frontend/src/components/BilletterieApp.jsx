@@ -289,7 +289,7 @@ function BilletterieApp() {
   });
 
   const generateWidgetCode = (type = null) => {
-    const productionUrl = 'https://rkeyprodapp.fr';
+    const productionUrl = window.location.origin;
     const widgetUrl = type 
       ? `${productionUrl}/api/widgets/billetterie.html?type=${type}`
       : `${productionUrl}/api/widgets/billetterie.html`;

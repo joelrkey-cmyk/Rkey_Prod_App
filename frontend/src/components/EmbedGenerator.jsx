@@ -20,7 +20,7 @@ const EmbedGenerator = () => {
   // const { toast } = useToast(); // Retiré pour éviter les erreurs DOM
 
   const generateEmbedCode = () => {
-    const baseUrl = 'https://rkeyprodapp.fr';
+    const baseUrl = window.location.origin;
     
     return `<!-- Widget d'avis Google R'Key Prod -->
 <div id="google-reviews-widget"></div>

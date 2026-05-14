@@ -409,7 +409,7 @@ const DjProfilesApp = () => {
   };
 
   const generateWidgetCode = (profile) => {
-    const productionUrl = 'https://rkeyprodapp.fr';
+    const productionUrl = window.location.origin;
     const uid = 'rkey-dj-' + profile.id.substring(0, 8);
     const src = `${productionUrl}/api/widgets/dj-profile.html?id=${profile.id}`;
     

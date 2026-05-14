@@ -179,7 +179,7 @@ function CatalogueView() {
   const unpublishedCount = equipment.length - publishedCount;
 
   const generateWidgetCode = () => {
-    const productionUrl = 'https://rkeyprodapp.fr';
+    const productionUrl = window.location.origin;
     const uid = 'rkey-cat-' + Date.now().toString(36);
     const code = `<!-- Widget Catalogue Location R'Key Prod -->
 <div style="width:100%;position:relative;">

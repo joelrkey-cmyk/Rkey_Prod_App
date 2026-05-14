@@ -813,7 +813,7 @@ function AgendaView({ stats, setCurrentView }) {
               title="Synchroniser toutes les réservations avec Google Agenda"
             >
               <RefreshCw className={cn("w-4 h-4 mr-2", isLoading && "animate-spin")} />
-              Sync. Google
+              Tout synchroniser
             </Button>
             <Button 
               onClick={() => handleAddReservationClick()}
