@@ -77,16 +77,6 @@ function ClientsView() {
 
   const handleClientTypeChange = (type) => {
     setClientType(type);
-    // Réinitialiser le formulaire
-    setFormData({
-      name: '',
-      email: '',
-      phone: '',
-      address: '',
-      notes: '',
-      siret: '',
-      company_name: ''
-    });
   };
 
   const handleSubmit = async (e) => {
