@@ -119,6 +119,10 @@ function ClientsView() {
       } else if (clientType === 'association') {
         clientData.company_name = formData.company_name || ''; // on utilise le même champ
         clientData.siret = formData.siret || ''; // optionnel pour assoc
+      } else {
+        // Particulier: clear company fields if they exist
+        clientData.company_name = '';
+        clientData.siret = '';
       }
       
       if (editingClient) {
@@ -265,47 +269,45 @@ function ClientsView() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Client Type Selection - Only show when creating new client */}
-              {!editingClient && (
-                <div>
-                  <Label>Type de client *</Label>
-                  <div className="flex gap-6 mt-2">
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="clientType"
-                        value="particulier"
-                        checked={clientType === 'particulier'}
-                        onChange={(e) => handleClientTypeChange(e.target.value)}
-                        className="w-4 h-4 text-blue-600"
-                      />
-                      <span className="text-sm">👤 Particulier</span>
-                    </label>
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="clientType"
-                        value="entreprise"
-                        checked={clientType === 'entreprise'}
-                        onChange={(e) => handleClientTypeChange(e.target.value)}
-                        className="w-4 h-4 text-blue-600"
-                      />
-                      <span className="text-sm">🏢 Entreprise</span>
-                    </label>
-                    <label className="flex items-center space-x-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="clientType"
-                        value="association"
-                        checked={clientType === 'association'}
-                        onChange={(e) => handleClientTypeChange(e.target.value)}
-                        className="w-4 h-4 text-blue-600"
-                      />
-                      <span className="text-sm">🤝 Association</span>
-                    </label>
-                  </div>
+              {/* Client Type Selection */}
+              <div>
+                <Label>Type de client *</Label>
+                <div className="flex gap-6 mt-2">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="clientType"
+                      value="particulier"
+                      checked={clientType === 'particulier'}
+                      onChange={(e) => handleClientTypeChange(e.target.value)}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm">👤 Particulier</span>
+                  </label>
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="clientType"
+                      value="entreprise"
+                      checked={clientType === 'entreprise'}
+                      onChange={(e) => handleClientTypeChange(e.target.value)}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm">🏢 Entreprise</span>
+                  </label>
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="clientType"
+                      value="association"
+                      checked={clientType === 'association'}
+                      onChange={(e) => handleClientTypeChange(e.target.value)}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm">🤝 Association</span>
+                  </label>
                 </div>
-              )}
+              </div>
 
               {/* Champs entreprise ou association (si sélectionné) */}
               {(clientType === 'entreprise' || clientType === 'association') && (
