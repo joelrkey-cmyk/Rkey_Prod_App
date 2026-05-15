@@ -23,7 +23,7 @@ import { Calendar } from '../ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Checkbox } from '../ui/checkbox';
 import { Textarea } from '../ui/textarea';
-import { CalendarIcon, Package, Users, FileText, BarChart3, Plus, Edit, Trash2, Download, Check, AlertCircle, Copy, RefreshCw, CheckCircle, Clock, Printer, Archive, Headphones, BookOpen, Home, User, Settings, Target, Calendar as CalendarIcon2, Menu, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Building2, Upload, Image, Sparkles, Eye, EyeOff, X, Send, ArrowLeft, Zap, UserPlus, Truck, MapPin } from 'lucide-react';
+import { CalendarIcon, Package, Users, FileText, BarChart3, Plus, Edit, Trash2, Download, Check, AlertCircle, Copy, RefreshCw, CheckCircle, Clock, Printer, Archive, Headphones, BookOpen, Home, User, Settings, Target, Calendar as CalendarIcon2, Menu, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Building2, Upload, Image, Sparkles, Eye, EyeOff, X, Send, ArrowLeft, Zap, UserPlus, Truck, MapPin, Search, ArrowUpDown } from 'lucide-react';
 import { generateCompleteReservationDocuments, generateWithdrawalSlip, calculateGuaranteeDeposit } from '../../utils/pdfGenerator';
 import { 
   DEGRESSION_COEFFICIENTS, 
@@ -45,7 +45,7 @@ function ClientsView() {
   const [clients, setClients] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
-  const [clientType, setClientType] = useState('particulier'); // 'particulier', 'entreprise'
+  const [clientType, setClientType] = useState('particulier'); // 'particulier', 'entreprise', 'association'
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -56,6 +56,9 @@ function ClientsView() {
     siret: '',
     company_name: ''
   });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState('asc'); // 'asc' or 'desc'
+
   useEffect(() => {
     fetchClients();
   }, []);
@@ -106,10 +109,16 @@ function ClientsView() {
         notes: formData.notes || ''
       };
 
-      // Ajouter les champs entreprise si le type est entreprise
+      // Add type explicitely if we want to save it
+      clientData.client_type = clientType;
+
+      // Ajouter les champs spécifiques si le type est entreprise ou association
       if (clientType === 'entreprise') {
         clientData.company_name = formData.company_name || '';
         clientData.siret = formData.siret || '';
+      } else if (clientType === 'association') {
+        clientData.company_name = formData.company_name || ''; // on utilise le même champ
+        clientData.siret = formData.siret || ''; // optionnel pour assoc
       }
       
       if (editingClient) {
@@ -157,8 +166,14 @@ function ClientsView() {
       company_name: client.company_name || '',
       siret: client.siret || ''
     });
-    // Détecter le type de client (entreprise si company_name existe)
-    setClientType(client.company_name ? 'entreprise' : 'particulier');
+    // Détecter le type de client (entreprise si company_name exists)
+    let initialType = 'particulier';
+    if (client.client_type) {
+      initialType = client.client_type;
+    } else if (client.company_name) {
+      initialType = 'entreprise';
+    }
+    setClientType(initialType);
     setShowAddForm(true);
   };
 
@@ -183,8 +198,14 @@ function ClientsView() {
   };
 
   const getClientBadge = (client) => {
-    if (client.company_name) {
+    let type = client.client_type;
+    if (!type && client.company_name) type = 'entreprise';
+    else if (!type) type = 'particulier';
+
+    if (type === 'entreprise') {
       return <Badge className="bg-blue-500 text-white border-blue-600">🏢 Entreprise</Badge>;
+    } else if (type === 'association') {
+      return <Badge className="bg-purple-500 text-white border-purple-600">🤝 Association</Badge>;
     }
     return <Badge variant="outline">👤 Particulier</Badge>;
   };
@@ -195,6 +216,29 @@ function ClientsView() {
       return `${client.name} - ${client.company_name}`;
     }
     return client.name;
+  };
+
+  const filteredAndSortedClients = [...clients]
+    .filter(client => {
+      const searchTerms = searchQuery.toLowerCase();
+      return (
+        (client.name && client.name.toLowerCase().includes(searchTerms)) ||
+        (client.company_name && client.company_name.toLowerCase().includes(searchTerms)) ||
+        (client.email && client.email.toLowerCase().includes(searchTerms))
+      );
+    })
+    .sort((a, b) => {
+      const nameA = getClientDisplayName(a).toLowerCase();
+      const nameB = getClientDisplayName(b).toLowerCase();
+      if (sortOrder === 'asc') {
+        return nameA.localeCompare(nameB, 'fr');
+      } else {
+        return nameB.localeCompare(nameA, 'fr');
+      }
+    });
+
+  const toggleSortOrder = () => {
+    setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
   };
 
   return (
@@ -216,7 +260,7 @@ function ClientsView() {
           <CardHeader>
             <CardTitle>{editingClient ? 'Modifier le client' : 'Nouveau client'}</CardTitle>
             <CardDescription>
-              {editingClient ? 'Modifiez les informations du client' : 'Créez un nouveau client (particulier ou entreprise)'}
+              {editingClient ? 'Modifiez les informations du client' : 'Créez un nouveau client (particulier, entreprise ou association)'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -248,32 +292,43 @@ function ClientsView() {
                       />
                       <span className="text-sm">🏢 Entreprise</span>
                     </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="clientType"
+                        value="association"
+                        checked={clientType === 'association'}
+                        onChange={(e) => handleClientTypeChange(e.target.value)}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <span className="text-sm">🤝 Association</span>
+                    </label>
                   </div>
                 </div>
               )}
 
-              {/* Champs entreprise (si sélectionné) */}
-              {clientType === 'entreprise' && (
+              {/* Champs entreprise ou association (si sélectionné) */}
+              {(clientType === 'entreprise' || clientType === 'association') && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="company_name">Nom de l'entreprise *</Label>
+                    <Label htmlFor="company_name">{clientType === 'association' ? "Nom de l'association" : "Nom de l'entreprise"} *</Label>
                     <Input
                       id="company_name"
                       value={formData.company_name}
                       onChange={(e) => setFormData({...formData, company_name: e.target.value})}
                       required
                       disabled={isLoading}
-                      placeholder="Raison sociale"
+                      placeholder={clientType === 'association' ? "Nom de l'association" : "Raison sociale"}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="siret">SIRET</Label>
+                    <Label htmlFor="siret">{clientType === 'association' ? "SIRET / RNA" : "SIRET"}</Label>
                     <Input
                       id="siret"
                       value={formData.siret}
                       onChange={(e) => setFormData({...formData, siret: e.target.value})}
                       disabled={isLoading}
-                      placeholder="12345678900012"
+                      placeholder={clientType === 'association' ? "Numéro (optionnel)" : "12345678900012"}
                       maxLength={14}
                     />
                   </div>
@@ -282,14 +337,14 @@ function ClientsView() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="name">{clientType === 'entreprise' ? 'Personne de contact' : 'Nom'} *</Label>
+                  <Label htmlFor="name">{(clientType === 'entreprise' || clientType === 'association') ? 'Personne de contact' : 'Nom'} *</Label>
                   <Input
                     id="name"
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                     required
                     disabled={isLoading}
-                    placeholder={clientType === 'entreprise' ? 'Nom du contact' : 'Nom complet du client'}
+                    placeholder={(clientType === 'entreprise' || clientType === 'association') ? 'Nom du contact' : 'Nom complet du client'}
                   />
                 </div>
                 <div>
@@ -368,13 +423,27 @@ function ClientsView() {
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Liste des clients</CardTitle>
-          <CardDescription>
-            {isLoading ? 'Chargement...' : (
-              clients.length === 0 ? 'Aucun client enregistré' : `${clients.length} client(s) dans le système`
-            )}
-          </CardDescription>
+        <CardHeader className="flex flex-col sm:flex-row gap-4 justify-between sm:items-center">
+          <div>
+            <CardTitle>Liste des clients</CardTitle>
+            <CardDescription>
+              {isLoading ? 'Chargement...' : (
+                clients.length === 0 ? 'Aucun client enregistré' : `${filteredAndSortedClients.length} client(s) trouvé(s) (sur ${clients.length})`
+              )}
+            </CardDescription>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+              <Input
+                type="search"
+                placeholder="Rechercher (nom, entreprise, email)..."
+                className="pl-8 sm:w-[300px]"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -385,7 +454,12 @@ function ClientsView() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nom</TableHead>
+                  <TableHead>
+                    <Button variant="ghost" onClick={toggleSortOrder} className="h-8 flex items-center gap-1 -ml-4 px-4 font-semibold hover:bg-transparent hover:text-gray-900">
+                      Nom
+                      <ArrowUpDown className="h-3 w-3" />
+                    </Button>
+                  </TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Téléphone</TableHead>
                   <TableHead>Adresse</TableHead>
@@ -394,14 +468,14 @@ function ClientsView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {clients.length === 0 ? (
+                {filteredAndSortedClients.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-gray-500">
-                      Aucun client enregistré. Cliquez sur "Ajouter un client" pour commencer.
+                      {searchQuery ? 'Aucun client trouvé pour cette recherche.' : 'Aucun client enregistré. Cliquez sur "Ajouter un client" pour commencer.'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  clients.map((client) => (
+                  filteredAndSortedClients.map((client) => (
                     <TableRow key={client.id}>
                       <TableCell className="font-semibold">
                         <div className="flex items-center gap-2">

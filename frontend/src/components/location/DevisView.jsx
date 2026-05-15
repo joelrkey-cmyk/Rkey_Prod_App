@@ -252,8 +252,8 @@ function DevisView({ setCurrentView }) {
     equipmentList.forEach((item, index) => {
       if (item.equipment_id) {
         const eq = equipment.find(e => e.id === item.equipment_id);
-        if (eq && eq.available_quantity < item.quantity) {
-          warnings.push(`${eq.name}: ${item.quantity >= 999999 ? '∞' : item.quantity} demandé, ${eq.available_quantity >= 999999 ? '∞' : eq.available_quantity} disponible`);
+        if (eq && eq.quantity < item.quantity) {
+          warnings.push(`${eq.name}: ${item.quantity >= 999999 ? '∞' : item.quantity} demandé, ${eq.quantity >= 999999 ? '∞' : eq.quantity} disponible`);
         }
       }
     });
@@ -928,33 +928,13 @@ function DevisView({ setCurrentView }) {
     try {
       setIsLoading(true);
       
-      // Récupérer le statut actuel du devis
-      const currentQuote = quotes.find(q => q.id === quoteId);
-      const oldStatus = currentQuote?.status;
-      
-      // Mettre à jour le statut du devis
+      // Mettre à jour le statut du devis (le backend gère la création/suppression de réservation)
       await axios.patch(`${API}/quotes/${quoteId}/status`, { status: newStatus });
       
-      // Si le statut devient "Accepté", créer automatiquement une réservation
       if (newStatus === 'Accepté') {
-        try {
-          await axios.post(`${API}/reservations`, { quote_id: quoteId });
-          toast.success('✅ Devis accepté et réservation créée automatiquement !');
-        } catch (reservationError) {
-          console.error('Error creating reservation:', reservationError);
-          toast.error('Devis accepté mais erreur lors de la création de la réservation');
-        }
-      } 
-      // Si le statut passe de "Accepté" à "En attente" ou "Brouillon", supprimer la réservation associée
-      else if (oldStatus === 'Accepté' && (newStatus === 'En attente' || newStatus === 'Brouillon')) {
-        try {
-          // Supprimer la réservation liée à ce devis
-          await axios.delete(`${API}/reservations/by-quote/${quoteId}`);
-          toast.success(`Statut modifié: ${newStatus}. Réservation supprimée de l'agenda.`);
-        } catch (deleteError) {
-          console.error('Error deleting reservation:', deleteError);
-          toast.warning(`Statut modifié mais impossible de supprimer la réservation`);
-        }
+        toast.success('✅ Devis accepté et réservation synchronisée avec l\'agenda !');
+      } else if (newStatus === 'Brouillon' || newStatus === 'En attente') {
+        toast.info(`Statut modifié: ${newStatus}. L'agenda est à jour.`);
       } else {
         toast.success(`Statut modifié: ${newStatus}`);
       }
@@ -1415,11 +1395,11 @@ function DevisView({ setCurrentView }) {
                             <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                               {(equipmentSearch[index]?.length >= 2 
                                 ? getFilteredEquipment(equipmentSearch[index]) 
-                                : equipment.filter(eq => eq.available_quantity > 0)
+                                : equipment.filter(eq => eq.quantity > 0)
                               ).length > 0 ? (
                                 (equipmentSearch[index]?.length >= 2 
                                   ? getFilteredEquipment(equipmentSearch[index]) 
-                                  : equipment.filter(eq => eq.available_quantity > 0)
+                                  : equipment.filter(eq => eq.quantity > 0)
                                 ).map((eq) => (
                                   <div
                                     key={eq.id}
@@ -1440,7 +1420,7 @@ function DevisView({ setCurrentView }) {
                                           {eq.daily_price}€/jour
                                         </div>
                                         <div className="text-xs text-gray-500">
-                                          {eq.available_quantity >= 999999 ? '∞' : eq.available_quantity} dispo
+                                          {eq.quantity >= 999999 ? '∞' : eq.quantity} dispo
                                         </div>
                                       </div>
                                     </div>

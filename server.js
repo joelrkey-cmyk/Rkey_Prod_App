@@ -1479,20 +1479,134 @@ api.post('/location/quotes', authMiddleware, async (req, res) => {
   res.json(clean(q));
 });
 api.put('/location/quotes/:id', authMiddleware, async (req, res) => {
-  await db.collection('location_quotes').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
-  res.json(await db.collection('location_quotes').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  const quoteId = req.params.id;
+  await db.collection('location_quotes').updateOne({ id: quoteId }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
+  const updatedQuote = await db.collection('location_quotes').findOne({ id: quoteId }, { projection: { _id: 0 } });
+  
+  // Also update associated reservation if it exists
+  const associatedReservation = await db.collection('location_reservations').findOne({ quote_id: quoteId });
+  if (associatedReservation) {
+    const resUpdate = {
+      client_name: updatedQuote.client_name || associatedReservation.client_name,
+      start_date: updatedQuote.start_date || associatedReservation.start_date,
+      end_date: updatedQuote.end_date || associatedReservation.end_date,
+      total_amount: updatedQuote.total_amount || associatedReservation.total_amount,
+      subtotal: updatedQuote.subtotal || associatedReservation.subtotal,
+      deposit_amount: updatedQuote.deposit_amount || associatedReservation.deposit_amount,
+      guarantee_amount: updatedQuote.guarantee_amount || associatedReservation.guarantee_amount,
+      delivery_cost: updatedQuote.delivery_cost || associatedReservation.delivery_cost,
+      delivery_address: updatedQuote.delivery_address || associatedReservation.delivery_address,
+      delivery_zone: updatedQuote.delivery_zone || associatedReservation.delivery_zone,
+      installation_cost: updatedQuote.installation_cost || associatedReservation.installation_cost,
+      equipment_items: updatedQuote.items || associatedReservation.equipment_items,
+      updated_at: new Date().toISOString()
+    };
+    await db.collection('location_reservations').updateOne({ id: associatedReservation.id }, { $set: resUpdate });
+    
+    // Sync newly updated reservation to Google Calendar
+    const updatedResForGoogle = await db.collection('location_reservations').findOne({ id: associatedReservation.id });
+    const googleEventId = await tryAutoSyncToGoogle(updatedResForGoogle);
+    if (googleEventId === 'DELETED') {
+        await db.collection('location_reservations').updateOne({ id: associatedReservation.id }, { $unset: { google_event_id: "" } });
+    } else if (googleEventId && googleEventId !== updatedResForGoogle.google_event_id) {
+        await db.collection('location_reservations').updateOne({ id: associatedReservation.id }, { $set: { google_event_id: googleEventId } });
+    }
+  }
+
+  res.json(updatedQuote);
 });
 api.delete('/location/quotes/:id', authMiddleware, async (req, res) => {
   await db.collection('location_quotes').deleteOne({ id: req.params.id });
   res.json({ success: true });
 });
 api.patch('/location/quotes/:id/status', authMiddleware, async (req, res) => {
-  await db.collection('location_quotes').updateOne({ id: req.params.id }, { $set: { status: req.body.status, updated_at: new Date().toISOString() } });
-  res.json(await db.collection('location_quotes').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  const quoteId = req.params.id;
+  const newStatus = req.body.status;
+  const oldQuote = await db.collection('location_quotes').findOne({ id: quoteId });
+  
+  await db.collection('location_quotes').updateOne({ id: quoteId }, { $set: { status: newStatus, updated_at: new Date().toISOString() } });
+  const updatedQuote = await db.collection('location_quotes').findOne({ id: quoteId }, { projection: { _id: 0 } });
+  
+  if (newStatus !== 'Accepté' && oldQuote && oldQuote.status === 'Accepté') {
+      // delete reservation(s) and google calendar event(s)
+      const reservations = await db.collection('location_reservations').find({ quote_id: quoteId }).toArray();
+      for (const reservation of reservations) {
+        if (reservation.google_event_id) {
+           await deleteReservationFromGoogleCalendar(reservation.google_event_id);
+        }
+      }
+      await db.collection('location_reservations').deleteMany({ quote_id: quoteId });
+  } else if (newStatus === 'Accepté' && oldQuote && oldQuote.status !== 'Accepté') {
+      // Create reservation if not exists
+      const existing = await db.collection('location_reservations').findOne({ quote_id: quoteId });
+      if (!existing) {
+          const reservationData = {
+              client_id: updatedQuote.client_id || '',
+              client_name: updatedQuote.client_name || '',
+              start_date: updatedQuote.start_date || '',
+              end_date: updatedQuote.end_date || '',
+              total_amount: updatedQuote.total_amount || 0,
+              subtotal: updatedQuote.subtotal || 0,
+              deposit_amount: updatedQuote.deposit_amount || 0,
+              guarantee_amount: updatedQuote.guarantee_amount || 0,
+              delivery_cost: updatedQuote.delivery_cost || 0,
+              delivery_address: updatedQuote.delivery_address || '',
+              delivery_zone: updatedQuote.delivery_zone || '',
+              installation_cost: updatedQuote.installation_cost || 0,
+              equipment_items: updatedQuote.items || [],
+              booking_type: updatedQuote.booking_type || 'client',
+              quote_id: quoteId,
+              status: 'accepted'
+          };
+          const r = { id: uuidv4(), ...reservationData, created_at: new Date().toISOString() };
+          const googleEventId = await tryAutoSyncToGoogle(r);
+          if (googleEventId && googleEventId !== 'DELETED') {
+            r.google_event_id = googleEventId;
+          }
+          await db.collection('location_reservations').insertOne(r);
+      }
+  }
+
+  res.json(updatedQuote);
 });
 api.patch('/location/quotes/:id', authMiddleware, async (req, res) => {
-  await db.collection('location_quotes').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
-  res.json(await db.collection('location_quotes').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  const quoteId = req.params.id;
+  await db.collection('location_quotes').updateOne({ id: quoteId }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
+  const updatedQuote = await db.collection('location_quotes').findOne({ id: quoteId }, { projection: { _id: 0 } });
+
+  // Also update associated reservation if it exists and wasn't a manual detach
+  if (req.body.status !== 'archive') {
+    const associatedReservation = await db.collection('location_reservations').findOne({ quote_id: quoteId });
+    if (associatedReservation) {
+      const resUpdate = {
+        client_name: updatedQuote.client_name || associatedReservation.client_name,
+        start_date: updatedQuote.start_date || associatedReservation.start_date,
+        end_date: updatedQuote.end_date || associatedReservation.end_date,
+        total_amount: updatedQuote.total_amount || associatedReservation.total_amount,
+        subtotal: updatedQuote.subtotal || associatedReservation.subtotal,
+        deposit_amount: updatedQuote.deposit_amount || associatedReservation.deposit_amount,
+        guarantee_amount: updatedQuote.guarantee_amount || associatedReservation.guarantee_amount,
+        delivery_cost: updatedQuote.delivery_cost || associatedReservation.delivery_cost,
+        delivery_address: updatedQuote.delivery_address || associatedReservation.delivery_address,
+        delivery_zone: updatedQuote.delivery_zone || associatedReservation.delivery_zone,
+        installation_cost: updatedQuote.installation_cost || associatedReservation.installation_cost,
+        equipment_items: updatedQuote.items || associatedReservation.equipment_items,
+        updated_at: new Date().toISOString()
+      };
+      await db.collection('location_reservations').updateOne({ id: associatedReservation.id }, { $set: resUpdate });
+
+      // Sync newly updated reservation to Google Calendar
+      const updatedResForGoogle = await db.collection('location_reservations').findOne({ id: associatedReservation.id });
+      const googleEventId = await tryAutoSyncToGoogle(updatedResForGoogle);
+      if (googleEventId === 'DELETED') {
+          await db.collection('location_reservations').updateOne({ id: associatedReservation.id }, { $unset: { google_event_id: "" } });
+      } else if (googleEventId && googleEventId !== updatedResForGoogle.google_event_id) {
+          await db.collection('location_reservations').updateOne({ id: associatedReservation.id }, { $set: { google_event_id: googleEventId } });
+      }
+    }
+  }
+
+  res.json(updatedQuote);
 });
 api.patch('/location/quotes/:id/archive', authMiddleware, async (req, res) => {
   await db.collection('location_quotes').updateOne({ id: req.params.id }, { $set: { status: 'archived', updated_at: new Date().toISOString() } });

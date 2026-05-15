@@ -179,7 +179,7 @@ export function EditReservationModal({
                     <optgroup key={categoryName} label={`${categoryIcon} ${categoryName.toUpperCase()}`}>
                       {categoryEquipment.map(eq => (
                         <option key={eq.id} value={eq.id}>
-                          {eq.name} - {eq.daily_price}€/jour ({(eq.available_quantity || 0) >= 999999 ? '∞' : (eq.available_quantity || 0)} dispo)
+                          {eq.name} - {eq.daily_price}€/jour ({(eq.quantity || 0) >= 999999 ? '∞' : (eq.quantity || 0)} dispo)
                         </option>
                       ))}
                     </optgroup>

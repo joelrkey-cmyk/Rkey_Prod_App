@@ -1287,11 +1287,11 @@ function AgendaView({ stats, setCurrentView }) {
                         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
                           {(equipmentSearchNew[index]?.length >= 2 
                             ? getFilteredEquipmentForAgenda(equipmentSearchNew[index]) 
-                            : equipment.filter(eq => eq.available_quantity > 0)
+                            : equipment.filter(eq => eq.quantity > 0)
                           ).length > 0 ? (
                             (equipmentSearchNew[index]?.length >= 2 
                               ? getFilteredEquipmentForAgenda(equipmentSearchNew[index]) 
-                              : equipment.filter(eq => eq.available_quantity > 0)
+                              : equipment.filter(eq => eq.quantity > 0)
                             ).map((eq) => (
                               <div
                                 key={eq.id}
@@ -1306,7 +1306,7 @@ function AgendaView({ stats, setCurrentView }) {
                                     </div>
                                   </div>
                                   <div className="text-xs text-gray-600 ml-2">
-                                    {eq.available_quantity >= 999999 ? '∞' : eq.available_quantity} dispo
+                                    {eq.quantity >= 999999 ? '∞' : eq.quantity} dispo
                                   </div>
                                 </div>
                               </div>
@@ -1707,7 +1707,7 @@ function AgendaView({ stats, setCurrentView }) {
                                 </div>
                               </div>
                               <div className="text-xs text-gray-600 ml-2">
-                                {(eq.available_quantity || 0) >= 999999 ? '∞' : (eq.available_quantity || 0)} dispo
+                                {(eq.quantity || 0) >= 999999 ? '∞' : (eq.quantity || 0)} dispo
                               </div>
                             </div>
                           </div>
