@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
@@ -34,7 +34,13 @@ const DjClientApp = () => {
       const response = await fetch(`${BACKEND_URL}/api/dj-fiches`, { headers });
       if (response.ok) {
         const data = await response.json();
-        setDjProfiles(data);
+        const normalizedData = data.map(dj => {
+          const djNameLower = (dj.nom_artistique || '').toLowerCase();
+          if (djNameLower === 'joel' || djNameLower === 'joël') return { ...dj, nom_artistique: "Joël R'Key" };
+          if (djNameLower === 'stephane' || djNameLower === 'stéphane') return { ...dj, nom_artistique: "Stefan Edison" };
+          return dj;
+        });
+        setDjProfiles(normalizedData);
       }
     } catch (error) {
       console.error("Error fetching dj profiles:", error);
@@ -79,18 +85,28 @@ const DjClientApp = () => {
          const info = c.client_info || {};
          const clientName = info.name || c.client_name || 'Client inconnu';
          const eventType = info.event_type || 'Événement';
+         
+         let djName = c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ";
+         const normalizedDjNameLower = djName.toLowerCase();
+         if (normalizedDjNameLower === 'joel' || normalizedDjNameLower === 'joël') {
+             djName = "Joël R'Key";
+         } else if (normalizedDjNameLower === 'stephane' || normalizedDjNameLower === 'stéphane') {
+             djName = "Stefan Edison";
+         }
+
          return {
             id: c.id,
             name: `${eventType} - ${clientName}`,
             date: info.event_date || c.event_date || '1970-01-01',
             dj: { 
-                name: c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ", 
-                login: (c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ").toLowerCase().replace(/\s+/g, '-')
+                name: djName, 
+                login: djName.toLowerCase().replace(/\s+/g, '-')
             },
             client: {
                 name: clientName,
                 login: clientName.toLowerCase().replace(/\s+/g, '-')
             },
+            rawClientInfo: info,
             contractInfo: {
                name: clientName,
                company: info.company || "",
@@ -98,7 +114,12 @@ const DjClientApp = () => {
                phone: info.phone || "Non qualifié",
                phone2: info.phone2 || "",
                location: info.event_location || "Lieu non défini",
-               event_type: info.event_type || ""
+               event_type: info.event_type || "",
+               setup_date: info.setup_date || "",
+               setup_time: info.setup_time || "",
+               start_time: info.start_time || "",
+               end_time: info.unlimited_time ? "Illimité" : (info.end_time || ""),
+               unlimited_time: info.unlimited_time || false
             },
             scheduleItems: c.event_order || [],
             djNotes: c.dj_notes || "",
@@ -106,7 +127,9 @@ const DjClientApp = () => {
             manualMustPlay: c.manual_must_play || "",
             blacklist: c.blacklist || "",
             selectedOptions: c.selected_options || [],
-            requestedOptions: c.requested_options || []
+            requestedOptions: c.requested_options || [],
+            chatMessages: c.chat_messages || [],
+            notifications: c.notifications || { admin: {}, dj: {}, client: {} }
          };
       });
       
@@ -126,6 +149,7 @@ const DjClientApp = () => {
   const [playlistLink, setPlaylistLink] = useState("");
   const [manualMustPlay, setManualMustPlay] = useState("");
   const [blacklist, setBlacklist] = useState("");
+  const [chatMessages, setChatMessages] = useState([]);
 
   useEffect(() => {
     if (currentRoute.eventId) {
@@ -136,12 +160,34 @@ const DjClientApp = () => {
         setPlaylistLink(ev.playlistLink || "");
         setManualMustPlay(ev.manualMustPlay || "");
         setBlacklist(ev.blacklist || "");
+        setChatMessages(ev.chatMessages || []);
       }
     }
   }, [currentRoute.eventId, events]);
 
   const updateContractDb = async (eventId, payload) => {
     try {
+      const ev = events.find(e => e.id === eventId);
+      const finalPayload = { ...payload };
+
+      if (!payload.notifications) {
+          let section = null;
+          if ('chat_messages' in payload) section = 'chat';
+          if ('requested_options' in payload) section = 'options';
+          if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload) section = 'playlist';
+          if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload) section = 'planning';
+          
+          if (section && currentRoute.role) {
+              const rolesToNotify = ['admin', 'dj', 'client'].filter(r => r !== currentRoute.role);
+              const newNotifs = ev && ev.notifications ? JSON.parse(JSON.stringify(ev.notifications)) : {admin:{}, dj:{}, client:{}};
+              rolesToNotify.forEach(r => {
+                  if (!newNotifs[r]) newNotifs[r] = {};
+                  newNotifs[r][section] = true;
+              });
+              finalPayload.notifications = newNotifs;
+          }
+      }
+
       const token = localStorage.getItem('access_token');
       const headers = { 
         'Content-Type': 'application/json',
@@ -150,7 +196,7 @@ const DjClientApp = () => {
       await fetch(`${BACKEND_URL}/api/contracts2/${eventId}`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify(payload)
+        body: JSON.stringify(finalPayload)
       });
       fetchContractsAsEvents();
     } catch(e) {
@@ -237,23 +283,32 @@ const DjClientApp = () => {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {eventsList.map(ev => (
-            <tr key={ev.id} className="hover:bg-gray-50 transition-colors">
-              <td className="py-4 px-4">
-                <button 
-                  onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
-                  className="font-medium text-gray-900 hover:text-indigo-600 hover:underline transition-colors text-left"
-                >
-                  {ev.name}
-                </button>
-              </td>
-              <td className="py-4 px-4 text-gray-600 whitespace-nowrap">{ev.date}</td>
-              <td className="py-4 px-4">
-                <div className="text-sm font-medium mb-1">{ev.dj.name}</div>
-                <div className="flex items-center gap-1">
-                  <div className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded truncate max-w-[150px]">
-                    {getDjLink(ev.dj)}
-                  </div>
+          {eventsList.map(ev => {
+            const notifCount = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]).length : 0;
+            return (
+              <tr key={ev.id} className="hover:bg-gray-50 transition-colors">
+                <td className="py-4 px-4 flex items-center gap-2">
+                  <button 
+                    onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
+                    className="font-medium text-gray-900 hover:text-indigo-600 hover:underline transition-colors text-left relative"
+                  >
+                    {ev.name}
+                  </button>
+                  {notifCount > 0 && (
+                    <span className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse shadow-sm">
+                      {notifCount}
+                    </span>
+                  )}
+                </td>
+                <td className="py-4 px-4 text-gray-600 whitespace-nowrap">
+                  {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
+                </td>
+                <td className="py-4 px-4">
+                  <div className="text-sm font-medium mb-1">{ev.dj.name}</div>
+                  <div className="flex items-center gap-1">
+                    <div className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded truncate max-w-[150px]">
+                      {getDjLink(ev.dj)}
+                    </div>
                   <button 
                     onClick={() => { navigator.clipboard.writeText(`https://${getDjLink(ev.dj)}`); toast.success("Lien DJ copié"); }} 
                     className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition" 
@@ -293,7 +348,8 @@ const DjClientApp = () => {
                 </div>
               </td>
             </tr>
-          ))}
+            );
+          })}
           {eventsList.length === 0 && (
             <tr><td colSpan="5" className="py-8 text-center text-gray-500 italic">Aucun événement.</td></tr>
           )}
@@ -392,7 +448,7 @@ const DjClientApp = () => {
     if (!canEdit && scheduleItems.length === 0 && !notes) return null;
 
     return (
-      <div className="bg-white rounded-xl shadow-sm border p-6 md:col-span-2">
+      <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 ${getSectionHighlightClass('planning')}`}>
         <div className="flex justify-between items-center mb-6">
           <div>
             <h3 className="text-lg font-bold flex items-center gap-2">
@@ -558,7 +614,7 @@ const DjClientApp = () => {
     };
 
     return (
-      <div className="bg-white rounded-xl shadow-sm border p-6 md:col-span-2">
+      <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 ${getSectionHighlightClass('playlist')}`}>
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-bold flex items-center gap-2">
             <Music className="w-5 h-5 text-indigo-600" />
@@ -609,8 +665,9 @@ const DjClientApp = () => {
                  value={manualMustPlay}
                  onChange={(e) => setManualMustPlay(e.target.value)}
                  onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { manual_must_play: e.target.value })}}
-                 className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                 placeholder="Ajoutez des titres manuellement ici..."
+                 disabled={playlistLink.trim().length > 0}
+                 className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-75"
+                 placeholder={playlistLink.trim().length > 0 ? "Non disponible lorsqu'un lien de playlist est fourni." : "Ajoutez des titres manuellement ici..."}
                />
             </div>
           </div>
@@ -858,6 +915,140 @@ const DjClientApp = () => {
       );
     };
 
+    const PlanningSection = () => {
+      const info = ev.contractInfo;
+      const role = currentRoute.role;
+      if (!info) return null;
+      
+      const [localInfo, setLocalInfo] = useState({
+        setup_date: info.setup_date || "",
+        setup_time: info.setup_time || "",
+        start_time: info.start_time || "",
+        end_time: (info.unlimited_time ? "" : info.end_time) || "",
+        unlimited_time: info.unlimited_time || false
+      });
+      
+      useEffect(() => {
+        setLocalInfo({
+          setup_date: info.setup_date || "",
+          setup_time: info.setup_time || "",
+          start_time: info.start_time || "",
+          end_time: (info.unlimited_time ? "" : info.end_time) || "",
+          unlimited_time: info.unlimited_time || false
+        });
+      }, [info]);
+      
+      const formatPlanningDate = (dateStr) => {
+        if (!dateStr) return "Non définie";
+        const parts = dateStr.split('-');
+        if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        return dateStr;
+      };
+
+      const handleUpdate = (field, value) => {
+        const updated = { ...localInfo, [field]: value };
+        setLocalInfo(updated);
+        
+        const payloadInfo = { 
+          ...ev.rawClientInfo, 
+          setup_date: updated.setup_date,
+          setup_time: updated.setup_time,
+          start_time: updated.start_time,
+          end_time: updated.unlimited_time ? null : updated.end_time,
+          unlimited_time: updated.unlimited_time
+        };
+        
+        ev.contractInfo.setup_date = updated.setup_date;
+        ev.contractInfo.setup_time = updated.setup_time;
+        ev.contractInfo.start_time = updated.start_time;
+        ev.contractInfo.end_time = updated.unlimited_time ? "Illimité" : updated.end_time;
+        ev.contractInfo.unlimited_time = updated.unlimited_time;
+        ev.rawClientInfo = payloadInfo;
+
+        updateContractDb(currentRoute.eventId, { client_info: payloadInfo });
+      };
+
+      const canEditBasic = role === 'admin' || role === 'dj';
+      const canEditEnd = role === 'admin';
+
+      return (
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('planning')}`}>
+          <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-gray-400" />
+            Planning de la prestation
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Date d'installation</p>
+              {canEditBasic ? (
+                 <input 
+                   type="date" 
+                   value={localInfo.setup_date} 
+                   onChange={(e) => handleUpdate('setup_date', e.target.value)}
+                   className="w-full border rounded-md p-2 text-sm focus:ring-indigo-500 bg-white"
+                 />
+              ) : (
+                <p className="font-medium text-gray-900">{formatPlanningDate(localInfo.setup_date)}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Heure d'installation</p>
+              {canEditBasic ? (
+                 <input 
+                   type="text" 
+                   value={localInfo.setup_time} 
+                   onChange={(e) => setLocalInfo({...localInfo, setup_time: e.target.value})}
+                   onBlur={(e) => handleUpdate('setup_time', e.target.value)}
+                   placeholder="Ex: 14h00, À définir..."
+                   className="w-full border rounded-md p-2 text-sm focus:ring-indigo-500 bg-white"
+                 />
+              ) : (
+                <p className="font-medium text-gray-900">{localInfo.setup_time || "À définir"}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Début de prestation</p>
+              {canEditBasic ? (
+                 <input 
+                   type="time" 
+                   value={localInfo.start_time} 
+                   onChange={(e) => handleUpdate('start_time', e.target.value)}
+                   className="w-full border rounded-md p-2 text-sm focus:ring-indigo-500 bg-white"
+                 />
+              ) : (
+                <p className="font-medium text-gray-900">{localInfo.start_time || "--:--"}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Fin de prestation</p>
+              {canEditEnd ? (
+                 <div className="flex items-center gap-3">
+                   <input 
+                     type="time" 
+                     value={localInfo.end_time} 
+                     onChange={(e) => handleUpdate('end_time', e.target.value)}
+                     disabled={localInfo.unlimited_time}
+                     className="w-full border rounded-md p-2 text-sm focus:ring-indigo-500 bg-white disabled:opacity-50"
+                   />
+                   <label className="flex items-center gap-1.5 text-sm whitespace-nowrap cursor-pointer shrink-0">
+                     <input 
+                       type="checkbox" 
+                       checked={localInfo.unlimited_time}
+                       onChange={(e) => handleUpdate('unlimited_time', e.target.checked)}
+                       className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                     />
+                     Illimité
+                   </label>
+                 </div>
+              ) : (
+                <p className="font-medium text-gray-900">{localInfo.unlimited_time ? "Illimité" : (localInfo.end_time || "--:--")}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     const OptionsSection = () => {
       const contractOptions = ev.selectedOptions || [];
       const requestedOptions = ev.requestedOptions || [];
@@ -901,6 +1092,7 @@ const DjClientApp = () => {
           if (res.ok) {
             setBasket([]);
             await fetchContractsAsEvents();
+            toast.success("Demandes d'options envoyées");
           }
         } catch (e) {
           console.error("Error submitting requested options", e);
@@ -909,8 +1101,38 @@ const DjClientApp = () => {
         }
       };
 
+      const cancelRequestedOption = async (optToRemove) => {
+        setIsSubmitting(true);
+        try {
+          const updatedRequestedOptions = requestedOptions.filter(opt => opt.name !== optToRemove.name);
+          const payload = { requested_options: updatedRequestedOptions };
+          
+          const token = localStorage.getItem('access_token');
+          const headers = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          
+          const res = await fetch(`${BACKEND_URL}/api/contracts2/${ev.id}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(payload)
+          });
+          
+          if (res.ok) {
+            await fetchContractsAsEvents();
+            toast.success("Demande d'option annulée");
+          } else {
+             toast.error("Erreur lors de l'annulation de l'option");
+          }
+        } catch (e) {
+          console.error("Error canceling requested option", e);
+          toast.error("Erreur de connexion");
+        } finally {
+          setIsSubmitting(false);
+        }
+      };
+
       return (
-        <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('options')}`}>
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
             <Plus className="w-5 h-5 text-gray-400" />
             Options de l'Événement
@@ -949,7 +1171,19 @@ const DjClientApp = () => {
                         <div className="flex items-center gap-2">
                           {opt.name}
                         </div>
-                        <span className="font-semibold">{opt.price} €</span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-semibold">{opt.price} €</span>
+                          {(role === 'dj' || role === 'admin') && (
+                            <button
+                              onClick={() => cancelRequestedOption(opt)}
+                              disabled={isSubmitting}
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors disabled:opacity-50"
+                              title="Annuler l'option"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -1019,6 +1253,102 @@ const DjClientApp = () => {
       );
     };
 
+    const ChatSection = () => {
+      const [newMessage, setNewMessage] = useState("");
+      const messagesEndRef = useRef(null);
+      
+      const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      };
+
+      useEffect(() => {
+        scrollToBottom();
+      }, [chatMessages]);
+
+      const handleSendMessage = () => {
+        if (!newMessage.trim()) return;
+        const msg = {
+          id: Date.now().toString(),
+          text: newMessage,
+          senderRole: currentRoute.role, // 'admin', 'dj', 'client'
+          senderName: currentRoute.role === 'admin' ? "R'Key Prod" : (currentRoute.role === 'dj' ? (ev.dj?.name || 'DJ') : (ev.contractInfo?.company || ev.client?.name || 'Client')),
+          timestamp: new Date().toISOString()
+        };
+        const updatedChat = [...chatMessages, msg];
+        setChatMessages(updatedChat);
+        setNewMessage("");
+        
+        ev.chatMessages = updatedChat;
+        if (currentRoute.eventId) {
+            updateContractDb(currentRoute.eventId, { chat_messages: updatedChat });
+        }
+      };
+
+      const downloadChat = () => {
+          const content = chatMessages.map(m => {
+             const date = new Date(m.timestamp).toLocaleString('fr-FR');
+             return `[${date}] ${m.senderName} (${m.senderRole}): ${m.text}`;
+          }).join('\n');
+          
+          const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `chat_${ev.id}.txt`;
+          link.click();
+          URL.revokeObjectURL(url);
+      };
+
+      return (
+        <div className={`bg-orange-50 rounded-xl shadow-lg border border-orange-200 p-6 mb-6 mt-6 relative overflow-hidden ${getSectionHighlightClass('chat') ? getSectionHighlightClass('chat') : 'ring-4 ring-orange-500/10'}`}>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-orange-900">
+              <MessageSquare className="w-5 h-5 text-orange-600" />
+              Espace Discussion
+            </h3>
+            {currentRoute.role === 'admin' && chatMessages.length > 0 && (
+              <button onClick={downloadChat} className="text-sm font-medium text-orange-700 hover:text-orange-900 flex items-center gap-1 bg-white px-3 py-1.5 rounded-md shadow-sm border border-orange-100 transition-colors">
+                <Download className="w-4 h-4" /> Exporter la conversation
+              </button>
+            )}
+          </div>
+          
+          <div className="bg-white/80 rounded-lg p-4 h-64 overflow-y-auto flex flex-col gap-3 mb-4 border border-orange-100 shadow-inner">
+            {chatMessages.length === 0 ? (
+              <p className="text-center text-orange-400/80 italic my-auto font-medium">Aucun message pour le moment. Commencez la discussion !</p>
+            ) : (
+               chatMessages.map(msg => {
+                 const isMe = msg.senderRole === currentRoute.role;
+                 return (
+                   <div key={msg.id} className={`flex flex-col max-w-[80%] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
+                     <span className="text-xs text-orange-800/60 mb-1 px-1 font-medium">{msg.senderName} • {new Date(msg.timestamp).toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})}</span>
+                     <div className={`p-3 text-sm ${isMe ? 'bg-orange-500 text-white rounded-2xl rounded-tr-none shadow-sm' : 'bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-tl-none shadow-sm break-words'}`}>
+                       {msg.text}
+                     </div>
+                   </div>
+                 );
+               })
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+          
+          <div className="flex gap-2">
+            <input 
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder="Écrivez votre message..."
+              className="flex-1 border border-orange-200 rounded-md p-2.5 focus:ring-2 focus:ring-orange-500 focus:outline-none focus:border-orange-500 bg-white placeholder-orange-300"
+            />
+            <button onClick={handleSendMessage} disabled={!newMessage.trim()} className="bg-orange-600 text-white px-5 py-2.5 rounded-md font-medium hover:bg-orange-700 disabled:opacity-50 transition-colors shadow-sm disabled:shadow-none font-semibold">
+              Envoyer
+            </button>
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div className="space-y-6">
         {!isClientStandalone && (
@@ -1043,6 +1373,8 @@ const DjClientApp = () => {
         )}
 
         <ClientInfoSection />
+        <ChatSection />
+        <PlanningSection />
         <OptionsSection />
 
         {currentRoute.role === 'admin' && (
@@ -1133,6 +1465,19 @@ const DjClientApp = () => {
     const past = myEvents.filter(e => e.date < today);
     const future = myEvents.filter(e => e.date >= today);
 
+    const futureByYear = future.reduce((acc, ev) => {
+      const year = ev.date.substring(0, 4);
+      if (!acc[year]) acc[year] = [];
+      acc[year].push(ev);
+      return acc;
+    }, {});
+
+    const [expandedYears, setExpandedYears] = useState({});
+
+    const toggleYear = (year) => {
+      setExpandedYears(prev => ({ ...prev, [year]: prev[year] === false ? true : false }));
+    };
+
     return (
       <div className="space-y-6">
         <div className="bg-yellow-600 text-white p-6 rounded-xl shadow-sm border border-yellow-700 relative overflow-hidden">
@@ -1158,18 +1503,64 @@ const DjClientApp = () => {
 
         <div className="grid gap-6">
             <h3 className="text-xl font-bold text-gray-800">Vos événements à venir</h3>
-            {future.length > 0 ? (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {future.map(ev => (
-                        <div key={ev.id} className="bg-white p-5 rounded-xl border shadow-sm hover:border-yellow-400 hover:shadow-md cursor-pointer transition group" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
-                            <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-bold text-lg text-gray-900 group-hover:text-yellow-600 transition-colors">{ev.name}</h4>
-                            </div>
-                            <div className="flex items-center gap-2 mb-4">
-                                <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">{ev.date}</span>
-                            </div>
-                            <p className="text-gray-600 text-sm mb-4">Client : <span className="font-medium text-gray-800">{ev.client.name}</span></p>
-                            <button className="text-yellow-600 font-medium text-sm flex items-center gap-1 group-hover:text-yellow-700">Ouvrir l'événement <ChevronRight className="w-4 h-4"/></button>
+            {Object.keys(futureByYear).length > 0 ? (
+                <div className="space-y-4">
+                    {Object.keys(futureByYear).sort().map(year => (
+                        <div key={year} className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                            <button 
+                                onClick={() => toggleYear(year)}
+                                className="flex items-center justify-between w-full p-4 bg-yellow-50 hover:bg-yellow-100 transition-colors text-left font-bold text-yellow-800"
+                            >
+                                <span className="flex items-center gap-2">
+                                    Année {year}
+                                    <span className="bg-yellow-200 text-yellow-800 text-xs py-1 px-2 rounded-full font-medium">
+                                        {futureByYear[year].length} événement(s)
+                                    </span>
+                                </span>
+                                {expandedYears[year] !== false ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                            </button>
+                            {expandedYears[year] !== false && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left bg-white">
+                                        <thead className="bg-gray-50 text-sm text-gray-500 border-b border-t">
+                                            <tr>
+                                                <th className="p-4 font-semibold">Événement</th>
+                                                <th className="p-4 font-semibold">Date</th>
+                                                <th className="p-4 font-semibold">Client</th>
+                                                <th className="p-4"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {futureByYear[year].map(ev => {
+                                                const notifCount = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]).length : 0;
+                                                return (
+                                                <tr key={ev.id} className="hover:bg-yellow-50 transition cursor-pointer group" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
+                                                    <td className="p-4 font-medium text-gray-900 group-hover:text-yellow-700 flex items-center gap-2">
+                                                        {ev.name}
+                                                        {notifCount > 0 && (
+                                                            <span className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse shadow-sm">
+                                                                {notifCount}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-4">
+                                                        <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
+                                                            {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-4 text-gray-600">{ev.client.name}</td>
+                                                    <td className="p-4 text-right">
+                                                        <button className="text-yellow-600 font-medium text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
+                                                            Ouvrir <ChevronRight className="w-4 h-4"/>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -1188,7 +1579,9 @@ const DjClientApp = () => {
                             {past.map(ev => (
                                 <tr key={ev.id} className="hover:bg-gray-50 transition cursor-pointer" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
                                     <td className="p-4 font-medium">{ev.name}</td>
-                                    <td className="p-4 text-gray-600">{ev.date}</td>
+                                    <td className="p-4 text-gray-600">
+                                        {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
+                                    </td>
                                     <td className="p-4 text-gray-600">{ev.client.name}</td>
                                     <td className="p-4 text-right">
                                         <button className="text-yellow-600 hover:underline text-sm font-medium">Consulter</button>
@@ -1206,8 +1599,52 @@ const DjClientApp = () => {
     );
   };
 
+  const clearAllNotifications = () => {
+    let eventsToUpdate = [];
+    const newEvents = events.map(ev => {
+      if (ev.notifications && ev.notifications[currentRoute.role] && Object.keys(ev.notifications[currentRoute.role]).length > 0) {
+        const updatedNotifs = { ...ev.notifications, [currentRoute.role]: {} };
+        eventsToUpdate.push({ id: ev.id, notifications: updatedNotifs });
+        return { ...ev, notifications: updatedNotifs };
+      }
+      return ev;
+    });
+    
+    if (eventsToUpdate.length > 0) {
+      setEvents(newEvents);
+      eventsToUpdate.forEach(({ id, notifications }) => {
+        updateContractDb(id, { notifications });
+      });
+    }
+  };
+
+  const getUnreadSections = (ev) => {
+      if (!ev || !ev.notifications || !ev.notifications[currentRoute.role]) return {};
+      return ev.notifications[currentRoute.role];
+  };
+
+  const hasAnyNotifications = () => {
+      return events.some(ev => ev.notifications && ev.notifications[currentRoute.role] && Object.keys(ev.notifications[currentRoute.role]).length > 0);
+  };
+
+  const getSectionHighlightClass = (section) => {
+    const ev = currentRoute.eventId ? events.find(e => e.id === currentRoute.eventId) : null;
+    const notifs = getUnreadSections(ev);
+    if (!notifs[section]) return '';
+    return currentRoute.role === 'client' 
+      ? 'ring-4 ring-red-500 border-red-500 shadow-xl relative' 
+      : 'ring-2 ring-red-400 border-red-400 relative';
+  };
+
   return (
-    <div className="p-6 max-w-6xl mx-auto pb-24">
+    <div className="p-6 max-w-6xl mx-auto pb-24 relative">
+      {hasAnyNotifications() && (
+          <div className="flex justify-end mb-4">
+              <button onClick={clearAllNotifications} className="bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2">
+                  <Check className="w-4 h-4" /> Marquer toutes les notifications comme lues
+              </button>
+          </div>
+      )}
       {currentRoute.view === 'list' && currentRoute.mode !== 'standalone_dj' && <AdminListView />}
       {currentRoute.view === 'dj-list' && currentRoute.mode === 'standalone_dj' && <DjStandaloneListView />}
       {currentRoute.view === 'detail' && <DetailView />}
