@@ -206,7 +206,8 @@
     </div>
 
     <script>
-        var BASE_URL = window.location.origin;
+        var parsedUrl = new URL(window.location.href);
+        var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
         var API_URL = BASE_URL + '/api/dj-fiches/public';
         var urlParams = new URLSearchParams(window.location.search);
         var profileId = urlParams.get('id');

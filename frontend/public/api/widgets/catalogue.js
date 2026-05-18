@@ -1,7 +1,8 @@
 // Catalogue Widget - R'Key Prod
 // Script de gestion du catalogue de location de matériel
 
-var BASE_URL = window.location.origin;
+var parsedUrl = new URL(document.currentScript ? document.currentScript.src : window.location.href);
+var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
 var API_URL = BASE_URL + '/api/catalogue/equipements';
 var CATEGORIES_URL = BASE_URL + '/api/location/categories/public';
 

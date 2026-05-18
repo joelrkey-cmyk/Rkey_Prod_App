@@ -29,7 +29,9 @@
   var FORM_ID = params.get("id");
   if (!FORM_ID) { document.getElementById("rkey-form-root").textContent = "Formulaire introuvable."; return; }
 
-  var API_BASE = window.location.origin + "/api/forms";
+  var parsedUrl = new URL(window.location.href);
+  var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
+  var API_BASE = BASE_URL + "/api/forms";
   var uploadedFiles = {}; // {field_id: {file_id, filename, stored_name, content_type}}
 
   fetch(API_BASE + "/" + FORM_ID + "/public")

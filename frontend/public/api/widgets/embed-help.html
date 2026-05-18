@@ -111,7 +111,8 @@
     </div>
 
     <script>
-        var SITE_URL = window.location.origin;
+        var parsedUrl = new URL(window.location.href);
+        var SITE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
 
         function generateCode() {
             var djId = document.getElementById('dj-id-input').value.trim();

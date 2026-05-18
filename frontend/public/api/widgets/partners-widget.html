@@ -91,7 +91,9 @@ html, body { background: transparent; font-family: -apple-system, BlinkMacSystem
   var category = params.get('category') || '';
   if (!category) { document.getElementById('rkey-partners-widget').innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Cat\u00e9gorie manquante.</p>'; return; }
 
-  var apiBase = window.location.origin + '/api';
+  var parsedUrl = new URL(window.location.href);
+  var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
+  var apiBase = BASE_URL + '/api';
 
   fetch(apiBase + '/partners/public/widget/' + encodeURIComponent(category))
     .then(function(r){ return r.json(); })
