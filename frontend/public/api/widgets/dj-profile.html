@@ -206,9 +206,8 @@
     </div>
 
     <script>
-        var parsedUrl = new URL(window.location.href);
-        var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
-        var API_URL = BASE_URL + '/api/dj-fiches/public';
+        // API URL
+        var API_URL = '/api/dj-fiches/public';
         var urlParams = new URLSearchParams(window.location.search);
         var profileId = urlParams.get('id');
 
@@ -281,7 +280,7 @@
             } catch (error) {
                 console.error('Erreur:', error);
                 container.className = '';
-                container.innerHTML = '<div class="error">Impossible de charger le profil.</div>';
+                container.innerHTML = '<div class="error">Impossible de charger le profil. <br><span style="font-size:10px;opacity:0.7">ERR: ' + error.message + '</span></div>';
                 setTimeout(sendHeightToParent, 100);
             }
         }

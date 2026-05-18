@@ -207,10 +207,8 @@
     </div>
 
     <script>
-        // URL de l'API R'Key Prod - détection automatique
-        var parsedUrl = new URL(window.location.href);
-        var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
-        var API_URL = BASE_URL + '/api/dj-fiches/public';
+        // API URL
+        var API_URL = '/api/dj-fiches/public';
         
         // Lire le paramètre "id" depuis l'URL
         var urlParams = new URLSearchParams(window.location.search);
@@ -249,7 +247,7 @@
                 setTimeout(sendHeightToParent, 100);
             } catch (error) {
                 console.error('Erreur:', error);
-                container.innerHTML = '<div class="error">❌ Impossible de charger le profil.<br>Veuillez réessayer plus tard.</div>';
+                container.innerHTML = '<div class="error">❌ Impossible de charger le profil.<br><span style="font-size:10px;opacity:0.7">ERR: ' + error.message + '</span></div>';
                 setTimeout(sendHeightToParent, 100);
             }
         }
