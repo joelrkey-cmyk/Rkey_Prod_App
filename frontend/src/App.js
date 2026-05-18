@@ -220,6 +220,11 @@ function App() {
                   </>
                 </ProtectedRoute>
               } />
+               <Route path="/:slug" element={
+                 <ErrorBoundary>
+                   <DjClientApp isPublic={true} />
+                 </ErrorBoundary>
+               } />
             </Routes>
           </AuthProvider>
         </BrowserRouter>

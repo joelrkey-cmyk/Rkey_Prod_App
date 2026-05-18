@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
@@ -6,7 +7,9 @@ import { jsPDF } from 'jspdf';
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
 
-const DjClientApp = () => {
+const DjClientApp = ({ isPublic = false }) => {
+  const { slug } = useParams();
+  
   const SCHEDULE_CATEGORIES = [
     { title: "Événements du Repas", type: 'repas', options: ["Apéritif", "Entrée", "Plat", "Fromage", "Dessert"] },
     { title: "Musique", type: 'musique', options: ["Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"] },
@@ -53,32 +56,48 @@ const DjClientApp = () => {
       const token = localStorage.getItem('access_token');
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
       
-      const [contractsRes, archivedRes, optionsRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/api/contracts2`, { headers }),
-          fetch(`${BACKEND_URL}/api/contracts2/archived`, { headers }),
-          fetch(`${BACKEND_URL}/api/material-options`, { headers })
-      ]);
-
-      if (optionsRes.ok) {
-          const opts = await optionsRes.json();
-          setAvailableOptions(opts);
-      } else {
-          const fallbackRes = await fetch(`${BACKEND_URL}/api/contract-options`, { headers });
-          if (fallbackRes.ok) {
-              const fOpts = await fallbackRes.json();
-              setAvailableOptions(fOpts.options || fOpts || []);
-          }
-      }
-      
       let allContracts = [];
-      if (contractsRes.ok) {
-          const data = await contractsRes.json();
-          const active = data.filter(c => !['deleted', 'archived'].includes(c.status));
-          allContracts = [...allContracts, ...active];
-      }
-      if (archivedRes.ok) {
-          const data = await archivedRes.json();
-          allContracts = [...allContracts, ...data];
+      
+      if (isPublic && slug) {
+         const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${slug}`);
+         if (publicRes.ok) {
+             const data = await publicRes.json();
+             allContracts = data.events || [];
+             if (allContracts.length > 0 && currentRoute.view === 'list') {
+                 if (data.role === 'client') {
+                     setCurrentRoute({ view: 'detail', role: 'client', eventId: allContracts[0].id, mode: 'standalone_client' });
+                 } else if (data.role === 'dj') {
+                     setCurrentRoute({ view: 'dj-list', role: 'dj', activeDj: { name: allContracts[0].dj_profile_data?.nom_artistique || allContracts[0].dj_profile }, mode: 'standalone_dj' });
+                 }
+             }
+         }
+      } else {
+          const [contractsRes, archivedRes, optionsRes] = await Promise.all([
+              fetch(`${BACKEND_URL}/api/contracts2`, { headers }),
+              fetch(`${BACKEND_URL}/api/contracts2/archived`, { headers }),
+              fetch(`${BACKEND_URL}/api/material-options`, { headers })
+          ]);
+
+          if (optionsRes.ok) {
+              const opts = await optionsRes.json();
+              setAvailableOptions(opts);
+          } else {
+              const fallbackRes = await fetch(`${BACKEND_URL}/api/contract-options`, { headers });
+              if (fallbackRes.ok) {
+                  const fOpts = await fallbackRes.json();
+                  setAvailableOptions(fOpts.options || fOpts || []);
+              }
+          }
+          
+          if (contractsRes.ok) {
+              const data = await contractsRes.json();
+              const active = data.filter(c => !['deleted', 'archived'].includes(c.status));
+              allContracts = [...allContracts, ...active];
+          }
+          if (archivedRes.ok) {
+              const data = await archivedRes.json();
+              allContracts = [...allContracts, ...data];
+          }
       }
       
       const mappedEvents = allContracts.map(c => {
@@ -193,7 +212,8 @@ const DjClientApp = () => {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       };
-      await fetch(`${BACKEND_URL}/api/contracts2/${eventId}`, {
+      const endpoint = isPublic ? `/api/public/dj-client/${eventId}` : `/api/contracts2/${eventId}`;
+      await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify(finalPayload)
@@ -1083,7 +1103,8 @@ const DjClientApp = () => {
           const headers = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
           
-          const res = await fetch(`${BACKEND_URL}/api/contracts2/${ev.id}`, {
+          const endpoint = isPublic ? `/api/public/dj-client/${ev.id}` : `/api/contracts2/${ev.id}`;
+          const res = await fetch(`${BACKEND_URL}${endpoint}`, {
             method: 'PUT',
             headers,
             body: JSON.stringify(payload)
@@ -1111,7 +1132,8 @@ const DjClientApp = () => {
           const headers = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
           
-          const res = await fetch(`${BACKEND_URL}/api/contracts2/${ev.id}`, {
+          const endpoint = isPublic ? `/api/public/dj-client/${ev.id}` : `/api/contracts2/${ev.id}`;
+          const res = await fetch(`${BACKEND_URL}${endpoint}`, {
             method: 'PUT',
             headers,
             body: JSON.stringify(payload)

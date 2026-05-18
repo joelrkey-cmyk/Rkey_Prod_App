@@ -926,6 +926,51 @@ api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
 // ═══════════════════════════════════════════════════
 // END OF CONTRACT TECHNICAL PDF NOTES
 // ═══════════════════════════════════════════════════
+
+api.get('/public/dj-client/:slug', async (req, res) => {
+  const slug = req.params.slug.toLowerCase();
+  const contracts = await db.collection('contracts2').find({ status: { $nin: ['trash'] } }, { projection: { _id: 0 } }).toArray();
+  
+  const mappedEvents = contracts.map(c => {
+    const info = c.client_info || {};
+    const clientName = info.name || c.client_name || 'Client inconnu';
+    const eventType = info.event_type || 'Événement';
+    
+    let djName = c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ";
+    const djLogin = djName.toLowerCase().replace(/\s+/g, '-');
+    const typeLower = eventType.split(' ')[0].toLowerCase().replace(/\s+/g, '-');
+    const clientNameLower = clientName.toLowerCase().replace(/\s+/g, '-');
+    const clientSlug = `${typeLower}-${clientNameLower}`;
+    
+    return {
+      id: c.id,
+      djLogin,
+      clientSlug,
+      ...c
+    };
+  });
+
+  // Check if it's a DJ slug
+  const djEvents = mappedEvents.filter(e => e.djLogin === slug);
+  if (djEvents.length > 0) {
+    return res.json({ role: 'dj', events: djEvents, slug });
+  }
+  
+  // Check if it's a Client slug
+  const clientEvents = mappedEvents.filter(e => e.clientSlug === slug);
+  if (clientEvents.length > 0) {
+    return res.json({ role: 'client', events: clientEvents, slug });
+  }
+  
+  return res.status(404).json({ error: 'Not found' });
+});
+
+api.put('/public/dj-client/:id', async (req, res) => {
+  const id = req.params.id;
+  await db.collection('contracts2').updateOne({ id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
+  res.json({ success: true });
+});
+
 api.get('/contracts2', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('contracts2').find({ status: { $nin: ['trash'] } }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
@@ -1404,7 +1449,7 @@ api.post('/location/catalogue/products-order/reset', authMiddleware, async (req,
 
 // Location Clients
 api.get('/location/clients', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('location_clients').find({}, { projection: { _id: 0 } }).sort({ last_name: 1 }).toArray()));
+  res.json(cleanList(await db.collection('location_clients').find({}, { projection: { _id: 0 } }).sort({ name: 1, company_name: 1 }).toArray()));
 });
 api.post('/location/clients', authMiddleware, async (req, res) => {
   const c = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };

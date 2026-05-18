@@ -1163,7 +1163,7 @@ function DevisView({ setCurrentView }) {
                       })}
                       className="mr-2"
                     />
-                    Client
+                    Client (Part., Pro, Assoc.)
                   </label>
                   <label className="flex items-center">
                     <input
@@ -1241,29 +1241,49 @@ function DevisView({ setCurrentView }) {
                               const search = clientSearch.toLowerCase();
                               const name = (client.name || '').toLowerCase();
                               const company = (client.company_name || '').toLowerCase();
-                              return name.includes(search) || company.includes(search);
+                              const type = (client.client_type || '').toLowerCase();
+                              return name.includes(search) || company.includes(search) || type.includes(search);
                             })
-                            .slice(0, 10)
+                            .sort((a, b) => {
+                              const nameA = (a.company_name || a.name || '').toLowerCase();
+                              const nameB = (b.company_name || b.name || '').toLowerCase();
+                              return nameA.localeCompare(nameB);
+                            })
+                            .slice(0, 100)
                             .map((client) => (
                               <div
                                 key={client.id}
-                                className="px-3 py-2 cursor-pointer hover:bg-gray-100 text-sm"
+                                className="px-3 py-2 cursor-pointer hover:bg-gray-100 text-sm flex items-center justify-between"
                                 onMouseDown={() => {
                                   setFormData({...formData, client_id: client.id});
                                   setClientSearch(client.company_name || client.name);
                                   setShowSuggestions({...showSuggestions, client: false});
                                 }}
                               >
-                                {client.company_name || client.name} {client.is_vip ? '⭐' : ''}
-                                {client.company_name && client.name !== client.company_name && (
-                                  <span className="text-gray-400 ml-2">({client.name})</span>
-                                )}
+                                <div>
+                                  {client.company_name || client.name} {client.is_vip ? '⭐' : ''}
+                                  {client.company_name && client.name !== client.company_name && (
+                                    <span className="text-gray-400 ml-2">({client.name})</span>
+                                  )}
+                                </div>
+                                <div>
+                                  {client.client_type === 'association' ? (
+                                    <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full border border-purple-200">🤝 Association</span>
+                                  ) : (client.client_type === 'entreprise' || (!client.client_type && client.company_name)) ? (
+                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full border border-blue-200">🏢 Entreprise</span>
+                                  ) : (
+                                    <span className="text-xs bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full border border-gray-200">👤 Particulier</span>
+                                  )}
+                                </div>
                               </div>
                             ))}
                           {clients.filter(client => {
                             if (!clientSearch) return true;
                             const search = clientSearch.toLowerCase();
-                            return (client.name || '').toLowerCase().includes(search) || (client.company_name || '').toLowerCase().includes(search);
+                            const nameMatch = (client.name || '').toLowerCase().includes(search);
+                            const companyMatch = (client.company_name || '').toLowerCase().includes(search);
+                            const typeMatch = (client.client_type || '').toLowerCase().includes(search);
+                            return nameMatch || companyMatch || typeMatch;
                           }).length === 0 && (
                             <div className="px-3 py-2 text-sm text-gray-500">Aucun client trouvé</div>
                           )}
