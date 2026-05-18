@@ -24,11 +24,25 @@ const DjClientApp = ({ isPublic = false }) => {
   useEffect(() => {
     fetchDjProfiles();
     fetchContractsAsEvents();
+    fetchPdfNotes();
   }, []);
 
   const [events, setEvents] = useState([]);
   const [availableOptions, setAvailableOptions] = useState([]);
+  const [pdfNotes, setPdfNotes] = useState([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+
+  const fetchPdfNotes = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/public/contract-pdf-notes`);
+      if (res.ok) {
+        const data = await res.json();
+        setPdfNotes(data || []);
+      }
+    } catch (e) {
+      console.error("Error fetching PDF notes:", e);
+    }
+  };
 
   const fetchDjProfiles = async () => {
     try {
@@ -149,6 +163,7 @@ const DjClientApp = ({ isPublic = false }) => {
             selectedOptions: c.selected_options || [],
             requestedOptions: c.requested_options || [],
             chatMessages: c.chat_messages || [],
+            selectedPdfNotes: c.selected_pdf_notes || [],
             notifications: c.notifications || { admin: {}, dj: {}, client: {} }
          };
       });
@@ -196,6 +211,7 @@ const DjClientApp = ({ isPublic = false }) => {
           if ('requested_options' in payload) section = 'options';
           if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload) section = 'playlist';
           if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload) section = 'planning';
+          if ('selected_pdf_notes' in payload) section = 'documents';
           
           if (section && currentRoute.role) {
               const rolesToNotify = ['admin', 'dj', 'client'].filter(r => r !== currentRoute.role);
@@ -1070,6 +1086,82 @@ const DjClientApp = ({ isPublic = false }) => {
       );
     };
 
+    const DocumentsTipsSection = () => {
+      const selectedPdfs = ev.selectedPdfNotes || [];
+      const isAdminOrDj = currentRoute.role === 'admin' || currentRoute.role === 'dj';
+
+      const handleTogglePdf = (id) => {
+        if (!isAdminOrDj) return;
+        const newSelected = selectedPdfs.includes(id) ? selectedPdfs.filter(i => i !== id) : [...selectedPdfs, id];
+        ev.selectedPdfNotes = newSelected;
+        if (currentRoute.eventId) {
+          updateContractDb(currentRoute.eventId, { selected_pdf_notes: newSelected });
+        }
+        const updatedEvents = [...events];
+        const idx = updatedEvents.findIndex(e => e.id === ev.id);
+        if (idx !== -1) {
+            updatedEvents[idx].selectedPdfNotes = newSelected;
+            setEvents(updatedEvents);
+        }
+      };
+
+      const handleDownloadPdf = (pdfId) => {
+        const downloadUrl = `${BACKEND_URL}/api/public/contract-pdf-notes/${pdfId}/download`;
+        window.open(downloadUrl, '_blank');
+      };
+
+      const visibleDocs = pdfNotes;
+      if (visibleDocs.length === 0) return null;
+
+      const displayDocs = isAdminOrDj ? visibleDocs : visibleDocs.filter(doc => selectedPdfs.includes(doc.id));
+      if (displayDocs.length === 0 && !isAdminOrDj) return null;
+
+      return (
+        <div className={`bg-white rounded-xl shadow-lg border p-6 mb-6 mt-6 transition-all ring-1 ring-slate-100 ${getSectionHighlightClass('documents') ? getSectionHighlightClass('documents') : ''}`}>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
+               <ExternalLink className="w-6 h-6 text-indigo-500" />
+               Documents & Tips Animation
+            </h3>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {displayDocs.map((doc) => {
+              const isSelected = selectedPdfs.includes(doc.id);
+              return (
+                <div 
+                  key={doc.id}
+                  onClick={() => handleTogglePdf(doc.id)}
+                  className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between ${isAdminOrDj ? 'cursor-pointer' : ''} ${isSelected ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                >
+                  <div className="flex items-start gap-3">
+                    {isAdminOrDj && (
+                      <div className="mt-1 flex-shrink-0 flex items-center justify-center w-5 h-5 rounded border border-indigo-200">
+                        {isSelected && <Check className="w-4 h-4 text-indigo-600" />}
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="font-medium text-slate-800 leading-tight">{doc.title || doc.filename}</p>
+                      <p className="text-xs text-slate-500 mt-1">Document PDF</p>
+                    </div>
+                  </div>
+                  {(currentRoute.role !== 'admin' && (!isAdminOrDj || isSelected)) && (
+                    <div className="mt-4 flex justify-end">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDownloadPdf(doc.id); }} 
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
+                        <Download className="w-4 h-4" /> Télécharger
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    };
+
     const OptionsSection = () => {
       const contractOptions = ev.selectedOptions || [];
       const requestedOptions = ev.requestedOptions || [];
@@ -1278,10 +1370,12 @@ const DjClientApp = ({ isPublic = false }) => {
 
     const ChatSection = () => {
       const [newMessage, setNewMessage] = useState("");
-      const messagesEndRef = useRef(null);
+      const chatContainerRef = useRef(null);
       
       const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
       };
 
       useEffect(() => {
@@ -1351,7 +1445,7 @@ const DjClientApp = ({ isPublic = false }) => {
             )}
           </div>
           
-          <div className="bg-white/80 rounded-lg p-4 h-64 overflow-y-auto flex flex-col gap-3 mb-4 border border-orange-100 shadow-inner">
+          <div ref={chatContainerRef} className="bg-white/80 rounded-lg p-4 h-64 overflow-y-auto flex flex-col gap-3 mb-4 border border-orange-100 shadow-inner">
             {chatMessages.length === 0 ? (
               <p className="text-center text-orange-400/80 italic my-auto font-medium">Aucun message pour le moment. Commencez la discussion !</p>
             ) : (
@@ -1367,7 +1461,6 @@ const DjClientApp = ({ isPublic = false }) => {
                  );
                })
             )}
-            <div ref={messagesEndRef} />
           </div>
           
           <div className="flex gap-2">
@@ -1413,6 +1506,7 @@ const DjClientApp = ({ isPublic = false }) => {
         <ClientInfoSection />
         <ChatSection />
         <PlanningSection />
+        <DocumentsTipsSection />
         <OptionsSection />
 
         {currentRoute.role === 'admin' && (

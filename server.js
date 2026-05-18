@@ -897,6 +897,21 @@ api.post('/contract-pdf-notes/reorder', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 
+api.get('/public/contract-pdf-notes', async (req, res) => {
+  const notes = await db.collection('contract_technical_pdf_notes').find({}, { projection: { _id: 0, title: 1, id: 1, filename: 1, order: 1 } }).sort({ order: 1 }).toArray();
+  res.json(notes);
+});
+
+api.get('/public/contract-pdf-notes/:id/download', async (req, res) => {
+  const note = await db.collection('contract_technical_pdf_notes').findOne({ id: req.params.id });
+  if (!note || !note.pdf_data) return res.status(404).json({ detail: 'Not found' });
+  
+  const buffer = Buffer.from(note.pdf_data, 'base64');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${note.filename || note.title}.pdf"`);
+  res.send(buffer);
+});
+
 api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
   try {
     const { deroulement_pdf_base64, selected_pdf_ids } = req.body;
