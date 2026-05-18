@@ -63,6 +63,7 @@ const DjClientApp = ({ isPublic = false }) => {
          if (publicRes.ok) {
              const data = await publicRes.json();
              allContracts = data.events || [];
+             setAvailableOptions(data.availableOptions || []);
              if (allContracts.length > 0 && currentRoute.view === 'list') {
                  if (data.role === 'client') {
                      setCurrentRoute({ view: 'detail', role: 'client', eventId: allContracts[0].id, mode: 'standalone_client' });
@@ -1511,12 +1512,14 @@ const DjClientApp = ({ isPublic = false }) => {
               </h2>
               <p className="mt-2 text-yellow-100">Retrouvez ci-dessous l'ensemble de vos prestations.</p>
             </div>
-            <button 
-              onClick={() => setCurrentRoute({ view: 'list', role: 'admin', eventId: null, mode: 'dashboard' })} 
-              className="px-4 py-2 bg-yellow-700 hover:bg-yellow-800 rounded-lg text-sm transition-colors shadow flex items-center gap-2 w-fit"
-            >
-              <Eye className="w-4 h-4" /> Fermer l'aperçu
-            </button>
+            {!isPublic && (
+              <button 
+                onClick={() => setCurrentRoute({ view: 'list', role: 'admin', eventId: null, mode: 'dashboard' })} 
+                className="px-4 py-2 bg-yellow-700 hover:bg-yellow-800 rounded-lg text-sm transition-colors shadow flex items-center gap-2 w-fit"
+              >
+                <Eye className="w-4 h-4" /> Fermer l'aperçu
+              </button>
+            )}
            </div>
            <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
              <Headphones className="w-48 h-48" />
@@ -1671,7 +1674,7 @@ const DjClientApp = ({ isPublic = false }) => {
       {currentRoute.view === 'dj-list' && currentRoute.mode === 'standalone_dj' && <DjStandaloneListView />}
       {currentRoute.view === 'detail' && <DetailView />}
       
-      {currentRoute.mode === 'standalone_client' && (
+      {!isPublic && currentRoute.mode === 'standalone_client' && (
          <div className="mt-8 flex justify-center">
             <button 
               onClick={() => setCurrentRoute({ view: 'list', role: 'admin', eventId: null, mode: 'dashboard' })} 

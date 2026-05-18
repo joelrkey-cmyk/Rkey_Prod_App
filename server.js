@@ -750,7 +750,16 @@ api.get('/dj-fiches/public', async (req, res) => {
   res.json(profiles.map(p => { const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } return r; }));
 });
 api.get('/dj-fiches/public/:id', async (req, res) => {
-  const p = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  let profileId = req.params.id;
+  
+  if (profileId.startsWith('rkey-dj-')) {
+     const shortId = profileId.replace('rkey-dj-', '');
+     const p = await db.collection('dj_profiles').findOne({ id: { $regex: `^${shortId}` } }, { projection: { _id: 0 } });
+     if (!p) return res.status(404).json({ detail: 'DJ Profile not found' });
+     const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } return res.json(r);
+  }
+
+  const p = await db.collection('dj_profiles').findOne({ id: profileId }, { projection: { _id: 0 } });
   if (!p) return res.status(404).json({ detail: 'DJ Profile not found' });
   const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } res.json(r);
 });
@@ -950,16 +959,18 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     };
   });
 
+  const options = await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1, name: 1 }).toArray();
+
   // Check if it's a DJ slug
   const djEvents = mappedEvents.filter(e => e.djLogin === slug);
   if (djEvents.length > 0) {
-    return res.json({ role: 'dj', events: djEvents, slug });
+    return res.json({ role: 'dj', events: djEvents, slug, availableOptions: options });
   }
   
   // Check if it's a Client slug
   const clientEvents = mappedEvents.filter(e => e.clientSlug === slug);
   if (clientEvents.length > 0) {
-    return res.json({ role: 'client', events: clientEvents, slug });
+    return res.json({ role: 'client', events: clientEvents, slug, availableOptions: options });
   }
   
   return res.status(404).json({ error: 'Not found' });
