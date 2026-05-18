@@ -25,6 +25,7 @@ import AbonnementsApp from "./components/AbonnementsApp";
 import FormsApp from "./components/FormsApp";
 import GlobalSettingsApp from "./components/GlobalSettingsApp";
 import PartnersApp from "./components/PartnersApp";
+import DjClientApp from "./components/DjClientApp";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -132,6 +133,17 @@ function App() {
                 </ProtectedRoute>
               } />
               
+              <Route path="/dj-client" element={
+                <ProtectedRoute>
+                  <>
+                    <Navigation />
+                    <ErrorBoundary>
+                      <DjClientApp />
+                    </ErrorBoundary>
+                  </>
+                </ProtectedRoute>
+              } />
+
               <Route path="/abonnements" element={
                 <ProtectedRoute>
                   <>
