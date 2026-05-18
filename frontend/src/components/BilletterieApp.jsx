@@ -289,7 +289,10 @@ function BilletterieApp() {
   });
 
   const generateWidgetCode = (type = null) => {
-    const productionUrl = window.location.origin;
+    let productionUrl = window.location.origin;
+    if (productionUrl.includes('ais-dev')) {
+        productionUrl = productionUrl.replace('ais-dev', 'ais-pre');
+    }
     const widgetUrl = type 
       ? `${productionUrl}/api/widgets/billetterie.html?type=${type}`
       : `${productionUrl}/api/widgets/billetterie.html`;

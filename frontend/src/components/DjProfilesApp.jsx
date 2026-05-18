@@ -409,7 +409,11 @@ const DjProfilesApp = () => {
   };
 
   const generateWidgetCode = (profile) => {
-    const productionUrl = window.location.origin;
+    let productionUrl = window.location.origin;
+    // Si l'utilisateur est dans l'environnement de développement, on utilise l'URL de pré-production (Shared URL) qui autorise les iframes
+    if (productionUrl.includes('ais-dev')) {
+        productionUrl = productionUrl.replace('ais-dev', 'ais-pre');
+    }
     const uid = 'rkey-dj-' + profile.id.substring(0, 8);
     const src = `${productionUrl}/api/widgets/dj-profile.html?id=${profile.id}`;
     
