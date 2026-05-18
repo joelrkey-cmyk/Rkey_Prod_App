@@ -11,6 +11,16 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
+export const EVENT_CATEGORIES = [
+  "Mariage",
+  "Anniversaire",
+  "Comité d'entreprise",
+  "Soirée privée",
+  "Événement professionnel",
+  "Show Hypnose",
+  "Intervention hypnose"
+];
+
 export const ConfigurationPage = ({
   selectedOptions,
   setSelectedOptions,
@@ -25,7 +35,8 @@ export const ConfigurationPage = ({
 }) => {
   const [activeConfigTab, setActiveConfigTab] = useState("options");
   const [editingOptionIndex, setEditingOptionIndex] = useState(null);
-  const [newOption, setNewOption] = useState({ name: "", price: 0 });
+  const [newOption, setNewOption] = useState({ name: "", price: 0, event_categories: [] });
+
   const [newNote, setNewNote] = useState({ key: "", title: "", content: "" });
   const [isSaving, setIsSaving] = useState(false);
   const [orderedNotes, setOrderedNotes] = useState([]);
@@ -62,10 +73,11 @@ export const ConfigurationPage = ({
         setIsSaving(true);
         const savedOption = await apiService.createMaterialOption({
           name: newOption.name.trim(),
-          price: newOption.price
+          price: newOption.price,
+          event_categories: newOption.event_categories || []
         });
         setSelectedOptions([...selectedOptions, { ...savedOption, selected: false }]);
-        setNewOption({ name: "", price: 0 });
+        setNewOption({ name: "", price: 0, event_categories: [] });
         toast.success("Option matériel ajoutée et sauvegardée définitivement !");
       } catch (error) {
         console.error("Error adding option:", error);
@@ -95,7 +107,11 @@ export const ConfigurationPage = ({
     const option = selectedOptions[index];
     try {
       setIsSaving(true);
-      await apiService.updateMaterialOption(option.id, { name: option.name, price: option.price });
+      await apiService.updateMaterialOption(option.id, { 
+        name: option.name, 
+        price: option.price,
+        event_categories: option.event_categories || [] 
+      });
       setEditingOptionIndex(null);
       toast.success("Option modifiée et sauvegardée !");
     } catch (error) {
@@ -378,21 +394,45 @@ export const ConfigurationPage = ({
                     <div key={index} className="flex items-center justify-between p-4 border rounded-lg bg-white">
                       <div className="flex-1">
                         {editingOptionIndex === index ? (
-                          <div className="flex items-center space-x-4">
-                            <Input value={option.name} onChange={(e) => { const updated = [...selectedOptions]; updated[index].name = e.target.value; setSelectedOptions(updated); }} className="flex-1" />
-                            <Input type="number" value={option.price} onChange={(e) => { const updated = [...selectedOptions]; updated[index].price = parseFloat(e.target.value) || 0; setSelectedOptions(updated); }} className="w-24" />
-                            <Button onClick={() => saveEditedOption(index)} size="sm" variant="outline" disabled={isSaving}>{isSaving ? "..." : "Valider"}</Button>
+                          <div className="flex flex-col space-y-3 flex-1 mr-4">
+                            <div className="flex items-center space-x-4">
+                              <Input value={option.name} onChange={(e) => { const updated = [...selectedOptions]; updated[index].name = e.target.value; setSelectedOptions(updated); }} className="flex-1" />
+                              <Input type="number" value={option.price} onChange={(e) => { const updated = [...selectedOptions]; updated[index].price = parseFloat(e.target.value) || 0; setSelectedOptions(updated); }} className="w-24" />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-xs text-slate-500">Afficher pour (vide = tous) :</Label>
+                              <div className="flex flex-wrap gap-2">
+                                {EVENT_CATEGORIES.map(cat => (
+                                  <label key={cat} className="flex items-center space-x-1 border px-2 py-0.5 rounded bg-slate-50 cursor-pointer">
+                                    <input type="checkbox" className="w-3 h-3 text-blue-600" checked={(option.event_categories || []).includes(cat)} onChange={(e) => {
+                                      const updated = [...selectedOptions];
+                                      let cats = [...(updated[index].event_categories || [])];
+                                      if (e.target.checked) cats.push(cat); else cats = cats.filter(c => c !== cat);
+                                      updated[index].event_categories = cats;
+                                      setSelectedOptions(updated);
+                                    }} />
+                                    <span className="text-xs">{cat}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <Button onClick={() => saveEditedOption(index)} size="sm" variant="outline" disabled={isSaving}>{isSaving ? "..." : "Valider"}</Button>
+                            </div>
                           </div>
                         ) : (
                           <div className="flex items-center justify-between">
                             <div>
                               <h3 className="font-medium">{option.name}</h3>
                               <p className="text-sm text-slate-600">{option.price}€</p>
+                              {(option.event_categories && option.event_categories.length > 0) && (
+                                <p className="text-xs text-blue-600 mt-1">Limité à : {option.event_categories.join(', ')}</p>
+                              )}
                             </div>
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 self-start mt-2">
                         <Button onClick={() => moveOption(index, 'up')} disabled={index === 0 || isSaving} size="sm" variant="ghost"><ChevronUp className="h-4 w-4" /></Button>
                         <Button onClick={() => moveOption(index, 'down')} disabled={index === selectedOptions.length - 1 || isSaving} size="sm" variant="ghost"><ChevronDown className="h-4 w-4" /></Button>
                         <Button onClick={() => setEditingOptionIndex(editingOptionIndex === index ? null : index)} size="sm" variant="outline" disabled={isSaving}><Edit className="h-4 w-4" /></Button>
@@ -405,12 +445,31 @@ export const ConfigurationPage = ({
                 <div className="border-t pt-4">
                   <h3 className="font-medium mb-4">Ajouter une nouvelle option</h3>
                   <p className="text-sm text-green-600 mb-3">Les options ajoutées sont sauvegardées définitivement</p>
-                  <div className="flex items-center space-x-4">
-                    <Input value={newOption.name} onChange={(e) => setNewOption({...newOption, name: e.target.value})} className="flex-1" disabled={isSaving} />
-                    <Input type="number" value={newOption.price} onChange={(e) => setNewOption({...newOption, price: parseFloat(e.target.value) || 0})} className="w-24" disabled={isSaving} />
-                    <Button onClick={addNewOption} disabled={!newOption.name.trim() || isSaving}>
-                      <Plus className="h-4 w-4 mr-2" />{isSaving ? "Ajout..." : "Ajouter"}
-                    </Button>
+                  <div className="flex flex-col space-y-4">
+                    <div className="flex items-center space-x-4">
+                      <Input placeholder="Nom de l'option" value={newOption.name} onChange={(e) => setNewOption({...newOption, name: e.target.value})} className="flex-1" disabled={isSaving} />
+                      <Input type="number" placeholder="Prix" value={newOption.price} onChange={(e) => setNewOption({...newOption, price: parseFloat(e.target.value) || 0})} className="w-24" disabled={isSaving} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-slate-700 font-medium">Afficher pour l'événement : (Laisser vide pour tous)</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {EVENT_CATEGORIES.map(cat => (
+                          <label key={cat} className="flex items-center space-x-1 border px-2 py-1 rounded bg-slate-50 cursor-pointer">
+                            <input type="checkbox" className="w-3 h-3 text-blue-600" checked={(newOption.event_categories || []).includes(cat)} onChange={(e) => {
+                              let cats = [...(newOption.event_categories || [])];
+                              if (e.target.checked) cats.push(cat); else cats = cats.filter(c => c !== cat);
+                              setNewOption({...newOption, event_categories: cats});
+                            }} />
+                            <span className="text-xs">{cat}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <Button onClick={addNewOption} disabled={!newOption.name.trim() || isSaving}>
+                        <Plus className="h-4 w-4 mr-2" />{isSaving ? "Ajout..." : "Ajouter"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>

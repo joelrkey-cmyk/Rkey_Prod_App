@@ -6,7 +6,7 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { 
   FileText, Calendar, MapPin, Music, Printer, Edit, Send, 
-  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter 
+  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye 
 } from 'lucide-react';
 
 export const ContractHistory = ({
@@ -20,6 +20,7 @@ export const ContractHistory = ({
   setShowConfiguration,
   setActiveTab,
   onPrintContract,
+  onPreviewContract,
   onLoadContract,
   onMarkAsSent,
   onMarkAsSigned,
@@ -244,6 +245,9 @@ export const ContractHistory = ({
                           <>
                             <Button onClick={() => onPrintContract(contract)} variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50">
                               <Printer className="h-4 w-4 mr-1" />PDF
+                            </Button>
+                            <Button onClick={() => onPreviewContract(contract)} variant="outline" size="sm" className="text-gray-600 border-gray-200 hover:bg-gray-50">
+                              <Eye className="h-4 w-4 mr-1" />Aperçu
                             </Button>
                             <Button onClick={() => onMarkArchivedAsUnsigned(contract.id)} variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50">
                               <RotateCcw className="h-4 w-4 mr-1" />Non signé

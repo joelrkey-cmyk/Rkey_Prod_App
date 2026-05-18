@@ -191,7 +191,8 @@ export const eventCategories = {
   animations: [
     "Blind test",
     "Chasse au trésor",
-    "Quiz interactif"
+    "Quiz interactif",
+    "Confessionnal"
   ]
 };
 

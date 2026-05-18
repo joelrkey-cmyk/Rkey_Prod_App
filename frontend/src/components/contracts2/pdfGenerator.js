@@ -156,6 +156,13 @@ export const generatePDFFromHTML = async (contract, generateContractHTMLFn, load
       return pdf.output('datauristring').split(',')[1];
     }
 
+    if (options.openPreview) {
+      const blobUrl = pdf.output('bloburl');
+      window.open(blobUrl, '_blank');
+      if (showToast) toast.success("Aperçu généré !");
+      return true;
+    }
+
     const cleanName = (contract.client_info.name || 'Client')
       .replace(/[^a-zA-Z0-9\s]/g, '')
       .replace(/\s+/g, '_')
@@ -208,6 +215,21 @@ export const getCompiledGuideBlob = async (contract, generateContractHTMLFn, loa
   } catch (error) {
     console.error('Erreur getCompiledGuideBlob:', error);
     return null;
+  }
+};
+
+// Fonction pour ouvrir uniquement un aperçu du contrat administratif
+export const previewContractPdf = async (contract, generateContractHTMLFn, loadSignatureImagesFn) => {
+  try {
+    toast.info("Génération de l'aperçu...", { duration: 3000 });
+    await generatePDFFromHTML(contract, generateContractHTMLFn, loadSignatureImagesFn, { 
+      mode: 'contract-only',
+      openPreview: true,
+      showToast: true 
+    });
+  } catch (error) {
+    console.error('Erreur aperçu PDF:', error);
+    toast.error("Échec de l'aperçu : " + error.message);
   }
 };
 

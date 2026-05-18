@@ -19,7 +19,7 @@ import FormSubmissionsSelector from "./FormSubmissionsSelector";
 // Modules extraits pour la maintenabilité
 import { fallbackPredefinedNotes, musicStyles, eventCategories, defaultHypnosisProgram, defaultCompanySettings } from "./contracts2/constants";
 import { generateContractHTML } from "./contracts2/htmlGenerator";
-import { generatePDFFromHTML as generatePDFFromHTMLImported, printContractWithSignature, generateContractAndGuide, getCompiledGuideBlob } from "./contracts2/pdfGenerator";
+import { generatePDFFromHTML as generatePDFFromHTMLImported, printContractWithSignature, generateContractAndGuide, getCompiledGuideBlob, previewContractPdf } from "./contracts2/pdfGenerator";
 import { ConfigurationPage } from "./contracts2/ConfigurationPage";
 import { ContractPreview } from "./contracts2/ContractPreview";
 import { ContractHistory } from "./contracts2/ContractHistory";
@@ -778,6 +778,10 @@ function Contracts2App() {
     generateContractAndGuide(contract, generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService);
   };
 
+  const handlePreviewContract = (contract) => {
+    previewContractPdf(contract, generateContractHTMLLocal, loadSignatureImages);
+  };
+
   // Export PDF pour Document 1 (Mandat R'KEY PROD)
   const handleExportMandatPDF = async () => {
     const data = buildCurrentContractData();
@@ -1378,7 +1382,7 @@ function Contracts2App() {
 
                   {/* Options Matériel (communes aux deux modes) */}
                   <div className="grid grid-cols-1 gap-3">
-                    {selectedOptions.map((option) => (
+                    {selectedOptions.filter(opt => !opt.event_categories || opt.event_categories.length === 0 || opt.event_categories.includes(clientInfo.event_type)).map((option) => (
                       <div key={option.id} className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${option.selected ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"}`} onClick={() => handleOptionToggle(option.id)}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
@@ -1859,6 +1863,7 @@ function Contracts2App() {
               setShowConfiguration={setShowConfiguration}
               setActiveTab={setActiveTab}
               onPrintContract={handlePrintContract}
+              onPreviewContract={handlePreviewContract}
               onLoadContract={loadContract}
               onMarkAsSent={markContractAsSent}
               onMarkAsSigned={markContractAsSigned}

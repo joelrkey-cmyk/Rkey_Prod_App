@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { jsPDF } from 'jspdf';
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -9,7 +10,7 @@ const DjClientApp = () => {
   const SCHEDULE_CATEGORIES = [
     { title: "Événements du Repas", type: 'repas', options: ["Apéritif", "Entrée", "Plat", "Fromage", "Dessert"] },
     { title: "Musique", type: 'musique', options: ["Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"] },
-    { title: "Animations", type: 'animations', options: ["Blind test", "Chasse au trésor", "Quiz interactif", "Show hypnose"] }
+    { title: "Animations", type: 'animations', options: ["Blind test", "Chasse au trésor", "Quiz interactif", "Show hypnose", "Confessionnal"] }
   ];
 
   const [currentRoute, setCurrentRoute] = useState({ view: 'list', role: 'admin', eventId: null, mode: 'dashboard' });
@@ -19,7 +20,12 @@ const DjClientApp = () => {
 
   useEffect(() => {
     fetchDjProfiles();
+    fetchContractsAsEvents();
   }, []);
+
+  const [events, setEvents] = useState([]);
+  const [availableOptions, setAvailableOptions] = useState([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
 
   const fetchDjProfiles = async () => {
     try {
@@ -35,48 +41,122 @@ const DjClientApp = () => {
     }
   };
 
-  // Données mockées pour la démonstration
-  const [events, setEvents] = useState([
-    {
-      id: 1,
-      name: "Mariage Sophie & Thomas",
-      date: "2026-07-15",
-      dj: { name: "DJ Mike", login: "dj.mike" },
-      client: { name: "Sophie Dupont", login: "sophie.d" }
-    },
-    {
-      id: 2,
-      name: "Anniversaire Marc",
-      date: "2025-11-20",
-      dj: { name: "DJ Mike", login: "dj.mike" },
-      client: { name: "Marc T.", login: "marc.t" }
-    },
-    {
-      id: 3,
-      name: "Gala d'Entreprise",
-      date: "2026-12-10",
-      dj: { name: "DJ Alex", login: "dj.alex" },
-      client: { name: "Entreprise XYZ", login: "entreprise.xyz" }
-    },
-    {
-      id: 4,
-      name: "Nouvel An",
-      date: "2027-12-31",
-      dj: { name: "DJ Mike", login: "dj.mike" },
-      client: { name: "Mairie", login: "mairie" }
-    }
-  ]);
+  const fetchContractsAsEvents = async () => {
+    setIsLoadingEvents(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      
+      const [contractsRes, archivedRes, optionsRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/api/contracts2`, { headers }),
+          fetch(`${BACKEND_URL}/api/contracts2/archived`, { headers }),
+          fetch(`${BACKEND_URL}/api/material-options`, { headers })
+      ]);
 
-  const [scheduleItems, setScheduleItems] = useState([
-    { id: 1, time: "18:00", description: "Arrivée invités & Cocktail", type: "repas" },
-    { id: 2, time: "20:00", description: "Entrée des mariés", type: "musique" },
-    { id: 3, time: "23:00", description: "Ouverture du bal", type: "musique" }
-  ]);
+      if (optionsRes.ok) {
+          const opts = await optionsRes.json();
+          setAvailableOptions(opts);
+      } else {
+          const fallbackRes = await fetch(`${BACKEND_URL}/api/contract-options`, { headers });
+          if (fallbackRes.ok) {
+              const fOpts = await fallbackRes.json();
+              setAvailableOptions(fOpts.options || fOpts || []);
+          }
+      }
+      
+      let allContracts = [];
+      if (contractsRes.ok) {
+          const data = await contractsRes.json();
+          const active = data.filter(c => !['deleted', 'archived'].includes(c.status));
+          allContracts = [...allContracts, ...active];
+      }
+      if (archivedRes.ok) {
+          const data = await archivedRes.json();
+          allContracts = [...allContracts, ...data];
+      }
+      
+      const mappedEvents = allContracts.map(c => {
+         const info = c.client_info || {};
+         const clientName = info.name || c.client_name || 'Client inconnu';
+         const eventType = info.event_type || 'Événement';
+         return {
+            id: c.id,
+            name: `${eventType} - ${clientName}`,
+            date: info.event_date || c.event_date || '1970-01-01',
+            dj: { 
+                name: c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ", 
+                login: (c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ").toLowerCase().replace(/\s+/g, '-')
+            },
+            client: {
+                name: clientName,
+                login: clientName.toLowerCase().replace(/\s+/g, '-')
+            },
+            contractInfo: {
+               name: clientName,
+               company: info.company || "",
+               email: info.email || "Non qualifié",
+               phone: info.phone || "Non qualifié",
+               phone2: info.phone2 || "",
+               location: info.event_location || "Lieu non défini",
+               event_type: info.event_type || ""
+            },
+            scheduleItems: c.event_order || [],
+            djNotes: c.dj_notes || "",
+            playlistLink: c.playlist_link || "",
+            manualMustPlay: c.manual_must_play || "",
+            blacklist: c.blacklist || "",
+            selectedOptions: c.selected_options || [],
+            requestedOptions: c.requested_options || []
+         };
+      });
+      
+      mappedEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
+      setEvents(mappedEvents);
+    } catch (error) {
+      console.error("Error fetching contracts as events:", error);
+      toast.error("Erreur lors du chargement des événements");
+    } finally {
+      setIsLoadingEvents(false);
+    }
+  };
+
+  const [scheduleItems, setScheduleItems] = useState([]);
   
   const [notes, setNotes] = useState("");
-  const [playlistLink, setPlaylistLink] = useState("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M");
-  const [manualMustPlay, setManualMustPlay] = useState("Shape of You - Ed Sheeran\nBillie Jean - Michael Jackson");
-  const [blacklist, setBlacklist] = useState("Macarena\nLes démons de minuit");
+  const [playlistLink, setPlaylistLink] = useState("");
+  const [manualMustPlay, setManualMustPlay] = useState("");
+  const [blacklist, setBlacklist] = useState("");
+
+  useEffect(() => {
+    if (currentRoute.eventId) {
+      const ev = events.find(e => e.id === currentRoute.eventId);
+      if (ev) {
+        setScheduleItems(ev.scheduleItems || []);
+        setNotes(ev.djNotes || "");
+        setPlaylistLink(ev.playlistLink || "");
+        setManualMustPlay(ev.manualMustPlay || "");
+        setBlacklist(ev.blacklist || "");
+      }
+    }
+  }, [currentRoute.eventId, events]);
+
+  const updateContractDb = async (eventId, payload) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      };
+      await fetch(`${BACKEND_URL}/api/contracts2/${eventId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      fetchContractsAsEvents();
+    } catch(e) {
+      console.error("Erreur lors de la sauvegarde: ", e);
+    }
+  };
   const [copiedLink, setCopiedLink] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
@@ -103,11 +183,16 @@ const DjClientApp = () => {
   const goToDetail = (eventId, role) => setCurrentRoute({ view: 'detail', role, eventId });
 
   const addScheduleItem = (description, type = 'custom') => {
-    setScheduleItems([...scheduleItems, { id: Date.now(), time: "", description, type }]);
+    const newItem = { key: `dj-custom-${Date.now()}`, time: "", label: description, type, icon: "" };
+    const newItems = [...scheduleItems, newItem];
+    setScheduleItems(newItems);
+    if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { event_order: newItems });
   };
 
-  const removeScheduleItem = (id) => {
-    setScheduleItems(scheduleItems.filter(item => item.id !== id));
+  const removeScheduleItem = (key) => {
+    const newItems = scheduleItems.filter(item => item.key !== key);
+    setScheduleItems(newItems);
+    if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { event_order: newItems });
   };
 
   const moveScheduleItem = (index, dir) => {
@@ -117,21 +202,27 @@ const DjClientApp = () => {
     newItems[index] = newItems[index + dir];
     newItems[index + dir] = temp;
     setScheduleItems(newItems);
+    if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { event_order: newItems });
   };
 
-  const updateScheduleItem = (id, field, value) => {
-    setScheduleItems(scheduleItems.map(item => item.id === id ? { ...item, [field]: value } : item));
+  const updateScheduleItem = (key, field, value) => {
+    const newItems = scheduleItems.map(item => item.key === key ? { ...item, [field]: value } : item);
+    setScheduleItems(newItems);
+  };
+
+  const handleUpdateScheduleItemBlur = () => {
+    if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { event_order: scheduleItems });
   };
 
   const getDjLink = (dj) => {
     const slug = dj.login || dj.name.toLowerCase().replace(/\s+/g, '-');
-    return `rkeprodapp.fr/${slug}`;
+    return `rkeyprodapp.fr/${slug}`;
   };
 
   const getClientLink = (ev) => {
     const type = ev.name.split(' ')[0].toLowerCase().replace(/\s+/g, '-');
     const clientName = ev.client.name.toLowerCase().replace(/\s+/g, '-');
-    return `rkeprodapp.fr/${type}-${clientName}`;
+    return `rkeyprodapp.fr/${type}-${clientName}`;
   };
 
   const EventTable = ({ eventsList }) => (
@@ -142,14 +233,20 @@ const DjClientApp = () => {
             <th className="py-3 px-4 rounded-tl-lg font-semibold">Événement</th>
             <th className="py-3 px-4 font-semibold">Date</th>
             <th className="py-3 px-4 font-semibold">Accès DJ</th>
-            <th className="py-3 px-4 font-semibold">Accès Client</th>
-            <th className="py-3 px-4 text-right rounded-tr-lg font-semibold">Action</th>
+            <th className="py-3 px-4 rounded-tr-lg font-semibold">Accès Client</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {eventsList.map(ev => (
             <tr key={ev.id} className="hover:bg-gray-50 transition-colors">
-              <td className="py-4 px-4 font-medium text-gray-900">{ev.name}</td>
+              <td className="py-4 px-4">
+                <button 
+                  onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
+                  className="font-medium text-gray-900 hover:text-indigo-600 hover:underline transition-colors text-left"
+                >
+                  {ev.name}
+                </button>
+              </td>
               <td className="py-4 px-4 text-gray-600 whitespace-nowrap">{ev.date}</td>
               <td className="py-4 px-4">
                 <div className="text-sm font-medium mb-1">{ev.dj.name}</div>
@@ -195,14 +292,6 @@ const DjClientApp = () => {
                   </button>
                 </div>
               </td>
-              <td className="py-4 px-4 flex justify-end">
-                <button 
-                  onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
-                  className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 hover:text-indigo-600 transition-colors shadow-sm"
-                >
-                  Gérer
-                </button>
-              </td>
             </tr>
           ))}
           {eventsList.length === 0 && (
@@ -221,6 +310,12 @@ const DjClientApp = () => {
           Mirador Administrateur - DJ/Client
         </h2>
         <div className="flex flex-col sm:flex-row gap-4 items-center">
+          <button 
+            onClick={() => window.location.href = '/contracts2'} 
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-indigo-700 transition"
+          >
+            <Plus className="w-5 h-5" /> Ajouter un événement
+          </button>
           <div className="flex items-center gap-2 bg-gray-50 border p-2 rounded-lg">
             <Filter className="w-5 h-5 text-gray-500" />
             <select 
@@ -292,6 +387,10 @@ const DjClientApp = () => {
   const ScheduleSection = ({ canEdit }) => {
     const [customItem, setCustomItem] = useState("");
 
+    const ev = events.find(e => e.id === currentRoute.eventId);
+
+    if (!canEdit && scheduleItems.length === 0 && !notes) return null;
+
     return (
       <div className="bg-white rounded-xl shadow-sm border p-6 md:col-span-2">
         <div className="flex justify-between items-center mb-6">
@@ -349,6 +448,7 @@ const DjClientApp = () => {
                <textarea 
                  value={notes}
                  onChange={(e) => setNotes(e.target.value)}
+                 onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { dj_notes: e.target.value })}}
                  className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
                  placeholder="Ajoutez ici des indications spécifiques..."
                />
@@ -362,8 +462,10 @@ const DjClientApp = () => {
             <p className="text-gray-500 text-sm italic">Aucun événement défini pour le moment.</p>
           ) : (
             <div className="space-y-3">
-              {scheduleItems.map((item, idx) => (
-                <div key={item.id} className={`flex items-center gap-3 p-3 rounded-lg border bg-gray-50`}>
+              {scheduleItems.map((item, originalIdx) => {
+                const idx = scheduleItems.findIndex(x => x.key === item.key);
+                return (
+                <div key={item.key} className={`flex items-center gap-3 p-3 rounded-lg border bg-gray-50`}>
                   {canEdit && (
                     <div className="flex flex-col gap-1 items-center px-2 border-r pr-4">
                       <button onClick={() => moveScheduleItem(idx, -1)} disabled={idx === 0} className="text-gray-400 hover:text-indigo-600 disabled:opacity-30">
@@ -379,7 +481,8 @@ const DjClientApp = () => {
                     <input 
                       type="time" 
                       value={item.time}
-                      onChange={(e) => updateScheduleItem(item.id, 'time', e.target.value)}
+                      onChange={(e) => updateScheduleItem(item.key, 'time', e.target.value)}
+                      onBlur={() => handleUpdateScheduleItemBlur()}
                       className="border rounded px-2 py-1 text-sm font-medium w-24 bg-white"
                       placeholder="HH:MM"
                     />
@@ -390,24 +493,47 @@ const DjClientApp = () => {
                   {canEdit ? (
                     <input 
                       type="text" 
-                      value={item.description}
-                      onChange={(e) => updateScheduleItem(item.id, 'description', e.target.value)}
+                      value={item.label}
+                      onChange={(e) => updateScheduleItem(item.key, 'label', e.target.value)}
+                      onBlur={() => handleUpdateScheduleItemBlur()}
                       className="flex-1 border rounded px-3 py-1 text-sm bg-white"
                     />
                   ) : (
-                    <div className="flex-1 font-medium">{item.description}</div>
+                    <div className="flex-1 font-medium italic text-gray-700">
+                      {item.isSurprise ? "Surprise" : item.label}
+                      {item.isSurprise && <span className="ml-2 text-xs text-indigo-500">🎁</span>}
+                    </div>
                   )}
 
                   {canEdit && (
-                    <button 
-                      onClick={() => removeScheduleItem(item.id)}
-                      className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1.5 text-sm font-medium text-gray-600 cursor-pointer bg-white px-2 py-1.5 rounded border border-gray-200">
+                        <input
+                          type="checkbox"
+                          checked={item.isSurprise || false}
+                          onChange={(e) => {
+                            updateScheduleItem(item.key, 'isSurprise', e.target.checked);
+                            handleUpdateScheduleItemBlur(); // We might need to handle this differently, but blur shouldn't be strictly necessary for checkbox.
+                            if (currentRoute.eventId) {
+                               const newItems = scheduleItems.map(i => i.key === item.key ? { ...i, isSurprise: e.target.checked } : i);
+                               updateContractDb(currentRoute.eventId, { event_order: newItems });
+                            }
+                          }}
+                          className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        Surprise
+                      </label>
+                      <button 
+                        onClick={() => removeScheduleItem(item.key)}
+                        className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded bg-white border border-gray-200 shadow-sm"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -453,6 +579,7 @@ const DjClientApp = () => {
                   type="url"
                   value={playlistLink}
                   onChange={(e) => setPlaylistLink(e.target.value)}
+                  onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { playlist_link: e.target.value })}}
                   placeholder="https://..."
                   className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
                 />
@@ -481,6 +608,7 @@ const DjClientApp = () => {
                <textarea
                  value={manualMustPlay}
                  onChange={(e) => setManualMustPlay(e.target.value)}
+                 onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { manual_must_play: e.target.value })}}
                  className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                  placeholder="Ajoutez des titres manuellement ici..."
                />
@@ -495,6 +623,7 @@ const DjClientApp = () => {
             <textarea
               value={blacklist}
               onChange={(e) => setBlacklist(e.target.value)}
+              onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { blacklist: e.target.value })}}
               className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-red-500 bg-white"
               placeholder="Ex: Pas de hard rock, éviter The Black Eyed Peas..."
             />
@@ -506,6 +635,8 @@ const DjClientApp = () => {
 
   const DetailView = () => {
     const ev = events.find(e => e.id === currentRoute.eventId) || events[0];
+    if (!ev) return <div>Chargement...</div>;
+    
     const isDashboard = currentRoute.mode === 'dashboard';
     const isDjStandalone = currentRoute.mode === 'standalone_dj';
     const isClientStandalone = currentRoute.mode === 'standalone_client';
@@ -516,6 +647,376 @@ const DjClientApp = () => {
       } else {
         goToList();
       }
+    };
+
+    const generateClientPDF = () => {
+      const doc = new jsPDF();
+      let y = 15;
+
+      // Header Orange
+      doc.setFillColor(234, 88, 12); // Tailwind orange-600
+      doc.rect(0, 0, 210, 25, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.text(ev.name.split(' ')[0].toUpperCase() || "ÉVÉNEMENT", 105, 12, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text(`Espace Client - ${ev.client.name}`, 105, 20, { align: 'center' });
+      
+      y = 40;
+      doc.setTextColor(0, 0, 0);
+      
+      const clientScheduleItems = scheduleItems || [];
+      if (clientScheduleItems.length > 0) {
+        doc.setFontSize(16);
+        doc.text("Déroulement de Soirée", 15, y);
+        y += 8;
+        doc.setFontSize(11);
+        doc.setTextColor(75, 85, 99);
+        clientScheduleItems.forEach(item => {
+          const itemLabel = item.isSurprise ? "Surprise" : (item.label || item.description);
+          doc.text(`${item.time || '--:--'} - ${itemLabel}`, 15, y);
+          y += 6;
+          if (y > 280) { doc.addPage(); y = 20; }
+        });
+        y += 5;
+      }
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(16);
+      doc.text("Playlist & Recommandations", 15, y);
+      y += 8;
+
+      if (playlistLink) {
+        doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+        doc.text("Lien playlist:", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(playlistLink, 180);
+        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+      }
+      
+      if (manualMustPlay) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(12); doc.setTextColor(21, 128, 61); // green-700
+        doc.text("À passer absolument:", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(manualMustPlay, 180);
+        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+      }
+
+      if (blacklist) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(12); doc.setTextColor(185, 28, 28); // red-700
+        doc.text("À éviter (Blacklist):", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(blacklist, 180);
+        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+      }
+
+      if (notes) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+        doc.text("Notes DJ:", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(notes, 180);
+        doc.text(splitText, 15, y);
+      }
+
+      doc.save(`Recapitulatif_${ev.client.name.replace(/\s+/g, '_')}.pdf`);
+    };
+
+    const generateDjPDF = () => {
+      const doc = new jsPDF();
+      let y = 15;
+
+      // Header Yellow
+      doc.setFillColor(202, 138, 4); // Tailwind yellow-600
+      doc.rect(0, 0, 210, 25, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.text(ev.name.split(' ')[0].toUpperCase() || "ÉVÉNEMENT", 105, 12, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text(`Espace DJ - ${ev.dj.name}`, 105, 20, { align: 'center' });
+      
+      y = 40;
+      doc.setTextColor(0, 0, 0);
+      
+      const info = ev.contractInfo;
+      if (info) {
+        doc.setFontSize(16);
+        doc.text("Informations Client", 15, y);
+        y += 8;
+        doc.setFontSize(11);
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Nom complet : ${info.name || '-'}`, 15, y); y += 6;
+        if (info.company) { doc.text(`Entreprise : ${info.company}`, 15, y); y += 6; }
+        doc.text(`Email : ${info.email || '-'}`, 15, y); y += 6;
+        doc.text(`Téléphone : ${info.phone || '-'} ${info.phone2 ? '/ ' + info.phone2 : ''}`, 15, y); y += 6;
+        doc.text(`Lieu : ${info.location || '-'}`, 15, y); y += 10;
+      }
+
+      if (scheduleItems && scheduleItems.length > 0) {
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(16);
+        doc.text("Déroulement de Soirée", 15, y);
+        y += 8;
+        doc.setFontSize(11);
+        doc.setTextColor(75, 85, 99);
+        scheduleItems.forEach(item => {
+          const surpriseText = item.isSurprise ? " (SURPRISE)" : "";
+          doc.text(`${item.time || '--:--'} - ${item.label || item.description}${surpriseText}`, 15, y);
+          y += 6;
+          if (y > 280) { doc.addPage(); y = 20; }
+        });
+        y += 5;
+      }
+      
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(16);
+      doc.text("Playlist & Recommandations", 15, y);
+      y += 8;
+
+      if (playlistLink) {
+        doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+        doc.text("Lien playlist:", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        doc.text(playlistLink, 15, y); y += 10;
+      }
+      
+      if (manualMustPlay) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(12); doc.setTextColor(21, 128, 61);
+        doc.text("À passer absolument:", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(manualMustPlay, 180);
+        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+      }
+
+      if (blacklist) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(12); doc.setTextColor(185, 28, 28);
+        doc.text("À éviter (Blacklist):", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(blacklist, 180);
+        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+      }
+
+      if (notes) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+        doc.text("Notes DJ:", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(notes, 180);
+        doc.text(splitText, 15, y);
+      }
+
+      doc.save(`Fiche_DJ_${ev.client.name.replace(/\s+/g, '_')}.pdf`);
+    };
+
+    const ClientInfoSection = () => {
+      const info = ev.contractInfo;
+      if (!info) return null;
+      return (
+        <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
+          <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <User className="w-5 h-5 text-gray-400" />
+            Informations Client
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nom & Prénom</p>
+              <p className="font-medium text-gray-900">{info.name}</p>
+            </div>
+            {info.company && (
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Entreprise</p>
+              <p className="font-medium text-gray-900">{info.company}</p>
+            </div>
+            )}
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</p>
+              <p className="font-medium text-gray-900">{info.email}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 1</p>
+              <p className="font-medium text-gray-900">{info.phone}</p>
+            </div>
+            {info.phone2 && (
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 2</p>
+              <p className="font-medium text-gray-900">{info.phone2}</p>
+            </div>
+            )}
+            <div className="md:col-span-2 lg:col-span-3">
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Lieu de l'événement</p>
+              <p className="font-medium text-gray-900">{info.location}</p>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const OptionsSection = () => {
+      const contractOptions = ev.selectedOptions || [];
+      const requestedOptions = ev.requestedOptions || [];
+      const eventType = ev.contractInfo?.event_type;
+      
+      const nonSelectedOptions = availableOptions.filter(opt => 
+        !contractOptions.some(co => co.id === opt.id || co.name === opt.name) &&
+        !requestedOptions.some(ro => ro.id === opt.id || ro.name === opt.name) &&
+        (!opt.event_categories || opt.event_categories.length === 0 || opt.event_categories.includes(eventType))
+      );
+      const role = currentRoute.role;
+
+      const [basket, setBasket] = useState([]);
+      const [isSubmitting, setIsSubmitting] = useState(false);
+
+      const toggleBasket = (opt) => {
+        if (basket.some(o => o.id === opt.id)) {
+          setBasket(basket.filter(o => o.id !== opt.id));
+        } else {
+          setBasket([...basket, opt]);
+        }
+      };
+
+      const submitRequest = async () => {
+        if (basket.length === 0) return;
+        setIsSubmitting(true);
+        try {
+          const updatedRequestedOptions = [...requestedOptions, ...basket];
+          const payload = { requested_options: updatedRequestedOptions };
+          
+          const token = localStorage.getItem('access_token');
+          const headers = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          
+          const res = await fetch(`${BACKEND_URL}/api/contracts2/${ev.id}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(payload)
+          });
+          
+          if (res.ok) {
+            setBasket([]);
+            await fetchContractsAsEvents();
+          }
+        } catch (e) {
+          console.error("Error submitting requested options", e);
+        } finally {
+          setIsSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
+          <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Plus className="w-5 h-5 text-gray-400" />
+            Options de l'Événement
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-6">
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-3">Options Validées au Contrat</h4>
+                {contractOptions.length > 0 ? (
+                  <ul className="space-y-2">
+                    {contractOptions.map((opt, idx) => (
+                      <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border">
+                        <div className="flex items-center gap-2">
+                          <Check className="w-4 h-4 text-green-500" />
+                          {opt.name}
+                        </div>
+                        <span className="font-semibold">{opt.price} €</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">Aucune option validée sur ce contrat.</p>
+                )}
+              </div>
+
+              {requestedOptions.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2 text-orange-600">
+                    <Clock className="w-4 h-4" />
+                    En attente de validation
+                  </h4>
+                  <ul className="space-y-2">
+                    {requestedOptions.map((opt, idx) => (
+                      <li key={idx} className="flex items-center justify-between text-orange-800 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200 shadow-sm">
+                        <div className="flex items-center gap-2">
+                          {opt.name}
+                        </div>
+                        <span className="font-semibold">{opt.price} €</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <h4 className="font-semibold text-gray-800 mb-3">Autres Options Disponibles</h4>
+              {role === 'dj' && (
+                <p className="text-sm text-yellow-700 bg-yellow-50 px-3 py-2 rounded-lg border border-yellow-200 mb-3">
+                  Note pour le DJ : Pour toute demande d'ajout d'option, veuillez en faire la demande à R'Key Prod directement.
+                </p>
+              )}
+              {role === 'client' && (
+                <p className="text-sm text-indigo-700 bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-200 mb-3">
+                  Ce que vous voyez dans cette section sont les options supplémentaires possibles pour votre événement. Vous souhaitez en ajouter une ? Cochez-la ci-dessous et validez !
+                </p>
+              )}
+              {nonSelectedOptions.length > 0 ? (
+                <div className="space-y-3">
+                  <ul className="space-y-2">
+                    {nonSelectedOptions.map((opt, idx) => {
+                      const isSelected = basket.some(o => o.id === opt.id);
+                      return (
+                        <li 
+                          key={idx} 
+                          onClick={() => role === 'client' && toggleBasket(opt)}
+                          className={`flex flex-col text-sm bg-white px-3 py-2 rounded-lg border shadow-sm transition-colors ${role === 'client' ? 'cursor-pointer hover:border-indigo-300' : ''} ${isSelected ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100'}`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-2">
+                              {role === 'client' && (
+                                <input 
+                                  type="checkbox" 
+                                  readOnly 
+                                  checked={isSelected} 
+                                  className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                />
+                              )}
+                              <span className={`font-medium ${isSelected ? 'text-indigo-800' : 'text-gray-800'}`}>{opt.name}</span>
+                            </div>
+                            <span className="font-semibold whitespace-nowrap ml-2 text-indigo-600">{opt.price} €</span>
+                          </div>
+                          {opt.description && <span className={`mt-1 ${role === 'client' ? 'pl-6' : ''} ${isSelected ? 'text-indigo-600' : 'text-gray-500'}`}>{opt.description}</span>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  {role === 'client' && basket.length > 0 && (
+                    <button
+                      onClick={submitRequest}
+                      disabled={isSubmitting}
+                      className="w-full mt-4 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 flex justify-center items-center gap-2"
+                    >
+                      {isSubmitting ? 'Envoi en cours...' : `Soumettre la demande (${basket.length} option${basket.length > 1 ? 's' : ''})`}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 italic">Toutes les options disponibles ont été sélectionnées.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      );
     };
 
     return (
@@ -541,13 +1042,24 @@ const DjClientApp = () => {
           </div>
         )}
 
+        <ClientInfoSection />
+        <OptionsSection />
+
         {currentRoute.role === 'admin' && (
           <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-sm">
+            <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <h2 className="text-2xl font-bold flex items-center gap-2">
                 <Shield className="w-8 h-8" />
                 Espace Admin - {ev.name}
               </h2>
+              <div className="flex gap-2 relative z-10">
+                <button onClick={generateDjPDF} className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                  <Download className="w-4 h-4" /> PDF DJ
+                </button>
+                <button onClick={generateClientPDF} className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                  <Download className="w-4 h-4" /> PDF Client
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <ScheduleSection canEdit={true} />
@@ -559,14 +1071,19 @@ const DjClientApp = () => {
         {currentRoute.role === 'dj' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="bg-yellow-600 text-white p-6 rounded-xl shadow-sm relative overflow-hidden">
-              <div className="relative z-10">
-                <h2 className="text-2xl font-bold flex items-center gap-2">
-                  <Headphones className="w-8 h-8" />
-                  Espace DJ - {ev.name}
-                </h2>
-                <div className="mt-4 flex gap-4 items-center">
-                  <p className="opacity-90">Connecté en tant que: <span className="font-semibold">{ev.dj.name}</span></p>
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <Headphones className="w-8 h-8" />
+                    Espace DJ - {ev.name}
+                  </h2>
+                  <div className="mt-4 flex gap-4 items-center">
+                    <p className="opacity-90">Connecté en tant que: <span className="font-semibold">{ev.dj.name}</span></p>
+                  </div>
                 </div>
+                <button onClick={generateDjPDF} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 w-fit">
+                  <Download className="w-5 h-5" /> Télécharger mon récap' PDF
+                </button>
               </div>
               <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
                 <Headphones className="w-48 h-48" />
@@ -582,14 +1099,19 @@ const DjClientApp = () => {
         {currentRoute.role === 'client' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="bg-green-600 text-white p-6 rounded-xl shadow-sm relative overflow-hidden">
-               <div className="relative z-10">
-                 <div className="flex flex-col mb-2">
-                   <span className="text-green-200 text-sm font-semibold uppercase tracking-wider">{ev.name.split(' ')[0]}</span>
+               <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                 <div>
+                   <div className="flex flex-col mb-2">
+                     <span className="text-green-200 text-sm font-semibold uppercase tracking-wider">{ev.name.split(' ')[0]}</span>
+                   </div>
+                   <h2 className="text-2xl font-bold flex items-center gap-2">
+                     <Users className="w-8 h-8" />
+                     Espace Client - {ev.client.name}
+                   </h2>
                  </div>
-                 <h2 className="text-2xl font-bold flex items-center gap-2">
-                   <Users className="w-8 h-8" />
-                   Espace Client - {ev.client.name}
-                 </h2>
+                 <button onClick={generateClientPDF} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 w-fit">
+                   <Download className="w-5 h-5" /> Télécharger mon récap' PDF
+                 </button>
                </div>
                <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
                  <Users className="w-48 h-48" />
