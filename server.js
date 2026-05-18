@@ -746,20 +746,31 @@ api.get('/dj-fiches', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('dj_profiles').find({}, { projection: { _id: 0 } }).toArray()));
 });
 api.get('/dj-fiches/public', async (req, res) => {
-  const profiles = await db.collection('dj_profiles').find({ is_public: true }, { projection: { _id: 0 } }).toArray();
+  const profiles = await db.collection('dj_profiles').find({ actif: true }, { projection: { _id: 0 } }).toArray();
   res.json(profiles.map(p => { const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } return r; }));
 });
 api.get('/dj-fiches/public/:id', async (req, res) => {
   let profileId = req.params.id;
+  if (!profileId) return res.status(404).json({ detail: 'DJ Profile not found' });
+  
+  profileId = profileId.trim();
+  let p = null;
   
   if (profileId.startsWith('rkey-dj-')) {
-     const shortId = profileId.replace('rkey-dj-', '');
-     const p = await db.collection('dj_profiles').findOne({ id: { $regex: `^${shortId}` } }, { projection: { _id: 0 } });
-     if (!p) return res.status(404).json({ detail: 'DJ Profile not found' });
-     const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } return res.json(r);
+     const shortId = profileId.replace('rkey-dj-', '').trim();
+     p = await db.collection('dj_profiles').findOne({ id: { $regex: new RegExp(`^${shortId}`, 'i') } }, { projection: { _id: 0 } });
+  } else {
+     p = await db.collection('dj_profiles').findOne({ id: { $regex: new RegExp(profileId, 'i') } }, { projection: { _id: 0 } });
+     if (!p && profileId.length >= 8) {
+       p = await db.collection('dj_profiles').findOne({ id: { $regex: new RegExp(`^${profileId.substring(0,8)}`, 'i') } }, { projection: { _id: 0 } });
+     }
   }
 
-  const p = await db.collection('dj_profiles').findOne({ id: profileId }, { projection: { _id: 0 } });
+  // Fallback: lookup by artist name (partial match) in case they passed the name instead of ID
+  if (!p) {
+     p = await db.collection('dj_profiles').findOne({ nom_artistique: { $regex: new RegExp(profileId, 'i') } }, { projection: { _id: 0 } });
+  }
+
   if (!p) return res.status(404).json({ detail: 'DJ Profile not found' });
   const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } res.json(r);
 });

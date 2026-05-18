@@ -1322,6 +1322,16 @@ const DjClientApp = ({ isPublic = false }) => {
           URL.revokeObjectURL(url);
       };
 
+      const resetChat = () => {
+        if (window.confirm("Êtes-vous sûr de vouloir vider l'historique de cette discussion ? Tous les messages seront supprimés.")) {
+          setChatMessages([]);
+          ev.chatMessages = [];
+          if (currentRoute.eventId) {
+              updateContractDb(currentRoute.eventId, { chat_messages: [] });
+          }
+        }
+      };
+
       return (
         <div className={`bg-orange-50 rounded-xl shadow-lg border border-orange-200 p-6 mb-6 mt-6 relative overflow-hidden ${getSectionHighlightClass('chat') ? getSectionHighlightClass('chat') : 'ring-4 ring-orange-500/10'}`}>
           <div className="flex justify-between items-center mb-4">
@@ -1330,9 +1340,14 @@ const DjClientApp = ({ isPublic = false }) => {
               Espace Discussion
             </h3>
             {currentRoute.role === 'admin' && chatMessages.length > 0 && (
-              <button onClick={downloadChat} className="text-sm font-medium text-orange-700 hover:text-orange-900 flex items-center gap-1 bg-white px-3 py-1.5 rounded-md shadow-sm border border-orange-100 transition-colors">
-                <Download className="w-4 h-4" /> Exporter la conversation
-              </button>
+              <div className="flex gap-2">
+                <button onClick={downloadChat} className="text-sm font-medium text-orange-700 hover:text-orange-900 flex items-center gap-1 bg-white px-3 py-1.5 rounded-md shadow-sm border border-orange-100 transition-colors">
+                  <Download className="w-4 h-4" /> Exporter
+                </button>
+                <button onClick={resetChat} className="text-sm font-medium text-red-700 hover:text-red-900 flex items-center gap-1 bg-red-50 px-3 py-1.5 rounded-md shadow-sm border border-red-100 transition-colors" title="Remettre à zéro la conversation">
+                  <Trash2 className="w-4 h-4" /> Vider
+                </button>
+              </div>
             )}
           </div>
           
