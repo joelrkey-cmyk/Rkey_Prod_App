@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 
@@ -20,6 +20,7 @@ const DjClientApp = ({ isPublic = false }) => {
   const [expandedSections, setExpandedSections] = useState({ past: false }); 
   const [djProfiles, setDjProfiles] = useState([]);
   const [selectedDjFilter, setSelectedDjFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchDjProfiles();
@@ -158,6 +159,7 @@ const DjClientApp = ({ isPublic = false }) => {
             requestedOptions: c.requested_options || [],
             chatMessages: c.chat_messages || [],
             selectedPdfNotes: c.selected_pdf_notes || [],
+            eventDocuments: c.event_documents || [],
             notifications: c.notifications || { admin: {}, dj: {}, client: {} }
          };
       });
@@ -239,10 +241,23 @@ const DjClientApp = ({ isPublic = false }) => {
   const today = new Date().toISOString().split('T')[0];
   
   const filteredEvents = events.filter(e => {
-    if (selectedDjFilter === 'all') return true;
-    const djNameFilter = selectedDjFilter.toLowerCase();
-    const evDjName = e.dj.name.toLowerCase();
-    return evDjName.includes(djNameFilter) || djNameFilter.includes(evDjName);
+    let djMatch = true;
+    if (selectedDjFilter !== 'all') {
+      const djNameFilter = selectedDjFilter.toLowerCase();
+      const evDjName = e.dj.name.toLowerCase();
+      djMatch = evDjName.includes(djNameFilter) || djNameFilter.includes(evDjName);
+    }
+    
+    let searchMatch = true;
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      searchMatch = 
+        (e.client?.name || '').toLowerCase().includes(q) ||
+        (e.contractInfo?.company || '').toLowerCase().includes(q) ||
+        (e.contractInfo?.location || '').toLowerCase().includes(q);
+    }
+
+    return djMatch && searchMatch;
   });
 
   const pastEvents = filteredEvents.filter(e => e.date < today);
@@ -396,14 +411,26 @@ const DjClientApp = ({ isPublic = false }) => {
           <Shield className="w-8 h-8 text-indigo-600" />
           Mirador Administrateur - DJ/Client
         </h2>
-        <div className="flex flex-col sm:flex-row gap-4 items-center">
+        <div className="flex flex-col sm:flex-row gap-4 items-center flex-1 justify-end ml-4">
+          <div className="relative w-full sm:max-w-xs">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
+            <input
+              type="text"
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              placeholder="Nom, entreprise ou lieu..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
           <button 
             onClick={() => window.location.href = '/contracts2'} 
             className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-indigo-700 transition"
           >
             <Plus className="w-5 h-5" /> Ajouter un événement
           </button>
-          <div className="flex items-center gap-2 bg-gray-50 border p-2 rounded-lg">
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 p-2 rounded-lg w-full sm:w-auto">
             <Filter className="w-5 h-5 text-gray-500" />
             <select 
               value={selectedDjFilter}
@@ -531,7 +558,7 @@ const DjClientApp = ({ isPublic = false }) => {
             </div>
 
             <div>
-               <h4 className="font-semibold text-gray-800 mb-3 text-sm">Notes et observations pour le déroulement</h4>
+               <h4 className="font-semibold text-gray-800 mb-3 text-sm">Note DJ (visible uniquement par le DJ et R'Key Prod)</h4>
                <textarea 
                  value={notes}
                  onChange={(e) => setNotes(e.target.value)}
@@ -1066,7 +1093,11 @@ const DjClientApp = ({ isPublic = false }) => {
 
     const DocumentsTipsSection = () => {
       const selectedPdfs = ev.selectedPdfNotes || [];
+      const eventDocuments = ev.eventDocuments || [];
       const isAdminOrDj = currentRoute.role === 'admin' || currentRoute.role === 'dj';
+      
+      const [isUploading, setIsUploading] = useState(false);
+      const [uploadCategory, setUploadCategory] = useState("Administrative");
 
       const handleTogglePdf = (id) => {
         if (!isAdminOrDj) return;
@@ -1087,54 +1118,191 @@ const DjClientApp = ({ isPublic = false }) => {
         const downloadUrl = `${BACKEND_URL}/api/public/contract-pdf-notes/${pdfId}/download`;
         window.open(downloadUrl, '_blank');
       };
+      
+      const handleDownloadEventDoc = (docId) => {
+        const downloadUrl = `${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/${docId}`;
+        window.open(downloadUrl, '_blank');
+      };
+      
+      const handleFileUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        if (file.type !== "application/pdf") {
+          toast.error("Veuillez sélectionner un fichier PDF.");
+          return;
+        }
+        
+        setIsUploading(true);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("category", uploadCategory);
+
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) throw new Error("Upload failed");
+
+          const result = await response.json();
+          if (result.success) {
+            toast.success("Document ajouté avec succès.");
+            const newDoc = result.document;
+            const newEventDocs = [...eventDocuments, newDoc];
+            ev.eventDocuments = newEventDocs;
+            
+            const updatedEvents = [...events];
+            const idx = updatedEvents.findIndex(e => e.id === ev.id);
+            if (idx !== -1) {
+                updatedEvents[idx].eventDocuments = newEventDocs;
+                setEvents(updatedEvents);
+            }
+          }
+        } catch (error) {
+          console.error("Error uploading document:", error);
+          toast.error("Erreur lors de l'envoi du document.");
+        } finally {
+          setIsUploading(false);
+          event.target.value = null; // Reset input
+        }
+      };
 
       const visibleDocs = pdfNotes;
-      if (visibleDocs.length === 0) return null;
-
-      const displayDocs = isAdminOrDj ? visibleDocs : visibleDocs.filter(doc => selectedPdfs.includes(doc.id));
-      if (displayDocs.length === 0 && !isAdminOrDj) return null;
+      const displayGlobalDocs = isAdminOrDj ? visibleDocs : visibleDocs.filter(doc => selectedPdfs.includes(doc.id));
+      
+      const administrativeDocs = eventDocuments.filter(d => d.category === 'Administrative');
+      const animationEventDocs = eventDocuments.filter(d => d.category !== 'Administrative');
+      
+      const hasAnyDocs = displayGlobalDocs.length > 0 || eventDocuments.length > 0;
 
       return (
         <div className={`bg-white rounded-xl shadow-lg border p-6 mb-6 mt-6 transition-all ring-1 ring-slate-100 ${getSectionHighlightClass('documents') ? getSectionHighlightClass('documents') : ''}`}>
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
-               <ExternalLink className="w-6 h-6 text-indigo-500" />
-               Documents & Tips Animation
+            <h3 className="text-xl font-bold flex flex-col sm:flex-row sm:items-center gap-2 text-slate-800">
+               <div className="flex items-center gap-2">
+                 <ExternalLink className="w-6 h-6 text-indigo-500" />
+                 Documents et Types d'animations
+               </div>
             </h3>
+            
+            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+               <select 
+                 className="text-sm border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1.5"
+                 value={uploadCategory}
+                 onChange={(e) => setUploadCategory(e.target.value)}
+                 title="Catégorie pour le prochain upload"
+               >
+                 <option value="Administrative">Administrative</option>
+                 <option value="Animations et interventions">Animations</option>
+               </select>
+               <label className={`cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center gap-2 ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                 {isUploading ? (
+                    <><RefreshCw className="animate-spin w-4 h-4" /> Envoi...</>
+                 ) : (
+                    <><Upload className="w-4 h-4" /> Ajouter un PDF</>
+                 )}
+                 <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+               </label>
+            </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {displayDocs.map((doc) => {
-              const isSelected = selectedPdfs.includes(doc.id);
-              return (
-                <div 
-                  key={doc.id}
-                  onClick={() => handleTogglePdf(doc.id)}
-                  className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between ${isAdminOrDj ? 'cursor-pointer' : ''} ${isSelected ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-300"}`}
-                >
-                  <div className="flex items-start gap-3">
-                    {isAdminOrDj && (
-                      <div className="mt-1 flex-shrink-0 flex items-center justify-center w-5 h-5 rounded border border-indigo-200">
-                        {isSelected && <Check className="w-4 h-4 text-indigo-600" />}
+          <div className="space-y-8">
+            {/* SECTION ADMINISTRATIVE */}
+            <div>
+              <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Administrative</h4>
+              {administrativeDocs.length === 0 ? (
+                <p className="text-sm text-slate-500 italic">Aucun document administratif pour cet événement.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {administrativeDocs.map((doc) => (
+                    <div 
+                      key={doc.id}
+                      className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1">
+                          <p className="font-medium text-slate-800 leading-tight">{doc.filename}</p>
+                          <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
+                        </div>
                       </div>
-                    )}
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-800 leading-tight">{doc.title || doc.filename}</p>
-                      <p className="text-xs text-slate-500 mt-1">Document PDF</p>
+                      <div className="mt-4 flex justify-end">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
+                          <Download className="w-4 h-4" /> Télécharger
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  {(currentRoute.role !== 'admin' && (!isAdminOrDj || isSelected)) && (
-                    <div className="mt-4 flex justify-end">
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleDownloadPdf(doc.id); }} 
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
-                        <Download className="w-4 h-4" /> Télécharger
-                      </button>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              );
-            })}
+              )}
+            </div>
+
+            {/* SECTION ANIMATIONS ET INTERVENTIONS */}
+            <div>
+              <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Animations et interventions</h4>
+              {(displayGlobalDocs.length === 0 && animationEventDocs.length === 0) ? (
+                 <p className="text-sm text-slate-500 italic">Aucun document d'animation pour cet événement.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Event Specific Animation Docs */}
+                  {animationEventDocs.map((doc) => (
+                    <div 
+                      key={doc.id}
+                      className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1">
+                          <p className="font-medium text-slate-800 leading-tight">{doc.filename}</p>
+                          <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex justify-end">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
+                          <Download className="w-4 h-4" /> Télécharger
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Global Tips (Existing feature) */}
+                  {displayGlobalDocs.map((doc) => {
+                    const isSelected = selectedPdfs.includes(doc.id);
+                    return (
+                      <div 
+                        key={doc.id}
+                        onClick={() => handleTogglePdf(doc.id)}
+                        className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between ${isAdminOrDj ? 'cursor-pointer' : ''} ${isSelected ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                      >
+                        <div className="flex items-start gap-3">
+                          {isAdminOrDj && (
+                            <div className="mt-1 flex-shrink-0 flex items-center justify-center w-5 h-5 rounded border border-indigo-200">
+                              {isSelected && <Check className="w-4 h-4 text-indigo-600" />}
+                            </div>
+                          )}
+                          <div className="flex-1">
+                            <p className="font-medium text-slate-800 leading-tight">{doc.title || doc.filename}</p>
+                            <p className="text-xs text-slate-500 mt-1">Guide/Tips PDF</p>
+                          </div>
+                        </div>
+                        {(currentRoute.role !== 'admin' && (!isAdminOrDj || isSelected)) && (
+                          <div className="mt-4 flex justify-end">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleDownloadPdf(doc.id); }} 
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
+                              <Download className="w-4 h-4" /> Télécharger
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       );

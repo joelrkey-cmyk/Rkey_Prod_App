@@ -17,11 +17,10 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
   };
 
   const hasDJNotesContent = () => {
-    const hasDJNotes = contract.dj_notes && contract.dj_notes.trim().length > 0;
     const hasMusicStyles = contract.selected_music_styles && contract.selected_music_styles.length > 0;
     const hasBlacklist = contract.blacklist && contract.blacklist.trim().length > 0;
     const hasAperitifMusic = contract.background_music_aperitif && contract.background_music_aperitif.trim().length > 0;
-    return hasDJNotes || hasMusicStyles || hasBlacklist || hasAperitifMusic;
+    return hasMusicStyles || hasBlacklist || hasAperitifMusic;
   };
 
   const hasTechnicalNotesContent = () => {
@@ -387,21 +386,9 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
                   <strong>🚫 À ÉVITER :</strong> ${contract.blacklist}
                 </div>
               ` : ''}
-              ${contract.guest_intervention ? `
-                <div style="margin-top: 6pt; background: #f0f7ff; padding: 4pt; border: 1px solid #bee3f8; border-radius: 4px;">
-                  <strong>🎤 INTERVENTIONS :</strong> ${contract.guest_intervention}
-                </div>
-              ` : ''}
             </div>
           </div>
         </div>
-        
-        ${contract.dj_notes ? `
-        <div style="margin-top: 15pt; padding: 10pt; background-color: #f0f7ff; border-left: 5px solid #007bff; border-radius: 4px;">
-          <div style="font-size: 10px; font-weight: bold; color: #0056b3; margin-bottom: 4pt; text-transform: uppercase;">Notes complémentaires DJ</div>
-          <div style="font-size: 11px; color: #333; line-height: 1.6;">${contract.dj_notes.replace(/\n/g, '<br>')}</div>
-        </div>
-        ` : ''}
       </div>
       
       <div class="paraphe-box" style="color: #d0d0d0;">paraphe</div>

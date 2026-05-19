@@ -1008,6 +1008,35 @@ api.put('/public/dj-client/:id', async (req, res) => {
   res.json({ success: true });
 });
 
+api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const category = req.body.category || 'Animations et interventions';
+  const newDoc = {
+    id: uuidv4(),
+    filename: req.file.originalname,
+    category: category,
+    pdf_data: req.file.buffer.toString('base64'),
+    uploaded_at: new Date().toISOString()
+  };
+  await db.collection('contracts2').updateOne(
+    { id: req.params.id }, 
+    { $push: { event_documents: newDoc } }
+  );
+  res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at } });
+});
+
+api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
+  const contract = await db.collection('contracts2').findOne({ id: req.params.id });
+  if (!contract || !contract.event_documents) return res.status(404).json({ error: 'Not found' });
+  const doc = contract.event_documents.find(d => d.id === req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  
+  const buffer = Buffer.from(doc.pdf_data, 'base64');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.filename)}"`);
+  res.send(buffer);
+});
+
 api.get('/contracts2', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('contracts2').find({ status: { $nin: ['trash'] } }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });

@@ -32,6 +32,7 @@ export const ContractHistory = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterYear, setFilterYear] = useState('All');
+  const [filterTime, setFilterTime] = useState('All');
 
   const archiveYears = useMemo(() => {
     const years = new Set();
@@ -63,10 +64,23 @@ export const ContractHistory = ({
           return year === filterYear;
         });
       }
+      
+      if (filterTime !== 'All') {
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        list = list.filter(c => {
+          if (!c.client_info?.event_date) return false;
+          const eventDate = new Date(c.client_info.event_date);
+          eventDate.setHours(0,0,0,0);
+          if (filterTime === 'Upcoming') return eventDate >= today;
+          if (filterTime === 'Past') return eventDate < today;
+          return true;
+        });
+      }
     }
     
     return list;
-  }, [showTrash, showArchive, deletedContracts, archivedContracts, contracts, searchQuery, filterYear]);
+  }, [showTrash, showArchive, deletedContracts, archivedContracts, contracts, searchQuery, filterYear, filterTime]);
 
   return (
     <div className="space-y-6" data-testid="contract-history">
@@ -145,6 +159,16 @@ export const ContractHistory = ({
                 </div>
                 <div className="flex items-center gap-2 bg-white rounded-md border px-3 py-2">
                   <Filter className="h-4 w-4 text-gray-500" />
+                  <select
+                    value={filterTime}
+                    onChange={(e) => setFilterTime(e.target.value)}
+                    className="bg-transparent border-none text-sm outline-none cursor-pointer"
+                  >
+                    <option value="All">Tous les événements</option>
+                    <option value="Upcoming">Événements à venir</option>
+                    <option value="Past">Événements passés</option>
+                  </select>
+                  <span className="text-gray-300 mx-1">|</span>
                   <select
                     value={filterYear}
                     onChange={(e) => setFilterYear(e.target.value)}

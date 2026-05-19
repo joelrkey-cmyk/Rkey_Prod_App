@@ -105,7 +105,6 @@ function Contracts2App() {
   const [selectedMusicStyles, setSelectedMusicStyles] = useState([]);
   const [djNotes, setDjNotes] = useState("");
   const [blacklist, setBlacklist] = useState("");
-  const [guestIntervention, setGuestIntervention] = useState("");
   const [cateringNotes, setCateringNotes] = useState("");
   const [cateringDrinks, setCateringDrinks] = useState(false);
   const [selectedEvents, setSelectedEvents] = useState([]);
@@ -383,7 +382,6 @@ function Contracts2App() {
         setSelectedMusicStyles(parsed.selectedMusicStyles || []);
         setDjNotes(parsed.djNotes || "");
         setBlacklist(parsed.blacklist || "");
-        setGuestIntervention(parsed.guestIntervention || "");
         setCateringNotes(parsed.cateringNotes || "");
         setCateringDrinks(parsed.cateringDrinks || false);
         setSelectedEvents(parsed.selectedEvents || []);
@@ -415,7 +413,7 @@ function Contracts2App() {
       signatureImages, invoiceNumber, noDepositRequired, customDepositAmount,
       contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, 
       optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, 
-      guestIntervention, cateringNotes, cateringDrinks, selectedEvents, 
+      cateringNotes, cateringDrinks, selectedEvents, 
       customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, 
       hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, 
       depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, 
@@ -423,7 +421,7 @@ function Contracts2App() {
       selectedPdfNotes, cgvText
     };
     sessionStorage.setItem('contracts2_form_state', JSON.stringify(state));
-  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, guestIntervention, cateringNotes, cateringDrinks, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, technicianContact, selectedPdfNotes, cgvText]);
+  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, technicianContact, selectedPdfNotes, cgvText]);
 
   const loadContracts = async () => {
     try {
@@ -476,23 +474,24 @@ function Contracts2App() {
   };
 
   const permanentlyDeleteContract = async (contractId) => {
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer définitivement ce contrat ? Cette action est irréversible.")) {
       try { await axios.delete(`${API}/contracts2/${contractId}/permanent`); toast.success("Contrat supprimé définitivement"); loadDeletedContracts(); }
       catch (error) { toast.error("Erreur lors de la suppression définitive"); console.error(error); }
-    }
   };
 
   const deleteArchivedContract = async (contractId) => {
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer ce contrat archivé ? Il sera déplacé vers la corbeille.")) {
       try { await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'deleted' }); toast.success("Contrat archivé supprimé et déplacé vers la corbeille"); loadArchivedContracts(); loadDeletedContracts(); }
       catch (error) { toast.error("Erreur lors de la suppression du contrat archivé"); console.error(error); }
-    }
   };
 
   const markArchivedAsUnsigned = async (contractId) => {
-    if (window.confirm("Êtes-vous sûr de vouloir marquer ce contrat comme non signé ? Il sera remis dans les contrats en attente.")) {
       try { 
-        await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'draft' }); 
+        const response = await axios.get(`${API}/contracts2/${contractId}`);
+        if (response.data) {
+           const updated = { ...response.data, status: 'draft', signatures: [] };
+           await axios.put(`${API}/contracts2/${contractId}`, updated);
+        } else {
+           await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'draft' }); 
+        }
         toast.success("Contrat remis dans les contrats en attente"); 
         await loadContracts(); 
         await loadArchivedContracts(); 
@@ -500,7 +499,6 @@ function Contracts2App() {
         setShowTrash(false); 
       }
       catch (error) { toast.error("Erreur lors de la remise en attente du contrat"); console.error(error); }
-    }
   };
 
   // ═══════════════════════════════════════════════════
@@ -622,7 +620,7 @@ function Contracts2App() {
   const resetForm = () => {
     setClientInfo({ name: "", company: "", address: "", phone: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, phone2: "", guest_count: "" });
     setSelectedOptions(availableOptions.map(opt => ({ ...opt, selected: false })));
-    setSelectedNotes([]); setSelectedMusicStyles([]); setDjNotes(""); setBlacklist(""); setGuestIntervention("");
+    setSelectedNotes([]); setSelectedMusicStyles([]); setDjNotes(""); setBlacklist("");
     setCateringNotes(""); setCateringDrinks(false);
     setSelectedEvents([]); setCustomRepasEvents([]); setCustomMusiqueEvents([]); setEventNotes(""); setEventOrder([]);
     setBasePrice(0); setFraisMandat(0); setCachetArtiste(0); setPackSonorisation(false); setPackLumiere(false); setInvoiceNumber(""); setDiscountAmount(0); setCustomDepositAmount(0); setNoDepositRequired(false);
@@ -688,7 +686,6 @@ function Contracts2App() {
       selected_music_styles: selectedMusicStyles,
       dj_notes: djNotes,
       blacklist: blacklist,
-      guest_intervention: guestIntervention,
       catering_notes: cateringNotes,
       catering_drinks: cateringDrinks,
       background_music_aperitif: backgroundMusicAperitif,
@@ -767,7 +764,6 @@ function Contracts2App() {
     setSelectedMusicStyles(contract.selected_music_styles || []);
     setDjNotes(contract.dj_notes || "");
     setBlacklist(contract.blacklist || "");
-    setGuestIntervention(contract.guest_intervention || "");
     setCateringNotes(contract.catering_notes || "");
     setCateringDrinks(contract.catering_drinks || false);
     setBackgroundMusicAperitif(contract.background_music_aperitif || "");
@@ -883,7 +879,6 @@ function Contracts2App() {
     selected_music_styles: selectedMusicStyles,
     dj_notes: djNotes,
     blacklist: blacklist,
-    guest_intervention: guestIntervention,
     selected_events: selectedEvents,
     custom_repas_events: customRepasEvents,
     custom_musique_events: customMusiqueEvents,
@@ -1447,14 +1442,18 @@ function Contracts2App() {
               </Card>
               )}
 
-              {/* Section Guide Organisation & Documents PDF (Nouveau) */}
+              {/* Section Organisation et notes DJ (Nouveau) */}
               {!['Show Hypnose', 'Intervention hypnose'].includes(clientInfo.event_type) && (
               <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
                 <CardHeader className="pb-4">
-                  <CardTitle className="text-slate-800">Guide Organisation & Documents PDF</CardTitle>
+                  <CardTitle className="text-slate-800">Organisation et notes DJ</CardTitle>
                   <CardDescription>Sélectionnez les documents à inclure dans le Guide Organisation</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <div className="space-y-2 pb-4 border-b">
+                     <Label className="text-slate-700">Notes DJ complémentaires (visible uniquement par le DJ)</Label>
+                     <Textarea value={djNotes} onChange={(e) => setDjNotes(e.target.value)} rows={3} className="border-slate-300 focus:border-blue-500" placeholder="Informations complémentaires, remarques particulières..." />
+                  </div>
                   <div className="grid grid-cols-1 gap-3">
                     {/* Item Virtuel: Déroulement de soirée */}
                     <div 
@@ -1517,11 +1516,11 @@ function Contracts2App() {
               </Card>
               )}
 
-              {/* Notes DJ - Styles Musicaux (Uniquement pour R'Key) */}
+              {/* Styles Musicaux (Uniquement pour R'Key) */}
               {!['Show Hypnose', 'Intervention hypnose'].includes(clientInfo.event_type) && (getProfileData(selectedDjProfile).nom_artistique?.toLowerCase().includes("r'key") || getProfileData(selectedDjProfile).titre?.includes("Gérant")) && (
               <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
                 <CardHeader className="pb-4">
-                  <CardTitle className="text-slate-800">Notes DJ - Styles Musicaux</CardTitle>
+                  <CardTitle className="text-slate-800">Styles Musicaux</CardTitle>
                   <CardDescription>Sélectionnez les styles musicaux prévus pour la soirée</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1536,9 +1535,7 @@ function Contracts2App() {
                     ))}
                   </div>
                   <div className="space-y-2 pt-4 border-t"><Label className="text-slate-700">Fond sonore apéritif</Label><Input value={backgroundMusicAperitif} onChange={(e) => setBackgroundMusicAperitif(e.target.value)} className="border-slate-300 focus:border-blue-500" /></div>
-                  <div className="space-y-2 pt-2"><Label className="text-slate-700">Notes DJ complémentaires (visible uniquement par le DJ)</Label><Textarea value={djNotes} onChange={(e) => setDjNotes(e.target.value)} rows={3} className="border-slate-300 focus:border-blue-500" /></div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label className="text-slate-700">Intervention des invités</Label><Textarea value={guestIntervention} onChange={(e) => setGuestIntervention(e.target.value)} rows={2} className="border-slate-300 focus:border-blue-500" placeholder="Ex: Surprise pour les mariés, discours, etc." /></div>
+                  <div className="grid grid-cols-1 md:grid-cols-1 gap-4 pt-2">
                     <div className="space-y-2"><Label className="text-slate-700">Musiques à éviter</Label><Textarea value={blacklist} onChange={(e) => setBlacklist(e.target.value)} rows={2} className="border-slate-300 focus:border-blue-500" /></div>
                   </div>
                 </CardContent>

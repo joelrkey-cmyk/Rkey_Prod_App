@@ -12,10 +12,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from './ui/alert-dialog';
 import { Textarea } from './ui/textarea';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { 
   Plus, Edit, Trash2, ArrowLeft, CreditCard, Calendar, 
   AlertTriangle, CheckCircle, PauseCircle, XCircle,
-  Euro, TrendingUp, Clock, Bell, Settings, Tag, FolderOpen
+  Euro, TrendingUp, Clock, Bell, Settings, Tag, FolderOpen, Download
 } from 'lucide-react';
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -307,6 +309,50 @@ function AbonnementsApp() {
   // Trier les catégories par ordre alphabétique
   const sortedCategories = Object.keys(groupedSubscriptions).sort();
 
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    
+    // Titre
+    doc.setFontSize(18);
+    doc.text("Liste des Abonnements", 14, 22);
+    
+    // Stats rapides
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Total mensuel HT: ${stats.total_monthly?.toFixed(2)} euros`, 14, 30);
+    doc.text(`Total annuel HT: ${stats.total_annual?.toFixed(2)} euros`, 14, 36);
+    doc.text(`Abonnements actifs: ${stats.active_count}`, 100, 30);
+    
+    // Préparation des données pour le tableau
+    const tableColumn = ["Nom", "Categorie", "Fournisseur", "Montant TTC", "Freq.", "Statut", "Renouv."];
+    const tableRows = [];
+    
+    filteredSubscriptions.forEach(sub => {
+      const subData = [
+        sub.name,
+        sub.category || '-',
+        sub.provider || '-',
+        `${sub.amount_ttc?.toFixed(2)} €`,
+        sub.frequency,
+        sub.status,
+        getRenewalDisplay(sub) || '-'
+      ];
+      tableRows.push(subData);
+    });
+    
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 45,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [41, 128, 185] },
+      alternateRowStyles: { fillColor: [245, 245, 245] }
+    });
+    
+    doc.save(`abonnements_${new Date().toISOString().split('T')[0]}.pdf`);
+    toast.success("PDF exporté avec succès");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {/* Header */}
@@ -330,6 +376,14 @@ function AbonnementsApp() {
               </div>
             </div>
             <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                className="bg-transparent border-slate-500 text-white hover:bg-slate-600"
+                onClick={exportToPDF}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Exporter PDF
+              </Button>
               <Button 
                 variant="outline" 
                 className="bg-transparent border-slate-500 text-white hover:bg-slate-600"
