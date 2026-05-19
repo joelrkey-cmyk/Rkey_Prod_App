@@ -79,7 +79,7 @@ export const ContractHistory = ({
           data-testid="active-contracts-tab"
         >
           <FileText className="h-4 w-4 mr-2" />
-          Contrats Actifs ({contracts.length})
+          Contrats en attente ({contracts.length})
         </Button>
         <Button
           variant={showArchive ? "default" : "ghost"}
@@ -121,7 +121,7 @@ export const ContractHistory = ({
                 ) : showArchive ? (
                   <><Archive className="h-5 w-5 text-green-600" /><span>Contrats Archivés</span></>
                 ) : (
-                  <><FileText className="h-5 w-5 text-blue-600" /><span>Contrats Actifs</span></>
+                  <><FileText className="h-5 w-5 text-blue-600" /><span>Contrats en attente</span></>
                 )}
               </CardTitle>
               <CardDescription>

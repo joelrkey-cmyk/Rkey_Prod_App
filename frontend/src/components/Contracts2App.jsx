@@ -97,7 +97,7 @@ function Contracts2App() {
   const [packLumiere, setPackLumiere] = useState(false);
   const [optionsTarifNotes, setOptionsTarifNotes] = useState("");
   const [contracts, setContracts] = useState([]);
-  const [activeTab, setActiveTab] = useState("create");
+  const [activeTab, setActiveTab] = useState("history");
   const [generatedContract, setGeneratedContract] = useState(null);
   const [editingContract, setEditingContract] = useState(null);
   const [showConfiguration, setShowConfiguration] = useState(false);
@@ -464,7 +464,14 @@ function Contracts2App() {
   };
 
   const restoreContract = async (contractId) => {
-    try { await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'draft' }); toast.success("Contrat restauré avec succès !"); loadContracts(); loadDeletedContracts(); }
+    try { 
+      await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'draft' }); 
+      toast.success("Contrat restauré avec succès !"); 
+      await loadContracts(); 
+      await loadDeletedContracts(); 
+      setShowTrash(false); 
+      setShowArchive(false); 
+    }
     catch (error) { toast.error("Erreur lors de la restauration du contrat"); console.error(error); }
   };
 
@@ -483,9 +490,16 @@ function Contracts2App() {
   };
 
   const markArchivedAsUnsigned = async (contractId) => {
-    if (window.confirm("Êtes-vous sûr de vouloir marquer ce contrat comme non signé ? Il sera remis dans les contrats actifs.")) {
-      try { await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'draft' }); toast.success("Contrat remis dans les contrats actifs"); loadContracts(); loadArchivedContracts(); }
-      catch (error) { toast.error("Erreur lors de la remise en actif du contrat"); console.error(error); }
+    if (window.confirm("Êtes-vous sûr de vouloir marquer ce contrat comme non signé ? Il sera remis dans les contrats en attente.")) {
+      try { 
+        await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'draft' }); 
+        toast.success("Contrat remis dans les contrats en attente"); 
+        await loadContracts(); 
+        await loadArchivedContracts(); 
+        setShowArchive(false); 
+        setShowTrash(false); 
+      }
+      catch (error) { toast.error("Erreur lors de la remise en attente du contrat"); console.error(error); }
     }
   };
 
@@ -630,7 +644,7 @@ function Contracts2App() {
   // SAVE / LOAD CONTRACT
   // ═══════════════════════════════════════════════════
 
-  const saveContractDraft = async () => {
+  const saveContractDraft = async (switchToPreview = true) => {
     if (!clientInfo.name || !clientInfo.email) {
       toast.error("Nom du client et email sont requis pour sauvegarder un brouillon.");
       return;
@@ -697,7 +711,7 @@ function Contracts2App() {
         setGeneratedContract(updatedContract);
         setContracts(prev => prev.map(c => c.id === editingContract.id ? updatedContract : c));
         toast.success("Brouillon de contrat mis à jour avec succès !");
-        setActiveTab("preview");
+        if (switchToPreview === true) setActiveTab("preview");
       } else {
         const response = await axios.post(`${API}/contracts2`, contract);
         const newContract = response.data;
@@ -705,7 +719,7 @@ function Contracts2App() {
         setContracts(prev => [newContract, ...prev]);
         setEditingContract(newContract);
         toast.success("Brouillon de contrat sauvegardé avec succès !");
-        setActiveTab("preview");
+        if (switchToPreview === true) setActiveTab("preview");
       }
     } catch (error) {
       console.error('Error saving contract draft:', error);
@@ -1522,7 +1536,7 @@ function Contracts2App() {
                     ))}
                   </div>
                   <div className="space-y-2 pt-4 border-t"><Label className="text-slate-700">Fond sonore apéritif</Label><Input value={backgroundMusicAperitif} onChange={(e) => setBackgroundMusicAperitif(e.target.value)} className="border-slate-300 focus:border-blue-500" /></div>
-                  <div className="space-y-2 pt-2"><Label className="text-slate-700">Notes DJ complémentaires</Label><Textarea value={djNotes} onChange={(e) => setDjNotes(e.target.value)} rows={3} className="border-slate-300 focus:border-blue-500" /></div>
+                  <div className="space-y-2 pt-2"><Label className="text-slate-700">Notes DJ complémentaires (visible uniquement par le DJ)</Label><Textarea value={djNotes} onChange={(e) => setDjNotes(e.target.value)} rows={3} className="border-slate-300 focus:border-blue-500" /></div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2"><Label className="text-slate-700">Intervention des invités</Label><Textarea value={guestIntervention} onChange={(e) => setGuestIntervention(e.target.value)} rows={2} className="border-slate-300 focus:border-blue-500" placeholder="Ex: Surprise pour les mariés, discours, etc." /></div>
                     <div className="space-y-2"><Label className="text-slate-700">Musiques à éviter</Label><Textarea value={blacklist} onChange={(e) => setBlacklist(e.target.value)} rows={2} className="border-slate-300 focus:border-blue-500" /></div>
@@ -1770,10 +1784,15 @@ function Contracts2App() {
               )}
 
               {/* Bouton d'action */}
-              <div className="lg:col-span-2 flex justify-center mb-6">
-                <Button onClick={saveContractDraft} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg" disabled={!clientInfo.name || !clientInfo.email}>
+              <div className="lg:col-span-2 flex justify-center gap-4 mb-6">
+                <Button onClick={() => saveContractDraft(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg" disabled={!clientInfo.name || !clientInfo.email}>
                   <FileText className="h-5 w-5 mr-2" />Aperçu du contrat
                 </Button>
+                {editingContract && (
+                  <Button onClick={() => saveContractDraft(false)} className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-lg" disabled={!clientInfo.name || !clientInfo.email}>
+                    <Save className="h-5 w-5 mr-2" />Mettre à jour
+                  </Button>
+                )}
               </div>
 
               {/* CGV Section */}

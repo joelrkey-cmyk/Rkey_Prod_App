@@ -87,8 +87,7 @@ const DjClientApp = ({ isPublic = false }) => {
              }
          }
       } else {
-          const [contractsRes, archivedRes, optionsRes] = await Promise.all([
-              fetch(`${BACKEND_URL}/api/contracts2`, { headers }),
+          const [archivedRes, optionsRes] = await Promise.all([
               fetch(`${BACKEND_URL}/api/contracts2/archived`, { headers }),
               fetch(`${BACKEND_URL}/api/material-options`, { headers })
           ]);
@@ -104,11 +103,6 @@ const DjClientApp = ({ isPublic = false }) => {
               }
           }
           
-          if (contractsRes.ok) {
-              const data = await contractsRes.json();
-              const active = data.filter(c => !['deleted', 'archived'].includes(c.status));
-              allContracts = [...allContracts, ...active];
-          }
           if (archivedRes.ok) {
               const data = await archivedRes.json();
               allContracts = [...allContracts, ...data];
@@ -629,13 +623,6 @@ const DjClientApp = ({ isPublic = false }) => {
               })}
             </div>
           )}
-
-          {!canEdit && notes && (
-            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-gray-700">
-              <span className="font-semibold block mb-1">Notes du DJ :</span>
-              {notes}
-            </div>
-          )}
         </div>
       </div>
     );
@@ -805,15 +792,6 @@ const DjClientApp = ({ isPublic = false }) => {
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
         const splitText = doc.splitTextToSize(blacklist, 180);
         doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
-      }
-
-      if (notes) {
-        if (y > 270) { doc.addPage(); y = 20; }
-        doc.setFontSize(12); doc.setTextColor(0, 0, 0);
-        doc.text("Notes DJ:", 15, y); y += 6;
-        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
-        const splitText = doc.splitTextToSize(notes, 180);
-        doc.text(splitText, 15, y);
       }
 
       doc.save(`Recapitulatif_${ev.client.name.replace(/\s+/g, '_')}.pdf`);

@@ -964,7 +964,7 @@ api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
 
 api.get('/public/dj-client/:slug', async (req, res) => {
   const slug = req.params.slug.toLowerCase();
-  const contracts = await db.collection('contracts2').find({ status: { $nin: ['trash'] } }, { projection: { _id: 0 } }).toArray();
+  const contracts = await db.collection('contracts2').find({ status: 'archived' }, { projection: { _id: 0 } }).toArray();
   
   const mappedEvents = contracts.map(c => {
     const info = c.client_info || {};
