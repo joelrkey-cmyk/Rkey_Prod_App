@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2 } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { generateMandatHTML, generateEntrepriseHTML } from './contracts2/mandatHtmlGenerator';
-import { defaultCompanySettings } from './contracts2/constants';
+import { defaultCompanySettings, musicStyles as availableMusicStyles } from './contracts2/constants';
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -168,7 +168,12 @@ const DjClientApp = ({ isPublic = false }) => {
             chatMessages: c.chat_messages || [],
             selectedPdfNotes: c.selected_pdf_notes || [],
             eventDocuments: c.event_documents || [],
-            notifications: c.notifications || { admin: {}, dj: {}, client: {} }
+            notifications: c.notifications || { admin: {}, dj: {}, client: {} },
+            cateringNotes: c.catering_notes || "",
+            cateringDrinks: c.catering_drinks || false,
+            selectedMusicStyles: c.selected_music_styles || [],
+            backgroundMusicAperitif: c.background_music_aperitif || "",
+            showMusicStylesToClient: c.show_music_styles_to_client !== undefined ? c.show_music_styles_to_client : true
          };
       });
       
@@ -221,11 +226,12 @@ const DjClientApp = ({ isPublic = false }) => {
           let section = null;
           if ('chat_messages' in payload) section = 'chat';
           if ('requested_options' in payload) section = 'options';
-          if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload) section = 'playlist';
+          if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload) section = 'playlist';
           if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload) section = 'planning';
           if ('client_photo' in payload) section = 'client_info';
           if ('selected_pdf_notes' in payload) section = 'documents';
           if ('venue_photos' in payload || 'venue_notes' in payload || 'has_limiteur_son' in payload || 'has_detecteur_fumee' in payload || 'has_no_limiteur_ni_detecteur' in payload) section = 'venue';
+          if ('catering_notes' in payload || 'catering_drinks' in payload) section = 'catering';
           
           if (section && currentRoute.role) {
               const rolesToNotify = ['admin', 'dj', 'client'].filter(r => r !== currentRoute.role);
@@ -621,7 +627,7 @@ const DjClientApp = ({ isPublic = false }) => {
                       placeholder="HH:MM"
                     />
                   ) : (
-                    <div className="font-bold text-gray-700 w-16">{item.time || '--:--'}</div>
+                    item.time ? <div className="font-bold text-gray-700 w-16">{item.time}</div> : null
                   )}
 
                   {canEdit ? (
@@ -865,7 +871,11 @@ const DjClientApp = ({ isPublic = false }) => {
         doc.setTextColor(75, 85, 99);
         clientScheduleItems.forEach(item => {
           const itemLabel = item.isSurprise ? "Surprise" : (item.label || item.description);
-          doc.text(`${item.time || '--:--'} - ${itemLabel}`, 15, y);
+          if (item.time) {
+            doc.text(`${item.time} - ${itemLabel}`, 15, y);
+          } else {
+            doc.text(itemLabel, 15, y);
+          }
           y += 6;
           if (y > 280) { doc.addPage(); y = 20; }
         });
@@ -982,7 +992,11 @@ const DjClientApp = ({ isPublic = false }) => {
         doc.setTextColor(75, 85, 99);
         scheduleItems.forEach(item => {
           const surpriseText = item.isSurprise ? " (SURPRISE)" : "";
-          doc.text(`${item.time || '--:--'} - ${item.label || item.description}${surpriseText}`, 15, y);
+          if (item.time) {
+            doc.text(`${item.time} - ${item.label || item.description}${surpriseText}`, 15, y);
+          } else {
+            doc.text(`${item.label || item.description}${surpriseText}`, 15, y);
+          }
           y += 6;
           if (y > 280) { doc.addPage(); y = 20; }
         });
@@ -1925,6 +1939,200 @@ const DjClientApp = ({ isPublic = false }) => {
       );
     };
 
+    const CateringSection = () => {
+      const ev = events.find(e => e.id === currentRoute.eventId);
+      if (!ev) return null;
+      
+      const isClient = currentRoute.role === 'client';
+      const isDj = currentRoute.role === 'dj';
+      const isAdmin = currentRoute.role === 'admin';
+      
+      return (
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mt-6 ${getSectionHighlightClass('catering')}`} id="section-catering">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Utensils className="w-5 h-5 text-indigo-600" />
+              Catering & Repas
+            </h3>
+          </div>
+          
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+              <div className="col-span-1 md:col-span-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Conditions de repas (selon contrat)</p>
+                {isAdmin ? (
+                  <textarea
+                    className="w-full border border-gray-300 rounded-lg p-3 text-sm min-h-[80px] bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
+                    placeholder="Précisez les conditions de repas convenues..."
+                    value={ev.cateringNotes || ''}
+                    onChange={e => {
+                      const newEvents = [...events];
+                      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                      newEvents[idx].cateringNotes = e.target.value;
+                      setEvents(newEvents);
+                    }}
+                    onBlur={e => updateContractDb(currentRoute.eventId, { catering_notes: e.target.value })}
+                  />
+                ) : (
+                  <p className="font-medium text-gray-900 bg-white p-3 rounded border border-gray-200 min-h-[60px] whitespace-pre-wrap">
+                    {ev.cateringNotes || "Aucune condition spécifique renseignée."}
+                  </p>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-3">
+                {isAdmin ? (
+                   <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-700">
+                     <input type="checkbox" checked={ev.cateringDrinks || false} onChange={e => {
+                       const val = e.target.checked;
+                       updateContractDb(currentRoute.eventId, { catering_drinks: val });
+                       const newEvents = [...events];
+                       const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                       newEvents[idx].cateringDrinks = val;
+                       setEvents(newEvents);
+                     }} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500" />
+                     Boissons comprises
+                   </label>
+                ) : (
+                   <div className="flex items-center gap-2 font-medium text-gray-700 bg-white p-3 rounded border border-gray-200">
+                     {ev.cateringDrinks ? (
+                       <><CheckCircle className="w-5 h-5 text-green-500" /> Boissons comprises dans le catering</>
+                     ) : (
+                       <><XCircle className="w-5 h-5 text-red-500" /> Boissons non comprises</>
+                     )}
+                   </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const MusicStylesSection = () => {
+      const ev = events.find(e => e.id === currentRoute.eventId);
+      if (!ev) return null;
+
+      const isClient = currentRoute.role === 'client';
+      const isAdminOrDj = currentRoute.role === 'admin' || currentRoute.role === 'dj';
+      
+      if (isClient && !ev.showMusicStylesToClient) {
+        return null;
+      }
+
+      const handleMusicStyleToggle = (style) => {
+        if (!isAdminOrDj) return;
+        const currentStyles = ev.selectedMusicStyles || [];
+        const isSelected = currentStyles.includes(style);
+        const newStyles = isSelected 
+          ? currentStyles.filter(s => s !== style)
+          : [...currentStyles, style];
+        
+        updateContractDb(currentRoute.eventId, { selected_music_styles: newStyles });
+        const newEvents = [...events];
+        const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+        newEvents[idx].selectedMusicStyles = newStyles;
+        setEvents(newEvents);
+      };
+
+      const selectAllMusicStyles = () => {
+        if (!isAdminOrDj) return;
+        updateContractDb(currentRoute.eventId, { selected_music_styles: [...availableMusicStyles] });
+        const newEvents = [...events];
+        const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+        newEvents[idx].selectedMusicStyles = [...availableMusicStyles];
+        setEvents(newEvents);
+      };
+
+      return (
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('playlist')}`}>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Music className="w-5 h-5 text-indigo-600" />
+              Styles Musicaux & Fond Sonore
+            </h3>
+            {isAdminOrDj && (
+              <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700 bg-gray-100 py-1.5 px-3 rounded-full hover:bg-gray-200 transition">
+                <input 
+                  type="checkbox" 
+                  checked={ev.showMusicStylesToClient} 
+                  onChange={e => {
+                    const val = e.target.checked;
+                    updateContractDb(currentRoute.eventId, { show_music_styles_to_client: val });
+                    const newEvents = [...events];
+                    const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                    newEvents[idx].showMusicStylesToClient = val;
+                    setEvents(newEvents);
+                  }} 
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" 
+                />
+                {!ev.showMusicStylesToClient ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-green-600" />}
+                Montrer au client
+              </label>
+            )}
+          </div>
+          
+          <div className="space-y-6">
+            <div className="border rounded-lg p-5 bg-indigo-50 border-indigo-200">
+              <h4 className="font-semibold text-indigo-700 mb-3 text-base">Fond Sonore (Apéritif / Accueil)</h4>
+              <div>
+                {isAdminOrDj ? (
+                  <input
+                    type="text"
+                    value={ev.backgroundMusicAperitif || ''}
+                    onChange={e => {
+                      const newEvents = [...events];
+                      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                      newEvents[idx].backgroundMusicAperitif = e.target.value;
+                      setEvents(newEvents);
+                    }}
+                    onBlur={e => updateContractDb(currentRoute.eventId, { background_music_aperitif: e.target.value })}
+                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
+                    placeholder="Ex: Jazz instrumental, Lounge, Chill-out..."
+                  />
+                ) : (
+                  <p className="font-medium text-gray-900 bg-white p-3 rounded border border-indigo-100 min-h-[44px]">
+                    {ev.backgroundMusicAperitif || "Aucun fond sonore spécifique renseigné."}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="border rounded-lg p-5 bg-gray-50 border-gray-200">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-semibold text-gray-700 text-base">Styles Musicaux Abordés</h4>
+                {isAdminOrDj && (
+                  <button type="button" onClick={selectAllMusicStyles} className="text-xs text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-full border border-purple-200 transition">
+                    Tout sélectionner
+                  </button>
+                )}
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                {availableMusicStyles.map((style) => (
+                  <div 
+                    key={style} 
+                    className={`p-2 rounded-lg border-2 transition-all text-center text-sm ${
+                      (ev.selectedMusicStyles || []).includes(style) 
+                        ? "border-purple-500 bg-purple-50 text-purple-700 font-medium font-medium cursor-pointer" 
+                        : "border-slate-200 bg-white text-slate-500"
+                    } ${isAdminOrDj ? "cursor-pointer hover:border-slate-300" : ""}`} 
+                    onClick={() => handleMusicStyleToggle(style)}
+                  >
+                    {style}
+                  </div>
+                ))}
+              </div>
+              
+              {isClient && (!ev.selectedMusicStyles || ev.selectedMusicStyles.length === 0) && (
+                <p className="text-gray-500 text-sm italic mt-2">Le DJ n'a pas encore défini de styles musicaux.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     const VenueSection = () => {
       const ev = events.find(e => e.id === currentRoute.eventId);
       if (!ev) return null;
@@ -1970,7 +2178,7 @@ const DjClientApp = ({ isPublic = false }) => {
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <MapPin className="w-5 h-5 text-indigo-600" />
-              Lieu de réception
+              Lieu de réception {isClient && <span className="text-xs font-normal text-gray-500 italic mt-1">(Facultatif mais apprécié)</span>}
             </h3>
           </div>
           
@@ -2170,7 +2378,9 @@ const DjClientApp = ({ isPublic = false }) => {
           </div>
         )}
 
+        <MusicStylesSection />
         <VenueSection />
+        <CateringSection />
       </div>
     );
   };
