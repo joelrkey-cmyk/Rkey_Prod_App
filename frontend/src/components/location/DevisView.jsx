@@ -66,6 +66,8 @@ function DevisView({ setCurrentView }) {
     dj_id: '',
     start_date: '',
     end_date: '',
+    force_weekend: false,
+    manual_coefficient: '', // Coefficient personnalisé
     discount_type: 'percent', // 'percent' ou 'fixed'
     discount_percent: 0,
     discount_amount: 0,
@@ -367,7 +369,8 @@ function DevisView({ setCurrentView }) {
       const finalDeliveryCost = deliveryResult.price || 0;
 
       // Obtenir les informations de dégressivité pour le calcul côté frontend
-      const degressionInfo = getDegressionInfo(formData.start_date, formData.end_date, formData.force_weekend);
+      const manualCoef = formData.manual_coefficient ? parseFloat(formData.manual_coefficient) : null;
+      const degressionInfo = getDegressionInfo(formData.start_date, formData.end_date, formData.force_weekend, manualCoef);
 
       // Calculer le sous-total matériel avec dégressivité
       let computedSubtotal = 0;
@@ -425,6 +428,7 @@ function DevisView({ setCurrentView }) {
         degression_coefficient: degressionInfo.coef,
         degression_type: degressionInfo.isWeekendDetected ? 'weekend' : degressionInfo.label,
         force_weekend: formData.force_weekend,
+        manual_coefficient: formData.manual_coefficient,
         items: selectedEquipment.map(item => ({
           equipment_id: item.equipment_id,
           quantity: parseInt(item.quantity) || 1
@@ -527,7 +531,8 @@ function DevisView({ setCurrentView }) {
       const finalDeliveryCost = deliveryResult.price || 0;
 
       // Obtenir les informations de dégressivité
-      const degressionInfo = getDegressionInfo(formData.start_date, formData.end_date, formData.force_weekend);
+      const manualCoef = formData.manual_coefficient ? parseFloat(formData.manual_coefficient) : null;
+      const degressionInfo = getDegressionInfo(formData.start_date, formData.end_date, formData.force_weekend, manualCoef);
 
       // Calculer les totaux
       let computedSubtotal = 0;
@@ -574,6 +579,7 @@ function DevisView({ setCurrentView }) {
         degression_coefficient: degressionInfo.coef,
         degression_type: degressionInfo.isWeekendDetected ? 'weekend' : degressionInfo.label,
         force_weekend: formData.force_weekend,
+        manual_coefficient: formData.manual_coefficient,
         items: selectedEquipment.map(item => ({
           equipment_id: item.equipment_id,
           quantity: parseInt(item.quantity) || 1
@@ -643,7 +649,8 @@ function DevisView({ setCurrentView }) {
       const finalDeliveryCost = deliveryResult.price || 0;
 
       // Obtenir les informations de dégressivité
-      const degressionInfo = getDegressionInfo(formData.start_date, formData.end_date, formData.force_weekend);
+      const manualCoef = formData.manual_coefficient ? parseFloat(formData.manual_coefficient) : null;
+      const degressionInfo = getDegressionInfo(formData.start_date, formData.end_date, formData.force_weekend, manualCoef);
       
       // Calculer la remise
       let finalDiscountPercent = 0;
@@ -699,6 +706,7 @@ function DevisView({ setCurrentView }) {
         degression_coefficient: degressionInfo.coef,
         degression_type: degressionInfo.isWeekendDetected ? 'weekend' : degressionInfo.label,
         force_weekend: formData.force_weekend,
+        manual_coefficient: formData.manual_coefficient,
         status: 'Brouillon', // Marquer comme brouillon
         items: selectedEquipment.filter(item => item.equipment_id).map(item => ({
           equipment_id: item.equipment_id,
@@ -822,6 +830,7 @@ function DevisView({ setCurrentView }) {
       deposit_payment_method: quote.deposit_payment_method || '',
       // Dégressivité - garder null si c'était null, sinon utiliser la valeur
       force_weekend: quote.force_weekend === true ? true : (quote.force_weekend === false ? false : null),
+      manual_coefficient: quote.manual_coefficient || '',
       internal_notes: quote.internal_notes || ''
     });
     setIsQuickQuote(quote.is_quick_quote || false);
@@ -991,7 +1000,8 @@ function DevisView({ setCurrentView }) {
     const days = calculateDays(formData.start_date, formData.end_date);
     
     // Obtenir les informations de dégressivité
-    const degressionInfo = getDegressionInfo(formData.start_date, formData.end_date, formData.force_weekend);
+    const manualCoef = formData.manual_coefficient ? parseFloat(formData.manual_coefficient) : null;
+    const degressionInfo = getDegressionInfo(formData.start_date, formData.end_date, formData.force_weekend, manualCoef);
     
     let subtotal = 0;
 
@@ -1976,20 +1986,34 @@ function DevisView({ setCurrentView }) {
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mb-3">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm font-semibold text-amber-800">📅 Tarification dégressivité</span>
-                          <div className="flex items-center gap-2">
-                            <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={formData.force_weekend === true}
+                                  onChange={(e) => {
+                                    // Simple toggle: coché = forfait weekend, décoché = tarif normal
+                                    const newValue = formData.force_weekend === true ? false : true;
+                                    setFormData({...formData, force_weekend: newValue});
+                                  }}
+                                  className="w-3 h-3"
+                                />
+                                <span>Forfait weekend</span>
+                              </label>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-gray-600 font-medium">Coef manuel (optionnel)</label>
                               <input
-                                type="checkbox"
-                                checked={formData.force_weekend === true}
-                                onChange={(e) => {
-                                  // Simple toggle: coché = forfait weekend, décoché = tarif normal
-                                  const newValue = formData.force_weekend === true ? false : true;
-                                  setFormData({...formData, force_weekend: newValue});
-                                }}
-                                className="w-3 h-3"
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                value={formData.manual_coefficient || ''}
+                                onChange={(e) => setFormData({...formData, manual_coefficient: e.target.value})}
+                                placeholder="ex: 4.5"
+                                className="w-24 text-sm border-gray-300 rounded-md py-1"
                               />
-                              <span>Forfait weekend</span>
-                            </label>
+                            </div>
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-sm">

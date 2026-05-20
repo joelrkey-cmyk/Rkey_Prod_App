@@ -77,7 +77,7 @@ export const calculateRentalDays = (startDate, endDate) => {
  * @param {boolean} isWeekend - Force le mode weekend (override manuel)
  * @returns {Object} - { coef, label, description, days, isWeekendDetected }
  */
-export const getDegressionInfo = (startDate, endDate, forceWeekend = null) => {
+export const getDegressionInfo = (startDate, endDate, forceWeekend = null, manualCoef = null) => {
   const days = calculateRentalDays(startDate, endDate);
   
   // Forfait weekend uniquement si forcé manuellement
@@ -86,19 +86,52 @@ export const getDegressionInfo = (startDate, endDate, forceWeekend = null) => {
   if (isWeekendDetected) {
     return {
       ...DEGRESSION_COEFFICIENTS.weekend,
+      coef: manualCoef !== null ? parseFloat(manualCoef) : DEGRESSION_COEFFICIENTS.weekend.coef,
       days,
       effectiveDays: 1,
-      isWeekendDetected: true
+      isWeekendDetected: true,
+      isManualOverridden: manualCoef !== null
     };
   }
   
-  // Pour 5+ jours, appliquer le tarif semaine
+  // Si on a un coefficient manuel
+  if (manualCoef !== null) {
+    return {
+      coef: parseFloat(manualCoef),
+      label: `Coef manuel (x${manualCoef})`,
+      description: `Coefficient forcé manuellement (${days} jours)`,
+      days,
+      effectiveDays: days,
+      isWeekendDetected: false,
+      isManualOverridden: true
+    };
+  }
+  
+  // Au-delà de 7 jours, on applique une logique plus large (ex: +1.5 coef par semaine supplémentaire)
+  if (days > 7) {
+    const extraWeeks = (days - 7) / 7;
+    // Base 7 jours = 3.0. +1.5 par semaine. Arrondi à 1 décimale près.
+    const calculatedCoef = Math.round((3.0 + extraWeeks * 1.5) * 10) / 10;
+    
+    return {
+      coef: calculatedCoef,
+      label: 'Longue durée',
+      description: `${days} jours consécutifs`,
+      days,
+      effectiveDays: days,
+      isWeekendDetected: false,
+      isManualOverridden: false
+    };
+  }
+  
+  // Pour 5 à 7 jours, appliquer le tarif semaine
   if (days >= 5) {
     return {
       ...DEGRESSION_COEFFICIENTS[7],
       days,
       effectiveDays: 7,
-      isWeekendDetected: false
+      isWeekendDetected: false,
+      isManualOverridden: false
     };
   }
   
@@ -109,7 +142,8 @@ export const getDegressionInfo = (startDate, endDate, forceWeekend = null) => {
     ...coefData,
     days,
     effectiveDays: days,
-    isWeekendDetected: false
+    isWeekendDetected: false,
+    isManualOverridden: false
   };
 };
 

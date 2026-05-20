@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
+import { generateMandatHTML, generateEntrepriseHTML } from './contracts2/mandatHtmlGenerator';
+import { defaultCompanySettings } from './contracts2/constants';
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -125,6 +127,8 @@ const DjClientApp = ({ isPublic = false }) => {
 
          return {
             id: c.id,
+            rawContractData: c,
+            eventType: eventType,
             name: `${eventType} - ${clientName}`,
             date: info.event_date || c.event_date || '1970-01-01',
             dj: { 
@@ -155,6 +159,10 @@ const DjClientApp = ({ isPublic = false }) => {
             playlistLink: c.playlist_link || "",
             manualMustPlay: c.manual_must_play || "",
             blacklist: c.blacklist || "",
+            entreeMaries: c.entree_maries || "",
+            ouvertureBal: c.ouverture_bal || "",
+            dessert: c.dessert || "",
+            dedicaces: c.dedicaces || "",
             selectedOptions: c.selected_options || [],
             requestedOptions: c.requested_options || [],
             chatMessages: c.chat_messages || [],
@@ -180,6 +188,10 @@ const DjClientApp = ({ isPublic = false }) => {
   const [playlistLink, setPlaylistLink] = useState("");
   const [manualMustPlay, setManualMustPlay] = useState("");
   const [blacklist, setBlacklist] = useState("");
+  const [entreeMaries, setEntreeMaries] = useState("");
+  const [ouvertureBal, setOuvertureBal] = useState("");
+  const [dessert, setDessert] = useState("");
+  const [dedicaces, setDedicaces] = useState("");
   const [chatMessages, setChatMessages] = useState([]);
 
   useEffect(() => {
@@ -191,6 +203,10 @@ const DjClientApp = ({ isPublic = false }) => {
         setPlaylistLink(ev.playlistLink || "");
         setManualMustPlay(ev.manualMustPlay || "");
         setBlacklist(ev.blacklist || "");
+        setEntreeMaries(ev.entreeMaries || "");
+        setOuvertureBal(ev.ouvertureBal || "");
+        setDessert(ev.dessert || "");
+        setDedicaces(ev.dedicaces || "");
         setChatMessages(ev.chatMessages || []);
       }
     }
@@ -330,7 +346,9 @@ const DjClientApp = ({ isPublic = false }) => {
         </thead>
         <tbody className="divide-y divide-gray-100">
           {eventsList.map(ev => {
-            const notifCount = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]).length : 0;
+            const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
+            const notifCount = notifKeys.length;
+            const hasChatNotif = notifKeys.includes('chat');
             return (
               <tr key={ev.id} className="hover:bg-gray-50 transition-colors">
                 <td className="py-4 px-4 flex items-center gap-2">
@@ -341,7 +359,7 @@ const DjClientApp = ({ isPublic = false }) => {
                     {ev.name}
                   </button>
                   {notifCount > 0 && (
-                    <span className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse shadow-sm">
+                    <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
                       {notifCount}
                     </span>
                   )}
@@ -664,6 +682,9 @@ const DjClientApp = ({ isPublic = false }) => {
       }
     };
 
+    const ev = events.find(e => e.id === currentRoute.eventId);
+    const isMariage = ev && ev.eventType && ev.eventType.toLowerCase().includes('mariage');
+
     return (
       <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 ${getSectionHighlightClass('playlist')}`}>
         <div className="flex justify-between items-center mb-6">
@@ -721,6 +742,65 @@ const DjClientApp = ({ isPublic = false }) => {
                  placeholder={playlistLink.trim().length > 0 ? "Non disponible lorsqu'un lien de playlist est fourni." : "Ajoutez des titres manuellement ici..."}
                />
             </div>
+          </div>
+
+          {isMariage && (
+            <div className="border rounded-lg p-5 bg-indigo-50 border-indigo-200">
+              <h4 className="font-semibold text-indigo-700 mb-3 text-base">Section Mariage</h4>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Entrée des mariés</label>
+                  <input
+                    type="text"
+                    value={entreeMaries}
+                    onChange={(e) => setEntreeMaries(e.target.value)}
+                    onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { entree_maries: e.target.value })}}
+                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
+                    placeholder="Titre exact (ex: Bruno Mars - Marry You)"
+                    disabled={role !== 'client' && role !== 'admin'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ouverture de bal</label>
+                  <input
+                    type="text"
+                    value={ouvertureBal}
+                    onChange={(e) => setOuvertureBal(e.target.value)}
+                    onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { ouverture_bal: e.target.value })}}
+                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
+                    placeholder="Titre exact (ex: Ed Sheeran - Perfect)"
+                    disabled={role !== 'client' && role !== 'admin'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dessert (facultatif)</label>
+                  <input
+                    type="text"
+                    value={dessert}
+                    onChange={(e) => setDessert(e.target.value)}
+                    onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { dessert: e.target.value })}}
+                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
+                    placeholder="Titre exact ou laissez vide si géré par le DJ"
+                    disabled={role !== 'client' && role !== 'admin'}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="border rounded-lg p-5 bg-blue-50 border-blue-200">
+            <h4 className="font-semibold text-blue-700 mb-3 text-base">Dédicaces dans la soirée</h4>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+               Titres à dédicacer (issus de votre playlist)
+            </label>
+            <textarea
+              value={dedicaces}
+              onChange={(e) => setDedicaces(e.target.value)}
+              onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { dedicaces: e.target.value })}}
+              className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              placeholder="Ex: ACDC - Highway to hell pour tonton Xavier"
+              disabled={role !== 'client' && role !== 'admin'}
+            />
           </div>
           
           <div className="border rounded-lg p-5 bg-red-50 border-red-100">
@@ -812,6 +892,42 @@ const DjClientApp = ({ isPublic = false }) => {
         doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
       }
 
+      if (ev && ev.eventType && ev.eventType.toLowerCase().includes('mariage')) {
+        if (entreeMaries) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.setFontSize(12); doc.setTextColor(67, 56, 202); // indigo-700
+          doc.text("Entrée des mariés:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitText = doc.splitTextToSize(entreeMaries, 180);
+          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        }
+        if (ouvertureBal) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.setFontSize(12); doc.setTextColor(67, 56, 202); 
+          doc.text("Ouverture de bal:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitText = doc.splitTextToSize(ouvertureBal, 180);
+          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        }
+        if (dessert) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.setFontSize(12); doc.setTextColor(67, 56, 202);
+          doc.text("Dessert:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitText = doc.splitTextToSize(dessert, 180);
+          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        }
+      }
+
+      if (dedicaces) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(12); doc.setTextColor(29, 78, 216); // blue-700
+        doc.text("Dédicaces dans la soirée:", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(dedicaces, 180);
+        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+      }
+
       if (blacklist) {
         if (y > 270) { doc.addPage(); y = 20; }
         doc.setFontSize(12); doc.setTextColor(185, 28, 28); // red-700
@@ -890,6 +1006,42 @@ const DjClientApp = ({ isPublic = false }) => {
         doc.text("À passer absolument:", 15, y); y += 6;
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
         const splitText = doc.splitTextToSize(manualMustPlay, 180);
+        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+      }
+
+      if (ev && ev.eventType && ev.eventType.toLowerCase().includes('mariage')) {
+        if (entreeMaries) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.setFontSize(12); doc.setTextColor(67, 56, 202); 
+          doc.text("Entrée des mariés:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitText = doc.splitTextToSize(entreeMaries, 180);
+          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        }
+        if (ouvertureBal) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.setFontSize(12); doc.setTextColor(67, 56, 202); 
+          doc.text("Ouverture de bal:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitText = doc.splitTextToSize(ouvertureBal, 180);
+          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        }
+        if (dessert) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.setFontSize(12); doc.setTextColor(67, 56, 202);
+          doc.text("Dessert:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitText = doc.splitTextToSize(dessert, 180);
+          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        }
+      }
+
+      if (dedicaces) {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.setFontSize(12); doc.setTextColor(29, 78, 216);
+        doc.text("Dédicaces dans la soirée:", 15, y); y += 6;
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        const splitText = doc.splitTextToSize(dedicaces, 180);
         doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
       }
 
@@ -1119,6 +1271,61 @@ const DjClientApp = ({ isPublic = false }) => {
         window.open(downloadUrl, '_blank');
       };
       
+      const exportHTMLToPDF = async (htmlContent, fileName) => {
+        try {
+          toast.info("Génération PDF du contrat en cours...", { duration: 3000 });
+          const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+          const tempContainer = document.createElement('div');
+          tempContainer.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:794px;background:white;padding:20px;';
+          tempContainer.innerHTML = htmlContent;
+          document.body.appendChild(tempContainer);
+          await new Promise(r => setTimeout(r, 1500));
+          const { default: html2canvas } = await import('html2canvas');
+          const allPages = tempContainer.querySelectorAll('[id^="pdf-page-"]');
+          const pageIds = Array.from(allPages).map(el => el.id).sort((a, b) => {
+            const order = id => id === 'pdf-page-1' ? 1 : id === 'pdf-page-cgv' ? 999 : 2;
+            return order(a) - order(b);
+          });
+          let added = false;
+          for (const pageId of pageIds) {
+            const el = tempContainer.querySelector(`#${pageId}`);
+            if (!el || !el.innerHTML.trim()) continue;
+            if (added) pdf.addPage();
+            const canvas = await html2canvas(el, { scale: 1.4, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', width: 794, logging: false });
+            const imgW = 190, imgH = (canvas.height * imgW) / canvas.width;
+            const imgData = canvas.toDataURL('image/jpeg', 0.88);
+            pdf.addImage(imgData, 'JPEG', 10, 10, imgW, Math.min(imgH, 277), undefined, 'FAST');
+            added = true;
+          }
+          document.body.removeChild(tempContainer);
+          pdf.save(fileName);
+          toast.success("Contrat téléchargé !");
+        } catch (error) {
+          console.error('Erreur PDF:', error);
+          toast.error("Erreur génération contrat : " + error.message);
+        }
+      };
+
+      const handleDownloadClientContract = async () => {
+        if (!ev || !ev.rawContractData) {
+            toast.error("Données du contrat indisponibles.");
+            return;
+        }
+        const data = ev.rawContractData;
+        
+        let html;
+        let cName = (data.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+        let filename;
+        if (data.contract_mode === 'entreprise') {
+            html = generateEntrepriseHTML(data, defaultCompanySettings);
+            filename = `Contrat_RKeyProd_${cName}.pdf`;
+        } else {
+            html = generateMandatHTML(data, defaultCompanySettings);
+            filename = `Contrat_RKeyProd_${cName}.pdf`;
+        }
+        await exportHTMLToPDF(html, filename);
+      };
+
       const handleDownloadEventDoc = (docId) => {
         const downloadUrl = `${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/${docId}`;
         window.open(downloadUrl, '_blank');
@@ -1193,7 +1400,7 @@ const DjClientApp = ({ isPublic = false }) => {
                  onChange={(e) => setUploadCategory(e.target.value)}
                  title="Catégorie pour le prochain upload"
                >
-                 <option value="Administrative">Administrative</option>
+                 <option value="Administrative">Administratif</option>
                  <option value="Animations et interventions">Animations</option>
                </select>
                <label className={`cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center gap-2 ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -1210,33 +1417,51 @@ const DjClientApp = ({ isPublic = false }) => {
           <div className="space-y-8">
             {/* SECTION ADMINISTRATIVE */}
             <div>
-              <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Administrative</h4>
-              {administrativeDocs.length === 0 ? (
-                <p className="text-sm text-slate-500 italic">Aucun document administratif pour cet événement.</p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {administrativeDocs.map((doc) => (
-                    <div 
-                      key={doc.id}
-                      className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between"
-                    >
+              <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Administratif</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                
+                {/* Contrat raccourci */}
+                {ev && ev.rawContractData && (
+                    <div className="p-4 rounded-lg border-2 border-indigo-200 bg-indigo-50 hover:border-indigo-300 transition-all flex flex-col justify-between">
                       <div className="flex items-start gap-3">
                         <div className="flex-1">
-                          <p className="font-medium text-slate-800 leading-tight">{doc.filename}</p>
-                          <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
+                          <p className="font-medium text-slate-800 leading-tight">
+                            Contrat {ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1">Contrat original sans signature</p>
                         </div>
                       </div>
                       <div className="mt-4 flex justify-end">
                         <button 
-                          onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
+                          onClick={(e) => { e.stopPropagation(); handleDownloadClientContract(); }} 
                           className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
                           <Download className="w-4 h-4" /> Télécharger
                         </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                )}
+
+                {administrativeDocs.map((doc) => (
+                  <div 
+                    key={doc.id}
+                    className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-800 leading-tight">{doc.filename}</p>
+                        <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
+                        className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
+                        <Download className="w-4 h-4" /> Télécharger
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* SECTION ANIMATIONS ET INTERVENTIONS */}
@@ -1812,13 +2037,15 @@ const DjClientApp = ({ isPublic = false }) => {
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
                                             {futureByYear[year].map(ev => {
-                                                const notifCount = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]).length : 0;
+                                                const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
+                                                const notifCount = notifKeys.length;
+                                                const hasChatNotif = notifKeys.includes('chat');
                                                 return (
                                                 <tr key={ev.id} className="hover:bg-yellow-50 transition cursor-pointer group" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
                                                     <td className="p-4 font-medium text-gray-900 group-hover:text-yellow-700 flex items-center gap-2">
                                                         {ev.name}
                                                         {notifCount > 0 && (
-                                                            <span className="flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full animate-pulse shadow-sm">
+                                                            <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
                                                                 {notifCount}
                                                             </span>
                                                         )}
