@@ -369,7 +369,11 @@ const DevisEnvoiApp = () => {
     try {
       const response = await api.post('/devis2/pages/migrate-to-gcs');
       if (response.data.success) {
-        toast.success(`Migration réussie: ${response.data.migrated} pages migrées, ${response.data.errors} erreurs, ${response.data.total} total.`);
+        if (response.data.message) {
+            toast.success(response.data.message);
+        } else {
+            toast.success(`Migration réussie: ${response.data.migrated} pages migrées, ${response.data.errors} erreurs.`);
+        }
         fetchPages();
       }
     } catch (error) {

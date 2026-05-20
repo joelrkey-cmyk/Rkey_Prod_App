@@ -1490,10 +1490,100 @@ api.delete('/location/equipment/:id', authMiddleware, async (req, res) => {
   await db.collection('location_equipment').deleteOne({ id: req.params.id });
   res.json({ success: true });
 });
-api.post('/upload/equipment-image', authMiddleware, upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ detail: 'No image' });
-  res.json({ url: `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}` });
+
+api.get('/gcs/location-photos/:filename', async (req, res) => {
+  if (!bucket) return res.status(500).send('GCS not configured');
+  const filename = req.params.filename;
+  const file = bucket.file(`location-photos/${filename}`);
+  
+  res.setHeader('Cache-Control', 'public, max-age=31536000');
+  file.createReadStream()
+    .on('error', (err) => {
+      console.error('Error streaming from GCS:', err.message);
+      res.status(404).send('Not found');
+    })
+    .pipe(res);
 });
+
+api.post('/upload/equipment-image', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ detail: 'No image' });
+  
+  try {
+    if (bucket) {
+      const ext = path.extname(req.file.originalname) || '';
+      const imageId = uuidv4();
+      const gcsPath = `location-photos/${imageId}${ext}`;
+      const file = bucket.file(gcsPath);
+      
+      await file.save(req.file.buffer, {
+        metadata: { contentType: req.file.mimetype }
+      });
+      
+      res.json({ url: `/api/gcs/${gcsPath}` });
+    } else {
+      res.json({ url: `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}` });
+    }
+  } catch (error) {
+    console.error('Error uploading equipment image:', error);
+    res.status(500).json({ detail: 'Erreur lors de l\'upload de l\'image' });
+  }
+});
+
+api.post('/location/equipment/migrate-to-gcs', authMiddleware, async (req, res) => {
+  if (!bucket) {
+    return res.status(500).json({ detail: 'GCS bucket is not initialized' });
+  }
+
+  try {
+    const equipment = await db.collection('location_equipment').find({
+      photo_url: { $regex: /^data:image/ }
+    }).toArray();
+
+    if (equipment.length === 0) {
+      return res.json({ success: true, migrated: 0, errors: 0, total: 0, message: "Toutes les photos sont déjà migrées." });
+    }
+
+    let migrated = 0;
+    let errors = 0;
+
+    for (const item of equipment) {
+      try {
+        const matches = item.photo_url.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+        if (!matches || matches.length !== 3) {
+          errors++;
+          continue;
+        }
+
+        const ext = `.${matches[1] === 'jpeg' ? 'jpg' : matches[1]}`;
+        const buffer = Buffer.from(matches[2], 'base64');
+        const imageId = uuidv4();
+        const gcsPath = `location-photos/${imageId}${ext}`;
+        const file = bucket.file(gcsPath);
+
+        await file.save(buffer, {
+          metadata: { contentType: `image/${matches[1]}` }
+        });
+
+        await db.collection('location_equipment').updateOne(
+          { id: item.id },
+          { $set: { photo_url: `/api/gcs/${gcsPath}` } }
+        );
+
+        migrated++;
+        console.log(`Migrated equipment ${item.id} image to GCS`);
+      } catch (err) {
+        console.error(`Error migrating equipment ${item.id}:`, err);
+        errors++;
+      }
+    }
+
+    res.json({ success: true, migrated, errors, total: equipment.length });
+  } catch (error) {
+    console.error('Migration error:', error);
+    res.status(500).json({ detail: 'Migration failed' });
+  }
+});
+
 api.post('/location/equipment/cleanup-copies', authMiddleware, (req, res) => res.json({ removed: 0 }));
 
 // Location Categories
@@ -2941,6 +3031,10 @@ api.post('/devis2/pages/migrate-to-gcs', authMiddleware, async (req, res) => {
 
   try {
     const pages = await db.collection('devis2_pages').find({ image_data: { $exists: true, $ne: '' } }).toArray();
+    if (pages.length === 0) {
+      return res.json({ success: true, migrated: 0, errors: 0, total: 0, message: "Toutes les pages ont déjà été migrées." });
+    }
+    
     let migrated = 0;
     let errors = 0;
 
