@@ -10,33 +10,10 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const sharp = require('sharp');
 const { google } = require('googleapis');
-const { Storage } = require('@google-cloud/storage');
 const fs = require('fs');
 
-// --- Google Cloud Storage Setup ---
-const BUCKET_NAME = 'rkey-prod-storage-01';
-let storage = null;
-let bucket = null;
-const GOOGLE_CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json');
-
-try {
-  if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-    storage = new Storage({ credentials });
-    bucket = storage.bucket(BUCKET_NAME);
-    console.log('Google Cloud Storage initialized from environment variable.');
-  } else if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
-    storage = new Storage({ keyFilename: GOOGLE_CREDENTIALS_PATH });
-    bucket = storage.bucket(BUCKET_NAME);
-    console.log('Google Cloud Storage initialized from file.');
-  } else {
-    console.warn('google-credentials.json not found, GCS not initialized.');
-  }
-} catch (err) {
-  console.error('Failed to initialize Google Cloud Storage:', err);
-}
-
 // --- Google Calendar Setup ---
+const GOOGLE_CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json');
 let calendar = null;
 let locationCalendarId = null;
 
@@ -2848,33 +2825,13 @@ api.get('/devis2/pages', authMiddleware, async (req, res) => {
 api.get('/devis2/pages/:id/preview', authMiddleware, async (req, res) => {
   const p = await db.collection('devis2_pages').findOne({ id: req.params.id });
   if (!p) return res.status(404).json({ detail: 'Not found' });
-  
-  let image_base64 = p.image_data || '';
-  if (p.gcs_path && bucket && !image_base64) {
-    try {
-      const file = bucket.file(p.gcs_path);
-      const [buffer] = await file.download();
-      image_base64 = buffer.toString('base64');
-    } catch (err) {
-      console.error('Error downloading preview from GCS:', err);
-    }
-  }
-  
-  res.json({ success: true, image_base64, filename: p.filename, label: p.label });
+  res.json({ success: true, image_base64: p.image_data || '', filename: p.filename, label: p.label });
 });
 api.put('/devis2/pages/:id', authMiddleware, async (req, res) => {
   await db.collection('devis2_pages').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
   res.json(await db.collection('devis2_pages').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
 });
 api.delete('/devis2/pages/:id', authMiddleware, async (req, res) => {
-  const p = await db.collection('devis2_pages').findOne({ id: req.params.id });
-  if (p && p.gcs_path && bucket) {
-    try {
-      await bucket.file(p.gcs_path).delete();
-    } catch (err) {
-      console.warn('Could not delete file from GCS:', err);
-    }
-  }
   await db.collection('devis2_pages').deleteOne({ id: req.params.id });
   res.json({ success: true });
 });
@@ -2886,97 +2843,24 @@ api.post('/devis2/pages/upload', authMiddleware, upload.single('file'), async (r
   if (!req.file) return res.status(400).json({ detail: 'No file' });
   try {
     const { label, category, is_tarif } = req.body;
-    const pageId = uuidv4();
-    const filename = req.file.originalname;
-    
-    let gcsPath = '';
-    
-    if (bucket) {
-      const ext = path.extname(filename) || '';
-      gcsPath = `devis-pages/${pageId}${ext}`;
-      const file = bucket.file(gcsPath);
-      try {
-        await file.save(req.file.buffer, {
-          metadata: { contentType: req.file.mimetype },
-        });
-        console.log(`Saved page to GCS: ${gcsPath}`);
-      } catch (uploadErr) {
-        console.error('Failed to upload to GCS, falling back to local DB:', uploadErr.message || uploadErr);
-        gcsPath = ''; // Clear gcsPath so it falls back to MongoDB
-      }
-    }
-
     const page = { 
-      id: pageId, 
-      label: label || filename,
+      id: uuidv4(), 
+      label: label || req.file.originalname,
       category: category || 'artiste',
       is_tarif: is_tarif === 'true' || is_tarif === true,
-      filename: filename,
+      image_data: req.file.buffer.toString('base64'),
+      filename: req.file.originalname,
       mimetype: req.file.mimetype,
-      gcs_path: gcsPath,
       created_at: new Date().toISOString() 
     };
-    
-    // Fallback if GCS is not configured or if upload failed
-    if (!bucket || !gcsPath) {
-      page.image_data = req.file.buffer.toString('base64');
-    }
-
     await db.collection('devis2_pages').insertOne(page);
-    
-    // Don't send huge image_data back to client
-    const responsePage = { ...page };
-    delete responsePage.image_data;
-    
-    res.json({ success: true, ...clean(responsePage) });
+    res.json({ success: true, ...clean(page) });
   } catch (error) {
     console.error('Error uploading devis2 page:', error);
     res.status(500).json({ success: false, detail: 'Erreur lors de l\'enregistrement de la page' });
   }
 });
-api.post('/devis2/pages/migrate-to-gcs', authMiddleware, async (req, res) => {
-  if (!bucket) {
-    return res.status(500).json({ detail: 'GCS bucket is not initialized' });
-  }
-
-  try {
-    const pages = await db.collection('devis2_pages').find({ image_data: { $exists: true, $ne: '' } }).toArray();
-    let migrated = 0;
-    let errors = 0;
-
-    for (const page of pages) {
-      try {
-        const ext = require('path').extname(page.filename || '') || '.png';
-        const gcsPath = `devis-pages/${page.id}${ext}`;
-        const file = bucket.file(gcsPath);
-        
-        const buffer = Buffer.from(page.image_data, 'base64');
-        
-        await file.save(buffer, {
-          metadata: { contentType: page.mimetype || 'image/png' }
-        });
-        
-        await db.collection('devis2_pages').updateOne(
-          { id: page.id },
-          { 
-            $set: { gcs_path: gcsPath },
-            $unset: { image_data: "" }
-          }
-        );
-        migrated++;
-        console.log(`Migrated page ${page.id} to GCS`);
-      } catch (err) {
-        console.error(`Error migrating page ${page.id}:`, err);
-        errors++;
-      }
-    }
-
-    res.json({ success: true, migrated, errors, total: pages.length });
-  } catch (error) {
-    console.error('Migration error:', error);
-    res.status(500).json({ detail: 'Migration failed' });
-  }
-});
+api.post('/devis2/pages/migrate-to-mongodb', authMiddleware, (req, res) => res.json({ migrated: 0 }));
 api.delete('/devis2/pages/orphaned', authMiddleware, (req, res) => res.json({ removed: 0 }));
 
 // DEVIS PDF & SENT
@@ -2990,23 +2874,9 @@ api.post('/devis2/generate-pdf', authMiddleware, async (req, res) => {
     for (const pageId of selected_pages) {
       let page = await db.collection('devis2_pages').findOne({ id: pageId });
       if (!page) page = await db.collection('devis2_pages').findOne({ key: pageId });
-      if (!page || (!page.image_data && !page.gcs_path)) continue;
+      if (!page || !page.image_data) continue;
 
-      let imgBytes = null;
-      if (page.gcs_path && bucket) {
-        try {
-          const file = bucket.file(page.gcs_path);
-          const [buffer] = await file.download();
-          imgBytes = buffer;
-        } catch (err) {
-          console.error(`Failed to download ${page.gcs_path} from GCS:`, err);
-          continue;
-        }
-      } else if (page.image_data) {
-        imgBytes = Buffer.from(page.image_data, 'base64');
-      } else {
-         continue;
-      }
+      let imgBytes = Buffer.from(page.image_data, 'base64');
 
       // Apply price overlay on tarif page (like production: white Poppins text at y=630)
       const labelLower = (page.label || '').toLowerCase();
@@ -3044,24 +2914,8 @@ api.post('/devis2/send-email', authMiddleware, async (req, res) => {
     for (const pageId of selected_pages) {
       let page = await db.collection('devis2_pages').findOne({ id: pageId });
       if (!page) page = await db.collection('devis2_pages').findOne({ key: pageId });
-      if (!page || (!page.image_data && !page.gcs_path)) continue;
-      
-      let imgBytes = null;
-      if (page.gcs_path && bucket) {
-        try {
-          const file = bucket.file(page.gcs_path);
-          const [buffer] = await file.download();
-          imgBytes = buffer;
-        } catch (err) {
-          console.error(`Failed to download ${page.gcs_path} from GCS:`, err);
-          continue;
-        }
-      } else if (page.image_data) {
-        imgBytes = Buffer.from(page.image_data, 'base64');
-      } else {
-        continue;
-      }
-      
+      if (!page || !page.image_data) continue;
+      let imgBytes = Buffer.from(page.image_data, 'base64');
       const labelLower = (page.label || '').toLowerCase();
       const isTarifPage = page.is_tarif || labelLower.includes('tarif') || labelLower.includes('horaire');
 

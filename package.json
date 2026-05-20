@@ -9,6 +9,7 @@
     "lint": "echo 'Linting skipped'"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.19.0",
     "@octokit/rest": "^22.0.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
