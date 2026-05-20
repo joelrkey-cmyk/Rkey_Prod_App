@@ -1636,11 +1636,45 @@ api.patch('/crm/relances/:id/complete', authMiddleware, async (req, res) => {
 // ══════════ SUBSCRIPTIONS ══════════
 api.get('/subscriptions/categories', authMiddleware, async (req, res) => {
   const cats = await db.collection('general_settings').findOne({ type: 'subscription_categories' }, { projection: { _id: 0 } });
-  res.json(cats?.categories || []);
+  if (!cats || !Array.isArray(cats.categories)) {
+    const defaults = [
+      { id: '1', name: "Logiciels & Outils", is_default: true },
+      { id: '2', name: "Marketing & Publicité", is_default: true },
+      { id: '3', name: "Assurances & Banques", is_default: true },
+      { id: '4', name: "Télécoms", is_default: true },
+      { id: '5', name: "Locaux & Énergies", is_default: true },
+      { id: '6', name: "Services", is_default: true },
+    ];
+    return res.json(defaults);
+  }
+  res.json(cats.categories);
 });
 api.post('/subscriptions/categories', authMiddleware, async (req, res) => {
-  await db.collection('general_settings').updateOne({ type: 'subscription_categories' }, { $set: { categories: req.body.categories } }, { upsert: true });
-  res.json(req.body.categories);
+  if (req.body.categories) {
+    await db.collection('general_settings').updateOne({ type: 'subscription_categories' }, { $set: { categories: req.body.categories } }, { upsert: true });
+    return res.json(req.body.categories);
+  }
+  
+  if (req.body.name) {
+    const doc = await db.collection('general_settings').findOne({ type: 'subscription_categories' });
+    let cats = doc?.categories;
+    if (!Array.isArray(cats)) {
+      cats = [
+        { id: '1', name: "Logiciels & Outils", is_default: true },
+        { id: '2', name: "Marketing & Publicité", is_default: true },
+        { id: '3', name: "Assurances & Banques", is_default: true },
+        { id: '4', name: "Télécoms", is_default: true },
+        { id: '5', name: "Locaux & Énergies", is_default: true },
+        { id: '6', name: "Services", is_default: true },
+      ];
+    }
+    const newCat = { id: Date.now().toString(), name: req.body.name, is_default: false };
+    cats.push(newCat);
+    await db.collection('general_settings').updateOne({ type: 'subscription_categories' }, { $set: { categories: cats } }, { upsert: true });
+    return res.json(newCat);
+  }
+  
+  res.status(400).json({ detail: "Missing name or categories property" });
 });
 api.delete('/subscriptions/categories/:id', authMiddleware, async (req, res) => {
   const doc = await db.collection('general_settings').findOne({ type: 'subscription_categories' });
@@ -1759,12 +1793,63 @@ api.get('/gcs/:folder/:filename', async (req, res) => {
   if (!bucket) return res.status(500).send('GCS not configured');
   const file = bucket.file(`${req.params.folder}/${req.params.filename}`);
   res.setHeader('Cache-Control', 'public, max-age=31536000');
+  if (req.query.download === 'true') {
+    res.setHeader('Content-Disposition', `attachment; filename="${req.params.filename}"`);
+  }
   file.createReadStream()
     .on('error', (err) => {
       console.error('Error streaming from GCS:', err.message);
       res.status(404).send('Not found');
     })
     .pipe(res);
+});
+
+api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ detail: 'No image' });
+  
+  try {
+    if (bucket) {
+      const ext = path.extname(req.file.originalname) || '';
+      const imageId = uuidv4();
+      const gcsPath = `client-uploads/${imageId}${ext}`;
+      const file = bucket.file(gcsPath);
+      
+      await file.save(req.file.buffer, {
+        metadata: { contentType: req.file.mimetype }
+      });
+      
+      res.json({ url: `/api/gcs/${gcsPath}` });
+    } else {
+      res.status(500).json({ detail: 'GCS not configured' });
+    }
+  } catch (error) {
+    console.error('Error uploading photo:', error);
+    res.status(500).json({ detail: 'Erreur lors de l\'upload de la photo' });
+  }
+});
+
+api.post('/upload/venue-photo', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ detail: 'No image' });
+  
+  try {
+    if (bucket) {
+      const ext = path.extname(req.file.originalname) || '';
+      const imageId = uuidv4();
+      const gcsPath = `venue-photos/${imageId}${ext}`;
+      const file = bucket.file(gcsPath);
+      
+      await file.save(req.file.buffer, {
+        metadata: { contentType: req.file.mimetype }
+      });
+      
+      res.json({ url: `/api/gcs/${gcsPath}` });
+    } else {
+      res.status(500).json({ detail: 'GCS not configured' });
+    }
+  } catch (error) {
+    console.error('Error uploading venue photo:', error);
+    res.status(500).json({ detail: 'Erreur lors de l\'upload de la photo du lieu' });
+  }
 });
 
 api.post('/upload/equipment-image', authMiddleware, upload.single('file'), async (req, res) => {

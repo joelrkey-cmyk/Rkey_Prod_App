@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { generateMandatHTML, generateEntrepriseHTML } from './contracts2/mandatHtmlGenerator';
@@ -223,7 +223,9 @@ const DjClientApp = ({ isPublic = false }) => {
           if ('requested_options' in payload) section = 'options';
           if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload) section = 'playlist';
           if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload) section = 'planning';
+          if ('client_photo' in payload) section = 'client_info';
           if ('selected_pdf_notes' in payload) section = 'documents';
+          if ('venue_photos' in payload || 'venue_notes' in payload || 'has_limiteur_son' in payload || 'has_detecteur_fumee' in payload || 'has_no_limiteur_ni_detecteur' in payload) section = 'venue';
           
           if (section && currentRoute.role) {
               const rolesToNotify = ['admin', 'dj', 'client'].filter(r => r !== currentRoute.role);
@@ -1068,41 +1070,113 @@ const DjClientApp = ({ isPublic = false }) => {
 
     const ClientInfoSection = () => {
       const info = ev.contractInfo;
+      const [uploading, setUploading] = useState(false);
+      
       if (!info) return null;
+      
+      const handleFileUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setUploading(true);
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/public/upload/photo`, {
+            method: 'POST',
+            body: formData
+          });
+          const data = await response.json();
+          if (response.ok && data.url) {
+            updateContractDb(currentRoute.eventId, { client_photo: data.url });
+            toast.success("Photo mise à jour");
+          } else {
+            toast.error("Erreur d'upload");
+          }
+        } catch (err) {
+          toast.error("Erreur serveur");
+        }
+        setUploading(false);
+      };
+
+      const handleDeletePhoto = () => {
+        if (!window.confirm("Supprimer cette photo ?")) return;
+        updateContractDb(currentRoute.eventId, { client_photo: null });
+      };
+
       return (
-        <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
-          <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
-            <User className="w-5 h-5 text-gray-400" />
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('client_info')}`} onClick={() => { if (ev.notifications && ev.notifications[currentRoute.role] && ev.notifications[currentRoute.role]['client_info']) toggleSection('client_info'); }}>
+          <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
+            <User className="w-5 h-5 text-indigo-600" />
             Informations Client
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nom & Prénom</p>
-              <p className="font-medium text-gray-900">{info.name}</p>
+          
+          <div className="flex flex-col md:flex-row gap-8">
+            <div className="w-full md:w-1/3 max-w-[240px] flex flex-col mx-auto md:mx-0">
+              {ev.client_photo ? (
+                <div className="relative group w-full aspect-[4/5] rounded-2xl overflow-hidden shadow-sm border border-gray-200">
+                  <img src={ev.client_photo.startsWith('http') ? ev.client_photo : `${BACKEND_URL}${ev.client_photo}`} alt="Client" className="w-full h-full object-cover" crossOrigin="anonymous" />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                    {currentRoute.role === 'client' && (
+                      <button onClick={handleDeletePhoto} className="bg-red-500 text-white p-2.5 rounded-full hover:bg-red-600 transition shadow-lg" title="Supprimer">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <a href={ev.client_photo.startsWith('http') ? `${ev.client_photo}?download=true` : `${BACKEND_URL}${ev.client_photo}?download=true`} download target="_blank" rel="noreferrer" className="bg-blue-500 text-white p-2.5 rounded-full hover:bg-blue-600 transition shadow-lg" title="Télécharger">
+                      <Download className="w-4 h-4" />
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-full aspect-[4/5] rounded-2xl bg-gray-50 border-2 border-dashed border-gray-300 flex flex-col items-center justify-center p-4 text-center">
+                  <User className="w-12 h-12 text-gray-300 mb-3" />
+                  <p className="text-sm font-medium text-gray-500 mb-1">Aucune photo</p>
+                  {currentRoute.role === 'client' && <p className="text-xs text-gray-400">Portrait ou paysage accepté</p>}
+                </div>
+              )}
+              
+              {currentRoute.role === 'client' && (
+                <label className="mt-4 w-full text-center bg-white border border-gray-300 text-gray-700 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-gray-50 transition cursor-pointer flex justify-center items-center gap-2">
+                  {uploading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Upload...</>
+                  ) : (
+                    <><Upload className="w-4 h-4" /> {ev.client_photo ? "Modifier" : "Ajouter"} une photo</>
+                  )}
+                  <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={uploading} />
+                </label>
+              )}
             </div>
-            {info.company && (
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Entreprise</p>
-              <p className="font-medium text-gray-900">{info.company}</p>
-            </div>
-            )}
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</p>
-              <p className="font-medium text-gray-900">{info.email}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 1</p>
-              <p className="font-medium text-gray-900">{info.phone}</p>
-            </div>
-            {info.phone2 && (
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 2</p>
-              <p className="font-medium text-gray-900">{info.phone2}</p>
-            </div>
-            )}
-            <div className="md:col-span-2 lg:col-span-3">
-              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Lieu de l'événement</p>
-              <p className="font-medium text-gray-900">{info.location}</p>
+            
+            <div className="w-full md:w-2/3 flex-1 flex flex-col justify-center">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nom & Prénom</p>
+                  <p className="font-medium text-gray-900">{info.name}</p>
+                </div>
+                {info.company && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Entreprise</p>
+                  <p className="font-medium text-gray-900">{info.company}</p>
+                </div>
+                )}
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</p>
+                  <p className="font-medium text-gray-900 break-all">{info.email}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 1</p>
+                  <p className="font-medium text-gray-900">{info.phone}</p>
+                </div>
+                {info.phone2 && (
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 2</p>
+                  <p className="font-medium text-gray-900">{info.phone2}</p>
+                </div>
+                )}
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Lieu de l'événement</p>
+                  <p className="font-medium text-gray-900">{info.location}</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1851,6 +1925,143 @@ const DjClientApp = ({ isPublic = false }) => {
       );
     };
 
+    const VenueSection = () => {
+      const ev = events.find(e => e.id === currentRoute.eventId);
+      if (!ev) return null;
+      
+      const isClient = currentRoute.role === 'client';
+      const [uploading, setUploading] = useState(false);
+      const isDashboard = window.location.pathname === '/';
+      const token = localStorage.getItem('access_token');
+      
+      const handleFileUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setUploading(true);
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/public/upload/photo`, {
+            method: 'POST',
+            body: formData
+          });
+          const data = await response.json();
+          if (response.ok && data.url) {
+            const currentPhotos = ev.venue_photos || [];
+            updateContractDb(currentRoute.eventId, { venue_photos: [...currentPhotos, { url: data.url, id: Date.now() }] });
+            toast.success("Photo ajoutée");
+          } else {
+            toast.error("Erreur upload");
+          }
+        } catch (err) {
+          toast.error("Erreur serveur");
+        }
+        setUploading(false);
+      };
+
+      const handleDeletePhoto = (photoId) => {
+        if (!window.confirm("Supprimer cette photo ?")) return;
+        const newPhotos = (ev.venue_photos || []).filter(p => p.id !== photoId);
+        updateContractDb(currentRoute.eventId, { venue_photos: newPhotos });
+      };
+
+      return (
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mt-6 ${getSectionHighlightClass('venue')}`} id="section-venue">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-indigo-600" />
+              Lieu de réception
+            </h3>
+          </div>
+          
+          <div className="space-y-6">
+            {/* Checkboxes from Contracts */}
+            <div>
+              <h4 className="font-semibold text-gray-700 mb-3">Contraintes Techniques de la salle</h4>
+                <div className="flex gap-4 flex-wrap">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={ev.has_limiteur_son || false} onChange={e => {
+                      const val = e.target.checked;
+                      updateContractDb(currentRoute.eventId, { has_limiteur_son: val, ...(val ? {has_no_limiteur_ni_detecteur: false} : {}) });
+                    }} />
+                    Limiteur de son
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={ev.has_detecteur_fumee || false} onChange={e => {
+                      const val = e.target.checked;
+                      updateContractDb(currentRoute.eventId, { has_detecteur_fumee: val, ...(val ? {has_no_limiteur_ni_detecteur: false} : {}) });
+                    }} />
+                    Détecteur de fumée
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={ev.has_no_limiteur_ni_detecteur || false} onChange={e => {
+                      const val = e.target.checked;
+                      updateContractDb(currentRoute.eventId, { has_no_limiteur_ni_detecteur: val, ...(val ? {has_limiteur_son: false, has_detecteur_fumee: false} : {}) });
+                    }} />
+                    Aucun
+                  </label>
+                </div>
+              </div>
+
+              {/* Photos Gallery */}
+              <div>
+                <h4 className="font-semibold text-gray-700 mb-3">Photos de la salle</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {(ev.venue_photos || []).map(photo => (
+                    <div key={photo.id} className="relative group rounded-lg overflow-hidden border">
+                      <img src={photo.url.startsWith('http') ? photo.url : `${BACKEND_URL}${photo.url}`} alt="Venue" className="w-full h-32 object-cover" crossOrigin="anonymous" />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button onClick={() => handleDeletePhoto(photo.id)} className="bg-red-500 text-white p-2 rounded-full hover:bg-red-600" title="Supprimer">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        {currentRoute.role !== 'client' && (
+                          <a href={photo.url.startsWith('http') ? `${photo.url}?download=true` : `${BACKEND_URL}${photo.url}?download=true`} download target="_blank" rel="noreferrer" className="bg-blue-500 text-white p-2 rounded-full hover:bg-blue-600" title="Télécharger">
+                            <Download className="w-4 h-4" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Upload button wrapper */}
+                  <label className="h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center relative hover:bg-gray-50 transition cursor-pointer">
+                    {uploading ? (
+                      <span className="text-gray-500 text-sm flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Upload...
+                      </span>
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 text-gray-400 mb-2" />
+                        <span className="text-sm text-gray-500">Ajouter une photo</span>
+                        <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFileUpload} />
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+
+              {/* Observations */}
+              <div>
+                <h4 className="font-semibold text-gray-700 mb-2">Observations sur la salle</h4>
+                <textarea
+                  className="w-full border rounded-lg p-3 text-sm min-h-[100px]"
+                  placeholder="Notes, accès, particularités du lieu de réception..."
+                  value={ev.venue_notes || ''}
+                  onChange={e => {
+                    const newEvents = [...events];
+                    const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                    newEvents[idx].venue_notes = e.target.value;
+                    setEvents(newEvents);
+                  }}
+                  onBlur={e => updateContractDb(currentRoute.eventId, { venue_notes: e.target.value })}
+                />
+              </div>
+
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div className="space-y-6">
         {!isClientStandalone && (
@@ -1958,6 +2169,8 @@ const DjClientApp = ({ isPublic = false }) => {
             </div>
           </div>
         )}
+
+        <VenueSection />
       </div>
     );
   };
