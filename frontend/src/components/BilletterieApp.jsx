@@ -258,6 +258,24 @@ function BilletterieApp() {
     return `${BACKEND_URL}${photoUrl}`;
   };
 
+  const migrateToGcs = async () => {
+    if (!window.confirm('Voulez-vous lancer la migration des anciennes photos vers Google Cloud Storage ?')) return;
+    try {
+      const response = await axios.post(`${API}/billetterie/events/migrate-to-gcs`);
+      if (response.data.success) {
+        if (response.data.message) {
+            toast.success(response.data.message);
+        } else {
+            toast.success(`Migration réussie: ${response.data.migrated} photos migrées.`);
+        }
+        fetchEvents();
+      }
+    } catch (error) {
+      console.error('Error migrating images:', error);
+      toast.error('Erreur lors de la migration.');
+    }
+  };
+
   const getTypeBadge = (type) => {
     if (type === "dj") {
       return <Badge className="bg-orange-500 hover:bg-orange-500 text-white">🎵 DJ</Badge>;
@@ -427,6 +445,15 @@ function BilletterieApp() {
                 >
                   <Code className="mr-2 h-4 w-4" />
                   DJ
+                </Button>
+
+                <Button 
+                  onClick={migrateToGcs}
+                  variant="outline"
+                  className="border-green-500 text-green-600 hover:bg-green-50"
+                  title="Migrer les photos événements vers GCS"
+                >
+                  Migrer vers GCS
                 </Button>
 
                 <Button 

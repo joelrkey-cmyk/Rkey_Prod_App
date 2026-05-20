@@ -954,6 +954,28 @@ function Contracts2App() {
               <p className="text-sm text-slate-600 mt-1">Gestion Agence / Mandataire</p>
             </div>
             <div className="flex items-center space-x-4">
+              <Button 
+                onClick={async () => {
+                   if (!window.confirm('Voulez-vous lancer la migration des documents événementiels vers Google Cloud Storage ?')) return;
+                   try {
+                     const resp = await fetch('/api/contracts2/documents/migrate-to-gcs', {
+                       method: 'POST',
+                       headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                     });
+                     const data = await resp.json();
+                     if (data.success) {
+                       if (data.message) toast.success(data.message);
+                       else toast.success(`Migration réussie: ${data.migrated} documents migrés.`);
+                     }
+                   } catch (error) { toast.error('Erreur lors de la migration.'); }
+                }}
+                variant="outline"
+                size="sm"
+                className="border-green-500 text-green-600 hover:bg-green-50"
+                title="Migrer les event_documents vers GCS"
+              >
+                Migrer DocsGCS
+              </Button>
               <Badge variant="secondary" className="text-sm">
                 {contracts.length} contrat{contracts.length !== 1 ? 's' : ''}
               </Badge>

@@ -411,6 +411,24 @@ const PartnersApp = () => {
     }
   };
 
+  const migrateToGcs = async () => {
+    if (!window.confirm('Voulez-vous lancer la migration des anciennes photos vers Google Cloud Storage ?')) return;
+    try {
+      const response = await axios.post(`${API}/partners/migrate-to-gcs`);
+      if (response.data.success) {
+        if (response.data.message) {
+            toast.success(response.data.message);
+        } else {
+            toast.success(`Migration réussie: ${response.data.migrated} photos migrées.`);
+        }
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Error migrating images:', error);
+      toast.error('Erreur lors de la migration.');
+    }
+  };
+
   const filtered = partners.filter(p => {
     const q = search.toLowerCase();
     return !q || [p.first_name, p.last_name, p.company, p.email, p.phone].some(v => (v || '').toLowerCase().includes(q));
@@ -431,6 +449,14 @@ const PartnersApp = () => {
           <p className="text-sm text-gray-500">{partners.length} partenaire{partners.length !== 1 ? 's' : ''}</p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            onClick={migrateToGcs}
+            variant="outline"
+            className="border-green-500 text-green-600 hover:bg-green-50"
+            title="Migrer les photos partenaires vers GCS"
+          >
+            Migrer vers GCS
+          </Button>
           <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700" onClick={() => { setCurrentPartner(null); setView('form'); }} data-testid="add-partner-btn">
             <Plus className="w-4 h-4 mr-1" /> Ajouter
           </Button>

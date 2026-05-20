@@ -567,7 +567,7 @@ function MaterielView() {
   const migrateToGcs = async () => {
     if (!window.confirm('Voulez-vous lancer la migration des anciennes photos vers Google Cloud Storage ?')) return;
     try {
-      const response = await api.post('/location/equipment/migrate-to-gcs');
+      const response = await axios.post(`${API}/equipment/migrate-to-gcs`);
       if (response.data.success) {
         if (response.data.message) {
             toast.success(response.data.message);

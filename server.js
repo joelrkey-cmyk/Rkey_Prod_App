@@ -36,6 +36,26 @@ try {
   console.error('Failed to initialize Google Cloud Storage:', err);
 }
 
+async function uploadBase64ToGcs(base64String, folder) {
+  if (!bucket || !base64String || typeof base64String !== 'string' || !base64String.startsWith('data:image')) {
+    return base64String;
+  }
+  try {
+    const matches = base64String.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return base64String;
+    const ext = `.${matches[1] === 'jpeg' ? 'jpg' : matches[1]}`;
+    const buffer = Buffer.from(matches[2], 'base64');
+    const imageId = uuidv4();
+    const gcsPath = `${folder}/${imageId}${ext}`;
+    const file = bucket.file(gcsPath);
+    await file.save(buffer, { metadata: { contentType: `image/${matches[1]}` } });
+    return `/api/gcs/${gcsPath}`;
+  } catch (err) {
+    console.error('Error uploading base64 to GCS:', err);
+    return base64String;
+  }
+}
+
 // --- Google Calendar Setup ---
 let calendar = null;
 let locationCalendarId = null;
@@ -740,18 +760,61 @@ api.get('/partners/:id', authMiddleware, async (req, res) => {
   res.json(p);
 });
 api.post('/partners', authMiddleware, async (req, res) => {
-  const partner = { id: uuidv4(), ...req.body, sort_order: req.body.sort_order || 999, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  const body = { ...req.body };
+  if (body.photo) body.photo = await uploadBase64ToGcs(body.photo, 'partners-photos');
+  if (body.cover_photo) body.cover_photo = await uploadBase64ToGcs(body.cover_photo, 'partners-photos');
+  
+  const partner = { id: uuidv4(), ...body, sort_order: body.sort_order || 999, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   await db.collection('partners').insertOne(partner);
   res.json(clean(partner));
 });
 api.put('/partners/:id', authMiddleware, async (req, res) => {
-  await db.collection('partners').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
+  const body = { ...req.body };
+  if (body.photo) body.photo = await uploadBase64ToGcs(body.photo, 'partners-photos');
+  if (body.cover_photo) body.cover_photo = await uploadBase64ToGcs(body.cover_photo, 'partners-photos');
+
+  await db.collection('partners').updateOne({ id: req.params.id }, { $set: { ...body, updated_at: new Date().toISOString() } });
   const updated = await db.collection('partners').findOne({ id: req.params.id }, { projection: { _id: 0 } });
   res.json(updated);
 });
 api.delete('/partners/:id', authMiddleware, async (req, res) => {
   await db.collection('partners').deleteOne({ id: req.params.id });
   res.json({ success: true });
+});
+
+api.post('/partners/migrate-to-gcs', authMiddleware, async (req, res) => {
+  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  try {
+    const items = await db.collection('partners').find({
+      $or: [
+        { photo: { $regex: /^data:image/ } },
+        { cover_photo: { $regex: /^data:image/ } }
+      ]
+    }).toArray();
+    if (items.length === 0) return res.json({ success: true, message: 'Toutes les photos sont déjà migrées', migrated: 0, errors: 0 });
+    let migrated = 0;
+    let errors = 0;
+    for (const item of items) {
+      try {
+        const update = {};
+        if (item.photo && item.photo.startsWith('data:image')) {
+          update.photo = await uploadBase64ToGcs(item.photo, 'partners-photos');
+        }
+        if (item.cover_photo && item.cover_photo.startsWith('data:image')) {
+          update.cover_photo = await uploadBase64ToGcs(item.cover_photo, 'partners-photos');
+        }
+        if (Object.keys(update).length > 0) {
+          await db.collection('partners').updateOne({ id: item.id }, { $set: update });
+          migrated++;
+        }
+      } catch (e) {
+        errors++;
+      }
+    }
+    res.json({ success: true, migrated, errors });
+  } catch (err) {
+    res.status(500).json({ detail: 'Migration failed' });
+  }
 });
 api.post('/partners/ocr', authMiddleware, (req, res) => res.json({ first_name: '', last_name: '', company: '', phone: '', email: '', website: '' }));
 api.get('/partners/widget/:category', authMiddleware, async (req, res) => {
@@ -798,18 +861,61 @@ api.get('/dj-fiches/public/:id', async (req, res) => {
   const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } res.json(r);
 });
 api.post('/dj-fiches', authMiddleware, async (req, res) => {
-  const profile = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
+  const body = { ...req.body };
+  if (body.photo) body.photo = await uploadBase64ToGcs(body.photo, 'dj-photos');
+  if (body.logo) body.logo = await uploadBase64ToGcs(body.logo, 'dj-photos');
+
+  const profile = { id: uuidv4(), ...body, created_at: new Date().toISOString() };
   await db.collection('dj_profiles').insertOne(profile);
   res.json(clean(profile));
 });
 api.put('/dj-fiches/:id', authMiddleware, async (req, res) => {
-  await db.collection('dj_profiles').updateOne({ id: req.params.id }, { $set: req.body });
+  const body = { ...req.body };
+  if (body.photo) body.photo = await uploadBase64ToGcs(body.photo, 'dj-photos');
+  if (body.logo) body.logo = await uploadBase64ToGcs(body.logo, 'dj-photos');
+
+  await db.collection('dj_profiles').updateOne({ id: req.params.id }, { $set: body });
   const updated = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0 } });
   res.json(updated);
 });
 api.delete('/dj-fiches/:id', authMiddleware, async (req, res) => {
   await db.collection('dj_profiles').deleteOne({ id: req.params.id });
   res.json({ success: true });
+});
+
+api.post('/dj-fiches/migrate-to-gcs', authMiddleware, async (req, res) => {
+  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  try {
+    const items = await db.collection('dj_profiles').find({
+      $or: [
+        { photo: { $regex: /^data:image/ } },
+        { logo: { $regex: /^data:image/ } }
+      ]
+    }).toArray();
+    if (items.length === 0) return res.json({ success: true, message: 'Toutes les photos sont déjà migrées', migrated: 0, errors: 0 });
+    let migrated = 0;
+    let errors = 0;
+    for (const item of items) {
+      try {
+        const update = {};
+        if (item.photo && item.photo.startsWith('data:image')) {
+          update.photo = await uploadBase64ToGcs(item.photo, 'dj-photos');
+        }
+        if (item.logo && item.logo.startsWith('data:image')) {
+          update.logo = await uploadBase64ToGcs(item.logo, 'dj-photos');
+        }
+        if (Object.keys(update).length > 0) {
+          await db.collection('dj_profiles').updateOne({ id: item.id }, { $set: update });
+          migrated++;
+        }
+      } catch (e) {
+        errors++;
+      }
+    }
+    res.json({ success: true, migrated, errors });
+  } catch (err) {
+    res.status(500).json({ detail: 'Migration failed' });
+  }
 });
 // Alias for contracts module - returns {profiles: {id: {...}, ...}} format expected by ContractsApp
 api.get('/dj-profiles', authMiddleware, async (req, res) => {
@@ -849,10 +955,47 @@ api.delete('/billetterie/events/:id', authMiddleware, async (req, res) => {
 });
 api.post('/billetterie/upload-image', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'No image' });
-  const b64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-  const doc = { id: uuidv4(), data: b64, created_at: new Date().toISOString() };
-  await db.collection('event_images').insertOne(doc);
-  res.json({ success: true, id: doc.id, image_url: b64, url: b64 });
+  try {
+    if (bucket) {
+      const ext = path.extname(req.file.originalname) || '';
+      const imageId = uuidv4();
+      const gcsPath = `events-photos/${imageId}${ext}`;
+      const file = bucket.file(gcsPath);
+      await file.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+      res.json({ success: true, id: imageId, image_url: `/api/gcs/${gcsPath}`, url: `/api/gcs/${gcsPath}` });
+    } else {
+      const b64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const doc = { id: uuidv4(), data: b64, created_at: new Date().toISOString() };
+      await db.collection('event_images').insertOne(doc);
+      res.json({ success: true, id: doc.id, image_url: b64, url: b64 });
+    }
+  } catch (error) {
+    console.error('Error uploading event image:', error);
+    res.status(500).json({ detail: 'Erreur lors de l\'upload de l\'image' });
+  }
+});
+
+api.post('/billetterie/events/migrate-to-gcs', authMiddleware, async (req, res) => {
+  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  try {
+    const items = await db.collection('events').find({
+      photo_url: { $regex: /^data:image/ }
+    }).toArray();
+    if (items.length === 0) return res.json({ success: true, message: 'Toutes les photos sont déjà migrées', migrated: 0, errors: 0 });
+    let migrated = 0; let errors = 0;
+    for (const item of items) {
+      if (item.photo_url && item.photo_url.startsWith('data:image')) {
+        try {
+          const newUrl = await uploadBase64ToGcs(item.photo_url, 'events-photos');
+          await db.collection('events').updateOne({ id: item.id }, { $set: { photo_url: newUrl } });
+          migrated++;
+        } catch (e) { errors++; }
+      }
+    }
+    res.json({ success: true, migrated, errors });
+  } catch (err) {
+    res.status(500).json({ detail: 'Migration failed' });
+  }
 });
 api.post('/billetterie/migrate-images', authMiddleware, (req, res) => res.json({ migrated: 0 }));
 api.get('/uploads/events/:filename', async (req, res) => {
@@ -885,16 +1028,27 @@ api.get('/contract-pdf-notes', authMiddleware, async (req, res) => {
 
 api.post('/contract-pdf-notes', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'No file' });
+  const noteId = uuidv4();
   const note = {
-    id: uuidv4(),
+    id: noteId,
     title: req.body.title || req.file.originalname,
     filename: req.file.originalname,
-    pdf_data: req.file.buffer.toString('base64'),
     order: parseInt(req.body.order) || 0,
     created_at: new Date().toISOString()
   };
+  
+  if (bucket) {
+    const ext = path.extname(req.file.originalname) || '';
+    const gcsPath = `contract-notes/${noteId}${ext}`;
+    const file = bucket.file(gcsPath);
+    await file.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+    note.gcs_path = gcsPath;
+  } else {
+    note.pdf_data = req.file.buffer.toString('base64');
+  }
+  
   await db.collection('contract_technical_pdf_notes').insertOne(note);
-  res.json(clean(note));
+  res.json({ id: note.id, title: note.title, filename: note.filename, order: note.order });
 });
 
 api.put('/contract-pdf-notes/:id', authMiddleware, async (req, res) => {
@@ -909,8 +1063,38 @@ api.put('/contract-pdf-notes/:id', authMiddleware, async (req, res) => {
 });
 
 api.delete('/contract-pdf-notes/:id', authMiddleware, async (req, res) => {
+  const note = await db.collection('contract_technical_pdf_notes').findOne({ id: req.params.id });
+  if (note && note.gcs_path && bucket) {
+    try { await bucket.file(note.gcs_path).delete(); } catch(e) {}
+  }
   await db.collection('contract_technical_pdf_notes').deleteOne({ id: req.params.id });
   res.json({ success: true });
+});
+
+api.post('/contract-pdf-notes/migrate-to-gcs', authMiddleware, async (req, res) => {
+  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  try {
+    const items = await db.collection('contract_technical_pdf_notes').find({ pdf_data: { $exists: true, $ne: '' } }).toArray();
+    if (items.length === 0) return res.json({ success: true, message: 'Tous les PDF sont déjà migrés', migrated: 0, errors: 0 });
+    let migrated = 0; let errors = 0;
+    for (const item of items) {
+      try {
+        const ext = path.extname(item.filename || '') || '.pdf';
+        const gcsPath = `contract-notes/${item.id}${ext}`;
+        const file = bucket.file(gcsPath);
+        const buffer = Buffer.from(item.pdf_data, 'base64');
+        await file.save(buffer, { metadata: { contentType: 'application/pdf' } });
+        await db.collection('contract_technical_pdf_notes').updateOne(
+          { id: item.id },
+          { $set: { gcs_path: gcsPath }, $unset: { pdf_data: "" } }
+        );
+        migrated++;
+      } catch (e) { errors++; }
+    }
+    res.json({ success: true, migrated, errors });
+  } catch (err) {
+    res.status(500).json({ detail: 'Migration failed' });
+  }
 });
 
 api.post('/contract-pdf-notes/reorder', authMiddleware, async (req, res) => {
@@ -927,12 +1111,21 @@ api.get('/public/contract-pdf-notes', async (req, res) => {
 
 api.get('/public/contract-pdf-notes/:id/download', async (req, res) => {
   const note = await db.collection('contract_technical_pdf_notes').findOne({ id: req.params.id });
-  if (!note || !note.pdf_data) return res.status(404).json({ detail: 'Not found' });
+  if (!note) return res.status(404).json({ detail: 'Not found' });
   
-  const buffer = Buffer.from(note.pdf_data, 'base64');
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${note.filename || note.title}.pdf"`);
-  res.send(buffer);
+  if (note.gcs_path && bucket) {
+    const file = bucket.file(note.gcs_path);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${note.filename || note.title}.pdf"`);
+    file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
+  } else if (note.pdf_data) {
+    const buffer = Buffer.from(note.pdf_data, 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${note.filename || note.title}.pdf"`);
+    res.send(buffer);
+  } else {
+    res.status(404).json({ detail: 'Not found' });
+  }
 });
 
 api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
@@ -954,14 +1147,22 @@ api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
       if (realIds.length > 0) {
         const notes = await db.collection('contract_technical_pdf_notes').find({ id: { $in: realIds } }).sort({ order: 1 }).toArray();
         for (const note of notes) {
-          if (note.pdf_data) {
-            try {
-              const noteDoc = await PDFDocument.load(Buffer.from(note.pdf_data, 'base64'));
+          try {
+            let buffer;
+            if (note.gcs_path && bucket) {
+              const file = bucket.file(note.gcs_path);
+              const [fileContent] = await file.download();
+              buffer = fileContent;
+            } else if (note.pdf_data) {
+              buffer = Buffer.from(note.pdf_data, 'base64');
+            }
+            if (buffer) {
+              const noteDoc = await PDFDocument.load(buffer);
               const pages = await finalDoc.copyPages(noteDoc, noteDoc.getPageIndices());
               pages.forEach((page) => finalDoc.addPage(page));
-            } catch (err) {
-              console.error(`Error merging PDF note ${note.id}:`, err);
             }
+          } catch (err) {
+            console.error(`Error merging PDF note ${note.id}:`, err);
           }
         }
       }
@@ -1034,13 +1235,22 @@ api.put('/public/dj-client/:id', async (req, res) => {
 api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const category = req.body.category || 'Animations et interventions';
+  const docId = uuidv4();
   const newDoc = {
-    id: uuidv4(),
+    id: docId,
     filename: req.file.originalname,
     category: category,
-    pdf_data: req.file.buffer.toString('base64'),
     uploaded_at: new Date().toISOString()
   };
+  if (bucket) {
+    const ext = path.extname(req.file.originalname) || '';
+    const gcsPath = `contract-event-documents/${req.params.id}/${docId}${ext}`;
+    const file = bucket.file(gcsPath);
+    await file.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+    newDoc.gcs_path = gcsPath;
+  } else {
+    newDoc.pdf_data = req.file.buffer.toString('base64');
+  }
   await db.collection('contracts2').updateOne(
     { id: req.params.id }, 
     { $push: { event_documents: newDoc } }
@@ -1054,10 +1264,64 @@ api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
   const doc = contract.event_documents.find(d => d.id === req.params.docId);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
   
-  const buffer = Buffer.from(doc.pdf_data, 'base64');
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.filename)}"`);
-  res.send(buffer);
+  if (doc.gcs_path && bucket) {
+    const file = bucket.file(doc.gcs_path);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.filename)}"`);
+    file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
+  } else if (doc.pdf_data) {
+    const buffer = Buffer.from(doc.pdf_data, 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.filename)}"`);
+    res.send(buffer);
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
+api.post('/contracts2/documents/migrate-to-gcs', authMiddleware, async (req, res) => {
+  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  try {
+    const contracts = await db.collection('contracts2').find({ "event_documents.pdf_data": { $exists: true } }).toArray();
+    if (contracts.length === 0) return res.json({ success: true, message: 'Tous les documents sont déjà migrés', migrated: 0, errors: 0 });
+    let migrated = 0; let errors = 0;
+    for (const contract of contracts) {
+      if (!contract.event_documents) continue;
+      let updated = false;
+      const updatedDocs = [];
+      for (const doc of contract.event_documents) {
+        if (doc.pdf_data) {
+          try {
+            const ext = path.extname(doc.filename || '') || '.pdf';
+            const gcsPath = `contract-event-documents/${contract.id}/${doc.id}${ext}`;
+            const file = bucket.file(gcsPath);
+            const buffer = Buffer.from(doc.pdf_data, 'base64');
+            await file.save(buffer, { metadata: { contentType: 'application/pdf' } });
+            
+            const newDoc = { ...doc, gcs_path: gcsPath };
+            delete newDoc.pdf_data;
+            updatedDocs.push(newDoc);
+            updated = true;
+            migrated++;
+          } catch (e) {
+            errors++;
+            updatedDocs.push(doc);
+          }
+        } else {
+          updatedDocs.push(doc);
+        }
+      }
+      if (updated) {
+        await db.collection('contracts2').updateOne(
+          { id: contract.id },
+          { $set: { event_documents: updatedDocs } }
+        );
+      }
+    }
+    res.json({ success: true, migrated, errors });
+  } catch (err) {
+    res.status(500).json({ detail: 'Migration failed' });
+  }
 });
 
 api.get('/contracts2', authMiddleware, async (req, res) => {
@@ -1491,11 +1755,9 @@ api.delete('/location/equipment/:id', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 
-api.get('/gcs/location-photos/:filename', async (req, res) => {
+api.get('/gcs/:folder/:filename', async (req, res) => {
   if (!bucket) return res.status(500).send('GCS not configured');
-  const filename = req.params.filename;
-  const file = bucket.file(`location-photos/${filename}`);
-  
+  const file = bucket.file(`${req.params.folder}/${req.params.filename}`);
   res.setHeader('Cache-Control', 'public, max-age=31536000');
   file.createReadStream()
     .on('error', (err) => {
