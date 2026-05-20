@@ -444,28 +444,6 @@ const DjProfilesApp = () => {
     }
   };
 
-  const migrateToGcs = async () => {
-    if (!window.confirm('Voulez-vous lancer la migration des anciennes photos vers Google Cloud Storage ?')) return;
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/dj-fiches/migrate-to-gcs`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-      });
-      const data = await response.json();
-      if (data.success) {
-        if (data.message) {
-            toast.success(data.message);
-        } else {
-            toast.success(`Migration réussie: ${data.migrated} photos migrées.`);
-        }
-        fetchProfiles();
-      }
-    } catch (error) {
-      console.error('Error migrating images:', error);
-      toast.error('Erreur lors de la migration.');
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-amber-50">
       <div className="container mx-auto py-8 px-4">
@@ -499,14 +477,6 @@ const DjProfilesApp = () => {
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Nouveau profil
-              </Button>
-              <Button 
-                onClick={migrateToGcs}
-                variant="outline"
-                className="border-green-500 text-green-600 hover:bg-green-50"
-                title="Migrer les photos vers GCS"
-              >
-                Migrer vers GCS
               </Button>
             </div>
           </CardContent>

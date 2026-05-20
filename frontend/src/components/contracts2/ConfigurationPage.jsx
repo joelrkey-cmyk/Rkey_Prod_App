@@ -342,27 +342,6 @@ export const ConfigurationPage = ({
     }
   };
 
-  const migrateToGcs = async () => {
-    if (!window.confirm('Voulez-vous lancer la migration des anciens PDF de notes techniques vers Google Cloud Storage ?')) return;
-    try {
-      const resp = await fetch(`${apiService.BACKEND_URL || ''}/api/contract-pdf-notes/migrate-to-gcs`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
-      });
-      const data = await resp.json();
-      if (data.success) {
-        if (data.message) {
-            toast.success(data.message);
-        } else {
-            toast.success(`Migration réussie: ${data.migrated} PDF migrés.`);
-        }
-      }
-    } catch (error) {
-      console.error('Error migrating pdfs:', error);
-      toast.error('Erreur lors de la migration.');
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6" data-testid="configuration-page">
       <div className="max-w-6xl mx-auto">
@@ -372,14 +351,6 @@ export const ConfigurationPage = ({
             <p className="text-slate-600 mt-2">Gérez vos options matériel et notes techniques</p>
           </div>
           <div className="flex gap-2">
-            <Button 
-                onClick={migrateToGcs}
-                variant="outline"
-                className="border-green-500 text-green-600 hover:bg-green-50"
-                title="Migrer les PDF Notes vers GCS"
-            >
-                Migrer PDF GCS
-            </Button>
             <Button 
               onClick={() => setShowConfiguration(false)}
               variant="outline"

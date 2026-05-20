@@ -364,24 +364,6 @@ const DevisEnvoiApp = () => {
     catch (error) { console.error('Error deleting orphaned pages:', error); toast.error('Erreur lors de la suppression des pages orphelines'); }
   };
 
-  const migrateToGcs = async () => {
-    if (!window.confirm('Voulez-vous lancer la migration des anciens PDF vers Google Cloud Storage ?')) return;
-    try {
-      const response = await api.post('/devis2/pages/migrate-to-gcs');
-      if (response.data.success) {
-        if (response.data.message) {
-            toast.success(response.data.message);
-        } else {
-            toast.success(`Migration réussie: ${response.data.migrated} pages migrées, ${response.data.errors} erreurs.`);
-        }
-        fetchPages();
-      }
-    } catch (error) {
-      console.error('Error migrating pages:', error);
-      toast.error('Erreur lors de la migration. Consultez la console.');
-    }
-  };
-
   const orphanedPagesCount = availablePages.filter(p => p.exists === false).length;
 
   // ═══════════════════════════════════════════
@@ -588,9 +570,6 @@ const DevisEnvoiApp = () => {
                 <CardTitle className="flex items-center justify-between">
                   <span className="flex items-center gap-2"><ImageIcon className="w-5 h-5 text-orange-500" />Sélection des Pages</span>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={migrateToGcs} className="border-blue-500 text-blue-600 hover:bg-blue-50" title="Migrer les données vers Google Cloud Storage">
-                      Migrer vers GCS
-                    </Button>
                     {orphanedPagesCount > 0 && (
                       <Button size="sm" variant="destructive" onClick={deleteOrphanedPages} className="bg-red-500 hover:bg-red-600" title="Supprimer les pages dont les fichiers sont manquants">
                         <Trash2 className="w-4 h-4 mr-1" />Supprimer orphelines ({orphanedPagesCount})

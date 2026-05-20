@@ -564,24 +564,6 @@ function MaterielView() {
     }));
   };
 
-  const migrateToGcs = async () => {
-    if (!window.confirm('Voulez-vous lancer la migration des anciennes photos vers Google Cloud Storage ?')) return;
-    try {
-      const response = await axios.post(`${API}/equipment/migrate-to-gcs`);
-      if (response.data.success) {
-        if (response.data.message) {
-            toast.success(response.data.message);
-        } else {
-            toast.success(`Migration réussie: ${response.data.migrated} photos migrées, ${response.data.errors} erreurs.`);
-        }
-        fetchEquipment();
-      }
-    } catch (error) {
-      console.error('Error migrating images:', error);
-      toast.error('Erreur lors de la migration. Consultez la console.');
-    }
-  };
-
   const exportExcel = () => {
     const data = getExportData();
     const ws = XLSX.utils.json_to_sheet(data);
@@ -723,14 +705,6 @@ function MaterielView() {
               </div>
             )}
           </div>
-          <Button 
-            onClick={migrateToGcs}
-            variant="outline"
-            className="border-green-500 text-green-600 hover:bg-green-50"
-            title="Migrer les photos matériel vers GCS"
-          >
-            Migrer vers GCS
-          </Button>
           <Button 
             onClick={() => setShowCategoryManager(true)}
             variant="outline"
