@@ -438,7 +438,7 @@ function optionalAuth(req, res, next) {
   } catch { req.user = null; next(); }
 }
 
-const ALL_APPS = ["devis","contracts","contracts2","location","rental","delivery","crm","billetterie","formulaires","dj-profiles","abonnements","parametres"];
+const ALL_APPS = ["devis","contracts","contracts2","location","agenda-prestation","rental","delivery","crm","billetterie","formulaires","dj-profiles","abonnements","parametres"];
 function getDefaultApps(role) {
   if (role === 'location') return ['rental', 'delivery'];
   return [...ALL_APPS];
@@ -3766,6 +3766,20 @@ api.get('/quotes', authMiddleware, async (req, res) => {
 // ═══════════════════════════════════════════
 // Serve widget HTML files (BEFORE api router so /api/widgets/* is served as static files)
 app.use('/api/widgets', express.static(path.join(__dirname, 'frontend', 'public', 'api', 'widgets')));
+
+api.get('/agenda-settings', authMiddleware, async (req, res) => {
+  let settings = await db.collection('agenda_settings').findOne({ id: 'global' }, { projection: { _id: 0 } });
+  if (!settings) settings = { id: 'global', deleted_djs: [], hidden_djs: [] };
+  res.json(settings);
+});
+api.put('/agenda-settings', authMiddleware, async (req, res) => {
+  await db.collection('agenda_settings').updateOne(
+    { id: 'global' },
+    { $set: { id: 'global', ...req.body } },
+    { upsert: true }
+  );
+  res.json({ success: true });
+});
 
 // Catch unregistered API routes
 api.use((req, res) => {

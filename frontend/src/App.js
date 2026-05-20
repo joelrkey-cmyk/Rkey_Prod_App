@@ -26,6 +26,7 @@ import FormsApp from "./components/FormsApp";
 import GlobalSettingsApp from "./components/GlobalSettingsApp";
 import PartnersApp from "./components/PartnersApp";
 import DjClientApp from "./components/DjClientApp";
+import AgendaPrestationApp from "./components/AgendaPrestationApp";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -185,6 +186,14 @@ function App() {
                       <DevisEnvoiApp />
                     </ErrorBoundary>
                   </>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/agenda-prestation" element={
+                <ProtectedRoute>
+                  <ErrorBoundary>
+                    <AgendaPrestationApp />
+                  </ErrorBoundary>
                 </ProtectedRoute>
               } />
               

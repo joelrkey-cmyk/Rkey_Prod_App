@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from './ui/textarea';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, PenLine, Settings, Handshake, Truck, Smile, FileSignature, Headphones } from 'lucide-react';
+import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, PenLine, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays } from 'lucide-react';
 import axios from '../services/axiosConfig';
 import { toast } from 'sonner';
 
@@ -458,6 +458,7 @@ const HomePage = () => {
         <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-8 gap-y-8 gap-x-4 justify-items-center">
           
           {[
+            { name: 'Agenda Presta', icon: <CalendarDays className="w-7 h-7" />, color: 'bg-red-500', route: '/agenda-prestation', key: 'agenda-prestation' },
             { name: 'Envoi de Devis', icon: <Send className="w-7 h-7" />, color: 'bg-orange-500', route: '/devis', key: 'devis' },
             { name: 'Contrats', icon: <FileSignature className="w-7 h-7" />, color: 'bg-amber-600', route: '/contracts2', key: 'contracts2' },
             { name: 'Location', icon: <Package className="w-7 h-7" />, color: 'bg-purple-500', route: '/location', key: 'location' },
