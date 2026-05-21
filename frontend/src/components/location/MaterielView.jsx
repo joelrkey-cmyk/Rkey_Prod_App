@@ -876,7 +876,7 @@ function MaterielView() {
                     {formData.photo_url && (
                       <div className="relative w-full h-32 rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
                         <img 
-                          src={formData.photo_url} 
+                          src={formData.photo_url.startsWith('/') ? `${BACKEND_URL}${formData.photo_url}` : formData.photo_url} 
                           alt="Aperçu"
                           className="w-full h-full object-cover"
                           onError={(e) => {
