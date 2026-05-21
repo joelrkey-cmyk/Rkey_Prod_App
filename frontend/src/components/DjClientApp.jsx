@@ -213,6 +213,12 @@ const DjClientApp = ({ isPublic = false }) => {
   const [chatMessages, setChatMessages] = useState([]);
 
   useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chatMessages]);
+
+  useEffect(() => {
     if (currentRoute.eventId) {
       const ev = events.find(e => e.id === currentRoute.eventId);
       if (ev) {
@@ -1259,12 +1265,12 @@ const DjClientApp = ({ isPublic = false }) => {
               {canEditBasic ? (
                  <input 
                    type="date" 
-                   value={localInfo.setup_date} 
+                   value={planningLocalInfo.setup_date} 
                    onChange={(e) => handleUpdate('setup_date', e.target.value)}
                    className="w-full border rounded-md p-2 text-sm focus:ring-indigo-500 bg-white"
                  />
               ) : (
-                <p className="font-medium text-gray-900">{formatPlanningDate(localInfo.setup_date)}</p>
+                <p className="font-medium text-gray-900">{formatPlanningDate(planningLocalInfo.setup_date)}</p>
               )}
             </div>
             <div>
@@ -1272,14 +1278,14 @@ const DjClientApp = ({ isPublic = false }) => {
               {canEditBasic ? (
                  <input 
                    type="text" 
-                   value={localInfo.setup_time} 
-                   onChange={(e) => setLocalInfo({...localInfo, setup_time: e.target.value})}
+                   value={planningLocalInfo.setup_time} 
+                   onChange={(e) => setPlanningLocalInfo({...planningLocalInfo, setup_time: e.target.value})}
                    onBlur={(e) => handleUpdate('setup_time', e.target.value)}
                    placeholder="Ex: 14h00, À définir..."
                    className="w-full border rounded-md p-2 text-sm focus:ring-indigo-500 bg-white"
                  />
               ) : (
-                <p className="font-medium text-gray-900">{localInfo.setup_time || "À définir"}</p>
+                <p className="font-medium text-gray-900">{planningLocalInfo.setup_time || "À définir"}</p>
               )}
             </div>
             <div>
@@ -1287,12 +1293,12 @@ const DjClientApp = ({ isPublic = false }) => {
               {canEditBasic ? (
                  <input 
                    type="time" 
-                   value={localInfo.start_time} 
+                   value={planningLocalInfo.start_time} 
                    onChange={(e) => handleUpdate('start_time', e.target.value)}
                    className="w-full border rounded-md p-2 text-sm focus:ring-indigo-500 bg-white"
                  />
               ) : (
-                <p className="font-medium text-gray-900">{localInfo.start_time || "--:--"}</p>
+                <p className="font-medium text-gray-900">{planningLocalInfo.start_time || "--:--"}</p>
               )}
             </div>
             <div>
@@ -1301,15 +1307,15 @@ const DjClientApp = ({ isPublic = false }) => {
                  <div className="flex items-center gap-3">
                    <input 
                      type="time" 
-                     value={localInfo.end_time} 
+                     value={planningLocalInfo.end_time} 
                      onChange={(e) => handleUpdate('end_time', e.target.value)}
-                     disabled={localInfo.unlimited_time}
+                     disabled={planningLocalInfo.unlimited_time}
                      className="w-full border rounded-md p-2 text-sm focus:ring-indigo-500 bg-white disabled:opacity-50"
                    />
                    <label className="flex items-center gap-1.5 text-sm whitespace-nowrap cursor-pointer shrink-0">
                      <input 
                        type="checkbox" 
-                       checked={localInfo.unlimited_time}
+                       checked={planningLocalInfo.unlimited_time}
                        onChange={(e) => handleUpdate('unlimited_time', e.target.checked)}
                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
                      />
@@ -1317,7 +1323,7 @@ const DjClientApp = ({ isPublic = false }) => {
                    </label>
                  </div>
               ) : (
-                <p className="font-medium text-gray-900">{localInfo.unlimited_time ? "Illimité" : (localInfo.end_time || "--:--")}</p>
+                <p className="font-medium text-gray-900">{planningLocalInfo.unlimited_time ? "Illimité" : (planningLocalInfo.end_time || "--:--")}</p>
               )}
             </div>
           </div>
@@ -1418,10 +1424,10 @@ const DjClientApp = ({ isPublic = false }) => {
           return;
         }
         
-        setIsUploading(true);
+        setDocsUploading(true);
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("category", uploadCategory);
+        formData.append("category", docsUploadCategory);
 
         try {
           const response = await fetch(`${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents`, {
@@ -1449,7 +1455,7 @@ const DjClientApp = ({ isPublic = false }) => {
           console.error("Error uploading document:", error);
           toast.error("Erreur lors de l'envoi du document.");
         } finally {
-          setIsUploading(false);
+          setDocsUploading(false);
           event.target.value = null; // Reset input
         }
       };
@@ -1475,20 +1481,20 @@ const DjClientApp = ({ isPublic = false }) => {
             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
                <select 
                  className="text-sm border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1.5"
-                 value={uploadCategory}
-                 onChange={(e) => setUploadCategory(e.target.value)}
+                 value={docsUploadCategory}
+                 onChange={(e) => setDocsUploadCategory(e.target.value)}
                  title="Catégorie pour le prochain upload"
                >
                  <option value="Administrative">Administratif</option>
                  <option value="Animations et interventions">Animations</option>
                </select>
-               <label className={`cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center gap-2 ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                 {isUploading ? (
+               <label className={`cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center gap-2 ${docsUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                 {docsUploading ? (
                     <><RefreshCw className="animate-spin w-4 h-4" /> Envoi...</>
                  ) : (
                     <><Upload className="w-4 h-4" /> Ajouter un PDF</>
                  )}
-                 <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={isUploading} />
+                 <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={docsUploading} />
                </label>
             </div>
           </div>
@@ -1769,7 +1775,7 @@ const DjClientApp = ({ isPublic = false }) => {
                 <div className="space-y-3">
                   <ul className="space-y-2">
                     {nonSelectedOptions.map((opt, idx) => {
-                      const isSelected = basket.some(o => o.id === opt.id);
+                      const isSelected = optionsBasket.some(o => o.id === opt.id);
                       return (
                         <li 
                           key={idx} 
@@ -1818,16 +1824,6 @@ const DjClientApp = ({ isPublic = false }) => {
     const ChatSection = () => {
       // Set to chatContainerRef defined at top-level
       
-      const scrollToBottom = () => {
-        if (chatContainerRef.current) {
-          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-        }
-      };
-
-      useEffect(() => {
-        scrollToBottom();
-      }, [chatMessages]);
-
       const handleSendMessage = () => {
         if (!chatNewMessage.trim()) return;
         const msg = {
@@ -2559,9 +2555,9 @@ const DjClientApp = ({ isPublic = false }) => {
               </button>
           </div>
       )}
-      {currentRoute.view === 'list' && currentRoute.mode !== 'standalone_dj' && <AdminListView />}
-      {currentRoute.view === 'dj-list' && currentRoute.mode === 'standalone_dj' && <DjStandaloneListView />}
-      {currentRoute.view === 'detail' && <DetailView />}
+      {currentRoute.view === 'list' && currentRoute.mode !== 'standalone_dj' && AdminListView()}
+      {currentRoute.view === 'dj-list' && currentRoute.mode === 'standalone_dj' && DjStandaloneListView()}
+      {currentRoute.view === 'detail' && DetailView()}
       
       {!isPublic && currentRoute.mode === 'standalone_client' && (
          <div className="mt-8 flex justify-center">
