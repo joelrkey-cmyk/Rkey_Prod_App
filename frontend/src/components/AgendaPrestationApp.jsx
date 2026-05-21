@@ -39,13 +39,13 @@ const CustomToolbar = (toolbar) => {
         {toolbar.label}
       </div>
       <div className="flex items-center gap-1 bg-white rounded-lg border p-1 shadow-sm">
-        {['month', 'week', 'day', 'agenda'].map(v => (
+        {['month', 'agenda'].map(v => (
           <button 
             key={v}
             className={`px-4 py-1.5 text-sm font-medium rounded-md transition capitalize ${toolbar.view === v ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-100 text-gray-600'}`}
             onClick={() => toolbar.onView(v)}
           >
-            {v === 'month' ? 'Mois' : v === 'week' ? 'Semaine' : v === 'day' ? 'Jour' : 'Liste'}
+            {v === 'month' ? 'Mois' : 'Planning'}
           </button>
         ))}
       </div>
@@ -59,6 +59,9 @@ export default function AgendaPrestationApp() {
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({ hidden_djs: [], deleted_djs: [] });
   const [showConfirmDelete, setShowConfirmDelete] = useState(null);
+  
+  const [calendarView, setCalendarView] = useState('month');
+  const [calendarDate, setCalendarDate] = useState(new Date());
 
   useEffect(() => {
     fetchData();
@@ -316,6 +319,19 @@ export default function AgendaPrestationApp() {
                     startAccessor="start"
                     endAccessor="end"
                     style={{ height: '100%' }}
+                    view={calendarView}
+                    date={calendarDate}
+                    onView={setCalendarView}
+                    onNavigate={setCalendarDate}
+                    onDrillDown={(newDate) => {
+                      setCalendarDate(newDate);
+                      setCalendarView('agenda');
+                    }}
+                    onSelectEvent={(event) => {
+                      setCalendarDate(event.start);
+                      setCalendarView('agenda');
+                    }}
+                    length={calendarView === 'agenda' ? 1 : undefined}
                     messages={{
                       next: "Suivant",
                       previous: "Précédent",
@@ -334,7 +350,7 @@ export default function AgendaPrestationApp() {
                     }}
                     popup
                     dayLayoutAlgorithm="no-overlap"
-                    views={['month', 'week', 'day', 'agenda']}
+                    views={['month', 'agenda']}
                   />
                 </div>
              )}
