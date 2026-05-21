@@ -2005,7 +2005,54 @@ api.get('/gcs/:folder/:filename', async (req, res) => {
   file.createReadStream()
     .on('error', (err) => {
       console.error('Error streaming from GCS:', err.message);
-      res.status(404).send('Not found');
+      if (!res.headersSent) {
+        const isPermissionError = err.message.toLowerCase().includes('permission') || 
+                                  err.message.toLowerCase().includes('access') || 
+                                  err.message.toLowerCase().includes('denied') || 
+                                  err.message.toLowerCase().includes('forbidden') ||
+                                  err.message.toLowerCase().includes('credential') ||
+                                  err.message.toLowerCase().includes('key');
+        
+        let clientEmail = 'agenda-bot@booking-pro-sync.iam.gserviceaccount.com';
+        if (process.env.GOOGLE_CREDENTIALS_JSON) {
+          try {
+            const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            if (creds.client_email) clientEmail = creds.client_email;
+          } catch(e) {}
+        }
+        
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.status(200);
+        
+        if (isPermissionError) {
+          res.send(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
+              <rect width="100%" height="100%" fill="#FEE2E2" rx="8" stroke="#F87171" stroke-width="2"/>
+              <text x="50%" y="45" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#DC2626">⚠️ ERREUR D'ACCÈS GCS (403)</text>
+              <text x="50%" y="80" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#7F1D1D" font-weight="bold">Le compte de service n'a pas accès au Bucket !</text>
+              <text x="50%" y="110" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#374151" font-weight="bold">Compte :</text>
+              <text x="50%" y="125" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="8.5" fill="#1F2937">${clientEmail}</text>
+              <text x="50%" y="150" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#374151" font-weight="bold">Bucket :</text>
+              <text x="50%" y="165" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#1F2937">rkey-prod-storage-01</text>
+              <rect x="15" y="185" width="370" height="50" fill="#FEF3C7" rx="4" stroke="#D97706" stroke-width="1"/>
+              <text x="50%" y="205" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#92400E">SOLUTION : Ajoutez le rôle "Administrateur des objets de stockage"</text>
+              <text x="50%" y="222" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#92400E">à ce compte de service sur votre bucket dans GCP.</text>
+            </svg>
+          `.trim());
+        } else {
+          res.send(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
+              <rect width="100%" height="100%" fill="#F3F4F6" rx="8" stroke="#D1D5DB" stroke-width="2"/>
+              <text x="50%" y="60" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#4B5563">📷 404 - IMAGE INTROUVABLE</text>
+              <text x="50%" y="100" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#374151">L'image n'existe pas dans le bucket Google Cloud Storage.</text>
+              <text x="50%" y="130" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#9CA3AF" font-family="monospace">Path: ${req.params.folder}/${req.params.filename}</text>
+              <rect x="25" y="170" width="350" height="50" fill="#ECFDF5" rx="4" stroke="#10B981" stroke-width="1"/>
+              <text x="50%" y="190" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#065F46">RÉSOLUTION : Importez à nouveau l'image</text>
+              <text x="50%" y="208" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#065F46">du matériel pour la recréer.</text>
+            </svg>
+          `.trim());
+        }
+      }
     })
     .pipe(res);
 });
@@ -2020,18 +2067,21 @@ api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
       const gcsPath = `client-uploads/${imageId}${ext}`;
       const file = bucket.file(gcsPath);
       
-      await file.save(req.file.buffer, {
-        metadata: { contentType: req.file.mimetype }
-      });
-      
-      res.json({ url: `/api/gcs/${gcsPath}` });
-    } else {
-      const imageId = uuidv4();
-      const b64 = req.file.buffer.toString('base64');
-      const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
-      await db.collection('event_uploads').insertOne(doc);
-      res.json({ url: `/api/uploads/events/${imageId}` });
+      try {
+        await file.save(req.file.buffer, {
+          metadata: { contentType: req.file.mimetype }
+        });
+        return res.json({ url: `/api/gcs/${gcsPath}` });
+      } catch (gcsErr) {
+        console.warn('GCS Upload Failed for /public/upload/photo, falling back to MongoDB:', gcsErr.message);
+      }
     }
+    
+    const imageId = uuidv4();
+    const b64 = req.file.buffer.toString('base64');
+    const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
+    await db.collection('event_uploads').insertOne(doc);
+    return res.json({ url: `/api/uploads/events/${imageId}` });
   } catch (error) {
     console.error('Error uploading photo:', error);
     res.status(500).json({ detail: 'Erreur lors de l\'upload de la photo' });
@@ -2048,18 +2098,21 @@ api.post('/upload/venue-photo', authMiddleware, upload.single('file'), async (re
       const gcsPath = `venue-photos/${imageId}${ext}`;
       const file = bucket.file(gcsPath);
       
-      await file.save(req.file.buffer, {
-        metadata: { contentType: req.file.mimetype }
-      });
-      
-      res.json({ url: `/api/gcs/${gcsPath}` });
-    } else {
-      const imageId = uuidv4();
-      const b64 = req.file.buffer.toString('base64');
-      const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
-      await db.collection('event_uploads').insertOne(doc);
-      res.json({ url: `/api/uploads/events/${imageId}` });
+      try {
+        await file.save(req.file.buffer, {
+          metadata: { contentType: req.file.mimetype }
+        });
+        return res.json({ url: `/api/gcs/${gcsPath}` });
+      } catch (gcsErr) {
+        console.warn('GCS Upload Failed for /upload/venue-photo, falling back to MongoDB:', gcsErr.message);
+      }
     }
+    
+    const imageId = uuidv4();
+    const b64 = req.file.buffer.toString('base64');
+    const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
+    await db.collection('event_uploads').insertOne(doc);
+    return res.json({ url: `/api/uploads/events/${imageId}` });
   } catch (error) {
     console.error('Error uploading venue photo:', error);
     res.status(500).json({ detail: 'Erreur lors de l\'upload de la photo du lieu' });
@@ -2076,14 +2129,22 @@ api.post('/upload/equipment-image', authMiddleware, upload.single('file'), async
       const gcsPath = `location-photos/${imageId}${ext}`;
       const file = bucket.file(gcsPath);
       
-      await file.save(req.file.buffer, {
-        metadata: { contentType: req.file.mimetype }
-      });
-      
-      res.json({ url: `/api/gcs/${gcsPath}` });
-    } else {
-      res.json({ url: `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}` });
+      try {
+        await file.save(req.file.buffer, {
+          metadata: { contentType: req.file.mimetype }
+        });
+        return res.json({ url: `/api/gcs/${gcsPath}` });
+      } catch (gcsErr) {
+        console.warn('GCS Upload Failed for /upload/equipment-image, falling back to MongoDB database:', gcsErr.message);
+      }
     }
+    
+    // Use MongoDB base64 dynamic asset route representing a cleaner URL instead of massive raw base64 data: url in equipment record
+    const imageId = uuidv4();
+    const b64 = req.file.buffer.toString('base64');
+    const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
+    await db.collection('event_uploads').insertOne(doc);
+    return res.json({ url: `/api/uploads/events/${imageId}` });
   } catch (error) {
     console.error('Error uploading equipment image:', error);
     res.status(500).json({ detail: 'Erreur lors de l\'upload de l\'image' });
