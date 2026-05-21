@@ -31,15 +31,33 @@ console.log('  - GOOGLE_PRIVATE_KEY exists:', !!process.env.GOOGLE_PRIVATE_KEY);
 console.log('==============================');
 
 function getGoogleCredentials() {
+  // 1. Chercher d'abord le fichier physique google-credentials.json
+  if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
+    try {
+      const fileContent = fs.readFileSync(GOOGLE_CREDENTIALS_PATH, 'utf8');
+      const creds = JSON.parse(fileContent);
+      if (creds) {
+        if (creds.private_key) {
+          creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+        }
+        console.log('Google Cloud Credentials successfully loaded from physical file.');
+        return creds;
+      }
+    } catch (fileErr) {
+      console.error('Failed to read or parse physical google-credentials.json file:', fileErr.message);
+    }
+  }
+
+  // 2. Si le fichier physique n'est pas là, chercher la variable d'environnement GOOGLE_CREDENTIALS_JSON
   if (process.env.GOOGLE_CREDENTIALS_JSON) {
     let creds = null;
     let credStr = process.env.GOOGLE_CREDENTIALS_JSON.trim();
-    // Hostinger / panels might wrap the JSON string
+    
+    // Nettoyage et déballage sécurisé de la chaîne JSON
     if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
     if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
     
     credStr = credStr.trim();
-    // Unescape safely if needed
     if (credStr.includes('\\"')) {
       credStr = credStr.replace(/\\"/g, '"');
     }
@@ -72,7 +90,7 @@ function getGoogleCredentials() {
 
         if (fields.type && fields.project_id && fields.private_key && fields.client_email) {
           creds = fields;
-          console.log('Successfully extracted Google Credentials object using Regex fallback!');
+          console.log('Successfully extracted Google Credentials object from environment using Regex fallback!');
         } else {
           console.error('Regex fallback failed to extract required credentials fields.');
         }
@@ -82,33 +100,23 @@ function getGoogleCredentials() {
     }
 
     if (creds) {
-      // Ensure private key has proper newlines in case they were escaped or stripped
       if (creds.private_key) {
         creds.private_key = creds.private_key.replace(/\\n/g, '\n');
       }
-      
-      // Auto-save parsed credentials to file to make it standard and compatible with all libraries
-      try {
-        fs.writeFileSync(GOOGLE_CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8');
-        console.log(`Saved google-credentials.json to file: ${GOOGLE_CREDENTIALS_PATH}`);
-      } catch (fileErr) {
-        console.error('Failed to write google-credentials.json file:', fileErr.message);
-      }
-      
       return creds;
     }
   } else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-    const creds = {
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync'
-    };
+    // 3. Fallback sur les variables individuelles
     try {
-      fs.writeFileSync(GOOGLE_CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8');
-    } catch (fileErr) {
-      console.error('Failed to write google-credentials.json file from alternative variables:', fileErr.message);
+      const creds = {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync'
+      };
+      return creds;
+    } catch (varsErr) {
+      console.error('Failed to construct credentials from individual environment variables:', varsErr.message);
     }
-    return creds;
   }
   return null;
 }
@@ -118,13 +126,9 @@ try {
   if (credentials) {
     storage = new Storage({ credentials });
     bucket = storage.bucket(BUCKET_NAME);
-    console.log('Google Cloud Storage initialized from environment variable.');
-  } else if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
-    storage = new Storage({ keyFilename: GOOGLE_CREDENTIALS_PATH });
-    bucket = storage.bucket(BUCKET_NAME);
-    console.log('Google Cloud Storage initialized from file.');
+    console.log('Google Cloud Storage initialized from environment variable or parsed file.');
   } else {
-    console.warn('google-credentials.json not found, GCS not initialized.');
+    console.warn('No Google credentials found (file or environment). GCS is not initialized.');
   }
 } catch (err) {
   console.error('Failed to initialize Google Cloud Storage:', err);
@@ -163,13 +167,7 @@ async function initGoogleCalendar() {
         credentials,
         scopes: ['https://www.googleapis.com/auth/calendar'],
       });
-      console.log('Google Calendar integration initialized from environment variable.');
-    } else if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
-      auth = new google.auth.GoogleAuth({
-        keyFile: GOOGLE_CREDENTIALS_PATH,
-        scopes: ['https://www.googleapis.com/auth/calendar'],
-      });
-      console.log('Google Calendar integration initialized from file.');
+      console.log('Google Calendar integration initialized from environment variables or file-system credentials.');
     } else {
       console.warn('google-credentials.json and GOOGLE_CREDENTIALS_JSON not found, Google Calendar sync is disabled.');
       return;
