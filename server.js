@@ -19,9 +19,36 @@ let storage = null;
 let bucket = null;
 const GOOGLE_CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json');
 
-try {
+function getGoogleCredentials() {
   if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    try {
+      let credStr = process.env.GOOGLE_CREDENTIALS_JSON;
+      // Hostinger / panels might wrap the JSON string
+      if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
+      
+      const creds = JSON.parse(credStr);
+      // Ensure private key has proper newlines in case they were escaped or stripped
+      if (creds.private_key) {
+        creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+      }
+      return creds;
+    } catch (e) {
+      console.error('Failed to parse GOOGLE_CREDENTIALS_JSON env var:', e.message);
+      return null;
+    }
+  } else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    return {
+      client_email: process.env.GOOGLE_CLIENT_EMAIL,
+      private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync'
+    };
+  }
+  return null;
+}
+
+try {
+  const credentials = getGoogleCredentials();
+  if (credentials) {
     storage = new Storage({ credentials });
     bucket = storage.bucket(BUCKET_NAME);
     console.log('Google Cloud Storage initialized from environment variable.');
@@ -63,8 +90,8 @@ let locationCalendarId = null;
 async function initGoogleCalendar() {
   try {
     let auth;
-    if (process.env.GOOGLE_CREDENTIALS_JSON) {
-      const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    const credentials = getGoogleCredentials();
+    if (credentials) {
       auth = new google.auth.GoogleAuth({
         credentials,
         scopes: ['https://www.googleapis.com/auth/calendar'],
@@ -517,13 +544,9 @@ const api = express.Router();
 api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
   let serviceAccountEmail = null;
   
-  if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    try {
-      const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-      serviceAccountEmail = creds.client_email;
-    } catch (e) {
-      console.error('Failed to parse GOOGLE_CREDENTIALS_JSON env var', e);
-    }
+  const credentials = getGoogleCredentials();
+  if (credentials) {
+    serviceAccountEmail = credentials.client_email;
   } else if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
     try {
       const creds = JSON.parse(fs.readFileSync(GOOGLE_CREDENTIALS_PATH, 'utf8'));

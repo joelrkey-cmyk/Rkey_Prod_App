@@ -425,8 +425,18 @@ function MaterielView() {
       const response = await axios.post(`${API}/generate-description`, {
         reference: productReference
       });
-      setGeneratedDescription(response.data.description);
+      const generatedText = response.data.description;
+      setGeneratedDescription(generatedText);
       toast.success('Description générée avec succès !');
+
+      // Autofill if form is open, matching user expectations from previous versions
+      if (showAddForm) {
+        setFormData(prev => ({
+          ...prev, 
+          observations: generatedText,
+          catalogue_description: generatedText
+        }));
+      }
     } catch (error) {
       toast.error('Erreur lors de la génération de la description');
     } finally {
@@ -449,7 +459,11 @@ function MaterielView() {
         category: formData.category,
         observations: formData.observations || ''
       });
-      setFormData(prev => ({ ...prev, catalogue_description: response.data.description }));
+      setFormData(prev => ({ 
+        ...prev, 
+        catalogue_description: response.data.description,
+        observations: prev.observations ? prev.observations : response.data.description 
+      }));
       toast.success('Description catalogue générée avec succès !');
     } catch (error) {
       console.error('Error generating catalogue description:', error);
@@ -855,7 +869,7 @@ function MaterielView() {
               </div>
               
               <div>
-                <Label htmlFor="equipment-observations">Observations</Label>
+                <Label htmlFor="equipment-observations">Description / Observations</Label>
                 <textarea
                   id="equipment-observations"
                   value={formData.observations}
