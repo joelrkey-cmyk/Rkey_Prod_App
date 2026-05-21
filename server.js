@@ -3716,11 +3716,13 @@ api.post('/devis2/generate-pdf', authMiddleware, async (req, res) => {
     if (!selected_pages || !selected_pages.length) return res.status(400).json({ detail: 'Aucune page sélectionnée' });
 
     const pdfDoc = await PDFDocument.create();
+    let gcsErrorsCount = 0;
+    let lastGcsError = '';
 
     for (const pageId of selected_pages) {
       let page = await db.collection('devis2_pages').findOne({ id: pageId });
       if (!page) page = await db.collection('devis2_pages').findOne({ key: pageId });
-      if (!page || (!page.image_data && !page.gcs_path)) continue;
+      if (!page) continue;
 
       let imgBytes = null;
       if (page.gcs_path && bucket) {
@@ -3730,12 +3732,19 @@ api.post('/devis2/generate-pdf', authMiddleware, async (req, res) => {
           imgBytes = buffer;
         } catch (err) {
           console.error(`Failed to download ${page.gcs_path} from GCS:`, err);
-          continue;
+          gcsErrorsCount++;
+          lastGcsError = err.message;
+          // Robust fallback to image_data if available in the database
+          if (page.image_data) {
+            imgBytes = Buffer.from(page.image_data, 'base64');
+          }
         }
       } else if (page.image_data) {
         imgBytes = Buffer.from(page.image_data, 'base64');
-      } else {
-         continue;
+      }
+
+      if (!imgBytes) {
+        continue;
       }
 
       // Apply price overlay on tarif page (like production: white Poppins text at y=630)
@@ -3756,7 +3765,21 @@ api.post('/devis2/generate-pdf', authMiddleware, async (req, res) => {
       pdfPage.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
     }
 
-    if (pdfDoc.getPageCount() === 0) return res.status(400).json({ detail: 'Aucune page valide trouvée' });
+    if (pdfDoc.getPageCount() === 0) {
+      if (gcsErrorsCount > 0) {
+        const isPermission = lastGcsError.toLowerCase().includes('permission') || 
+                             lastGcsError.toLowerCase().includes('denied') || 
+                             lastGcsError.toLowerCase().includes('access') ||
+                             lastGcsError.toLowerCase().includes('forbidden');
+        if (isPermission) {
+          return res.status(400).json({ 
+            detail: `Erreur d'autorisation Google Cloud Storage : Votre compte de service (agenda-bot@booking-pro-sync.iam.gserviceaccount.com) n'a pas accès au bucket "rkey-prod-storage-01". Veuillez ajouter le rôle "Administrateur des objets de stockage" (Storage Object Admin) à ce compte de service sur GCP.` 
+          });
+        }
+        return res.status(400).json({ detail: `Erreur de téléchargement des pages depuis Google Cloud Storage : ${lastGcsError}` });
+      }
+      return res.status(400).json({ detail: 'Aucune page valide trouvée' });
+    }
 
     const pdfBytes = await pdfDoc.save();
     const pdfBase64 = Buffer.from(pdfBytes).toString('base64');
