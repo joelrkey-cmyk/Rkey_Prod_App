@@ -35,7 +35,7 @@ export const ConfigurationPage = ({
 }) => {
   const [activeConfigTab, setActiveConfigTab] = useState("options");
   const [editingOptionIndex, setEditingOptionIndex] = useState(null);
-  const [newOption, setNewOption] = useState({ name: "", price: 0, event_categories: [] });
+  const [newOption, setNewOption] = useState({ name: "", price: 0, event_categories: [], linked_equipment_id: "" });
 
   const [newNote, setNewNote] = useState({ key: "", title: "", content: "" });
   const [isSaving, setIsSaving] = useState(false);
@@ -51,6 +51,8 @@ export const ConfigurationPage = ({
   const [isCgvModalOpen, setIsCgvModalOpen] = useState(false);
   const [editingCgvData, setEditingCgvData] = useState({ name: "", content: "" });
 
+  const [equipmentList, setEquipmentList] = useState([]);
+
   // Charger les notes ordonnées au montage
   useEffect(() => {
     const loadOrderedNotes = async () => {
@@ -63,7 +65,16 @@ export const ConfigurationPage = ({
         console.error("Error loading ordered notes:", error);
       }
     };
+    const loadEquipmentList = async () => {
+      try {
+        const data = await apiService.request('/location/equipment');
+        setEquipmentList(data || []);
+      } catch (error) {
+        console.error("Error loading equipment list:", error);
+      }
+    };
     loadOrderedNotes();
+    loadEquipmentList();
   }, [apiService]);
 
   // --- Options Matériel ---
@@ -74,10 +85,11 @@ export const ConfigurationPage = ({
         const savedOption = await apiService.createMaterialOption({
           name: newOption.name.trim(),
           price: newOption.price,
-          event_categories: newOption.event_categories || []
+          event_categories: newOption.event_categories || [],
+          linked_equipment_id: newOption.linked_equipment_id || null
         });
         setSelectedOptions([...selectedOptions, { ...savedOption, selected: false }]);
-        setNewOption({ name: "", price: 0, event_categories: [] });
+        setNewOption({ name: "", price: 0, event_categories: [], linked_equipment_id: "" });
         toast.success("Option matériel ajoutée et sauvegardée définitivement !");
       } catch (error) {
         console.error("Error adding option:", error);
@@ -110,7 +122,8 @@ export const ConfigurationPage = ({
       await apiService.updateMaterialOption(option.id, { 
         name: option.name, 
         price: option.price,
-        event_categories: option.event_categories || [] 
+        event_categories: option.event_categories || [],
+        linked_equipment_id: option.linked_equipment_id || null
       });
       setEditingOptionIndex(null);
       toast.success("Option modifiée et sauvegardée !");
@@ -418,6 +431,23 @@ export const ConfigurationPage = ({
                                 ))}
                               </div>
                             </div>
+                            <div className="space-y-1 mt-2">
+                              <Label className="text-xs text-slate-500">Lier à un équipement de location :</Label>
+                              <select 
+                                className="w-full text-sm border rounded-md px-3 py-2 bg-white"
+                                value={option.linked_equipment_id || ""}
+                                onChange={(e) => { 
+                                  const updated = [...selectedOptions]; 
+                                  updated[index].linked_equipment_id = e.target.value; 
+                                  setSelectedOptions(updated); 
+                                }}
+                              >
+                                <option value="">-- Aucun équipement lié --</option>
+                                {equipmentList.map(eq => (
+                                  <option key={eq.id} value={eq.id}>{eq.name}</option>
+                                ))}
+                              </select>
+                            </div>
                             <div>
                               <Button onClick={() => saveEditedOption(index)} size="sm" variant="outline" disabled={isSaving}>{isSaving ? "..." : "Valider"}</Button>
                             </div>
@@ -429,6 +459,12 @@ export const ConfigurationPage = ({
                               <p className="text-sm text-slate-600">{option.price}€</p>
                               {(option.event_categories && option.event_categories.length > 0) && (
                                 <p className="text-xs text-blue-600 mt-1">Limité à : {option.event_categories.join(', ')}</p>
+                              )}
+                              {option.linked_equipment_id && (
+                                <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1">
+                                  <Music className="w-3 h-3" /> 
+                                  Lié à : {equipmentList.find(eq => eq.id === option.linked_equipment_id)?.name || "Équipement introuvable"}
+                                </p>
                               )}
                             </div>
                           </div>
@@ -466,6 +502,22 @@ export const ConfigurationPage = ({
                           </label>
                         ))}
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm text-slate-700 font-medium">Lier à un équipement de location :</Label>
+                      <select 
+                        className="w-full text-sm border rounded-md px-3 py-2 bg-white"
+                        value={newOption.linked_equipment_id || ""}
+                        onChange={(e) => setNewOption({...newOption, linked_equipment_id: e.target.value})}
+                      >
+                        <option value="">-- Aucun équipement lié --</option>
+                        {equipmentList.map(eq => (
+                          <option key={eq.id} value={eq.id}>{eq.name}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-slate-500">
+                        Si un équipement est lié, une réservation sera automatiquement créée lorsque le contrat comportant cette option sera signé.
+                      </p>
                     </div>
                     <div>
                       <Button onClick={addNewOption} disabled={!newOption.name.trim() || isSaving}>

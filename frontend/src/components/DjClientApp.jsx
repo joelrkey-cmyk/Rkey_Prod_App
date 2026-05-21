@@ -12,6 +12,19 @@ const BACKEND_URL = API_BASE_URL;
 const DjClientApp = ({ isPublic = false }) => {
   const { slug } = useParams();
   
+  // -- Lifted States for Inner Render Functions --
+  const [scheduleCustomItem, setScheduleCustomItem] = useState("");
+  const [clientPhotoUploading, setClientPhotoUploading] = useState(false);
+  const [planningLocalInfo, setPlanningLocalInfo] = useState({});
+  const [docsUploading, setDocsUploading] = useState(false);
+  const [docsUploadCategory, setDocsUploadCategory] = useState("Administrative");
+  const [optionsBasket, setOptionsBasket] = useState([]);
+  const [optionsSubmitting, setOptionsSubmitting] = useState(false);
+  const [chatNewMessage, setChatNewMessage] = useState("");
+  const chatContainerRef = useRef(null);
+  const [venueUploading, setVenueUploading] = useState(false);
+  const [djStandaloneExpandedYears, setDjStandaloneExpandedYears] = useState({});
+  
   const SCHEDULE_CATEGORIES = [
     { title: "Événements du Repas", type: 'repas', options: ["Apéritif", "Entrée", "Plat", "Fromage", "Dessert"] },
     { title: "Musique", type: 'musique', options: ["Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"] },
@@ -491,7 +504,7 @@ const DjClientApp = ({ isPublic = false }) => {
               </button>
               {expandedSections[year] !== false && (
                 <div className="p-4 bg-white">
-                  <EventTable eventsList={futureByYear[year]} />
+                  {EventTable({ eventsList: futureByYear[year] })}
                 </div>
               )}
             </div>
@@ -515,7 +528,7 @@ const DjClientApp = ({ isPublic = false }) => {
           </button>
           {expandedSections['past'] && (
             <div className="mt-4 p-4 border border-gray-200 rounded-xl bg-gray-50">
-              <EventTable eventsList={pastEvents} />
+              {EventTable({ eventsList: pastEvents })}
             </div>
           )}
         </div>
@@ -525,8 +538,6 @@ const DjClientApp = ({ isPublic = false }) => {
   );
 
   const ScheduleSection = ({ canEdit }) => {
-    const [customItem, setCustomItem] = useState("");
-
     const ev = events.find(e => e.id === currentRoute.eventId);
 
     if (!canEdit && scheduleItems.length === 0 && !notes) return null;
@@ -568,14 +579,14 @@ const DjClientApp = ({ isPublic = false }) => {
               <div className="flex gap-2">
                 <input 
                   type="text" 
-                  value={customItem}
-                  onChange={(e) => setCustomItem(e.target.value)}
+                  value={scheduleCustomItem}
+                  onChange={(e) => setScheduleCustomItem(e.target.value)}
                   placeholder="Autre événement..." 
                   className="flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  onKeyDown={e => { if(e.key === 'Enter' && customItem) { addScheduleItem(customItem); setCustomItem(''); } }}
+                  onKeyDown={e => { if(e.key === 'Enter' && scheduleCustomItem) { addScheduleItem(scheduleCustomItem); setScheduleCustomItem(''); } }}
                 />
                 <button 
-                  onClick={() => { if(customItem) { addScheduleItem(customItem); setCustomItem(''); } }}
+                  onClick={() => { if(scheduleCustomItem) { addScheduleItem(scheduleCustomItem); setScheduleCustomItem(''); } }}
                   className="bg-indigo-600 text-white p-2 rounded-md hover:bg-indigo-700 transition"
                 >
                   <Plus className="w-5 h-5" />
@@ -1084,18 +1095,17 @@ const DjClientApp = ({ isPublic = false }) => {
 
     const ClientInfoSection = () => {
       const info = ev.contractInfo;
-      const [uploading, setUploading] = useState(false);
       
       if (!info) return null;
       
       const handleFileUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        setUploading(true);
+        setClientPhotoUploading(true);
         const formData = new FormData();
         formData.append('file', file);
         try {
-          const response = await fetch(`${BACKEND_URL}/api/public/upload/photo`, {
+          const response = await fetch(`/api/gcs/upload`, {
             method: 'POST',
             body: formData
           });
@@ -1109,7 +1119,7 @@ const DjClientApp = ({ isPublic = false }) => {
         } catch (err) {
           toast.error("Erreur serveur");
         }
-        setUploading(false);
+        setClientPhotoUploading(false);
       };
 
       const handleDeletePhoto = () => {
@@ -1201,24 +1211,8 @@ const DjClientApp = ({ isPublic = false }) => {
       const info = ev.contractInfo;
       const role = currentRoute.role;
       if (!info) return null;
-      
-      const [localInfo, setLocalInfo] = useState({
-        setup_date: info.setup_date || "",
-        setup_time: info.setup_time || "",
-        start_time: info.start_time || "",
-        end_time: (info.unlimited_time ? "" : info.end_time) || "",
-        unlimited_time: info.unlimited_time || false
-      });
-      
-      useEffect(() => {
-        setLocalInfo({
-          setup_date: info.setup_date || "",
-          setup_time: info.setup_time || "",
-          start_time: info.start_time || "",
-          end_time: (info.unlimited_time ? "" : info.end_time) || "",
-          unlimited_time: info.unlimited_time || false
-        });
-      }, [info]);
+
+      // Effect lifted to top level DjClientApp
       
       const formatPlanningDate = (dateStr) => {
         if (!dateStr) return "Non définie";
@@ -1228,8 +1222,8 @@ const DjClientApp = ({ isPublic = false }) => {
       };
 
       const handleUpdate = (field, value) => {
-        const updated = { ...localInfo, [field]: value };
-        setLocalInfo(updated);
+        const updated = { ...planningLocalInfo, [field]: value };
+        setPlanningLocalInfo(updated);
         
         const payloadInfo = { 
           ...ev.rawClientInfo, 
@@ -1335,9 +1329,6 @@ const DjClientApp = ({ isPublic = false }) => {
       const selectedPdfs = ev.selectedPdfNotes || [];
       const eventDocuments = ev.eventDocuments || [];
       const isAdminOrDj = currentRoute.role === 'admin' || currentRoute.role === 'dj';
-      
-      const [isUploading, setIsUploading] = useState(false);
-      const [uploadCategory, setUploadCategory] = useState("Administrative");
 
       const handleTogglePdf = (id) => {
         if (!isAdminOrDj) return;
@@ -1633,22 +1624,19 @@ const DjClientApp = ({ isPublic = false }) => {
       );
       const role = currentRoute.role;
 
-      const [basket, setBasket] = useState([]);
-      const [isSubmitting, setIsSubmitting] = useState(false);
-
       const toggleBasket = (opt) => {
-        if (basket.some(o => o.id === opt.id)) {
-          setBasket(basket.filter(o => o.id !== opt.id));
+        if (optionsBasket.some(o => o.id === opt.id)) {
+          setOptionsBasket(optionsBasket.filter(o => o.id !== opt.id));
         } else {
-          setBasket([...basket, opt]);
+          setOptionsBasket([...optionsBasket, opt]);
         }
       };
 
       const submitRequest = async () => {
-        if (basket.length === 0) return;
-        setIsSubmitting(true);
+        if (optionsBasket.length === 0) return;
+        setOptionsSubmitting(true);
         try {
-          const updatedRequestedOptions = [...requestedOptions, ...basket];
+          const updatedRequestedOptions = [...requestedOptions, ...optionsBasket];
           const payload = { requested_options: updatedRequestedOptions };
           
           const token = localStorage.getItem('access_token');
@@ -1663,19 +1651,19 @@ const DjClientApp = ({ isPublic = false }) => {
           });
           
           if (res.ok) {
-            setBasket([]);
+            setOptionsBasket([]);
             await fetchContractsAsEvents();
             toast.success("Demandes d'options envoyées");
           }
         } catch (e) {
           console.error("Error submitting requested options", e);
         } finally {
-          setIsSubmitting(false);
+          setOptionsSubmitting(false);
         }
       };
 
       const cancelRequestedOption = async (optToRemove) => {
-        setIsSubmitting(true);
+        setOptionsSubmitting(true);
         try {
           const updatedRequestedOptions = requestedOptions.filter(opt => opt.name !== optToRemove.name);
           const payload = { requested_options: updatedRequestedOptions };
@@ -1750,7 +1738,7 @@ const DjClientApp = ({ isPublic = false }) => {
                           {(role === 'dj' || role === 'admin') && (
                             <button
                               onClick={() => cancelRequestedOption(opt)}
-                              disabled={isSubmitting}
+                              disabled={optionsSubmitting}
                               className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors disabled:opacity-50"
                               title="Annuler l'option"
                             >
@@ -1808,13 +1796,13 @@ const DjClientApp = ({ isPublic = false }) => {
                     })}
                   </ul>
 
-                  {role === 'client' && basket.length > 0 && (
+                  {role === 'client' && optionsBasket.length > 0 && (
                     <button
                       onClick={submitRequest}
-                      disabled={isSubmitting}
+                      disabled={optionsSubmitting}
                       className="w-full mt-4 bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 flex justify-center items-center gap-2"
                     >
-                      {isSubmitting ? 'Envoi en cours...' : `Soumettre la demande (${basket.length} option${basket.length > 1 ? 's' : ''})`}
+                      {optionsSubmitting ? 'Envoi en cours...' : `Soumettre la demande (${optionsBasket.length} option${optionsBasket.length > 1 ? 's' : ''})`}
                     </button>
                   )}
                 </div>
@@ -1828,8 +1816,7 @@ const DjClientApp = ({ isPublic = false }) => {
     };
 
     const ChatSection = () => {
-      const [newMessage, setNewMessage] = useState("");
-      const chatContainerRef = useRef(null);
+      // Set to chatContainerRef defined at top-level
       
       const scrollToBottom = () => {
         if (chatContainerRef.current) {
@@ -1842,17 +1829,17 @@ const DjClientApp = ({ isPublic = false }) => {
       }, [chatMessages]);
 
       const handleSendMessage = () => {
-        if (!newMessage.trim()) return;
+        if (!chatNewMessage.trim()) return;
         const msg = {
           id: Date.now().toString(),
-          text: newMessage,
+          text: chatNewMessage,
           senderRole: currentRoute.role, // 'admin', 'dj', 'client'
           senderName: currentRoute.role === 'admin' ? "R'Key Prod" : (currentRoute.role === 'dj' ? (ev.dj?.name || 'DJ') : (ev.contractInfo?.company || ev.client?.name || 'Client')),
           timestamp: new Date().toISOString()
         };
         const updatedChat = [...chatMessages, msg];
         setChatMessages(updatedChat);
-        setNewMessage("");
+        setChatNewMessage("");
         
         ev.chatMessages = updatedChat;
         if (currentRoute.eventId) {
@@ -1925,13 +1912,13 @@ const DjClientApp = ({ isPublic = false }) => {
           <div className="flex gap-2">
             <input 
               type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              value={chatNewMessage}
+              onChange={(e) => setChatNewMessage(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Écrivez votre message..."
               className="flex-1 border border-orange-200 rounded-md p-2.5 focus:ring-2 focus:ring-orange-500 focus:outline-none focus:border-orange-500 bg-white placeholder-orange-300"
             />
-            <button onClick={handleSendMessage} disabled={!newMessage.trim()} className="bg-orange-600 text-white px-5 py-2.5 rounded-md font-medium hover:bg-orange-700 disabled:opacity-50 transition-colors shadow-sm disabled:shadow-none font-semibold">
+            <button onClick={handleSendMessage} disabled={!chatNewMessage.trim()} className="bg-orange-600 text-white px-5 py-2.5 rounded-md font-medium hover:bg-orange-700 disabled:opacity-50 transition-colors shadow-sm disabled:shadow-none font-semibold">
               Envoyer
             </button>
           </div>
@@ -2138,18 +2125,17 @@ const DjClientApp = ({ isPublic = false }) => {
       if (!ev) return null;
       
       const isClient = currentRoute.role === 'client';
-      const [uploading, setUploading] = useState(false);
       const isDashboard = window.location.pathname === '/';
       const token = localStorage.getItem('access_token');
       
       const handleFileUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        setUploading(true);
+        setVenueUploading(true);
         const formData = new FormData();
         formData.append('file', file);
         try {
-          const response = await fetch(`${BACKEND_URL}/api/public/upload/photo`, {
+          const response = await fetch(`/api/gcs/upload`, {
             method: 'POST',
             body: formData
           });
@@ -2164,7 +2150,7 @@ const DjClientApp = ({ isPublic = false }) => {
         } catch (err) {
           toast.error("Erreur serveur");
         }
-        setUploading(false);
+        setVenueUploading(false);
       };
 
       const handleDeletePhoto = (photoId) => {
@@ -2233,7 +2219,7 @@ const DjClientApp = ({ isPublic = false }) => {
                   
                   {/* Upload button wrapper */}
                   <label className="h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center relative hover:bg-gray-50 transition cursor-pointer">
-                    {uploading ? (
+                    {venueUploading ? (
                       <span className="text-gray-500 text-sm flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" /> Upload...
                       </span>
@@ -2293,11 +2279,11 @@ const DjClientApp = ({ isPublic = false }) => {
           </div>
         )}
 
-        <ClientInfoSection />
-        <ChatSection />
-        <PlanningSection />
-        <DocumentsTipsSection />
-        <OptionsSection />
+        {ClientInfoSection()}
+        {ChatSection()}
+        {PlanningSection()}
+        {DocumentsTipsSection()}
+        {OptionsSection()}
 
         {currentRoute.role === 'admin' && (
           <div className="space-y-6 animate-in fade-in duration-300">
@@ -2316,8 +2302,8 @@ const DjClientApp = ({ isPublic = false }) => {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ScheduleSection canEdit={true} />
-              <PlaylistSection role="admin" />
+              {ScheduleSection({ canEdit: true })}
+              {PlaylistSection({ role: "admin" })}
             </div>
           </div>
         )}
@@ -2344,8 +2330,8 @@ const DjClientApp = ({ isPublic = false }) => {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ScheduleSection canEdit={true} />
-              <PlaylistSection role="dj" />
+              {ScheduleSection({ canEdit: true })}
+              {PlaylistSection({ role: "dj" })}
             </div>
           </div>
         )}
@@ -2372,15 +2358,15 @@ const DjClientApp = ({ isPublic = false }) => {
                </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ScheduleSection canEdit={false} />
-              <PlaylistSection role="client" />
+              {ScheduleSection({ canEdit: false })}
+              {PlaylistSection({ role: "client" })}
             </div>
           </div>
         )}
 
-        <MusicStylesSection />
-        <VenueSection />
-        <CateringSection />
+        {MusicStylesSection()}
+        {VenueSection()}
+        {CateringSection()}
       </div>
     );
   };
@@ -2398,10 +2384,8 @@ const DjClientApp = ({ isPublic = false }) => {
       return acc;
     }, {});
 
-    const [expandedYears, setExpandedYears] = useState({});
-
     const toggleYear = (year) => {
-      setExpandedYears(prev => ({ ...prev, [year]: prev[year] === false ? true : false }));
+      setDjStandaloneExpandedYears(prev => ({ ...prev, [year]: prev[year] === false ? true : false }));
     };
 
     return (
@@ -2445,9 +2429,9 @@ const DjClientApp = ({ isPublic = false }) => {
                                         {futureByYear[year].length} événement(s)
                                     </span>
                                 </span>
-                                {expandedYears[year] !== false ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                                {djStandaloneExpandedYears[year] !== false ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                             </button>
-                            {expandedYears[year] !== false && (
+                            {djStandaloneExpandedYears[year] !== false && (
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left bg-white">
                                         <thead className="bg-gray-50 text-sm text-gray-500 border-b border-t">
