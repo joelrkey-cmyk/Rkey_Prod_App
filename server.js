@@ -2856,52 +2856,22 @@ api.get('/location/gcs-diagnostic', authMiddleware, async (req, res) => {
   try {
     if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
       diagnostic.credentials_source = 'physical_file';
-      const fileContent = fs.readFileSync(GOOGLE_CREDENTIALS_PATH, 'utf8');
-      const creds = JSON.parse(fileContent);
-      diagnostic.credentials_parsed = {
-        project_id: creds.project_id,
-        client_email: creds.client_email,
-        type: creds.type,
-        private_key_starts_with: creds.private_key ? creds.private_key.substring(0, 30) + "..." : null
-      };
-      if (creds.private_key) {
-        creds.private_key = sanitizePrivateKey(creds.private_key);
-      }
-      activeCredentials = creds;
     } else if (process.env.GOOGLE_CREDENTIALS_JSON) {
       diagnostic.credentials_source = 'environment_json';
-      let credStr = process.env.GOOGLE_CREDENTIALS_JSON.trim();
-      if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
-      if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
-      credStr = credStr.trim();
-      if (credStr.includes('\\"')) {
-        credStr = credStr.replace(/\\"/g, '"');
-      }
-      const creds = JSON.parse(credStr);
-      diagnostic.credentials_parsed = {
-        project_id: creds.project_id,
-        client_email: creds.client_email,
-        type: creds.type,
-        private_key_starts_with: creds.private_key ? creds.private_key.substring(0, 30) + "..." : null
-      };
-      if (creds.private_key) {
-        creds.private_key = sanitizePrivateKey(creds.private_key);
-      }
-      activeCredentials = creds;
     } else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
       diagnostic.credentials_source = 'environment_individual_variables';
-      diagnostic.credentials_parsed = {
-        project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync',
-        client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key_starts_with: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.substring(0, 30) + "..." : null
-      };
-      activeCredentials = {
-        client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: sanitizePrivateKey(process.env.GOOGLE_PRIVATE_KEY),
-        project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync'
-      };
     } else {
       diagnostic.credentials_source = 'none';
+    }
+
+    activeCredentials = getGoogleCredentials();
+    if (activeCredentials) {
+      diagnostic.credentials_parsed = {
+        project_id: activeCredentials.project_id,
+        client_email: activeCredentials.client_email,
+        type: activeCredentials.type || (activeCredentials.client_email ? 'service_account' : null),
+        private_key_starts_with: activeCredentials.private_key ? activeCredentials.private_key.substring(0, 30) + "..." : null
+      };
     }
   } catch (err) {
     diagnostic.credentials_source_error = err.message;
