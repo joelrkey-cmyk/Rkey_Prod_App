@@ -191,9 +191,12 @@ function App() {
 
               <Route path="/agenda-prestation" element={
                 <ProtectedRoute>
-                  <ErrorBoundary>
-                    <AgendaPrestationApp />
-                  </ErrorBoundary>
+                  <>
+                    <Navigation />
+                    <ErrorBoundary>
+                      <AgendaPrestationApp />
+                    </ErrorBoundary>
+                  </>
                 </ProtectedRoute>
               } />
               

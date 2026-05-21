@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
-import { Home, FileSignature, FileCheck, Package, Users, Ticket, User, Send, LogOut, FileText, Handshake, Truck, CreditCard, Settings, ChevronDown, Building2, Smile, Headphones } from 'lucide-react';
+import { Home, FileSignature, FileCheck, Package, Users, Ticket, User, Send, LogOut, FileText, Handshake, Truck, CreditCard, Settings, ChevronDown, Building2, Smile, Headphones, Calendar } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const NAV_ITEMS = [
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { key: 'rental', path: '/rental', icon: Handshake, label: 'Retrait / Retour', activeClass: 'bg-slate-800 text-white hover:bg-slate-900', inactiveClass: 'text-slate-700 hover:bg-slate-100' },
   { key: 'delivery', path: '/delivery', icon: Truck, label: 'Livraison', activeClass: 'bg-blue-600 text-white hover:bg-blue-700', inactiveClass: 'text-blue-600 hover:bg-blue-50' },
   { key: 'dj-client', path: '/dj-client', icon: Headphones, label: 'DJ / Client', activeClass: 'bg-pink-600 text-white hover:bg-pink-700', inactiveClass: 'text-pink-600 hover:bg-pink-50' },
+  { key: 'agenda-prestation', path: '/agenda-prestation', icon: Calendar, label: 'Agenda Presta', activeClass: 'bg-rose-600 text-white hover:bg-rose-700', inactiveClass: 'text-rose-600 hover:bg-rose-50' },
   { key: 'crm', path: '/crm', icon: Building2, label: 'CRM', activeClass: 'bg-green-600 text-white hover:bg-green-700', inactiveClass: 'text-green-600 hover:bg-green-50' },
   { key: 'billetterie', path: '/billetterie', icon: Ticket, label: 'Événements', activeClass: 'bg-gray-800 text-white hover:bg-gray-900', inactiveClass: 'text-gray-800 hover:bg-gray-100' },
   { key: 'formulaires', path: '/formulaires', icon: FileText, label: 'Formulaires', activeClass: 'bg-orange-500 text-white hover:bg-orange-600', inactiveClass: 'text-orange-500 hover:bg-orange-50' },
@@ -87,6 +88,7 @@ const Navigation = () => {
     if (location.pathname.startsWith('/billetterie')) return 'billetterie';
     if (location.pathname.startsWith('/dj-profiles')) return 'dj-profiles';
     if (location.pathname.startsWith('/devis')) return 'devis';
+    if (location.pathname.startsWith('/agenda-prestation')) return 'agenda-prestation';
     if (location.pathname.startsWith('/formulaires')) return 'formulaires';
     if (location.pathname.startsWith('/abonnements')) return 'abonnements';
     if (location.pathname.startsWith('/parametres')) return 'parametres';
