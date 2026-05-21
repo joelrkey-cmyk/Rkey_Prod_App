@@ -22,10 +22,17 @@ const GOOGLE_CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json');
 function getGoogleCredentials() {
   if (process.env.GOOGLE_CREDENTIALS_JSON) {
     try {
-      let credStr = process.env.GOOGLE_CREDENTIALS_JSON;
+      let credStr = process.env.GOOGLE_CREDENTIALS_JSON.trim();
       // Hostinger / panels might wrap the JSON string
       if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
+      if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
       
+      credStr = credStr.trim();
+      // Unescape safely if needed
+      if (credStr.includes('\\"')) {
+        credStr = credStr.replace(/\\"/g, '"');
+      }
+
       const creds = JSON.parse(credStr);
       // Ensure private key has proper newlines in case they were escaped or stripped
       if (creds.private_key) {
@@ -543,7 +550,6 @@ const api = express.Router();
 
 api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
   let serviceAccountEmail = null;
-  
   const credentials = getGoogleCredentials();
   if (credentials) {
     serviceAccountEmail = credentials.client_email;
