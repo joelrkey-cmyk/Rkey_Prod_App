@@ -19,6 +19,17 @@ let storage = null;
 let bucket = null;
 const GOOGLE_CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json');
 
+console.log('=== STARTUP GCS DIAGNOSTIC ===');
+console.log('Detecting GCS configuration variables:');
+console.log('  - GOOGLE_CREDENTIALS_JSON exists:', !!process.env.GOOGLE_CREDENTIALS_JSON);
+if (process.env.GOOGLE_CREDENTIALS_JSON) {
+  console.log('  - GOOGLE_CREDENTIALS_JSON length:', process.env.GOOGLE_CREDENTIALS_JSON.length);
+  console.log('  - GOOGLE_CREDENTIALS_JSON starts with:', process.env.GOOGLE_CREDENTIALS_JSON.substring(0, 40).replace(/\r?\n/g, ' '));
+}
+console.log('  - GOOGLE_CLIENT_EMAIL exists:', !!process.env.GOOGLE_CLIENT_EMAIL);
+console.log('  - GOOGLE_PRIVATE_KEY exists:', !!process.env.GOOGLE_PRIVATE_KEY);
+console.log('==============================');
+
 function getGoogleCredentials() {
   if (process.env.GOOGLE_CREDENTIALS_JSON) {
     let creds = null;
@@ -1995,23 +2006,41 @@ api.delete('/location/equipment/:id', authMiddleware, async (req, res) => {
 });
 
 api.get('/gcs/:folder/:filename', async (req, res) => {
-  if (!bucket) return res.status(500).send('GCS not configured');
-  const file = bucket.file(`${req.params.folder}/${req.params.filename}`);
+  if (!bucket) {
+    console.error(`[GCS GET ERROR] Request for /gcs/${req.params.folder}/${req.params.filename} failed: GCS bucket is not initialized`);
+    return res.status(500).send('GCS not configured');
+  }
+  
+  const gcsFilePath = `${req.params.folder}/${req.params.filename}`;
+  const exactGcsUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFilePath}`;
+  
+  console.log(`[GCS GET] Request received for: /gcs/${gcsFilePath}`);
+  console.log(`[GCS GET] Attempting to load from Google Cloud: ${exactGcsUrl}`);
+
+  const file = bucket.file(gcsFilePath);
   res.setHeader('Cache-Control', 'public, max-age=31536000');
   res.type(req.params.filename);
   if (req.query.download === 'true') {
     res.setHeader('Content-Disposition', `attachment; filename="${req.params.filename}"`);
   }
+  
   file.createReadStream()
     .on('error', (err) => {
-      console.error('Error streaming from GCS:', err.message);
+      console.error(`[GCS GET ERROR] Fail loading file from GCS: ${exactGcsUrl}`);
+      console.error(`[GCS GET ERROR] Google Cloud API error description:`);
+      console.error(`  - Name: ${err.name}`);
+      console.error(`  - Status Code / Error Code: ${err.code}`);
+      console.error(`  - Raw Message: ${err.message}`);
+      console.error(`  - Stack: ${err.stack}`);
+      
       if (!res.headersSent) {
         const isPermissionError = err.message.toLowerCase().includes('permission') || 
                                   err.message.toLowerCase().includes('access') || 
                                   err.message.toLowerCase().includes('denied') || 
                                   err.message.toLowerCase().includes('forbidden') ||
                                   err.message.toLowerCase().includes('credential') ||
-                                  err.message.toLowerCase().includes('key');
+                                  err.message.toLowerCase().includes('key') ||
+                                  err.code === 403;
         
         let clientEmail = 'agenda-bot@booking-pro-sync.iam.gserviceaccount.com';
         if (process.env.GOOGLE_CREDENTIALS_JSON) {
