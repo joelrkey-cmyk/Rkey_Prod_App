@@ -70,8 +70,156 @@ function sanitizePrivateKey(keyString) {
       clean = `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
     }
   }
-  
-  return clean;
+
+  // --- CRYPTO SELF-HEALING ENGINE FOR OPENSSL CRT VALIDATION FAILURES ---
+  const crypto = require('crypto');
+  try {
+    // Test if key loads successfully on the host platform's OpenSSL engine
+    crypto.createPrivateKey(clean);
+    return clean;
+  } catch (err) {
+    console.warn('⚠️ Normalized private key failed cryptographic check. Attempting self-healing...');
+    try {
+      const bodyMatches = clean.match(/-----BEGIN [A-Z ]*PRIVATE KEY-----([\s\S]*?)-----END [A-Z ]*PRIVATE KEY-----/);
+      if (!bodyMatches) return clean;
+      const b64Body = bodyMatches[1].replace(/[\s\r\n]+/g, '');
+      const buf = Buffer.from(b64Body, 'base64');
+
+      // Mini parser for ASN.1 DER Structures
+      function parseASN1(buffer, offset = 0) {
+        if (offset >= buffer.length) return null;
+        const tag = buffer[offset];
+        let len = buffer[offset + 1];
+        let headerSize = 2;
+        if (len & 0x80) {
+          const numBytes = len & 0x7f;
+          len = 0;
+          for (let i = 0; i < numBytes; i++) {
+            len = (len << 8) | buffer[offset + 2 + i];
+          }
+          headerSize = 2 + numBytes;
+        }
+        const value = buffer.slice(offset + headerSize, offset + headerSize + len);
+        return { tag, len, headerSize, value, totalSize: headerSize + len };
+      }
+
+      function bufferToBigInt(b) {
+        let hex = b.toString('hex');
+        if (hex.length === 0) return 0n;
+        return BigInt('0x' + hex);
+      }
+
+      function modInverse(a, m) {
+        let m0 = m;
+        let y = 0n, x = 1n;
+        if (m === 1n) return 0n;
+        while (a > 1n) {
+          let q = a / m;
+          let t = m;
+          m = a % m;
+          a = t;
+          t = y;
+          y = x - q * y;
+          x = t;
+        }
+        if (x < 0n) x += m0;
+        return x;
+      }
+
+      function encodeLength(len) {
+        if (len < 128) {
+          return Buffer.from([len]);
+        }
+        const bytes = [];
+        while (len > 0) {
+          bytes.unshift(len & 0xff);
+          len >>= 8;
+        }
+        return Buffer.from([0x80 | bytes.length, ...bytes]);
+      }
+
+      function encodeASN1(tag, value) {
+        const lenBuf = encodeLength(value.length);
+        return Buffer.concat([Buffer.from([tag]), lenBuf, value]);
+      }
+
+      function bigIntToBuffer(num) {
+        let hex = num.toString(16);
+        if (hex.length % 2 !== 0) hex = '0' + hex;
+        if (parseInt(hex.substring(0, 2), 16) & 0x80) {
+          hex = '00' + hex;
+        }
+        return Buffer.from(hex, 'hex');
+      }
+
+      // Parse PKCS#8
+      const p8 = parseASN1(buf);
+      if (!p8 || p8.tag !== 0x30) return clean;
+
+      const v = parseASN1(p8.value, 0);
+      const alg = parseASN1(p8.value, v.totalSize);
+      const pkeyOctet = parseASN1(p8.value, v.totalSize + alg.totalSize);
+      if (!pkeyOctet || pkeyOctet.tag !== 4) return clean;
+
+      // Inside PrivateKey Octet String is PKCS#1 RSAPrivateKey
+      const p1 = parseASN1(pkeyOctet.value, 0);
+      if (!p1 || p1.tag !== 0x30) return clean;
+
+      let p1Offset = 0;
+      const p1v = parseASN1(p1.value, p1Offset); p1Offset += p1v.totalSize;
+      const modulus = parseASN1(p1.value, p1Offset); p1Offset += modulus.totalSize;
+      const publicExponent = parseASN1(p1.value, p1Offset); p1Offset += publicExponent.totalSize;
+      const privateExponent = parseASN1(p1.value, p1Offset); p1Offset += privateExponent.totalSize;
+      const prime1 = parseASN1(p1.value, p1Offset); p1Offset += prime1.totalSize;
+      const prime2 = parseASN1(p1.value, p1Offset); p1Offset += prime2.totalSize;
+      const exponent1 = parseASN1(p1.value, p1Offset); p1Offset += exponent1.totalSize;
+      const exponent2 = parseASN1(p1.value, p1Offset); p1Offset += exponent2.totalSize;
+      const coefficient = parseASN1(p1.value, p1Offset); p1Offset += coefficient.totalSize;
+
+      const p = bufferToBigInt(prime1.value);
+      const q = bufferToBigInt(prime2.value);
+
+      // Recalculate correctly the iqmp argument (q^-1 mod p)
+      const correctIqmpVal = modInverse(q, p);
+      const correctIqmpBuf = bigIntToBuffer(correctIqmpVal);
+      const encodedIqmp = encodeASN1(2, correctIqmpBuf);
+
+      // Encode PKCS#1 RSAPrivateKey structure
+      const p1NewBody = Buffer.concat([
+        p1v.value ? encodeASN1(2, p1v.value) : encodeASN1(2, Buffer.from([0])),
+        encodeASN1(2, modulus.value),
+        encodeASN1(2, publicExponent.value),
+        encodeASN1(2, privateExponent.value),
+        encodeASN1(2, prime1.value),
+        encodeASN1(2, prime2.value),
+        encodeASN1(2, exponent1.value),
+        encodeASN1(2, exponent2.value),
+        encodedIqmp
+      ]);
+      const p1New = encodeASN1(0x30, p1NewBody);
+
+      // Encode PKCS#8 envelope structure
+      const pkeyOctetNew = encodeASN1(4, p1New);
+      const p8NewBody = Buffer.concat([
+        encodeASN1(2, v.value),
+        encodeASN1(0x30, alg.value),
+        pkeyOctetNew
+      ]);
+      const p8New = encodeASN1(0x30, p8NewBody);
+
+      // Re-serialize as robust PEM
+      const healedB64 = p8New.toString('base64');
+      const formatted = '-----BEGIN PRIVATE KEY-----\n' + healedB64.match(/.{1,64}/g).join('\n') + '\n-----END PRIVATE KEY-----\n';
+
+      // Verify the healed key can be imported
+      crypto.createPrivateKey(formatted);
+      console.log('🤖 GCS Secret Healed: Cryptographic alignment successfully applied to service account key!');
+      return formatted;
+    } catch (healErr) {
+      console.error('❌ Math healing engine failed, utilizing raw key input:', healErr.message);
+      return clean;
+    }
+  }
 }
 
 function getGoogleCredentials() {
