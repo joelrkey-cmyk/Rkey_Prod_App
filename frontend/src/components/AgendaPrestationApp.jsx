@@ -302,11 +302,12 @@ export default function AgendaPrestationApp() {
         color: '#fff',
         border: '0px',
         display: 'block',
-        fontSize: '11px',
-        fontWeight: 'bold',
-        padding: '4px 6px',
+        fontSize: '12px',
+        fontWeight: '500',
+        letterSpacing: '0.2px',
+        padding: '4px 8px',
         whiteSpace: 'pre-wrap',
-        lineHeight: '1.3'
+        lineHeight: '1.4'
       }
     };
   };
