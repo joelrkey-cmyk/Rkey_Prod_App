@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const express = require('express');
 const { MongoClient, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
@@ -21,34 +21,83 @@ const GOOGLE_CREDENTIALS_PATH = path.join(__dirname, 'google-credentials.json');
 
 function getGoogleCredentials() {
   if (process.env.GOOGLE_CREDENTIALS_JSON) {
-    try {
-      let credStr = process.env.GOOGLE_CREDENTIALS_JSON.trim();
-      // Hostinger / panels might wrap the JSON string
-      if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
-      if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
-      
-      credStr = credStr.trim();
-      // Unescape safely if needed
-      if (credStr.includes('\\"')) {
-        credStr = credStr.replace(/\\"/g, '"');
-      }
+    let creds = null;
+    let credStr = process.env.GOOGLE_CREDENTIALS_JSON.trim();
+    // Hostinger / panels might wrap the JSON string
+    if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
+    if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
+    
+    credStr = credStr.trim();
+    // Unescape safely if needed
+    if (credStr.includes('\\"')) {
+      credStr = credStr.replace(/\\"/g, '"');
+    }
 
-      const creds = JSON.parse(credStr);
+    try {
+      creds = JSON.parse(credStr);
+    } catch (e) {
+      console.warn('Standard JSON.parse failed for GOOGLE_CREDENTIALS_JSON, trying Regex fallback:', e.message);
+      try {
+        const fields = {};
+        const regexes = {
+          type: /"type"\s*:\s*"([^"]+)"/,
+          project_id: /"project_id"\s*:\s*"([^"]+)"/,
+          private_key_id: /"private_key_id"\s*:\s*"([^"]+)"/,
+          private_key: /"private_key"\s*:\s*"([\s\S]*?)"/,
+          client_email: /"client_email"\s*:\s*"([^"]+)"/,
+          client_id: /"client_id"\s*:\s*"([^"]+)"/,
+          auth_uri: /"auth_uri"\s*:\s*"([^"]+)"/,
+          token_uri: /"token_uri"\s*:\s*"([^"]+)"/,
+          auth_provider_x509_cert_url: /"auth_provider_x509_cert_url"\s*:\s*"([^"]+)"/,
+          client_x509_cert_url: /"client_x509_cert_url"\s*:\s*"([^"]+)"/
+        };
+
+        for (const [key, regex] of Object.entries(regexes)) {
+          const match = credStr.match(regex);
+          if (match && match[1]) {
+            fields[key] = match[1];
+          }
+        }
+
+        if (fields.type && fields.project_id && fields.private_key && fields.client_email) {
+          creds = fields;
+          console.log('Successfully extracted Google Credentials object using Regex fallback!');
+        } else {
+          console.error('Regex fallback failed to extract required credentials fields.');
+        }
+      } catch (err) {
+        console.error('Failed to parse GOOGLE_CREDENTIALS_JSON via fallback:', err.message);
+      }
+    }
+
+    if (creds) {
       // Ensure private key has proper newlines in case they were escaped or stripped
       if (creds.private_key) {
         creds.private_key = creds.private_key.replace(/\\n/g, '\n');
       }
+      
+      // Auto-save parsed credentials to file to make it standard and compatible with all libraries
+      try {
+        fs.writeFileSync(GOOGLE_CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8');
+        console.log(`Saved google-credentials.json to file: ${GOOGLE_CREDENTIALS_PATH}`);
+      } catch (fileErr) {
+        console.error('Failed to write google-credentials.json file:', fileErr.message);
+      }
+      
       return creds;
-    } catch (e) {
-      console.error('Failed to parse GOOGLE_CREDENTIALS_JSON env var:', e.message);
-      return null;
     }
   } else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-    return {
+    const creds = {
       client_email: process.env.GOOGLE_CLIENT_EMAIL,
       private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
       project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync'
     };
+    try {
+      fs.writeFileSync(GOOGLE_CREDENTIALS_PATH, JSON.stringify(creds, null, 2), 'utf8');
+    } catch (fileErr) {
+      console.error('Failed to write google-credentials.json file from alternative variables:', fileErr.message);
+    }
+    return creds;
   }
   return null;
 }
@@ -1949,6 +1998,7 @@ api.get('/gcs/:folder/:filename', async (req, res) => {
   if (!bucket) return res.status(500).send('GCS not configured');
   const file = bucket.file(`${req.params.folder}/${req.params.filename}`);
   res.setHeader('Cache-Control', 'public, max-age=31536000');
+  res.type(req.params.filename);
   if (req.query.download === 'true') {
     res.setHeader('Content-Disposition', `attachment; filename="${req.params.filename}"`);
   }
@@ -2349,31 +2399,43 @@ api.patch('/location/quotes/:id/archive', authMiddleware, async (req, res) => {
 });
 api.post('/location/generate-description', authMiddleware, async (req, res) => {
   try {
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.includes('MY_GEMINI_API_KEY')) {
+      return res.status(400).json({ detail: "Clé API Gemini non configurée. Veuillez l'ajouter dans vos secrets." });
+    }
     const { name, reference, category, observations } = req.body;
     const prompt = `Génère une description commerciale courte et professionnelle en français pour ce matériel de location événementielle :\n- Nom : ${name || 'Non précisé'}\n- Référence : ${reference || 'Non précisée'}\n- Catégorie : ${category || 'Non précisée'}\n- Observations : ${observations || 'Aucune'}\n\nLa description doit être vendeuse, concise (2-3 phrases max) et mettre en avant les avantages pour un événement. Réponds uniquement avec la description, sans guillemets.`;
     const { GoogleGenAI } = require('@google/genai');
-    const ai = new GoogleGenAI({});
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt
     });
     const description = response.text.trim() || '';
     res.json({ description });
-  } catch (e) { console.error('AI generation error:', e); res.json({ description: '' }); }
+  } catch (e) {
+    console.error('AI generation error:', e);
+    res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Vérifiez votre clé API Gemini." });
+  }
 });
 api.post('/location/generate-catalogue-description', authMiddleware, async (req, res) => {
   try {
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.includes('MY_GEMINI_API_KEY')) {
+      return res.status(400).json({ detail: "Clé API Gemini non configurée. Veuillez l'ajouter dans vos secrets." });
+    }
     const { name, reference, category, observations } = req.body;
     const prompt = `Génère une description catalogue commerciale en français pour ce matériel de location événementielle :\n- Nom : ${name || 'Non précisé'}\n- Référence : ${reference || 'Non précisée'}\n- Catégorie : ${category || 'Non précisée'}\n- Observations : ${observations || 'Aucune'}\n\nLa description doit être vendeuse, professionnelle, concise (3-4 phrases) et adaptée à un catalogue public destiné aux organisateurs d'événements. Mets en avant les caractéristiques et avantages. Réponds uniquement avec la description, sans guillemets.`;
     const { GoogleGenAI } = require('@google/genai');
-    const ai = new GoogleGenAI({});
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt
     });
     const description = response.text.trim() || '';
     res.json({ description });
-  } catch (e) { console.error('AI catalogue description error:', e); res.json({ description: '' }); }
+  } catch (e) {
+    console.error('AI catalogue description error:', e);
+    res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Vérifiez votre clé API Gemini." });
+  }
 });
 api.get('/location/dashboard', authMiddleware, async (req, res) => {
   const [quotes, reservations, equipment] = await Promise.all([

@@ -438,7 +438,8 @@ function MaterielView() {
         }));
       }
     } catch (error) {
-      toast.error('Erreur lors de la génération de la description');
+      console.error('Error generating description:', error);
+      toast.error(error.response?.data?.detail || 'Erreur lors de la génération de la description');
     } finally {
       setIsGenerating(false);
     }
@@ -461,13 +462,12 @@ function MaterielView() {
       });
       setFormData(prev => ({ 
         ...prev, 
-        catalogue_description: response.data.description,
-        observations: prev.observations ? prev.observations : response.data.description 
+        catalogue_description: response.data.description
       }));
       toast.success('Description catalogue générée avec succès !');
     } catch (error) {
       console.error('Error generating catalogue description:', error);
-      toast.error('Erreur lors de la génération de la description');
+      toast.error(error.response?.data?.detail || 'Erreur lors de la génération de la description');
     } finally {
       setIsGeneratingCatalogueDesc(false);
     }
