@@ -20,7 +20,10 @@ const EmbedGenerator = () => {
   // const { toast } = useToast(); // Retiré pour éviter les erreurs DOM
 
   const generateEmbedCode = () => {
-    const baseUrl = window.location.origin;
+    let baseUrl = window.location.origin;
+    if (baseUrl.includes('ais-dev')) {
+        baseUrl = baseUrl.replace('ais-dev', 'ais-pre');
+    }
     
     return `<!-- Widget d'avis Google R'Key Prod -->
 <div id="google-reviews-widget"></div>

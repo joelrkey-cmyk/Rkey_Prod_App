@@ -106,7 +106,8 @@ function AgendaView({ stats, setCurrentView }) {
     if (!reservation) return 'Inconnu';
     
     if (reservation.booking_type === 'dj') {
-      return reservation.dj_name || 'DJ';
+      const eventName = reservation.event_name || reservation.event || '';
+      return eventName ? `${eventName} (${reservation.dj_name || 'DJ'})` : reservation.dj_name || 'DJ';
     }
     
     // Pour les clients, chercher les infos complètes du client
@@ -144,18 +145,17 @@ function AgendaView({ stats, setCurrentView }) {
         color: '#3b82f6' // Bleu
       };
     } else {
-      // DJ: afficher les références du matériel (4 lettres max)
-      const equipmentLabels = (reservation.equipment_items || [])
-        .map(item => item?.reference || (item?.equipment_name || '').substring(0, 4))
-        .filter(label => label && label.length > 0)
-        .join('/');
+      // DJ: afficher l'événement et le nom du DJ
+      const eventName = reservation.event_name || reservation.event || '';
+      const djName = reservation.dj_name || 'DJ';
+      const displayText = eventName ? `${eventName} (${djName})` : djName;
       
       // Trouver la couleur du DJ
       const dj = djs.find(d => d.id === reservation.dj_id);
       const djColor = dj?.color || '#f97316'; // Orange par défaut
       
       return {
-        text: equipmentLabels || reservation.dj_name || 'DJ',
+        text: displayText,
         color: djColor
       };
     }
@@ -932,7 +932,6 @@ function AgendaView({ stats, setCurrentView }) {
                 return Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
               };
 
-              // Pour les réservations multi-jours, ne les afficher que le jour de début OU le premier jour de la semaine
               const isStartOfReservation = (reservation) => {
                 const startDate = new Date(reservation.start_date);
                 startDate.setHours(0, 0, 0, 0);
@@ -944,36 +943,27 @@ function AgendaView({ stats, setCurrentView }) {
               const isFirstDayOfWeek = (reservation) => {
                 return dayOfWeek === 0; // Lundi
               };
-
-              // Calculer combien de jours restent dans cette semaine pour cette réservation
-              const getDaysInWeek = (reservation) => {
-                const startDate = new Date(reservation.start_date);
+              
+              const isEndOfReservation = (reservation) => {
                 const endDate = new Date(reservation.end_date);
-                const currentDay = new Date(day);
-                startDate.setHours(0, 0, 0, 0);
                 endDate.setHours(0, 0, 0, 0);
+                const currentDay = new Date(day);
                 currentDay.setHours(0, 0, 0, 0);
-                
-                const effectiveStart = currentDay > startDate ? currentDay : startDate;
-                const daysUntilEndOfWeek = 6 - dayOfWeek; // jours restants jusqu'à dimanche
-                const endOfWeek = new Date(currentDay);
-                endOfWeek.setDate(endOfWeek.getDate() + daysUntilEndOfWeek);
-                
-                const effectiveEnd = endDate < endOfWeek ? endDate : endOfWeek;
-                return Math.ceil((effectiveEnd - effectiveStart) / (1000 * 60 * 60 * 24)) + 1;
+                return endDate.getTime() === currentDay.getTime();
               };
 
-              // Filtrer les réservations à afficher
-              const reservationsToShow = dayReservations.filter(reservation => {
-                const duration = getReservationDuration(reservation);
-                if (duration === 1) return true; // Toujours afficher les mono-jour
-                
-                // Pour multi-jours: afficher seulement au début OU au début de chaque semaine
-                return isStartOfReservation(reservation) || (isFirstDayOfWeek(reservation) && !isStartOfReservation(reservation));
+              // Sort day reservations so multi-day events appear consistently in the vertical stack
+              const sortedDayReservations = [...dayReservations].sort((a, b) => {
+                const startA = new Date(a.start_date).getTime();
+                const startB = new Date(b.start_date).getTime();
+                if (startA !== startB) return startA - startB;
+                const durA = getReservationDuration(a);
+                const durB = getReservationDuration(b);
+                return durB - durA; // longest first
               });
               
-              const clientReservations = reservationsToShow.filter(r => r.booking_type === 'client');
-              const djReservations = reservationsToShow.filter(r => r.booking_type === 'dj');
+              const clientReservations = sortedDayReservations.filter(r => r.booking_type === 'client');
+              const djReservations = sortedDayReservations.filter(r => r.booking_type === 'dj');
               
               // Ajouter le numéro de semaine au début de chaque ligne (tous les 7 jours)
               const elements = [];
@@ -1025,73 +1015,80 @@ function AgendaView({ stats, setCurrentView }) {
                     </Button>
                   </div>
                   
-                  {/* Display reservations with client/DJ names */}
-                  <div className="mt-2 space-y-1">
-                    {clientReservations.map((reservation) => {
+                  {(() => {
+                    const renderReservationBlock = (reservation, type) => {
                       const display = getReservationDisplay(reservation);
                       const duration = getReservationDuration(reservation);
-                      const daysInWeek = getDaysInWeek(reservation);
                       const isMultiDay = duration > 1;
                       const isStart = isStartOfReservation(reservation);
-                      const isContinuation = isMultiDay && !isStart;
+                      const isEnd = isEndOfReservation(reservation);
                       
-                      // Calculer la largeur pour les événements multi-jours
-                      const widthPercent = isMultiDay ? `calc(${daysInWeek * 100}% + ${(daysInWeek - 1) * 8}px)` : '100%';
+                      let roundedClass = 'rounded';
+                      if (isMultiDay) {
+                        if (isStart) roundedClass = 'rounded-l';
+                        else if (isEnd) roundedClass = 'rounded-r';
+                        else roundedClass = 'rounded-none';
+                      }
+                      
+                      let flexDivStyle = { 
+                        backgroundColor: display.color,
+                        position: 'relative',
+                        zIndex: isMultiDay ? 10 : 1
+                      };
+                      
+                      if (isMultiDay) {
+                        if (!isStart) {
+                          flexDivStyle.marginLeft = '-9px';
+                          flexDivStyle.paddingLeft = '9px';
+                        }
+                        if (!isEnd && dayOfWeek !== 6) { // If it's not the end AND not Sunday
+                          flexDivStyle.marginRight = '-9px';
+                          flexDivStyle.paddingRight = '9px';
+                          flexDivStyle.borderTopRightRadius = '0';
+                          flexDivStyle.borderBottomRightRadius = '0';
+                        }
+                        if (!isStart && dayOfWeek !== 0) { // If it's not the start AND not Monday
+                          flexDivStyle.borderTopLeftRadius = '0';
+                          flexDivStyle.borderBottomLeftRadius = '0';
+                        }
+                      }
+                      
+                      // For Sundays, force rounded right if it continues to next week
+                      if (isMultiDay && dayOfWeek === 6 && !isEnd) {
+                         roundedClass = roundedClass.replace('rounded-none', 'rounded-r').replace('rounded-l', 'rounded');
+                      }
+                      // For Mondays, force rounded left
+                      if (isMultiDay && dayOfWeek === 0 && !isStart) {
+                         roundedClass = roundedClass.replace('rounded-none', 'rounded-l').replace('rounded-r', 'rounded');
+                      }
+                      
+                      const titleText = type === 'client' 
+                        ? `Client: ${getClientDisplayNameFromReservation(reservation)}${isMultiDay ? ` (${duration} jours)` : ''}`
+                        : `DJ: ${reservation.dj_name || 'Nom non défini'} - ${display.text}${isMultiDay ? ` (${duration} jours)` : ''}`;
                       
                       return (
                         <div 
                           key={reservation.id}
-                          className={`text-white text-xs px-2 py-1 cursor-pointer hover:opacity-90 truncate ${
-                            isMultiDay 
-                              ? `absolute z-10 ${isStart ? 'rounded-l' : 'rounded-l-none'} rounded-r`
-                              : 'rounded relative'
-                          }`}
-                          style={{ 
-                            backgroundColor: display.color,
-                            width: isMultiDay ? widthPercent : '100%',
-                            left: isMultiDay ? '8px' : 'auto',
-                            right: isMultiDay ? 'auto' : 'auto',
-                            marginTop: isMultiDay ? '0' : '0',
-                            position: isMultiDay ? 'relative' : 'relative'
-                          }}
+                          className={`text-white text-xs px-2 py-1 cursor-pointer hover:opacity-90 truncate ${roundedClass}`}
+                          style={flexDivStyle}
                           onClick={() => handleDayClick(day, dayReservations)}
-                          title={`Client: ${getClientDisplayNameFromReservation(reservation)}${isMultiDay ? ` (${duration} jours)` : ''}`}
+                          title={titleText}
                         >
-                          {isContinuation ? '→ ' : ''}{display.text}{isMultiDay && isStart ? ` (${duration}j)` : ''}
+                          {isStart ? (
+                            <>{display.text}{isMultiDay ? ` (${duration}j)` : ''}</>
+                          ) : (
+                            <>&nbsp;</>
+                          )}
                         </div>
                       );
-                    })}
-                    {djReservations.map((reservation) => {
-                      const display = getReservationDisplay(reservation);
-                      const duration = getReservationDuration(reservation);
-                      const daysInWeek = getDaysInWeek(reservation);
-                      const isMultiDay = duration > 1;
-                      const isStart = isStartOfReservation(reservation);
-                      const isContinuation = isMultiDay && !isStart;
-                      
-                      const widthPercent = isMultiDay ? `calc(${daysInWeek * 100}% + ${(daysInWeek - 1) * 8}px)` : '100%';
-                      
-                      return (
-                        <div 
-                          key={reservation.id}
-                          className={`text-white text-xs px-2 py-1 cursor-pointer hover:opacity-90 truncate ${
-                            isMultiDay 
-                              ? `z-10 ${isStart ? 'rounded-l' : 'rounded-l-none'} rounded-r`
-                              : 'rounded'
-                          }`}
-                          style={{ 
-                            backgroundColor: display.color,
-                            width: isMultiDay ? widthPercent : '100%',
-                            position: 'relative'
-                          }}
-                          onClick={() => handleDayClick(day, dayReservations)}
-                          title={`DJ: ${reservation.dj_name || 'Nom non défini'} - ${display.text}${isMultiDay ? ` (${duration} jours)` : ''}`}
-                        >
-                          {isContinuation ? '→ ' : ''}{display.text}{isMultiDay && isStart ? ` (${duration}j)` : ''}
-                        </div>
-                      );
-                    })}
-                  </div>
+                    };
+
+                    return (
+                      <div className="mt-2 space-y-1 relative">
+                        {clientReservations.map(res => renderReservationBlock(res, 'client'))}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
               

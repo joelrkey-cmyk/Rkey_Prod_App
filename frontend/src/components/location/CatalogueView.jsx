@@ -179,7 +179,10 @@ function CatalogueView() {
   const unpublishedCount = equipment.length - publishedCount;
 
   const generateWidgetCode = () => {
-    const productionUrl = window.location.origin;
+    let productionUrl = window.location.origin;
+    if (productionUrl.includes('ais-dev')) {
+        productionUrl = productionUrl.replace('ais-dev', 'ais-pre');
+    }
     const uid = 'rkey-cat-' + Date.now().toString(36);
     const code = `<!-- Widget Catalogue Location R'Key Prod -->
 <div style="width:100%;position:relative;">

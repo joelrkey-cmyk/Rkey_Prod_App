@@ -1,10 +1,8 @@
 // Catalogue Widget - R'Key Prod
 // Script de gestion du catalogue de location de matériel
 
-var parsedUrl = new URL(document.currentScript ? document.currentScript.src : window.location.href);
-var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
-var API_URL = BASE_URL + '/api/catalogue/equipements';
-var CATEGORIES_URL = BASE_URL + '/api/location/categories/public';
+var API_URL = '/api/catalogue/equipements';
+var CATEGORIES_URL = '/api/location/categories/public';
 
 var allEquipment = [];
 var allEquipmentMap = {};
@@ -142,10 +140,15 @@ function renderEquipment(equipment) {
         
         html += '<div id="' + cardId + '" class="equipment-card">';
         
+        var imgUrl = item.photo_url;
+        if (imgUrl && imgUrl.startsWith('/')) {
+            imgUrl = BASE_URL + imgUrl;
+        }
+        
         // Image
-        if (item.photo_url) {
+        if (imgUrl) {
             html += '<div class="card-image-container">';
-            html += '<img src="' + item.photo_url + '" alt="' + item.name + '" class="card-image" onerror="this.parentElement.outerHTML=\'<div class=card-image-placeholder>' + (item.is_pack ? '📦' : '🎛️') + '</div>\'">';
+            html += '<img src="' + imgUrl + '" alt="' + item.name + '" class="card-image" onerror="this.parentElement.outerHTML=\'<div class=card-image-placeholder>' + (item.is_pack ? '📦' : '🎛️') + '</div>\'">';
             html += '</div>';
         } else {
             html += '<div class="card-image-placeholder">' + (item.is_pack ? '📦' : '🎛️') + '</div>';

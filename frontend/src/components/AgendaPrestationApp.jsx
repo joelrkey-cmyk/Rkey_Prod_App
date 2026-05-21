@@ -71,10 +71,11 @@ export default function AgendaPrestationApp() {
     try {
       setLoading(true);
       
-      const [settingsRes, djsRes, contractsRes] = await Promise.all([
+      const [settingsRes, djsRes, contractsRes, reservationsRes] = await Promise.all([
         axios.get(`${API}/agenda-settings`),
         axios.get(`${API}/location/djs`),
-        axios.get(`${API}/contracts2`)
+        axios.get(`${API}/contracts2`),
+        axios.get(`${API}/location/reservations`)
       ]);
 
       const loadedSettings = {
@@ -160,20 +161,85 @@ export default function AgendaPrestationApp() {
         
         let title = String(`${type} - ${client}`.trim());
         if (title === '-') title = 'Événement sans nom';
+
+        let optionsDetails = '';
+        if (c.selected_options && Array.isArray(c.selected_options)) {
+          const opts = c.selected_options.map(o => typeof o === 'string' ? o : o.name).filter(Boolean);
+          if (opts.length > 0) {
+            optionsDetails = `\nOptions: ${opts.join(', ')}`;
+          }
+        } else if (c.requested_options && Array.isArray(c.requested_options)) {
+          const opts = c.requested_options.map(o => typeof o === 'string' ? o : o.name).filter(Boolean);
+          if (opts.length > 0) {
+            optionsDetails = `\nOptions: ${opts.join(', ')}`;
+          }
+        }
         
-        let signature = `${officialId}_${eventDate.toISOString().split('T')[0]}_${title.toLowerCase().trim()}`;
+        let fullTitle = `${title}${optionsDetails}`;
+        
+        // Prevent duplicate mapping if somehow necessary, but contracts are unique by ID
+        let signature = `${officialId}_${eventDate.toISOString().split('T')[0]}_contract_${c.id}`;
         if (eventSignatures.has(signature)) return;
         eventSignatures.add(signature);
 
         parsedEvents.push({
-          id: String(c.id),
-          title: title,
+          id: `contract_${c.id}`,
+          title: fullTitle,
           start: eventDate,
           end: eventDate,
           allDay: true,
           djId: officialId,
           djName: assignedDj.name,
           status: String(c.status)
+        });
+      });
+
+      const allReservations = reservationsRes.data || [];
+      const djReservations = allReservations.filter(r => r.booking_type === 'dj');
+
+      djReservations.forEach(r => {
+        let officialId = null;
+        let cleanName = normalize(r.dj_name || '');
+        if (nameToOfficialId.has(cleanName)) {
+          officialId = nameToOfficialId.get(cleanName);
+        } else {
+          let firstWord = cleanName.split(/[\s-]/)[0];
+          if (nameToOfficialId.has(firstWord)) {
+            officialId = nameToOfficialId.get(firstWord);
+          }
+        }
+        
+        if (!officialId) return;
+        
+        let assignedDj = officialDjMap.get(officialId);
+        
+        let startDate = new Date(r.start_date);
+        let endDate = new Date(r.end_date);
+        if (isNaN(startDate) || isNaN(endDate)) return;
+        
+        let equipmentOpts = '';
+        if (r.equipment && Array.isArray(r.equipment)) {
+          const equips = r.equipment.map(e => typeof e === 'string' ? e : e.name).filter(Boolean);
+          if (equips.length > 0) {
+            equipmentOpts = `\nMatériel: ${equips.join(', ')}`;
+          }
+        }
+
+        let pubTitle = r.event_name || r.event || 'Réservation DJ';
+
+        let signature = `${officialId}_${startDate.toISOString().split('T')[0]}_reservation_${r.id}`;
+        if (eventSignatures.has(signature)) return;
+        eventSignatures.add(signature);
+
+        parsedEvents.push({
+          id: `res_${r.id}`,
+          title: `[Matériel] ${pubTitle}${equipmentOpts}`,
+          start: startDate,
+          end: endDate,
+          allDay: true,
+          djId: officialId,
+          djName: assignedDj.name,
+          status: 'reservation'
         });
       });
 
@@ -238,7 +304,9 @@ export default function AgendaPrestationApp() {
         display: 'block',
         fontSize: '11px',
         fontWeight: 'bold',
-        padding: '2px 4px'
+        padding: '4px 6px',
+        whiteSpace: 'pre-wrap',
+        lineHeight: '1.3'
       }
     };
   };

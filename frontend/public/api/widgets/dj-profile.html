@@ -292,8 +292,14 @@
 
             // ── LEFT: Photo + Badge ──
             html += '<div class="profile-left">';
-            if (profile.photo_url) {
-                html += '<img src="' + profile.photo_url + '" alt="' + profile.nom_artistique + '" class="profile-photo">';
+            var photoUrl = profile.photo_url;
+            if (photoUrl && photoUrl.startsWith('/')) {
+                var parsedUrl = new URL(window.location.href);
+                var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
+                photoUrl = BASE_URL + photoUrl;
+            }
+            if (photoUrl) {
+                html += '<img src="' + photoUrl + '" alt="' + profile.nom_artistique + '" class="profile-photo">';
             } else {
                 html += '<div class="profile-photo-placeholder">🎧</div>';
             }

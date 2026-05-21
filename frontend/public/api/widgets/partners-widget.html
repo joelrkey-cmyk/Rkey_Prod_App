@@ -174,10 +174,15 @@ html, body { background: transparent; font-family: -apple-system, BlinkMacSystem
 
         // === RECTO (cover_photo or fallback) ===
         html += '<div class="rkv-face rkv-recto">';
-        if(p.coverImg){
-          html += '<img class="rkv-recto-photo" src="'+p.coverImg+'" alt="'+p.n+'">';
-        } else if(p.profileImg){
-          html += '<img class="rkv-recto-photo" src="'+p.profileImg+'" alt="'+p.n+'" style="filter:blur(1px) brightness(.7);">';
+        var cImgStr = p.coverImg;
+        if(cImgStr && cImgStr.startsWith('/')) cImgStr = BASE_URL + cImgStr;
+        var pImgStr = p.profileImg;
+        if(pImgStr && pImgStr.startsWith('/')) pImgStr = BASE_URL + pImgStr;
+
+        if(cImgStr){
+          html += '<img class="rkv-recto-photo" src="'+cImgStr+'" alt="'+p.n+'">';
+        } else if(pImgStr){
+          html += '<img class="rkv-recto-photo" src="'+pImgStr+'" alt="'+p.n+'" style="filter:blur(1px) brightness(.7);">';
         } else {
           html += '<div class="rkv-recto-fallback" style="background:'+col+';">'+initials+'</div>';
         }
@@ -212,8 +217,8 @@ html, body { background: transparent; font-family: -apple-system, BlinkMacSystem
         html += '</div></div>';
 
         html += '<div class="rkv-verso-right"><div class="rkv-avatar-lg">';
-        if(p.profileImg){
-          html += '<img src="'+p.profileImg+'" alt="'+p.n+'">';
+        if(pImgStr){
+          html += '<img src="'+pImgStr+'" alt="'+p.n+'">';
         } else {
           html += '<span class="rkv-avatar-lg-initials">'+initials+'</span>';
         }

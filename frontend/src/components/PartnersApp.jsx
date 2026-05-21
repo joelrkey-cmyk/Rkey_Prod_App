@@ -244,7 +244,10 @@ const InlineWidgetPreview = ({ categoryName }) => {
   const [previewSize, setPreviewSize] = useState('desktop');
   const iframeRef = useRef(null);
 
-  const baseUrl = window.location.origin;
+  let baseUrl = window.location.origin;
+  if (baseUrl.includes('ais-dev')) {
+      baseUrl = baseUrl.replace('ais-dev', 'ais-pre');
+  }
   const widgetUrl = `${baseUrl}/api/widgets/partners-widget.html?category=${encodeURIComponent(categoryName)}`;
   const pUid = 'rkey-part-' + Date.now().toString(36);
 

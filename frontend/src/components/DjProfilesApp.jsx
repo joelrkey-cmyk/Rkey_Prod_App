@@ -410,7 +410,6 @@ const DjProfilesApp = () => {
 
   const generateWidgetCode = (profile) => {
     let productionUrl = window.location.origin;
-    // Si l'utilisateur est dans l'environnement de développement, on utilise l'URL de pré-production (Shared URL) qui autorise les iframes
     if (productionUrl.includes('ais-dev')) {
         productionUrl = productionUrl.replace('ais-dev', 'ais-pre');
     }
