@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { generateMandatHTML, generateEntrepriseHTML } from './contracts2/mandatHtmlGenerator';
@@ -173,8 +173,11 @@ const DjClientApp = ({ isPublic = false }) => {
             manualMustPlay: c.manual_must_play || "",
             blacklist: c.blacklist || "",
             entreeMaries: c.entree_maries || "",
+            entreeMariesNotes: c.entree_maries_notes || "",
             ouvertureBal: c.ouverture_bal || "",
+            ouvertureBalNotes: c.ouverture_bal_notes || "",
             dessert: c.dessert || "",
+            dessertNotes: c.dessert_notes || "",
             dedicaces: c.dedicaces || "",
             selectedOptions: c.selected_options || [],
             requestedOptions: c.requested_options || [],
@@ -186,7 +189,13 @@ const DjClientApp = ({ isPublic = false }) => {
             cateringDrinks: c.catering_drinks || false,
             selectedMusicStyles: c.selected_music_styles || [],
             backgroundMusicAperitif: c.background_music_aperitif || "",
-            showMusicStylesToClient: c.show_music_styles_to_client !== undefined ? c.show_music_styles_to_client : true
+            showMusicStylesToClient: c.show_music_styles_to_client !== undefined ? c.show_music_styles_to_client : true,
+            client_photo: c.client_photo || null,
+            venue_photos: c.venue_photos || [],
+            venue_notes: c.venue_notes || "",
+            has_limiteur_son: c.has_limiteur_son || false,
+            has_detecteur_fumee: c.has_detecteur_fumee || false,
+            has_no_limiteur_ni_detecteur: c.has_no_limiteur_ni_detecteur || false
          };
       });
       
@@ -207,8 +216,11 @@ const DjClientApp = ({ isPublic = false }) => {
   const [manualMustPlay, setManualMustPlay] = useState("");
   const [blacklist, setBlacklist] = useState("");
   const [entreeMaries, setEntreeMaries] = useState("");
+  const [entreeMariesNotes, setEntreeMariesNotes] = useState("");
   const [ouvertureBal, setOuvertureBal] = useState("");
+  const [ouvertureBalNotes, setOuvertureBalNotes] = useState("");
   const [dessert, setDessert] = useState("");
+  const [dessertNotes, setDessertNotes] = useState("");
   const [dedicaces, setDedicaces] = useState("");
   const [chatMessages, setChatMessages] = useState([]);
 
@@ -228,8 +240,11 @@ const DjClientApp = ({ isPublic = false }) => {
         setManualMustPlay(ev.manualMustPlay || "");
         setBlacklist(ev.blacklist || "");
         setEntreeMaries(ev.entreeMaries || "");
+        setEntreeMariesNotes(ev.entreeMariesNotes || "");
         setOuvertureBal(ev.ouvertureBal || "");
+        setOuvertureBalNotes(ev.ouvertureBalNotes || "");
         setDessert(ev.dessert || "");
+        setDessertNotes(ev.dessertNotes || "");
         setDedicaces(ev.dedicaces || "");
         setChatMessages(ev.chatMessages || []);
       }
@@ -708,18 +723,127 @@ const DjClientApp = ({ isPublic = false }) => {
     };
 
     const ev = events.find(e => e.id === currentRoute.eventId);
+    if (!ev) return null;
     const isMariage = ev && ev.eventType && ev.eventType.toLowerCase().includes('mariage');
+    const isClient = role === 'client';
+    const isAdminOrDj = role === 'admin' || role === 'dj';
+
+    const handleMusicStyleToggle = (style) => {
+      if (!isAdminOrDj) return;
+      const currentStyles = ev.selectedMusicStyles || [];
+      const isSelected = currentStyles.includes(style);
+      const newStyles = isSelected 
+        ? currentStyles.filter(s => s !== style)
+        : [...currentStyles, style];
+      
+      updateContractDb(currentRoute.eventId, { selected_music_styles: newStyles });
+      const newEvents = [...events];
+      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+      newEvents[idx].selectedMusicStyles = newStyles;
+      setEvents(newEvents);
+    };
+
+    const selectAllMusicStyles = () => {
+      if (!isAdminOrDj) return;
+      updateContractDb(currentRoute.eventId, { selected_music_styles: [...availableMusicStyles] });
+      const newEvents = [...events];
+      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+      newEvents[idx].selectedMusicStyles = [...availableMusicStyles];
+      setEvents(newEvents);
+    };
 
     return (
       <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 ${getSectionHighlightClass('playlist')}`}>
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-bold flex items-center gap-2">
             <Music className="w-5 h-5 text-indigo-600" />
-            Playlist & Recommandations
+            Playlist et Styles Musicaux
           </h3>
         </div>
         
         <div className="space-y-6">
+          
+          {/* FOND SONORE APPENDED HERE */}
+          {(!isClient || ev.showMusicStylesToClient) && (
+            <div className="border rounded-lg p-5 bg-indigo-50 border-indigo-200">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-semibold text-indigo-700 text-base">Fond Sonore (Apéritif / Accueil)</h4>
+                {isAdminOrDj && (
+                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700 bg-white py-1.5 px-3 rounded-full border border-gray-200 hover:bg-gray-50 transition">
+                    <input 
+                      type="checkbox" 
+                      checked={ev.showMusicStylesToClient || false} 
+                      onChange={e => {
+                        const val = e.target.checked;
+                        updateContractDb(currentRoute.eventId, { show_music_styles_to_client: val });
+                        const newEvents = [...events];
+                        const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                        newEvents[idx].showMusicStylesToClient = val;
+                        setEvents(newEvents);
+                      }} 
+                      className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" 
+                    />
+                    {!ev.showMusicStylesToClient ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-green-600" />}
+                    Montrer au client
+                  </label>
+                )}
+              </div>
+              <div>
+                {isAdminOrDj ? (
+                  <input
+                    type="text"
+                    value={ev.backgroundMusicAperitif || ''}
+                    onChange={e => {
+                      const newEvents = [...events];
+                      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                      newEvents[idx].backgroundMusicAperitif = e.target.value;
+                      setEvents(newEvents);
+                    }}
+                    onBlur={e => updateContractDb(currentRoute.eventId, { background_music_aperitif: e.target.value })}
+                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
+                    placeholder="Ex: Jazz instrumental, Lounge, Chill-out..."
+                  />
+                ) : (
+                  <p className="font-medium text-gray-900 bg-white p-3 rounded border border-indigo-100 min-h-[44px]">
+                    {ev.backgroundMusicAperitif || "Aucun fond sonore spécifique renseigné."}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* STYLES MUSICAUX ABORDES */}
+          <div className="border rounded-lg p-5 bg-gray-50 border-gray-200">
+            <div className="flex justify-between items-center mb-3">
+              <h4 className="font-semibold text-gray-700 text-base">Styles Musicaux Abordés</h4>
+              {isAdminOrDj && (
+                <button type="button" onClick={selectAllMusicStyles} className="text-xs text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-full border border-purple-200 transition">
+                  Tout sélectionner
+                </button>
+              )}
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              {availableMusicStyles.map((style) => (
+                <div 
+                  key={style} 
+                  className={`p-2 px-4 rounded-lg border-2 transition-all text-center text-sm ${
+                    (ev.selectedMusicStyles || []).includes(style) 
+                      ? "border-purple-500 bg-purple-50 text-purple-700 font-medium cursor-pointer" 
+                      : "border-slate-200 bg-white text-slate-500"
+                  } ${isAdminOrDj ? "cursor-pointer hover:border-slate-300" : ""}`} 
+                  onClick={() => handleMusicStyleToggle(style)}
+                >
+                  {style}
+                </div>
+              ))}
+            </div>
+            
+            {isClient && (!ev.selectedMusicStyles || ev.selectedMusicStyles.length === 0) && (
+              <p className="text-gray-500 text-sm italic mt-2">Le DJ n'a pas encore défini de styles musicaux.</p>
+            )}
+          </div>
+
           <div className="border rounded-lg p-5 bg-gray-50 border-gray-200">
             <h4 className="font-semibold text-green-700 mb-3 text-base">À passer absolument</h4>
             
@@ -784,6 +908,14 @@ const DjClientApp = ({ isPublic = false }) => {
                     placeholder="Titre exact (ex: Bruno Mars - Marry You)"
                     disabled={role !== 'client' && role !== 'admin'}
                   />
+                  <input
+                    type="text"
+                    value={entreeMariesNotes}
+                    onChange={(e) => setEntreeMariesNotes(e.target.value)}
+                    onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { entree_maries_notes: e.target.value })}}
+                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-gray-50 mt-2 text-gray-600"
+                    placeholder="Observations (ex: Lancer à 0:34)..."
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Ouverture de bal</label>
@@ -796,6 +928,14 @@ const DjClientApp = ({ isPublic = false }) => {
                     placeholder="Titre exact (ex: Ed Sheeran - Perfect)"
                     disabled={role !== 'client' && role !== 'admin'}
                   />
+                  <input
+                    type="text"
+                    value={ouvertureBalNotes}
+                    onChange={(e) => setOuvertureBalNotes(e.target.value)}
+                    onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { ouverture_bal_notes: e.target.value })}}
+                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-gray-50 mt-2 text-gray-600"
+                    placeholder="Observations..."
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Dessert (facultatif)</label>
@@ -807,6 +947,14 @@ const DjClientApp = ({ isPublic = false }) => {
                     className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
                     placeholder="Titre exact ou laissez vide si géré par le DJ"
                     disabled={role !== 'client' && role !== 'admin'}
+                  />
+                  <input
+                    type="text"
+                    value={dessertNotes}
+                    onChange={(e) => setDessertNotes(e.target.value)}
+                    onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { dessert_notes: e.target.value })}}
+                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-gray-50 mt-2 text-gray-600"
+                    placeholder="Observations..."
                   />
                 </div>
               </div>
@@ -1111,7 +1259,7 @@ const DjClientApp = ({ isPublic = false }) => {
         const formData = new FormData();
         formData.append('file', file);
         try {
-          const response = await fetch(`/api/gcs/upload`, {
+          const response = await fetch(`${BACKEND_URL}/api/public/upload/photo`, {
             method: 'POST',
             body: formData
           });
@@ -1164,15 +1312,21 @@ const DjClientApp = ({ isPublic = false }) => {
                 </div>
               )}
               
-              {currentRoute.role === 'client' && (
+              {currentRoute.role === 'client' ? (
                 <label className="mt-4 w-full text-center bg-white border border-gray-300 text-gray-700 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-gray-50 transition cursor-pointer flex justify-center items-center gap-2">
-                  {uploading ? (
+                  {clientPhotoUploading ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Upload...</>
                   ) : (
                     <><Upload className="w-4 h-4" /> {ev.client_photo ? "Modifier" : "Ajouter"} une photo</>
                   )}
-                  <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={uploading} />
+                  <input type="file" accept="image/*" className="hidden" onChange={handleFileUpload} disabled={clientPhotoUploading} />
                 </label>
+              ) : (
+                ev.client_photo && (
+                  <a href={ev.client_photo.startsWith('http') ? `${ev.client_photo}?download=true` : `${BACKEND_URL}${ev.client_photo}?download=true`} download target="_blank" rel="noreferrer" className="mt-4 w-full flex text-center bg-white border border-gray-300 text-gray-700 py-2.5 px-4 rounded-xl text-sm font-medium hover:bg-gray-50 transition justify-center items-center gap-2">
+                    <Download className="w-4 h-4" /> Télécharger la photo
+                  </a>
+                )
               )}
             </div>
             
@@ -1416,6 +1570,29 @@ const DjClientApp = ({ isPublic = false }) => {
         window.open(downloadUrl, '_blank');
       };
       
+      const handleDeleteEventDoc = async (docId) => {
+        if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce document ?")) return;
+        try {
+          const endpoint = `/api/public/dj-client/${currentRoute.eventId}/documents/${docId}`;
+          const res = await fetch(`${BACKEND_URL}${endpoint}`, { method: 'DELETE' });
+          if (res.ok) {
+            const newEventDocs = ev.eventDocuments.filter(d => d.id !== docId);
+            const updatedEvents = [...events];
+            const idx = updatedEvents.findIndex(e => e.id === ev.id);
+            if (idx !== -1) {
+              ev.eventDocuments = newEventDocs;
+              updatedEvents[idx].eventDocuments = newEventDocs;
+              setEvents(updatedEvents);
+            }
+            toast.success("Document supprimé avec succès.");
+          } else {
+            toast.error("Erreur lors de la suppression du document.");
+          }
+        } catch (e) {
+          toast.error("Erreur lors de la suppression.");
+        }
+      };
+      
       const handleFileUpload = async (event) => {
         const file = event.target.files[0];
         if (!file) return;
@@ -1509,8 +1686,8 @@ const DjClientApp = ({ isPublic = false }) => {
                 {ev && ev.rawContractData && (
                     <div className="p-4 rounded-lg border-2 border-indigo-200 bg-indigo-50 hover:border-indigo-300 transition-all flex flex-col justify-between">
                       <div className="flex items-start gap-3">
-                        <div className="flex-1">
-                          <p className="font-medium text-slate-800 leading-tight">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-800 leading-tight truncate" title={`Contrat ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`}>
                             Contrat {ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}
                           </p>
                           <p className="text-xs text-slate-500 mt-1">Contrat original sans signature</p>
@@ -1529,11 +1706,20 @@ const DjClientApp = ({ isPublic = false }) => {
                 {administrativeDocs.map((doc) => (
                   <div 
                     key={doc.id}
-                    className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between"
+                    className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between relative group"
                   >
+                    {currentRoute.role === 'admin' && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
+                        className="absolute top-2 right-2 text-slate-400 hover:text-red-500 hidden group-hover:flex bg-white/80 rounded-full p-1 transition"
+                        title="Supprimer ce document"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                     <div className="flex items-start gap-3">
-                      <div className="flex-1">
-                        <p className="font-medium text-slate-800 leading-tight">{doc.filename}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-slate-800 leading-tight truncate" title={doc.filename}>{doc.filename}</p>
                         <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
                       </div>
                     </div>
@@ -1560,11 +1746,20 @@ const DjClientApp = ({ isPublic = false }) => {
                   {animationEventDocs.map((doc) => (
                     <div 
                       key={doc.id}
-                      className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between"
+                      className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between relative group"
                     >
+                      {currentRoute.role === 'admin' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
+                          className="absolute top-2 right-2 text-slate-400 hover:text-red-500 hidden group-hover:flex bg-white/80 rounded-full p-1 transition"
+                          title="Supprimer ce document"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
                       <div className="flex items-start gap-3">
-                        <div className="flex-1">
-                          <p className="font-medium text-slate-800 leading-tight">{doc.filename}</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-800 leading-tight truncate" title={doc.filename}>{doc.filename}</p>
                           <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
                         </div>
                       </div>
@@ -1593,8 +1788,8 @@ const DjClientApp = ({ isPublic = false }) => {
                               {isSelected && <Check className="w-4 h-4 text-indigo-600" />}
                             </div>
                           )}
-                          <div className="flex-1">
-                            <p className="font-medium text-slate-800 leading-tight">{doc.title || doc.filename}</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-slate-800 leading-tight truncate" title={doc.title || doc.filename}>{doc.title || doc.filename}</p>
                             <p className="text-xs text-slate-500 mt-1">Guide/Tips PDF</p>
                           </div>
                         </div>
@@ -1695,7 +1890,7 @@ const DjClientApp = ({ isPublic = false }) => {
           console.error("Error canceling requested option", e);
           toast.error("Erreur de connexion");
         } finally {
-          setIsSubmitting(false);
+          setOptionsSubmitting(false);
         }
       };
 
@@ -1992,130 +2187,6 @@ const DjClientApp = ({ isPublic = false }) => {
       );
     };
 
-    const MusicStylesSection = () => {
-      const ev = events.find(e => e.id === currentRoute.eventId);
-      if (!ev) return null;
-
-      const isClient = currentRoute.role === 'client';
-      const isAdminOrDj = currentRoute.role === 'admin' || currentRoute.role === 'dj';
-      
-      if (isClient && !ev.showMusicStylesToClient) {
-        return null;
-      }
-
-      const handleMusicStyleToggle = (style) => {
-        if (!isAdminOrDj) return;
-        const currentStyles = ev.selectedMusicStyles || [];
-        const isSelected = currentStyles.includes(style);
-        const newStyles = isSelected 
-          ? currentStyles.filter(s => s !== style)
-          : [...currentStyles, style];
-        
-        updateContractDb(currentRoute.eventId, { selected_music_styles: newStyles });
-        const newEvents = [...events];
-        const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
-        newEvents[idx].selectedMusicStyles = newStyles;
-        setEvents(newEvents);
-      };
-
-      const selectAllMusicStyles = () => {
-        if (!isAdminOrDj) return;
-        updateContractDb(currentRoute.eventId, { selected_music_styles: [...availableMusicStyles] });
-        const newEvents = [...events];
-        const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
-        newEvents[idx].selectedMusicStyles = [...availableMusicStyles];
-        setEvents(newEvents);
-      };
-
-      return (
-        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('playlist')}`}>
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-              <Music className="w-5 h-5 text-indigo-600" />
-              Styles Musicaux & Fond Sonore
-            </h3>
-            {isAdminOrDj && (
-              <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700 bg-gray-100 py-1.5 px-3 rounded-full hover:bg-gray-200 transition">
-                <input 
-                  type="checkbox" 
-                  checked={ev.showMusicStylesToClient} 
-                  onChange={e => {
-                    const val = e.target.checked;
-                    updateContractDb(currentRoute.eventId, { show_music_styles_to_client: val });
-                    const newEvents = [...events];
-                    const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
-                    newEvents[idx].showMusicStylesToClient = val;
-                    setEvents(newEvents);
-                  }} 
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" 
-                />
-                {!ev.showMusicStylesToClient ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-green-600" />}
-                Montrer au client
-              </label>
-            )}
-          </div>
-          
-          <div className="space-y-6">
-            <div className="border rounded-lg p-5 bg-indigo-50 border-indigo-200">
-              <h4 className="font-semibold text-indigo-700 mb-3 text-base">Fond Sonore (Apéritif / Accueil)</h4>
-              <div>
-                {isAdminOrDj ? (
-                  <input
-                    type="text"
-                    value={ev.backgroundMusicAperitif || ''}
-                    onChange={e => {
-                      const newEvents = [...events];
-                      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
-                      newEvents[idx].backgroundMusicAperitif = e.target.value;
-                      setEvents(newEvents);
-                    }}
-                    onBlur={e => updateContractDb(currentRoute.eventId, { background_music_aperitif: e.target.value })}
-                    className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
-                    placeholder="Ex: Jazz instrumental, Lounge, Chill-out..."
-                  />
-                ) : (
-                  <p className="font-medium text-gray-900 bg-white p-3 rounded border border-indigo-100 min-h-[44px]">
-                    {ev.backgroundMusicAperitif || "Aucun fond sonore spécifique renseigné."}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="border rounded-lg p-5 bg-gray-50 border-gray-200">
-              <div className="flex justify-between items-center mb-3">
-                <h4 className="font-semibold text-gray-700 text-base">Styles Musicaux Abordés</h4>
-                {isAdminOrDj && (
-                  <button type="button" onClick={selectAllMusicStyles} className="text-xs text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-full border border-purple-200 transition">
-                    Tout sélectionner
-                  </button>
-                )}
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                {availableMusicStyles.map((style) => (
-                  <div 
-                    key={style} 
-                    className={`p-2 rounded-lg border-2 transition-all text-center text-sm ${
-                      (ev.selectedMusicStyles || []).includes(style) 
-                        ? "border-purple-500 bg-purple-50 text-purple-700 font-medium font-medium cursor-pointer" 
-                        : "border-slate-200 bg-white text-slate-500"
-                    } ${isAdminOrDj ? "cursor-pointer hover:border-slate-300" : ""}`} 
-                    onClick={() => handleMusicStyleToggle(style)}
-                  >
-                    {style}
-                  </div>
-                ))}
-              </div>
-              
-              {isClient && (!ev.selectedMusicStyles || ev.selectedMusicStyles.length === 0) && (
-                <p className="text-gray-500 text-sm italic mt-2">Le DJ n'a pas encore défini de styles musicaux.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    };
-
     const VenueSection = () => {
       const ev = events.find(e => e.id === currentRoute.eventId);
       if (!ev) return null;
@@ -2131,7 +2202,7 @@ const DjClientApp = ({ isPublic = false }) => {
         const formData = new FormData();
         formData.append('file', file);
         try {
-          const response = await fetch(`/api/gcs/upload`, {
+          const response = await fetch(`${BACKEND_URL}/api/public/upload/photo`, {
             method: 'POST',
             body: formData
           });
@@ -2275,6 +2346,67 @@ const DjClientApp = ({ isPublic = false }) => {
           </div>
         )}
 
+        {currentRoute.role === 'admin' && (
+          <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in duration-300">
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <Shield className="w-8 h-8" />
+              Espace Admin - {ev.name}
+            </h2>
+            <div className="flex gap-2 relative z-10">
+              <button onClick={generateDjPDF} className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                <Download className="w-4 h-4" /> PDF DJ
+              </button>
+              <button onClick={generateClientPDF} className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                <Download className="w-4 h-4" /> PDF Client
+              </button>
+            </div>
+          </div>
+        )}
+
+        {currentRoute.role === 'dj' && (
+          <div className="bg-yellow-600 text-white p-6 rounded-xl shadow-sm relative overflow-hidden animate-in fade-in duration-300">
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Headphones className="w-8 h-8" />
+                  Espace DJ - {ev.name}
+                </h2>
+                <div className="mt-4 flex gap-4 items-center">
+                  <p className="opacity-90">Connecté en tant que: <span className="font-semibold">{ev.dj.name}</span></p>
+                </div>
+              </div>
+              <button onClick={generateDjPDF} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 w-fit">
+                <Download className="w-5 h-5" /> Télécharger mon récap' PDF
+              </button>
+            </div>
+            <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
+              <Headphones className="w-48 h-48" />
+            </div>
+          </div>
+        )}
+
+        {currentRoute.role === 'client' && (
+          <div className="bg-green-600 text-white p-6 rounded-xl shadow-sm relative overflow-hidden animate-in fade-in duration-300">
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex flex-col mb-2">
+                  <span className="text-green-200 text-sm font-semibold uppercase tracking-wider">{ev.name.split(' ')[0]}</span>
+                </div>
+                <h2 className="text-2xl font-bold flex items-center gap-2">
+                  <Users className="w-8 h-8" />
+                  Espace Client - {ev.client.name}
+                </h2>
+              </div>
+              <button onClick={generateClientPDF} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 w-fit">
+                <Download className="w-5 h-5" /> Télécharger mon récap' PDF
+              </button>
+            </div>
+            <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
+              <Users className="w-48 h-48" />
+            </div>
+          </div>
+        )}
+
         {ClientInfoSection()}
         {ChatSection()}
         {PlanningSection()}
@@ -2282,87 +2414,28 @@ const DjClientApp = ({ isPublic = false }) => {
         {OptionsSection()}
 
         {currentRoute.role === 'admin' && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h2 className="text-2xl font-bold flex items-center gap-2">
-                <Shield className="w-8 h-8" />
-                Espace Admin - {ev.name}
-              </h2>
-              <div className="flex gap-2 relative z-10">
-                <button onClick={generateDjPDF} className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
-                  <Download className="w-4 h-4" /> PDF DJ
-                </button>
-                <button onClick={generateClientPDF} className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
-                  <Download className="w-4 h-4" /> PDF Client
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {ScheduleSection({ canEdit: true })}
-              {PlaylistSection({ role: "admin" })}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+            {ScheduleSection({ canEdit: true })}
+            {PlaylistSection({ role: "admin" })}
           </div>
         )}
 
         {currentRoute.role === 'dj' && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="bg-yellow-600 text-white p-6 rounded-xl shadow-sm relative overflow-hidden">
-              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-2xl font-bold flex items-center gap-2">
-                    <Headphones className="w-8 h-8" />
-                    Espace DJ - {ev.name}
-                  </h2>
-                  <div className="mt-4 flex gap-4 items-center">
-                    <p className="opacity-90">Connecté en tant que: <span className="font-semibold">{ev.dj.name}</span></p>
-                  </div>
-                </div>
-                <button onClick={generateDjPDF} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 w-fit">
-                  <Download className="w-5 h-5" /> Télécharger mon récap' PDF
-                </button>
-              </div>
-              <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
-                <Headphones className="w-48 h-48" />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {ScheduleSection({ canEdit: true })}
-              {PlaylistSection({ role: "dj" })}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+            {ScheduleSection({ canEdit: true })}
+            {PlaylistSection({ role: "dj" })}
           </div>
         )}
 
         {currentRoute.role === 'client' && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="bg-green-600 text-white p-6 rounded-xl shadow-sm relative overflow-hidden">
-               <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                 <div>
-                   <div className="flex flex-col mb-2">
-                     <span className="text-green-200 text-sm font-semibold uppercase tracking-wider">{ev.name.split(' ')[0]}</span>
-                   </div>
-                   <h2 className="text-2xl font-bold flex items-center gap-2">
-                     <Users className="w-8 h-8" />
-                     Espace Client - {ev.client.name}
-                   </h2>
-                 </div>
-                 <button onClick={generateClientPDF} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 w-fit">
-                   <Download className="w-5 h-5" /> Télécharger mon récap' PDF
-                 </button>
-               </div>
-               <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
-                 <Users className="w-48 h-48" />
-               </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {ScheduleSection({ canEdit: false })}
-              {PlaylistSection({ role: "client" })}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+            {ScheduleSection({ canEdit: false })}
+            {PlaylistSection({ role: "client" })}
           </div>
         )}
 
-        {MusicStylesSection()}
-        {VenueSection()}
         {CateringSection()}
+        {VenueSection()}
       </div>
     );
   };

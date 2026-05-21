@@ -247,7 +247,7 @@ async function deleteReservationFromGoogleCalendar(eventId) {
 async function tryAutoSyncToGoogle(reservation) {
   try {
     const bType = (reservation.booking_type || '').toLowerCase();
-    if (bType !== 'client' && bType !== 'livraison') {
+    if (bType !== 'client' && bType !== 'livraison' && bType !== 'dj') {
       return null; // Ignore types that shouldn't be synced
     }
     
@@ -1005,6 +1005,10 @@ api.get('/uploads/events/:filename', async (req, res) => {
     const imgBuffer = Buffer.from(upload.data, 'base64');
     res.set('Content-Type', upload.content_type || 'image/png');
     res.set('Cache-Control', 'public, max-age=86400');
+    if (req.query.download === 'true') {
+      const ext = upload.content_type && upload.content_type.split('/')[1] || 'png';
+      res.setHeader('Content-Disposition', `attachment; filename="photo-${req.params.filename}.${ext}"`);
+    }
     res.send(imgBuffer);
   } catch { res.status(404).json({ detail: 'Not found' }); }
 });
@@ -1279,6 +1283,33 @@ api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
   }
 });
 
+api.delete('/public/dj-client/:id/documents/:docId', async (req, res) => {
+  try {
+    const contract = await db.collection('contracts2').findOne({ id: req.params.id });
+    if (!contract || !contract.event_documents) return res.status(404).json({ error: 'Not found' });
+    
+    // Find the document to potentially delete from GCS
+    const docToDelete = contract.event_documents.find(d => d.id === req.params.docId);
+    if (docToDelete && docToDelete.gcs_path && bucket) {
+      const file = bucket.file(docToDelete.gcs_path);
+      try {
+        await file.delete();
+      } catch (err) {
+        console.error('Failed to delete file from GCS:', err);
+      }
+    }
+
+    await db.collection('contracts2').updateOne(
+      { id: req.params.id },
+      { $pull: { event_documents: { id: req.params.docId } } }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 api.post('/contracts2/documents/migrate-to-gcs', authMiddleware, async (req, res) => {
   if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
   try {
@@ -1324,6 +1355,95 @@ api.post('/contracts2/documents/migrate-to-gcs', authMiddleware, async (req, res
   }
 });
 
+async function syncContractReservations(contract) {
+  if (!contract) return;
+  // Helper to delete reservations and calendar events
+  const cleanupReservations = async (contractId) => {
+    const existingReservations = await db.collection('location_reservations').find({ contract_id: contractId }).toArray();
+    for (const res of existingReservations) {
+      if (res.google_event_id) {
+        try {
+          await deleteReservationFromGoogleCalendar(res.google_event_id);
+        } catch (e) {
+          console.error("Error deleting from Google Calendar:", e);
+        }
+      }
+    }
+    await db.collection('location_reservations').deleteMany({ contract_id: contractId });
+  };
+
+  // If not 'archived' (signed), delete the reservations for this contract
+  if (contract.status !== 'archived') {
+    await cleanupReservations(contract.id);
+    return;
+  }
+  
+  const options = contract.selected_options || [];
+  const linkedEquipments = options.filter(o => o.linked_equipment_id);
+  
+  if (linkedEquipments.length === 0) {
+    await cleanupReservations(contract.id);
+    return;
+  }
+  
+  const resolvedItems = [];
+  for (const opt of linkedEquipments) {
+    const eq = await db.collection('location_equipment').findOne({ id: opt.linked_equipment_id });
+    if (eq) {
+      resolvedItems.push({
+        equipment_id: eq.id,
+        equipment_name: eq.name,
+        name: eq.name,
+        reference: eq.reference,
+        daily_price: eq.daily_price || 0,
+        total_days: 1
+      });
+    }
+  }
+  
+  if (resolvedItems.length === 0) {
+    await cleanupReservations(contract.id);
+    return;
+  }
+  
+  const dj = await db.collection('dj_profiles').findOne({ id: contract.dj_profile });
+  const djName = dj && (dj.nom_artistique || dj.nom_complet) ? (dj.nom_artistique || dj.nom_complet) : 'DJ';
+  
+  const reservationData = {
+    contract_id: contract.id,
+    booking_type: 'dj', // "la réservation a été faite pour un DJ"
+    dj_id: contract.dj_profile,
+    dj_name: djName,
+    client_name: contract.client_info?.name || 'Client',
+    event_name: (contract.client_info?.name || 'Client') + ' - ' + (contract.client_info?.event_type || 'Événement'),
+    start_date: contract.client_info?.event_date || new Date().toISOString().split('T')[0],
+    end_date: contract.client_info?.event_date || new Date().toISOString().split('T')[0],
+    items: resolvedItems,
+    equipment_items: resolvedItems,
+    status: 'accepted',
+    updated_at: new Date().toISOString()
+  };
+  
+  const existing = await db.collection('location_reservations').findOne({ contract_id: contract.id });
+  if (existing) {
+    // If equipment or dates changed, google sync might need update but there is no update helper natively here except through complex flows
+    // at least update local
+    await db.collection('location_reservations').updateOne({ id: existing.id }, { $set: reservationData });
+  } else {
+    reservationData.id = uuidv4();
+    reservationData.created_at = new Date().toISOString();
+    try {
+      const googleEventId = await tryAutoSyncToGoogle(reservationData);
+      if (googleEventId && googleEventId !== 'DELETED') {
+        reservationData.google_event_id = googleEventId;
+      }
+    } catch (err) {
+      console.error('Google auto-sync error in contract reservations:', err);
+    }
+    await db.collection('location_reservations').insertOne(reservationData);
+  }
+}
+
 api.get('/contracts2', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('contracts2').find({ status: { $nin: ['trash'] } }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
@@ -1345,18 +1465,25 @@ api.get('/contracts2/:id', authMiddleware, async (req, res) => {
 api.post('/contracts2', authMiddleware, async (req, res) => {
   const contract = { id: uuidv4(), ...req.body, status: req.body.status || 'draft', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   await db.collection('contracts2').insertOne(contract);
+  await syncContractReservations(contract);
   res.json(clean(contract));
 });
 api.put('/contracts2/:id', authMiddleware, async (req, res) => {
   await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
-  res.json(await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  await syncContractReservations(updatedContract);
+  res.json(updatedContract);
 });
 api.put('/contracts2/:id/status', authMiddleware, async (req, res) => {
   await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { status: req.body.status, updated_at: new Date().toISOString() } });
-  res.json(await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  await syncContractReservations(updatedContract);
+  res.json(updatedContract);
 });
 api.delete('/contracts2/:id', authMiddleware, async (req, res) => {
   await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { status: 'trash', updated_at: new Date().toISOString() } });
+  const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  await syncContractReservations(updatedContract);
   res.json({ success: true });
 });
 api.delete('/contracts2/:id/permanent', authMiddleware, async (req, res) => {
@@ -1820,7 +1947,11 @@ api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
       
       res.json({ url: `/api/gcs/${gcsPath}` });
     } else {
-      res.status(500).json({ detail: 'GCS not configured' });
+      const imageId = uuidv4();
+      const b64 = req.file.buffer.toString('base64');
+      const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
+      await db.collection('event_uploads').insertOne(doc);
+      res.json({ url: `/api/uploads/events/${imageId}` });
     }
   } catch (error) {
     console.error('Error uploading photo:', error);
@@ -1844,7 +1975,11 @@ api.post('/upload/venue-photo', authMiddleware, upload.single('file'), async (re
       
       res.json({ url: `/api/gcs/${gcsPath}` });
     } else {
-      res.status(500).json({ detail: 'GCS not configured' });
+      const imageId = uuidv4();
+      const b64 = req.file.buffer.toString('base64');
+      const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
+      await db.collection('event_uploads').insertOne(doc);
+      res.json({ url: `/api/uploads/events/${imageId}` });
     }
   } catch (error) {
     console.error('Error uploading venue photo:', error);
