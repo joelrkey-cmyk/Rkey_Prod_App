@@ -39,7 +39,7 @@ import {
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { Toaster } from '../ui/sonner';
-import { API, BACKEND_URL, formatDateLocal, axios } from './helpers';
+import { API, BACKEND_URL, formatDateLocal, axios, getImageUrl } from './helpers';
 
 function CatalogueView() {
   const [equipment, setEquipment] = useState([]);
@@ -356,7 +356,7 @@ function CatalogueView() {
                           >
                             {item.photo_url && (
                               <img 
-                                src={item.photo_url.startsWith('/') ? `${BACKEND_URL}${item.photo_url}` : item.photo_url} 
+                                src={getImageUrl(item.photo_url)} 
                                 alt={item.name}
                                 className="w-full h-32 object-cover rounded-lg mb-3"
                                 onError={(e) => e.target.style.display = 'none'}
@@ -463,7 +463,7 @@ function CatalogueView() {
                     <span className="text-sm text-gray-400 w-6">{index + 1}.</span>
                     {product.photo_url ? (
                       <img 
-                        src={product.photo_url.startsWith('/') ? `${BACKEND_URL}${product.photo_url}` : product.photo_url} 
+                        src={getImageUrl(product.photo_url)} 
                         alt={product.name}
                         className="w-10 h-10 object-cover rounded"
                         onError={(e) => e.target.style.display = 'none'}

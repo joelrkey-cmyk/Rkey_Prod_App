@@ -39,7 +39,7 @@ import {
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { Toaster } from '../ui/sonner';
-import { API, BACKEND_URL, formatDateLocal, axios } from './helpers';
+import { API, BACKEND_URL, formatDateLocal, axios, getImageUrl } from './helpers';
 import * as XLSX from 'xlsx';
 
 function MaterielView() {
@@ -876,7 +876,7 @@ function MaterielView() {
                     {formData.photo_url && (
                       <div className="relative w-full h-32 rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
                         <img 
-                          src={formData.photo_url.startsWith('/') ? `${BACKEND_URL}${formData.photo_url}` : formData.photo_url} 
+                          src={getImageUrl(formData.photo_url)} 
                           alt="Aperçu"
                           className="w-full h-full object-cover"
                           onError={(e) => {

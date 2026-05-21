@@ -649,8 +649,9 @@
                 if (event.photo_url) {
                     // Gérer les URLs relatives (uploadées) et absolues
                     var imageUrl = event.photo_url;
-                    if (imageUrl.startsWith('/api/')) {
-                        imageUrl = API_URL.replace('/api/billetterie/events/public', '') + imageUrl;
+                    if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
+                        var baseUrl = API_URL.replace('/api/billetterie/events/public', '');
+                        imageUrl = baseUrl + (imageUrl.startsWith('/') ? '' : '/') + imageUrl;
                     }
                     // Échapper les apostrophes pour le onclick
                     var escapedTitle = event.titre.replace(/'/g, "\\'");

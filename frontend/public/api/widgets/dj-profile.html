@@ -293,10 +293,10 @@
             // ── LEFT: Photo + Badge ──
             html += '<div class="profile-left">';
             var photoUrl = profile.photo_url;
-            if (photoUrl && photoUrl.startsWith('/')) {
+            if (photoUrl && !photoUrl.startsWith('http') && !photoUrl.startsWith('data:')) {
                 var parsedUrl = new URL(window.location.href);
                 var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
-                photoUrl = BASE_URL + photoUrl;
+                photoUrl = BASE_URL + (photoUrl.startsWith('/') ? '' : '/') + photoUrl;
             }
             if (photoUrl) {
                 html += '<img src="' + photoUrl + '" alt="' + profile.nom_artistique + '" class="profile-photo">';

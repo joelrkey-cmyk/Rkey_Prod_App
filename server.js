@@ -2322,12 +2322,13 @@ api.post('/location/generate-description', authMiddleware, async (req, res) => {
   try {
     const { name, reference, category, observations } = req.body;
     const prompt = `Génère une description commerciale courte et professionnelle en français pour ce matériel de location événementielle :\n- Nom : ${name || 'Non précisé'}\n- Référence : ${reference || 'Non précisée'}\n- Catégorie : ${category || 'Non précisée'}\n- Observations : ${observations || 'Aucune'}\n\nLa description doit être vendeuse, concise (2-3 phrases max) et mettre en avant les avantages pour un événement. Réponds uniquement avec la description, sans guillemets.`;
-    const resp = await fetch('https://integrations.emergentagent.com/llm/chat/completions', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.EMERGENT_LLM_KEY}` },
-      body: JSON.stringify({ model: 'gemini/gemini-3-flash-preview', messages: [{ role: 'user', content: prompt }], max_tokens: 300 })
+    const { GoogleGenAI } = require('@google/genai');
+    const ai = new GoogleGenAI({});
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt
     });
-    const data = await resp.json();
-    const description = data.choices?.[0]?.message?.content?.trim() || '';
+    const description = response.text.trim() || '';
     res.json({ description });
   } catch (e) { console.error('AI generation error:', e); res.json({ description: '' }); }
 });
@@ -2335,12 +2336,13 @@ api.post('/location/generate-catalogue-description', authMiddleware, async (req,
   try {
     const { name, reference, category, observations } = req.body;
     const prompt = `Génère une description catalogue commerciale en français pour ce matériel de location événementielle :\n- Nom : ${name || 'Non précisé'}\n- Référence : ${reference || 'Non précisée'}\n- Catégorie : ${category || 'Non précisée'}\n- Observations : ${observations || 'Aucune'}\n\nLa description doit être vendeuse, professionnelle, concise (3-4 phrases) et adaptée à un catalogue public destiné aux organisateurs d'événements. Mets en avant les caractéristiques et avantages. Réponds uniquement avec la description, sans guillemets.`;
-    const resp = await fetch('https://integrations.emergentagent.com/llm/chat/completions', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.EMERGENT_LLM_KEY}` },
-      body: JSON.stringify({ model: 'gemini/gemini-3-flash-preview', messages: [{ role: 'user', content: prompt }], max_tokens: 400 })
+    const { GoogleGenAI } = require('@google/genai');
+    const ai = new GoogleGenAI({});
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt
     });
-    const data = await resp.json();
-    const description = data.choices?.[0]?.message?.content?.trim() || '';
+    const description = response.text.trim() || '';
     res.json({ description });
   } catch (e) { console.error('AI catalogue description error:', e); res.json({ description: '' }); }
 });

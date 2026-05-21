@@ -15,4 +15,10 @@ export const formatDateLocal = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+export const getImageUrl = (photoUrl) => {
+  if (!photoUrl) return null;
+  if (photoUrl.startsWith('http') || photoUrl.startsWith('data:')) return photoUrl;
+  return `${BACKEND_URL}${photoUrl.startsWith('/') ? '' : '/'}${photoUrl}`;
+};
+
 export { axios };

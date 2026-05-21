@@ -143,8 +143,8 @@ function renderEquipment(equipment) {
         html += '<div id="' + cardId + '" class="equipment-card">';
         
         var imgUrl = item.photo_url;
-        if (imgUrl && imgUrl.startsWith('/')) {
-            imgUrl = BASE_URL + imgUrl;
+        if (imgUrl && !imgUrl.startsWith('http') && !imgUrl.startsWith('data:')) {
+            imgUrl = BASE_URL + (imgUrl.startsWith('/') ? '' : '/') + imgUrl;
         }
         
         // Image
