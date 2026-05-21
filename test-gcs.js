@@ -7,7 +7,11 @@ async function testGCS() {
   let bucket = null;
 
   try {
-    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+    if (fs.existsSync('google-credentials.json')) {
+      console.log('Using physical healed google-credentials.json...');
+      storage = new Storage({ keyFilename: 'google-credentials.json' });
+    } else if (process.env.GOOGLE_CREDENTIALS_JSON) {
+      console.log('Using GOOGLE_CREDENTIALS_JSON env...');
       storage = new Storage({ credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) });
     } else {
       console.log('Using default credentials');

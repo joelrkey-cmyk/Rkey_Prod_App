@@ -18,6 +18,7 @@ export const formatDateLocal = (date) => {
 export const getImageUrl = (photoUrl) => {
   if (!photoUrl) return null;
   if (photoUrl.startsWith('http') || photoUrl.startsWith('data:')) return photoUrl;
+  
   return `${BACKEND_URL}${photoUrl.startsWith('/') ? '' : '/'}${photoUrl}`;
 };
 

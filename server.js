@@ -30,6 +30,50 @@ console.log('  - GOOGLE_CLIENT_EMAIL exists:', !!process.env.GOOGLE_CLIENT_EMAIL
 console.log('  - GOOGLE_PRIVATE_KEY exists:', !!process.env.GOOGLE_PRIVATE_KEY);
 console.log('==============================');
 
+function sanitizePrivateKey(keyString) {
+  if (!keyString) return keyString;
+  let clean = keyString.trim();
+  
+  // Replace literal '\n' and '\r' strings with actual characters
+  clean = clean.replace(/\\n/g, '\n');
+  clean = clean.replace(/\\r/g, '\r');
+  
+  // Remove wrapping single/double quotes
+  if (clean.startsWith('"') && clean.endsWith('"')) {
+    clean = clean.substring(1, clean.length - 1);
+  }
+  if (clean.startsWith("'") && clean.endsWith("'")) {
+    clean = clean.substring(1, clean.length - 1);
+  }
+  
+  clean = clean.trim();
+  
+  // Extract the exact BEGIN and END markers and the base64 content
+  const matches = clean.match(/(-----BEGIN [A-Z ]*PRIVATE KEY-----)([\s\S]*?)(-----END [A-Z ]*PRIVATE KEY-----)/);
+  if (matches) {
+    const header = matches[1].trim();
+    const base64Body = matches[2].replace(/[\s\r\n]+/g, '');
+    const footer = matches[3].trim();
+    const lines = [];
+    for (let i = 0; i < base64Body.length; i += 64) {
+      lines.push(base64Body.substring(i, i + 64));
+    }
+    clean = `${header}\n${lines.join('\n')}\n${footer}`;
+  } else {
+    // If BEGIN/END doesn't exist, try to wrap the raw Base64 string if it looks like one
+    const base64Body = clean.replace(/[\s\r\n]+/g, '');
+    if (base64Body.length > 100) {
+      const lines = [];
+      for (let i = 0; i < base64Body.length; i += 64) {
+        lines.push(base64Body.substring(i, i + 64));
+      }
+      clean = `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
+    }
+  }
+  
+  return clean;
+}
+
 function getGoogleCredentials() {
   // 1. Chercher d'abord le fichier physique google-credentials.json
   if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
@@ -38,7 +82,7 @@ function getGoogleCredentials() {
       const creds = JSON.parse(fileContent);
       if (creds) {
         if (creds.private_key) {
-          creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+          creds.private_key = sanitizePrivateKey(creds.private_key);
         }
         console.log('Google Cloud Credentials successfully loaded from physical file.');
         return creds;
@@ -101,7 +145,7 @@ function getGoogleCredentials() {
 
     if (creds) {
       if (creds.private_key) {
-        creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+        creds.private_key = sanitizePrivateKey(creds.private_key);
       }
       return creds;
     }
@@ -110,7 +154,7 @@ function getGoogleCredentials() {
     try {
       const creds = {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        private_key: sanitizePrivateKey(process.env.GOOGLE_PRIVATE_KEY),
         project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync'
       };
       return creds;
@@ -132,6 +176,69 @@ try {
   }
 } catch (err) {
   console.error('Failed to initialize Google Cloud Storage:', err);
+}
+
+// Generates a GCS signed URL (valid for 12 hours) securely using the service account private key in memory.
+// This allows Hostinger platforms to stream directly from Google CDN without publicizing the bucket (no allUsers needed!).
+async function getGcsSignedUrl(gcsPath) {
+  if (!bucket) return null;
+  try {
+    const file = bucket.file(gcsPath);
+    // V4 signed URL with 12 hour expiration
+    const [url] = await file.getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: Date.now() + 12 * 60 * 60 * 1000, // 12 hours
+    });
+    return url;
+  } catch (err) {
+    console.error(`[GCS SIGNED URL ERROR] Failed to sign path "${gcsPath}":`, err.message);
+    return null;
+  }
+}
+
+// Recursively processes any response object or list returned by standard API routes, and transforms
+// any GCS reference like "/gcs/folder/file.ext" into a secure GCS direct-access signed URL.
+async function autoSignGcsUrlsInObject(obj) {
+  if (!obj || !bucket) return obj;
+  
+  // Check if GCS Direct Mode is enabled in settings
+  let useDirectUrls = false;
+  try {
+    const s = await db.collection('location_settings').findOne({ type: 'gcs' });
+    useDirectUrls = s ? !!s.gcs_use_direct_urls : false;
+  } catch (dbErr) {
+    // Ignore db err
+  }
+  
+  if (!useDirectUrls) return obj; // If direct URLs are disabled (standard proxy mode), send clean DB paths
+  
+  if (Array.isArray(obj)) {
+    const signedArray = [];
+    for (let item of obj) {
+      signedArray.push(await autoSignGcsUrlsInObject(item));
+    }
+    return signedArray;
+  }
+  
+  if (typeof obj === 'object') {
+    const cloned = { ...obj };
+    for (const key of Object.keys(cloned)) {
+      const val = cloned[key];
+      if (typeof val === 'string' && val.startsWith('/gcs/')) {
+        const gcsPath = val.replace('/gcs/', '');
+        const signedUrl = await getGcsSignedUrl(gcsPath);
+        if (signedUrl) {
+          cloned[key] = signedUrl;
+        }
+      } else if (val && typeof val === 'object' && !(val instanceof Date)) {
+        cloned[key] = await autoSignGcsUrlsInObject(val);
+      }
+    }
+    return cloned;
+  }
+  
+  return obj;
 }
 
 async function uploadBase64ToGcs(base64String, folder) {
@@ -835,7 +942,7 @@ api.delete('/partners/categories/:id', authMiddleware, async (req, res) => {
 api.get('/partners', authMiddleware, async (req, res) => {
   const query = req.query.category ? { category: req.query.category } : {};
   const partners = await db.collection('partners').find(query, { projection: { _id: 0 } }).sort({ sort_order: 1, last_name: 1 }).toArray();
-  res.json(partners);
+  res.json(await autoSignGcsUrlsInObject(partners));
 });
 api.put('/partners/reorder', authMiddleware, async (req, res) => {
   for (const item of (req.body.order || [])) await db.collection('partners').updateOne({ id: item.id }, { $set: { sort_order: item.sort_order } });
@@ -844,7 +951,7 @@ api.put('/partners/reorder', authMiddleware, async (req, res) => {
 api.get('/partners/:id', authMiddleware, async (req, res) => {
   const p = await db.collection('partners').findOne({ id: req.params.id }, { projection: { _id: 0 } });
   if (!p) return res.status(404).json({ detail: 'Not found' });
-  res.json(p);
+  res.json(await autoSignGcsUrlsInObject(p));
 });
 api.post('/partners', authMiddleware, async (req, res) => {
   const body = { ...req.body };
@@ -853,7 +960,7 @@ api.post('/partners', authMiddleware, async (req, res) => {
   
   const partner = { id: uuidv4(), ...body, sort_order: body.sort_order || 999, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   await db.collection('partners').insertOne(partner);
-  res.json(clean(partner));
+  res.json(await autoSignGcsUrlsInObject(clean(partner)));
 });
 api.put('/partners/:id', authMiddleware, async (req, res) => {
   const body = { ...req.body };
@@ -862,7 +969,7 @@ api.put('/partners/:id', authMiddleware, async (req, res) => {
 
   await db.collection('partners').updateOne({ id: req.params.id }, { $set: { ...body, updated_at: new Date().toISOString() } });
   const updated = await db.collection('partners').findOne({ id: req.params.id }, { projection: { _id: 0 } });
-  res.json(updated);
+  res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.delete('/partners/:id', authMiddleware, async (req, res) => {
   await db.collection('partners').deleteOne({ id: req.params.id });
@@ -906,21 +1013,22 @@ api.post('/partners/migrate-to-gcs', authMiddleware, async (req, res) => {
 api.post('/partners/ocr', authMiddleware, (req, res) => res.json({ first_name: '', last_name: '', company: '', phone: '', email: '', website: '' }));
 api.get('/partners/widget/:category', authMiddleware, async (req, res) => {
   const partners = await db.collection('partners').find({ category: req.params.category }, { projection: { _id: 0, card_recto: 0, card_verso: 0 } }).sort({ sort_order: 1, last_name: 1 }).toArray();
-  res.json(partners);
+  res.json(await autoSignGcsUrlsInObject(partners));
 });
 api.get('/partners/public/widget/:category', async (req, res) => {
   const partners = await db.collection('partners').find({ category: req.params.category }, { projection: { _id: 0, card_recto: 0, card_verso: 0, notes: 0 } }).sort({ sort_order: 1, last_name: 1 }).toArray();
-  res.json(partners);
+  res.json(await autoSignGcsUrlsInObject(partners));
 });
 
 // ══════════ DJ PROFILES ══════════
 const DJ_PRIVATE = new Set(['nom_complet','email','telephone','siret','adresse_postale','statut_artiste','iban','bic']);
 api.get('/dj-fiches', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('dj_profiles').find({}, { projection: { _id: 0 } }).toArray()));
+  res.json(await autoSignGcsUrlsInObject(cleanList(await db.collection('dj_profiles').find({}, { projection: { _id: 0 } }).toArray())));
 });
 api.get('/dj-fiches/public', async (req, res) => {
   const profiles = await db.collection('dj_profiles').find({ actif: true }, { projection: { _id: 0 } }).toArray();
-  res.json(profiles.map(p => { const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } return r; }));
+  const cleaned = profiles.map(p => { const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } return r; });
+  res.json(await autoSignGcsUrlsInObject(cleaned));
 });
 api.get('/dj-fiches/public/:id', async (req, res) => {
   let profileId = req.params.id;
@@ -945,7 +1053,8 @@ api.get('/dj-fiches/public/:id', async (req, res) => {
   }
 
   if (!p) return res.status(404).json({ detail: 'DJ Profile not found' });
-  const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } res.json(r);
+  const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } 
+  res.json(await autoSignGcsUrlsInObject(r));
 });
 api.post('/dj-fiches', authMiddleware, async (req, res) => {
   const body = { ...req.body };
@@ -954,7 +1063,7 @@ api.post('/dj-fiches', authMiddleware, async (req, res) => {
 
   const profile = { id: uuidv4(), ...body, created_at: new Date().toISOString() };
   await db.collection('dj_profiles').insertOne(profile);
-  res.json(clean(profile));
+  res.json(await autoSignGcsUrlsInObject(clean(profile)));
 });
 api.put('/dj-fiches/:id', authMiddleware, async (req, res) => {
   const body = { ...req.body };
@@ -963,7 +1072,7 @@ api.put('/dj-fiches/:id', authMiddleware, async (req, res) => {
 
   await db.collection('dj_profiles').updateOne({ id: req.params.id }, { $set: body });
   const updated = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0 } });
-  res.json(updated);
+  res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.delete('/dj-fiches/:id', authMiddleware, async (req, res) => {
   await db.collection('dj_profiles').deleteOne({ id: req.params.id });
@@ -1017,24 +1126,27 @@ api.get('/dj-profiles', authMiddleware, async (req, res) => {
       profilesMap[p.id] = p; 
     }
   });
-  res.json({ profiles: profilesMap });
+  res.json(await autoSignGcsUrlsInObject({ profiles: profilesMap }));
 });
 
 // ══════════ EVENTS / BILLETTERIE ══════════
 api.get('/billetterie/events', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('events').find({}, { projection: { _id: 0 } }).sort({ date: -1 }).toArray()));
+  const list = cleanList(await db.collection('events').find({}, { projection: { _id: 0 } }).sort({ date: -1 }).toArray());
+  res.json(await autoSignGcsUrlsInObject(list));
 });
 api.get('/billetterie/events/public', async (req, res) => {
-  res.json(cleanList(await db.collection('events').find({}, { projection: { _id: 0 } }).sort({ date: -1 }).toArray()));
+  const list = cleanList(await db.collection('events').find({}, { projection: { _id: 0 } }).sort({ date: -1 }).toArray());
+  res.json(await autoSignGcsUrlsInObject(list));
 });
 api.post('/billetterie/events', authMiddleware, async (req, res) => {
   const event = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
   await db.collection('events').insertOne(event);
-  res.json(clean(event));
+  res.json(await autoSignGcsUrlsInObject(clean(event)));
 });
 api.put('/billetterie/events/:id', authMiddleware, async (req, res) => {
   await db.collection('events').updateOne({ id: req.params.id }, { $set: req.body });
-  res.json(await db.collection('events').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  const updated = await db.collection('events').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.delete('/billetterie/events/:id', authMiddleware, async (req, res) => {
   await db.collection('events').deleteOne({ id: req.params.id });
@@ -1984,19 +2096,22 @@ api.put('/material-options/reorder', authMiddleware, async (req, res) => {
 
 // ══════════ LOCATION (Equipment, Categories, Clients, DJs, Quotes, Reservations) ══════════
 api.get('/location/equipment', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('location_equipment').find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray()));
+  const items = cleanList(await db.collection('location_equipment').find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray());
+  res.json(await autoSignGcsUrlsInObject(items));
 });
 api.get('/catalogue/equipements', async (req, res) => {
-  res.json(cleanList(await db.collection('location_equipment').find({ publier_catalogue: true }, { projection: { _id: 0 } }).sort({ name: 1 }).toArray()));
+  const items = cleanList(await db.collection('location_equipment').find({ publier_catalogue: true }, { projection: { _id: 0 } }).sort({ name: 1 }).toArray());
+  res.json(await autoSignGcsUrlsInObject(items));
 });
 api.post('/location/equipment', authMiddleware, async (req, res) => {
   const eq = { id: uuidv4(), maintenance_status: 'operational', ...req.body, created_at: new Date().toISOString() };
   await db.collection('location_equipment').insertOne(eq);
-  res.json(clean(eq));
+  res.json(await autoSignGcsUrlsInObject(clean(eq)));
 });
 api.put('/location/equipment/:id', authMiddleware, async (req, res) => {
   await db.collection('location_equipment').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
-  res.json(await db.collection('location_equipment').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  const updated = await db.collection('location_equipment').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.delete('/location/equipment/:id', authMiddleware, async (req, res) => {
   await db.collection('location_equipment').deleteOne({ id: req.params.id });
@@ -2022,66 +2137,67 @@ api.get('/gcs/:folder/:filename', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${req.params.filename}"`);
   }
   
-  file.createReadStream()
-    .on('error', (err) => {
-      console.error(`[GCS GET ERROR] Fail loading file from GCS: ${exactGcsUrl}`);
-      console.error(`[GCS GET ERROR] Google Cloud API error description:`);
-      console.error(`  - Name: ${err.name}`);
-      console.error(`  - Status Code / Error Code: ${err.code}`);
-      console.error(`  - Raw Message: ${err.message}`);
-      console.error(`  - Stack: ${err.stack}`);
+  try {
+    const [buffer] = await file.download();
+    res.send(buffer);
+  } catch (err) {
+    console.error(`[GCS GET ERROR] Fail loading file from GCS: ${exactGcsUrl}`);
+    console.error(`[GCS GET ERROR] Google Cloud API error description:`);
+    console.error(`  - Name: ${err.name}`);
+    console.error(`  - Status Code / Error Code: ${err.code}`);
+    console.error(`  - Raw Message: ${err.message}`);
+    console.error(`  - Stack: ${err.stack}`);
+    
+    if (!res.headersSent) {
+      const isPermissionError = err.message.toLowerCase().includes('permission') || 
+                                err.message.toLowerCase().includes('access') || 
+                                err.message.toLowerCase().includes('denied') || 
+                                err.message.toLowerCase().includes('forbidden') ||
+                                err.message.toLowerCase().includes('credential') ||
+                                err.message.toLowerCase().includes('key') ||
+                                err.code === 403;
       
-      if (!res.headersSent) {
-        const isPermissionError = err.message.toLowerCase().includes('permission') || 
-                                  err.message.toLowerCase().includes('access') || 
-                                  err.message.toLowerCase().includes('denied') || 
-                                  err.message.toLowerCase().includes('forbidden') ||
-                                  err.message.toLowerCase().includes('credential') ||
-                                  err.message.toLowerCase().includes('key') ||
-                                  err.code === 403;
-        
-        let clientEmail = 'agenda-bot@booking-pro-sync.iam.gserviceaccount.com';
-        if (process.env.GOOGLE_CREDENTIALS_JSON) {
-          try {
-            const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-            if (creds.client_email) clientEmail = creds.client_email;
-          } catch(e) {}
-        }
-        
-        res.setHeader('Content-Type', 'image/svg+xml');
-        res.status(200);
-        
-        if (isPermissionError) {
-          res.send(`
-            <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
-              <rect width="100%" height="100%" fill="#FEE2E2" rx="8" stroke="#F87171" stroke-width="2"/>
-              <text x="50%" y="45" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#DC2626">⚠️ ERREUR D'ACCÈS GCS (403)</text>
-              <text x="50%" y="80" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#7F1D1D" font-weight="bold">Le compte de service n'a pas accès au Bucket !</text>
-              <text x="50%" y="110" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#374151" font-weight="bold">Compte :</text>
-              <text x="50%" y="125" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="8.5" fill="#1F2937">${clientEmail}</text>
-              <text x="50%" y="150" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#374151" font-weight="bold">Bucket :</text>
-              <text x="50%" y="165" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#1F2937">rkey-prod-storage-01</text>
-              <rect x="15" y="185" width="370" height="50" fill="#FEF3C7" rx="4" stroke="#D97706" stroke-width="1"/>
-              <text x="50%" y="205" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#92400E">SOLUTION : Ajoutez le rôle "Administrateur des objets de stockage"</text>
-              <text x="50%" y="222" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#92400E">à ce compte de service sur votre bucket dans GCP.</text>
-            </svg>
-          `.trim());
-        } else {
-          res.send(`
-            <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
-              <rect width="100%" height="100%" fill="#F3F4F6" rx="8" stroke="#D1D5DB" stroke-width="2"/>
-              <text x="50%" y="60" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#4B5563">📷 404 - IMAGE INTROUVABLE</text>
-              <text x="50%" y="100" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#374151">L'image n'existe pas dans le bucket Google Cloud Storage.</text>
-              <text x="50%" y="130" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#9CA3AF" font-family="monospace">Path: ${req.params.folder}/${req.params.filename}</text>
-              <rect x="25" y="170" width="350" height="50" fill="#ECFDF5" rx="4" stroke="#10B981" stroke-width="1"/>
-              <text x="50%" y="190" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#065F46">RÉSOLUTION : Importez à nouveau l'image</text>
-              <text x="50%" y="208" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#065F46">du matériel pour la recréer.</text>
-            </svg>
-          `.trim());
-        }
+      let clientEmail = 'agenda-bot@booking-pro-sync.iam.gserviceaccount.com';
+      if (process.env.GOOGLE_CREDENTIALS_JSON) {
+        try {
+          const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+          if (creds.client_email) clientEmail = creds.client_email;
+        } catch(e) {}
       }
-    })
-    .pipe(res);
+      
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.status(200);
+      
+      if (isPermissionError) {
+        res.send(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
+            <rect width="100%" height="100%" fill="#FEE2E2" rx="8" stroke="#F87171" stroke-width="2"/>
+            <text x="50%" y="45" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#DC2626">⚠️ ERREUR D'ACCÈS GCS (403)</text>
+            <text x="50%" y="80" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#7F1D1D" font-weight="bold">Le compte de service n'a pas accès au Bucket !</text>
+            <text x="50%" y="110" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#374151" font-weight="bold">Compte :</text>
+            <text x="50%" y="125" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="8.5" fill="#1F2937">${clientEmail}</text>
+            <text x="50%" y="150" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#374151" font-weight="bold">Bucket :</text>
+            <text x="50%" y="165" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#1F2937">rkey-prod-storage-01</text>
+            <rect x="15" y="185" width="370" height="50" fill="#FEF3C7" rx="4" stroke="#D97706" stroke-width="1"/>
+            <text x="50%" y="205" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#92400E">SOLUTION : Ajoutez le rôle "Administrateur des objets de stockage"</text>
+            <text x="50%" y="222" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#92400E">à ce compte de service sur votre bucket dans GCP.</text>
+          </svg>
+        `.trim());
+      } else {
+        res.send(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
+            <rect width="100%" height="100%" fill="#F3F4F6" rx="8" stroke="#D1D5DB" stroke-width="2"/>
+            <text x="50%" y="60" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#4B5563">📷 404 - IMAGE INTROUVABLE</text>
+            <text x="50%" y="100" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#374151">L'image n'existe pas dans le bucket Google Cloud Storage.</text>
+            <text x="50%" y="130" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#9CA3AF" font-family="monospace">Path: ${req.params.folder}/${req.params.filename}</text>
+            <rect x="25" y="170" width="350" height="50" fill="#ECFDF5" rx="4" stroke="#10B981" stroke-width="1"/>
+            <text x="50%" y="190" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#065F46">RÉSOLUTION : Importez à nouveau l'image</text>
+            <text x="50%" y="208" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#065F46">du matériel pour la recréer.</text>
+          </svg>
+        `.trim());
+      }
+    }
+  }
 });
 
 api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
@@ -2544,6 +2660,134 @@ api.get('/location/settings/cgv', authMiddleware, async (req, res) => {
 api.post('/location/settings/cgv', authMiddleware, async (req, res) => {
   await db.collection('location_settings').updateOne({ type: 'cgv' }, { $set: { type: 'cgv', cgv: req.body.cgv || req.body.content || '' } }, { upsert: true });
   res.json({ success: true });
+});
+
+// GCS settings
+api.get('/location/settings/gcs', authMiddleware, async (req, res) => {
+  const s = await db.collection('location_settings').findOne({ type: 'gcs' }, { projection: { _id: 0 } });
+  res.json({
+    gcs_use_direct_urls: s ? !!s.gcs_use_direct_urls : false
+  });
+});
+
+api.post('/location/settings/gcs', authMiddleware, async (req, res) => {
+  await db.collection('location_settings').updateOne(
+    { type: 'gcs' },
+    { $set: { type: 'gcs', gcs_use_direct_urls: !!req.body.gcs_use_direct_urls } },
+    { upsert: true }
+  );
+  res.json({ success: true, gcs_use_direct_urls: !!req.body.gcs_use_direct_urls });
+});
+
+// GCS Live diagnostic
+api.get('/location/gcs-diagnostic', authMiddleware, async (req, res) => {
+  const diagnostic = {
+    env: {
+      GOOGLE_CREDENTIALS_JSON_exists: !!process.env.GOOGLE_CREDENTIALS_JSON,
+      GOOGLE_CREDENTIALS_JSON_length: process.env.GOOGLE_CREDENTIALS_JSON ? process.env.GOOGLE_CREDENTIALS_JSON.length : 0,
+      GOOGLE_CLIENT_EMAIL_exists: !!process.env.GOOGLE_CLIENT_EMAIL,
+      GOOGLE_PRIVATE_KEY_exists: !!process.env.GOOGLE_PRIVATE_KEY,
+    },
+    gcs_configuration: {
+      bucket_name: BUCKET_NAME,
+      storage_initialized: !!storage,
+      bucket_initialized: !!bucket,
+    },
+    credentials_source: null,
+    credentials_parsed: null,
+    connection_test: {
+      success: false,
+      error: null,
+      error_code: null,
+      files_found_count: 0
+    }
+  };
+
+  let activeCredentials = null;
+
+  try {
+    if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
+      diagnostic.credentials_source = 'physical_file';
+      const fileContent = fs.readFileSync(GOOGLE_CREDENTIALS_PATH, 'utf8');
+      const creds = JSON.parse(fileContent);
+      diagnostic.credentials_parsed = {
+        project_id: creds.project_id,
+        client_email: creds.client_email,
+        type: creds.type,
+        private_key_starts_with: creds.private_key ? creds.private_key.substring(0, 30) + "..." : null
+      };
+      if (creds.private_key) {
+        creds.private_key = sanitizePrivateKey(creds.private_key);
+      }
+      activeCredentials = creds;
+    } else if (process.env.GOOGLE_CREDENTIALS_JSON) {
+      diagnostic.credentials_source = 'environment_json';
+      let credStr = process.env.GOOGLE_CREDENTIALS_JSON.trim();
+      if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
+      if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
+      credStr = credStr.trim();
+      if (credStr.includes('\\"')) {
+        credStr = credStr.replace(/\\"/g, '"');
+      }
+      const creds = JSON.parse(credStr);
+      diagnostic.credentials_parsed = {
+        project_id: creds.project_id,
+        client_email: creds.client_email,
+        type: creds.type,
+        private_key_starts_with: creds.private_key ? creds.private_key.substring(0, 30) + "..." : null
+      };
+      if (creds.private_key) {
+        creds.private_key = sanitizePrivateKey(creds.private_key);
+      }
+      activeCredentials = creds;
+    } else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+      diagnostic.credentials_source = 'environment_individual_variables';
+      diagnostic.credentials_parsed = {
+        project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync',
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key_starts_with: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.substring(0, 30) + "..." : null
+      };
+      activeCredentials = {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: sanitizePrivateKey(process.env.GOOGLE_PRIVATE_KEY),
+        project_id: process.env.GOOGLE_PROJECT_ID || 'booking-pro-sync'
+      };
+    } else {
+      diagnostic.credentials_source = 'none';
+    }
+  } catch (err) {
+    diagnostic.credentials_source_error = err.message;
+  }
+
+  // Permettre un rechargement dynamique en direct à la demande
+  if (activeCredentials) {
+    try {
+      const testStorage = new Storage({ credentials: activeCredentials });
+      const testBucket = testStorage.bucket(BUCKET_NAME);
+      const [files] = await testBucket.getFiles({ maxResults: 3 });
+      
+      diagnostic.connection_test.success = true;
+      diagnostic.connection_test.files_found_count = files.length;
+      diagnostic.connection_test.sample_files = files.map(f => f.name);
+
+      // On guérit l'état de l'application à chaud !
+      storage = testStorage;
+      bucket = testBucket;
+      diagnostic.gcs_configuration.storage_initialized = true;
+      diagnostic.gcs_configuration.bucket_initialized = true;
+      console.log('🌈 GCS healed successfully with verified credentials during diagnostic check!');
+    } catch (gcsErr) {
+      diagnostic.connection_test.success = false;
+      diagnostic.connection_test.error = gcsErr.message;
+      diagnostic.connection_test.error_code = gcsErr.code;
+      diagnostic.connection_test.error_stack = gcsErr.stack;
+    }
+  } else {
+    diagnostic.connection_test.success = false;
+    diagnostic.connection_test.error = "Aucune information de connexion (credentials) n'a pu être chargée.";
+  }
+
+  res.json(diagnostic);
 });
 
 // Location Reservations

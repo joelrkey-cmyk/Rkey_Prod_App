@@ -41,7 +41,21 @@ function LocationApp() {
 
   const handleAddReservationClick = () => { setCurrentView('agenda'); };
 
-  useEffect(() => { fetchDashboardStats(); }, []);
+  useEffect(() => { 
+    fetchDashboardStats(); 
+    fetchGcsSettings();
+  }, []);
+
+  const fetchGcsSettings = async () => {
+    try {
+      const response = await axios.get(`${API}/settings/gcs`);
+      if (response.data && response.data.gcs_use_direct_urls !== undefined) {
+        localStorage.setItem('gcs_use_direct_urls', response.data.gcs_use_direct_urls ? 'true' : 'false');
+      }
+    } catch (error) {
+      console.error('Error fetching GCS settings at startup:', error);
+    }
+  };
 
   const fetchDashboardStats = async () => {
     try { const response = await axios.get(`${API}/dashboard`); setStats(response.data); }
