@@ -2108,6 +2108,48 @@ const DjClientApp = ({ isPublic = false }) => {
         }
       };
 
+      const validateRequestedOption = async (optToValidate) => {
+        setOptionsSubmitting(true);
+        try {
+          // Extraire et filtrer l'option des demandes en attente
+          const updatedRequestedOptions = requestedOptions.filter(opt => opt.name !== optToValidate.name);
+          
+          // L'ajouter au choix validé (selected_options) s'il n'y est pas déjà
+          const alreadySelected = contractOptions.some(opt => opt.name === optToValidate.name);
+          const updatedContractOptions = alreadySelected 
+            ? contractOptions 
+            : [...contractOptions, optToValidate];
+
+          const payload = { 
+            requested_options: updatedRequestedOptions,
+            selected_options: updatedContractOptions
+          };
+          
+          const token = localStorage.getItem('access_token');
+          const headers = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          
+          const endpoint = isPublic ? `/api/public/dj-client/${ev.id}` : `/api/contracts2/${ev.id}`;
+          const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(payload)
+          });
+          
+          if (res.ok) {
+            await fetchContractsAsEvents();
+            toast.success("Option validée et ajoutée au contrat !");
+          } else {
+             toast.error("Erreur lors de la validation de l'option");
+          }
+        } catch (e) {
+          console.error("Error validating requested option", e);
+          toast.error("Erreur de connexion");
+        } finally {
+          setOptionsSubmitting(false);
+        }
+      };
+
       return (
         <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('options')}`}>
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
@@ -2151,14 +2193,24 @@ const DjClientApp = ({ isPublic = false }) => {
                         <div className="flex items-center gap-3">
                           <span className="font-semibold">{opt.price} €</span>
                           {(role === 'dj' || role === 'admin') && (
-                            <button
-                              onClick={() => cancelRequestedOption(opt)}
-                              disabled={optionsSubmitting}
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition-colors disabled:opacity-50"
-                              title="Annuler l'option"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => validateRequestedOption(opt)}
+                                disabled={optionsSubmitting}
+                                className="text-green-650 hover:text-green-800 hover:bg-green-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
+                                title="Valider l'option"
+                              >
+                                <Check className="w-4 h-4 text-green-600" />
+                              </button>
+                              <button
+                                onClick={() => cancelRequestedOption(opt)}
+                                disabled={optionsSubmitting}
+                                className="text-red-500 hover:text-red-750 hover:bg-red-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
+                                title="Refuser / Annuler l'option"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </li>

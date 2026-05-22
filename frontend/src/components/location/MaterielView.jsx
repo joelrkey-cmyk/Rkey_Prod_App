@@ -90,7 +90,6 @@ function MaterielView() {
     maintenance_status: 'operational'
   });
   const [isGeneratingCatalogueDesc, setIsGeneratingCatalogueDesc] = useState(false);
-  const [isMigrating, setIsMigrating] = useState(false);
   
   // AI Description states
   const [productReference, setProductReference] = useState('');
@@ -122,25 +121,6 @@ function MaterielView() {
     } catch (error) {
       console.error('Error fetching categories:', error);
       setCategories([]);
-    }
-  };
-
-  const handleGcsMigration = async () => {
-    try {
-      setIsMigrating(true);
-      toast.info('Migration vers Google Cloud Storage en cours...');
-      const response = await axios.post(`${BACKEND_URL}/api/location/equipment/migrate-to-gcs`);
-      if (response.data.success) {
-        toast.success(`Migration réussie ! ${response.data.migrated} images migrées vers GCS.`);
-        await fetchEquipment();
-      } else {
-        toast.error('Échec de la migration : ' + (response.data.message || ''));
-      }
-    } catch (error) {
-      console.error('Error during GCS migration:', error);
-      toast.error('Erreur lors de la migration vers GCS');
-    } finally {
-      setIsMigrating(false);
     }
   };
 
@@ -774,15 +754,6 @@ function MaterielView() {
           >
             <BarChart3 className="w-4 h-4 mr-2" />
             Description IA
-          </Button>
-          <Button 
-            onClick={handleGcsMigration} 
-            disabled={isMigrating || isLoading}
-            variant="outline"
-            className="border-amber-500 text-amber-600 hover:bg-amber-50"
-          >
-            <Upload className={`w-4 h-4 mr-2 ${isMigrating ? 'animate-spin' : ''}`} />
-            {isMigrating ? 'Migration...' : 'Migrer vers GCS'}
           </Button>
           <Button 
             onClick={() => setShowAddForm(true)} 
