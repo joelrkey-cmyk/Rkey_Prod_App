@@ -1559,7 +1559,19 @@ api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
 
 api.get('/public/dj-client/:slug', async (req, res) => {
   const slug = req.params.slug.toLowerCase();
-  const contracts = await db.collection('contracts2').find({ status: 'archived' }, { projection: { _id: 0 } }).toArray();
+  
+  const normalizeString = (str) => {
+    if (!str) return '';
+    return str.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // remove accents
+      .replace(/[^a-z0-9]/g, ''); // keep only alpha-numeric characters
+  };
+
+  const normalizedRequestedSlug = normalizeString(slug);
+
+  // Fetch all non-trash contracts so DJs can see all upcoming & past events!
+  const contracts = await db.collection('contracts2').find({ status: { $ne: 'trash' } }, { projection: { _id: 0 } }).toArray();
   
   const mappedEvents = contracts.map(c => {
     const info = c.client_info || {};
@@ -1567,6 +1579,13 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     const eventType = info.event_type || 'Événement';
     
     let djName = c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ";
+    const normalizedDjNameLower = djName.toLowerCase();
+    if (normalizedDjNameLower === 'joel' || normalizedDjNameLower === 'joël') {
+      djName = "Joël R'Key";
+    } else if (normalizedDjNameLower === 'stephane' || normalizedDjNameLower === 'stéphane') {
+      djName = "Stefan Edison";
+    }
+    
     const djLogin = djName.toLowerCase().replace(/\s+/g, '-');
     const typeLower = eventType.split(' ')[0].toLowerCase().replace(/\s+/g, '-');
     const clientNameLower = clientName.toLowerCase().replace(/\s+/g, '-');
@@ -1582,14 +1601,22 @@ api.get('/public/dj-client/:slug', async (req, res) => {
 
   const options = await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1, name: 1 }).toArray();
 
-  // Check if it's a DJ slug
-  const djEvents = mappedEvents.filter(e => e.djLogin === slug);
+  // Check if it's a DJ slug using robust string normalization
+  const djEvents = mappedEvents.filter(e => {
+    return normalizeString(e.djLogin) === normalizedRequestedSlug || 
+           normalizeString(e.dj_profile) === normalizedRequestedSlug ||
+           (e.dj_profile_data?.nom_artistique && normalizeString(e.dj_profile_data.nom_artistique) === normalizedRequestedSlug);
+  });
+  
   if (djEvents.length > 0) {
     return res.json({ role: 'dj', events: djEvents, slug, availableOptions: options });
   }
   
   // Check if it's a Client slug
-  const clientEvents = mappedEvents.filter(e => e.clientSlug === slug);
+  const clientEvents = mappedEvents.filter(e => {
+    return normalizeString(e.clientSlug) === normalizedRequestedSlug;
+  });
+  
   if (clientEvents.length > 0) {
     return res.json({ role: 'client', events: clientEvents, slug, availableOptions: options });
   }
