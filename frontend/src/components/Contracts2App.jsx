@@ -586,7 +586,10 @@ function Contracts2App() {
       return Math.max(0, basePrice + optionsTotal - discountAmount);
     }
     // Mode Mandat: Frais Mandat + Cachet Artiste + Options - Remise
-    return Math.max(0, fraisMandat + cachetArtiste + optionsTotal - discountAmount);
+    // Support robust fallback for legacy contracts (migrated from old app) where separate mandate fees are 0 but basePrice is set
+    const mandataireRate = fraisMandat + cachetArtiste;
+    const baseRate = (mandataireRate === 0 && basePrice > 0) ? basePrice : mandataireRate;
+    return Math.max(0, baseRate + optionsTotal - discountAmount);
   };
 
   const calculateDepositAmount = () => {

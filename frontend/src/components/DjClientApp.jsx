@@ -2028,7 +2028,70 @@ const DjClientApp = ({ isPublic = false }) => {
     };
 
     const OptionsSection = () => {
+      const c = ev.rawContractData || {};
+      
+      const isDirigeant = 
+        c.dj_profile_data?.nom_artistique?.toLowerCase().includes("r'key") || 
+        c.dj_profile_data?.nom_artistique?.toLowerCase().includes("rkey") || 
+        c.dj_profile_data?.titre?.includes("Gérant") || 
+        c.dj_profile_data?.statut_artiste === 'dirigeant' ||
+        c.dj_profile?.toLowerCase().includes("r'key") || 
+        c.dj_profile?.toLowerCase().includes("rkey");
+
+      const basePrice = Number(c.base_price) || 0;
+      const fraisMandat = Number(c.frais_mandat) || 0;
+      const cachetArtiste = Number(c.cachet_artiste) || 0;
+      const discountAmount = Number(c.discount_amount) || 0;
+
+      // Base rate parsing with fallback for legacy/migrated contracts
+      let baseRate = 0;
+      const isEntreprise = c.contract_mode === 'entreprise' || c.contractMode === 'entreprise';
+      
+      if (isDirigeant) {
+        baseRate = basePrice;
+      } else if (isEntreprise) {
+        baseRate = basePrice;
+      } else {
+        // Mode mandataire
+        const mandataireRate = fraisMandat + cachetArtiste;
+        if (mandataireRate === 0 && basePrice > 0) {
+          baseRate = basePrice;
+        } else {
+          baseRate = mandataireRate;
+        }
+      }
+
       const contractOptions = ev.selectedOptions || [];
+      const optionsTotal = contractOptions.reduce((acc, opt) => acc + (Number(opt.price) || 0), 0);
+
+      // Calcul du total
+      const totalPrestation = Math.max(0, baseRate + optionsTotal - discountAmount);
+
+      // Calcul de l'acompte (deposit)
+      let depositAmount = 0;
+      if (c.no_deposit_required) {
+        depositAmount = 0;
+      } else if (Number(c.custom_deposit_amount) > 0) {
+        depositAmount = Number(c.custom_deposit_amount);
+      } else if (Number(c.deposit_amount) > 0) {
+        depositAmount = Number(c.deposit_amount);
+      } else {
+        // 50% du total
+        depositAmount = Math.round((totalPrestation * 0.5) * 100) / 100;
+      }
+
+      // L'acompte est versé si expressément coché OU si le contrat est déjà signé / archivé / complété
+      const isDepositPaid = c.deposit_paid || c.status === 'signed' || c.status === 'archived' || c.status === 'completed';
+
+      // Montant déjà réglé
+      let amountPaid = 0;
+      if (isDepositPaid) {
+        amountPaid = depositAmount > 0 ? depositAmount : 0;
+      }
+
+      // Solde restant
+      const remainingBalance = Math.max(0, totalPrestation - amountPaid);
+
       const requestedOptions = ev.requestedOptions || [];
       const eventType = ev.contractInfo?.event_type;
       
@@ -2154,8 +2217,81 @@ const DjClientApp = ({ isPublic = false }) => {
         <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('options')}`}>
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
             <Plus className="w-5 h-5 text-gray-400" />
-            Options de l'Événement
+            Tarifs et Options de l'Événement
           </h3>
+
+          {/* Tableaux de bord financier simple & esthétique */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200/50">
+            {/* Total prestation */}
+            <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Montant Prestation TTC</span>
+                <span className="text-xl font-bold text-slate-800">{totalPrestation.toFixed(2)} €</span>
+              </div>
+              <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 space-y-0.5">
+                <div className="flex justify-between">
+                  <span>Tarif de base :</span>
+                  <span>{baseRate.toFixed(2)} €</span>
+                </div>
+                {optionsTotal > 0 && (
+                  <div className="flex justify-between font-medium text-slate-600">
+                    <span>Options :</span>
+                    <span>+{optionsTotal.toFixed(2)} €</span>
+                  </div>
+                )}
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-rose-500 font-medium">
+                    <span>Remise :</span>
+                    <span>-{discountAmount.toFixed(2)} €</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Déjà réglé (Acompte) */}
+            <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Paiement déjà versé</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xl font-bold text-emerald-600">
+                    {amountPaid > 0 ? `${amountPaid.toFixed(2)} €` : "0,00 €"}
+                  </span>
+                  {isDepositPaid && (
+                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100 uppercase">
+                      Reçu
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 italic leading-tight">
+                {c.no_deposit_required ? (
+                  <span className="text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded block">
+                    Confiance / Externe (Aucun acompte requis)
+                  </span>
+                ) : isDepositPaid ? (
+                  <span className="text-emerald-700 font-medium block">
+                    Acompte perçu à la signature du contrat.
+                  </span>
+                ) : (
+                  <span className="text-amber-600 font-medium block">
+                    Acompte de {depositAmount.toFixed(2)} € en attente.
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Solde restant */}
+            <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Solde restant dû</span>
+                <span className="text-xl font-bold text-indigo-600">{remainingBalance.toFixed(2)} €</span>
+              </div>
+              <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 flex items-center justify-between">
+                <span>Dû le jour J :</span>
+                <span className="font-semibold text-slate-800">{remainingBalance.toFixed(2)} €</span>
+              </div>
+            </div>
+          </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-6">

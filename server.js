@@ -740,6 +740,7 @@ async function connectDB() {
     db = client.db(DB_NAME);
     dbError = null;
     console.log(`Connected to MongoDB: ${DB_NAME}`);
+
     await ensureAdminUser();
     // TTL index: auto-delete uploaded form files after 24 hours
     try {
