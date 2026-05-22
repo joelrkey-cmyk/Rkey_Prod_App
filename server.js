@@ -313,23 +313,32 @@ function getGoogleCredentials() {
   return null;
 }
 
-try {
-  const credentials = getGoogleCredentials();
-  if (credentials) {
-    storage = new Storage({ credentials });
-    bucket = storage.bucket(BUCKET_NAME);
-    console.log('Google Cloud Storage initialized from environment variable or parsed file.');
-  } else {
-    console.warn('No Google credentials found (file or environment). GCS is not initialized.');
+function getGcsBucket() {
+  if (bucket) return bucket;
+  try {
+    const credentials = getGoogleCredentials();
+    if (credentials) {
+      storage = new Storage({ credentials });
+      bucket = storage.bucket(BUCKET_NAME);
+      console.log('🌈 Google Cloud Storage lazily initialized successfully on demand!');
+      return bucket;
+    }
+  } catch (err) {
+    console.error('❌ Failed dynamically initializing GCS in getGcsBucket:', err);
   }
+  return null;
+}
+
+try {
+  getGcsBucket();
 } catch (err) {
-  console.error('Failed to initialize Google Cloud Storage:', err);
+  console.error('Failed to initialize Google Cloud Storage at startup:', err);
 }
 
 // Generates a GCS signed URL (valid for 12 hours) securely using the service account private key in memory.
 // This allows Hostinger platforms to stream directly from Google CDN without publicizing the bucket (no allUsers needed!).
 async function getGcsSignedUrl(gcsPath) {
-  if (!bucket) return null;
+  if (!getGcsBucket()) return null;
   try {
     const file = bucket.file(gcsPath);
     // V4 signed URL with 12 hour expiration
@@ -348,7 +357,7 @@ async function getGcsSignedUrl(gcsPath) {
 // Recursively processes any response object or list returned by standard API routes, and transforms
 // any GCS reference like "/gcs/folder/file.ext" into a secure GCS direct-access signed URL.
 async function autoSignGcsUrlsInObject(obj) {
-  if (!obj || !bucket) return obj;
+  if (!obj || !getGcsBucket()) return obj;
   
   // Check if GCS Direct Mode is enabled in settings
   let useDirectUrls = false;
@@ -373,8 +382,19 @@ async function autoSignGcsUrlsInObject(obj) {
     const cloned = { ...obj };
     for (const key of Object.keys(cloned)) {
       const val = cloned[key];
-      if (typeof val === 'string' && val.startsWith('/gcs/')) {
-        const gcsPath = val.replace('/gcs/', '');
+      if (typeof val === 'string' && (val.includes('/gcs/') || val.includes('gcs/'))) {
+        let gcsPath = val;
+        if (gcsPath.includes('api/gcs/')) {
+          gcsPath = gcsPath.substring(gcsPath.indexOf('api/gcs/') + 8);
+        } else if (gcsPath.includes('gcs/')) {
+          gcsPath = gcsPath.substring(gcsPath.indexOf('gcs/') + 4);
+        }
+        if (gcsPath.startsWith('/')) {
+          gcsPath = gcsPath.substring(1);
+        }
+        if (gcsPath.includes('?')) {
+          gcsPath = gcsPath.split('?')[0];
+        }
         const signedUrl = await getGcsSignedUrl(gcsPath);
         if (signedUrl) {
           cloned[key] = signedUrl;
@@ -390,7 +410,7 @@ async function autoSignGcsUrlsInObject(obj) {
 }
 
 async function uploadBase64ToGcs(base64String, folder) {
-  if (!bucket || !base64String || typeof base64String !== 'string' || !base64String.startsWith('data:image')) {
+  if (!getGcsBucket() || !base64String || typeof base64String !== 'string' || !base64String.startsWith('data:image')) {
     return base64String;
   }
   try {
@@ -1125,7 +1145,7 @@ api.delete('/partners/:id', authMiddleware, async (req, res) => {
 });
 
 api.post('/partners/migrate-to-gcs', authMiddleware, async (req, res) => {
-  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  if (!getGcsBucket()) return res.status(500).json({ detail: 'GCS not configured' });
   try {
     const items = await db.collection('partners').find({
       $or: [
@@ -1228,7 +1248,7 @@ api.delete('/dj-fiches/:id', authMiddleware, async (req, res) => {
 });
 
 api.post('/dj-fiches/migrate-to-gcs', authMiddleware, async (req, res) => {
-  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  if (!getGcsBucket()) return res.status(500).json({ detail: 'GCS not configured' });
   try {
     const items = await db.collection('dj_profiles').find({
       $or: [
@@ -1323,7 +1343,7 @@ api.post('/billetterie/upload-image', authMiddleware, upload.single('file'), asy
 });
 
 api.post('/billetterie/events/migrate-to-gcs', authMiddleware, async (req, res) => {
-  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  if (!getGcsBucket()) return res.status(500).json({ detail: 'GCS not configured' });
   try {
     const items = await db.collection('events').find({
       photo_url: { $regex: /^data:image/ }
@@ -1423,7 +1443,7 @@ api.delete('/contract-pdf-notes/:id', authMiddleware, async (req, res) => {
 });
 
 api.post('/contract-pdf-notes/migrate-to-gcs', authMiddleware, async (req, res) => {
-  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  if (!getGcsBucket()) return res.status(500).json({ detail: 'GCS not configured' });
   try {
     const items = await db.collection('contract_technical_pdf_notes').find({ pdf_data: { $exists: true, $ne: '' } }).toArray();
     if (items.length === 0) return res.json({ success: true, message: 'Tous les PDF sont déjà migrés', migrated: 0, errors: 0 });
@@ -1658,7 +1678,7 @@ api.delete('/public/dj-client/:id/documents/:docId', async (req, res) => {
 });
 
 api.post('/contracts2/documents/migrate-to-gcs', authMiddleware, async (req, res) => {
-  if (!bucket) return res.status(500).json({ detail: 'GCS not configured' });
+  if (!getGcsBucket()) return res.status(500).json({ detail: 'GCS not configured' });
   try {
     const contracts = await db.collection('contracts2').find({ "event_documents.pdf_data": { $exists: true } }).toArray();
     if (contracts.length === 0) return res.json({ success: true, message: 'Tous les documents sont déjà migrés', migrated: 0, errors: 0 });
@@ -2267,7 +2287,7 @@ api.delete('/location/equipment/:id', authMiddleware, async (req, res) => {
 });
 
 api.get('/gcs/:folder/:filename', async (req, res) => {
-  if (!bucket) {
+  if (!getGcsBucket()) {
     console.error(`[GCS GET ERROR] Request for /gcs/${req.params.folder}/${req.params.filename} failed: GCS bucket is not initialized`);
     return res.status(500).send('GCS not configured');
   }
@@ -2443,7 +2463,7 @@ api.post('/upload/equipment-image', authMiddleware, upload.single('file'), async
 });
 
 api.post('/location/equipment/migrate-to-gcs', authMiddleware, async (req, res) => {
-  if (!bucket) {
+  if (!getGcsBucket()) {
     return res.status(500).json({ detail: 'GCS bucket is not initialized' });
   }
 
@@ -4033,7 +4053,7 @@ api.post('/devis2/pages/upload', authMiddleware, upload.single('file'), async (r
     };
     
     // Fallback if GCS is not configured or if upload failed
-    if (!bucket || !gcsPath) {
+    if (!getGcsBucket() || !gcsPath) {
       page.image_data = req.file.buffer.toString('base64');
     }
 
@@ -4050,7 +4070,7 @@ api.post('/devis2/pages/upload', authMiddleware, upload.single('file'), async (r
   }
 });
 api.post('/devis2/pages/migrate-to-gcs', authMiddleware, async (req, res) => {
-  if (!bucket) {
+  if (!getGcsBucket()) {
     return res.status(500).json({ detail: 'GCS bucket is not initialized' });
   }
 
