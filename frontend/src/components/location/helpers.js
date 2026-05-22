@@ -19,6 +19,11 @@ export const getImageUrl = (photoUrl) => {
   if (!photoUrl) return null;
   if (photoUrl.startsWith('http') || photoUrl.startsWith('data:')) return photoUrl;
   
+  // For local API pathways, return a relative URL to ensure it is resolved against the current origin/port
+  if (photoUrl.startsWith('/api') || photoUrl.startsWith('api')) {
+    return photoUrl.startsWith('/') ? photoUrl : `/${photoUrl}`;
+  }
+  
   return `${BACKEND_URL}${photoUrl.startsWith('/') ? '' : '/'}${photoUrl}`;
 };
 

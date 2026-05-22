@@ -255,6 +255,9 @@ function BilletterieApp() {
   const getImageUrl = (photoUrl) => {
     if (!photoUrl) return null;
     if (photoUrl.startsWith('http') || photoUrl.startsWith('data:')) return photoUrl;
+    if (photoUrl.startsWith('/api') || photoUrl.startsWith('api')) {
+      return photoUrl.startsWith('/') ? photoUrl : `/${photoUrl}`;
+    }
     return `${BACKEND_URL}${photoUrl}`;
   };
 
