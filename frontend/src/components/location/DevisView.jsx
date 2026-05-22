@@ -1464,6 +1464,29 @@ function DevisView({ setCurrentView }) {
                             </div>
                           )}
                         </div>
+                        
+                        {/* Detail du pack en tout petit */}
+                        {(() => {
+                          const selectedEq = item.equipment_id ? equipment.find(eq => eq.id === item.equipment_id) : null;
+                          if (selectedEq && selectedEq.is_pack && selectedEq.pack_items && selectedEq.pack_items.length > 0) {
+                            return (
+                              <div className="mt-1 pl-1.5 text-[9.5px] text-gray-500 bg-gray-50/60 rounded p-1.5 border border-dashed border-gray-250">
+                                <div className="space-y-0.5">
+                                  {selectedEq.pack_items.map((packItem, pIdx) => {
+                                    const subEq = equipment.find(e => e.id === packItem.equipment_id);
+                                    return (
+                                      <div key={pIdx} className="flex items-center gap-1 leading-tight font-medium text-slate-500">
+                                        <span>•</span>
+                                        <span>{packItem.quantity}x {subEq ? subEq.name : packItem.equipment_id}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                       <div className="w-20">
                         <Input

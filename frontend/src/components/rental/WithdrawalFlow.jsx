@@ -120,6 +120,17 @@ const WithdrawalFlow = ({ onBack }) => {
         reference: eq?.reference || item.reference || '',
         quantity: item.quantity || 1,
         checked: false,
+        is_pack: eq?.is_pack || false,
+        pack_items: eq?.pack_items ? eq.pack_items.map(p => {
+          const subEq = equipment.find(e => e.id === p.equipment_id);
+          return {
+            equipment_id: p.equipment_id,
+            name: subEq?.name || 'Sous-équipement',
+            reference: subEq?.reference || '',
+            quantity: p.quantity || 1,
+            checked: false
+          };
+        }) : []
       };
     });
     setChecklist(items);
@@ -156,11 +167,42 @@ const WithdrawalFlow = ({ onBack }) => {
 
   // Step 2 helpers
   const toggleCheck = (idx) => {
-    setChecklist(prev => prev.map((item, i) => i === idx ? { ...item, checked: !item.checked } : item));
+    setChecklist(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const nextChecked = !item.checked;
+      return {
+        ...item,
+        checked: nextChecked,
+        pack_items: item.pack_items 
+          ? item.pack_items.map(pi => ({ ...pi, checked: nextChecked }))
+          : []
+      };
+    }));
+  };
+  const toggleSubCheck = (packIdx, subIdx) => {
+    setChecklist(prev => prev.map((item, i) => {
+      if (i !== packIdx) return item;
+      const updatedPackItems = item.pack_items.map((pi, sIdx) => 
+        sIdx === subIdx ? { ...pi, checked: !pi.checked } : pi
+      );
+      const allSubChecked = updatedPackItems.every(pi => pi.checked);
+      return {
+        ...item,
+        checked: allSubChecked,
+        pack_items: updatedPackItems
+      };
+    }));
   };
   const checkAll = () => {
     const allChecked = checklist.every(i => i.checked) && lastMinuteItems.every(i => i.checked);
-    setChecklist(prev => prev.map(i => ({ ...i, checked: !allChecked })));
+    setChecklist(prev => prev.map(i => {
+      const nextChecked = !allChecked;
+      return {
+        ...i,
+        checked: nextChecked,
+        pack_items: i.pack_items ? i.pack_items.map(pi => ({ ...pi, checked: nextChecked })) : []
+      };
+    }));
     setLastMinuteItems(prev => prev.map(i => ({ ...i, checked: !allChecked })));
   };
   const addLastMinute = () => {
@@ -351,16 +393,48 @@ const WithdrawalFlow = ({ onBack }) => {
           <button onClick={checkAll} className="text-xs text-slate-500 hover:text-slate-800 underline">
             {allChecked ? 'Tout decocher' : 'Tout cocher'}
           </button>
-          {checklist.map((item, idx) => (
-            <label key={item.id} className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-3 cursor-pointer" data-testid={`check-item-${idx}`}>
-              <input type="checkbox" checked={item.checked} onChange={() => toggleCheck(idx)} className="w-5 h-5 rounded" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-slate-800">{item.name}</p>
-                {item.reference && <p className="text-xs text-slate-400">Ref: {item.reference}</p>}
+          {checklist.map((item, idx) => {
+            const hasSubItems = item.pack_items && item.pack_items.length > 0;
+            return (
+              <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3" data-testid={`check-item-${idx}`}>
+                {/* Main line */}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={item.checked}
+                    onChange={() => toggleCheck(idx)}
+                    className="w-5 h-5 rounded cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{item.name}</p>
+                    {item.reference && <p className="text-xs text-slate-400">Ref: {item.reference}</p>}
+                  </div>
+                  <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">x{item.quantity}</span>
+                </div>
+                
+                {/* Sub-items list with a small indent / arborescence style */}
+                {hasSubItems && (
+                  <div className="mt-3 pl-6 ml-2 border-l border-dashed border-slate-200 space-y-2">
+                    {item.pack_items.map((subItem, sIdx) => (
+                      <label key={sIdx} className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={subItem.checked}
+                          onChange={() => toggleSubCheck(idx, sIdx)}
+                          className="w-4 h-4 rounded text-slate-705 border-slate-300 focus:ring-slate-500 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs ${subItem.checked ? 'text-slate-400 line-through' : 'text-slate-500'} font-medium truncate`}>{subItem.name}</p>
+                          {subItem.reference && <p className="text-[10px] text-slate-400">Ref: {subItem.reference}</p>}
+                        </div>
+                        <span className="text-[10px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">x{subItem.quantity * item.quantity}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
-              <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">x{item.quantity}</span>
-            </label>
-          ))}
+            );
+          })}
           {lastMinuteItems.map((item, idx) => (
             <label key={item.id} className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3 cursor-pointer">
               <input type="checkbox" checked={item.checked} onChange={() => toggleLastMinute(idx)} className="w-5 h-5 rounded" />

@@ -131,13 +131,32 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     if (isEnriched) {
       subtotal = quoteData.subtotal || 0;
       items.forEach((item, index) => {
-        if (yPos > 250) { doc.addPage(); yPos = 20; }
+        const eq = equipment.find(e => e.id === item.equipment_id);
+        const hasPackDetails = eq && eq.is_pack && eq.pack_items && eq.pack_items.length > 0;
+        let rowHeight = lineHeight;
+        let compLines = [];
+        
+        if (hasPackDetails) {
+          const compItems = eq.pack_items.map(packItem => {
+            const subEq = equipment.find(e => e.id === packItem.equipment_id);
+            return `${packItem.quantity}x ${subEq ? subEq.name : packItem.equipment_id}`;
+          }).join(', ');
+          const compText = `Composition du pack : ${compItems}`;
+          doc.setFontSize(6);
+          doc.setFont('helvetica', 'italic');
+          compLines = doc.splitTextToSize(compText, colWidths[0] - 4);
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          rowHeight += compLines.length * 3;
+        }
+
+        if (yPos + rowHeight > 270) { doc.addPage(); yPos = 20; }
         
         const lineTotal = item.total_price || ((item.daily_price || 0) * item.quantity * degressionCoef);
         
         if (index % 2 === 0) {
           doc.setFillColor(250, 250, 250);
-          doc.rect(margin, yPos - 4, pageWidth - 2 * margin, lineHeight, 'F');
+          doc.rect(margin, yPos - 4, pageWidth - 2 * margin, rowHeight, 'F');
         }
         
         doc.text((item.equipment_name || 'N/A').substring(0, 40), colX[0] + 2, yPos);
@@ -145,7 +164,20 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
         doc.text(`${(item.daily_price || 0).toFixed(2)}€`, colX[2] + 2, yPos);
         doc.text(`x${degressionCoef}`, colX[3] + 2, yPos);
         doc.text(`${lineTotal.toFixed(2)}€`, colX[4] + 2, yPos);
-        yPos += lineHeight;
+
+        if (hasPackDetails) {
+          doc.setFontSize(6);
+          doc.setTextColor(150, 150, 150);
+          doc.setFont('helvetica', 'italic');
+          compLines.forEach((line, lIdx) => {
+            doc.text(line, colX[0] + 2, yPos + 3.2 + (lIdx * 3));
+          });
+          doc.setFontSize(10);
+          doc.setTextColor(0, 0, 0);
+          doc.setFont('helvetica', 'normal');
+        }
+
+        yPos += rowHeight;
       });
     } else {
       items.forEach((item, index) => {
@@ -154,11 +186,29 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
           const lineTotal = eq.daily_price * item.quantity * degressionCoef;
           subtotal += lineTotal;
           
-          if (yPos > 250) { doc.addPage(); yPos = 20; }
+          const hasPackDetails = eq.is_pack && eq.pack_items && eq.pack_items.length > 0;
+          let rowHeight = lineHeight;
+          let compLines = [];
+          
+          if (hasPackDetails) {
+            const compItems = eq.pack_items.map(packItem => {
+              const subEq = equipment.find(e => e.id === packItem.equipment_id);
+              return `${packItem.quantity}x ${subEq ? subEq.name : packItem.equipment_id}`;
+            }).join(', ');
+            const compText = `Composition du pack : ${compItems}`;
+            doc.setFontSize(6);
+            doc.setFont('helvetica', 'italic');
+            compLines = doc.splitTextToSize(compText, colWidths[0] - 4);
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            rowHeight += compLines.length * 3;
+          }
+
+          if (yPos + rowHeight > 270) { doc.addPage(); yPos = 20; }
           
           if (index % 2 === 0) {
             doc.setFillColor(250, 250, 250);
-            doc.rect(margin, yPos - 4, pageWidth - 2 * margin, lineHeight, 'F');
+            doc.rect(margin, yPos - 4, pageWidth - 2 * margin, rowHeight, 'F');
           }
           
           doc.text(eq.name.substring(0, 40), colX[0] + 2, yPos);
@@ -166,7 +216,20 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
           doc.text(`${eq.daily_price.toFixed(2)}€`, colX[2] + 2, yPos);
           doc.text(`x${degressionCoef}`, colX[3] + 2, yPos);
           doc.text(`${lineTotal.toFixed(2)}€`, colX[4] + 2, yPos);
-          yPos += lineHeight;
+
+          if (hasPackDetails) {
+            doc.setFontSize(6);
+            doc.setTextColor(150, 150, 150);
+            doc.setFont('helvetica', 'italic');
+            compLines.forEach((line, lIdx) => {
+              doc.text(line, colX[0] + 2, yPos + 3.2 + (lIdx * 3));
+            });
+            doc.setFontSize(10);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('helvetica', 'normal');
+          }
+
+          yPos += rowHeight;
         }
       });
     }

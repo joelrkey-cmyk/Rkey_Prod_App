@@ -80,6 +80,7 @@ const ReturnFlow = ({ onBack }) => {
   const [step, setStep] = useState(1);
   const [activeRentals, setActiveRentals] = useState([]);
   const [clients, setClients] = useState([]);
+  const [equipment, setEquipment] = useState([]);
   const [selectedRental, setSelectedRental] = useState(null);
   const [workflowId, setWorkflowId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -104,9 +105,10 @@ const ReturnFlow = ({ onBack }) => {
 
   const fetchData = async () => {
     try {
-      const [wfRes, clRes] = await Promise.all([
+      const [wfRes, clRes, eqRes] = await Promise.all([
         axios.get(`${BACKEND_URL}/api/rental/workflows`),
         axios.get(`${BACKEND_URL}/api/location/clients`),
+        axios.get(`${BACKEND_URL}/api/location/equipment`),
       ]);
       const workflows = wfRes.data || [];
       // Exclude withdrawals whose return is already completed
@@ -120,6 +122,7 @@ const ReturnFlow = ({ onBack }) => {
       );
       setActiveRentals(active);
       setClients(clRes.data || []);
+      setEquipment(eqRes.data || []);
     } catch (e) {
       console.error(e);
       toast.error('Erreur de chargement');
@@ -134,12 +137,35 @@ const ReturnFlow = ({ onBack }) => {
     if (client?.email) setClientEmail(client.email);
 
     // Build return checklist from withdrawal items
-    const items = (rental.checklist || rental.equipment_items || []).map((item, idx) => ({
-      id: item.id || `item-${idx}`,
-      name: item.name || item.equipment_name || 'Equipement',
-      quantity: item.quantity || 1,
-      checked: false,
-    }));
+    const items = (rental.checklist || rental.equipment_items || []).map((item, idx) => {
+      const eq = equipment.find(e => e.id === (item.equipment_id || item.id));
+      const is_pack = item.is_pack !== undefined ? item.is_pack : (eq?.is_pack || false);
+      
+      const pack_items = item.pack_items ? item.pack_items.map(p => ({
+        ...p,
+        checked: false // Reset checked for the return flow checklist
+      })) : (eq?.pack_items ? eq.pack_items.map(p => {
+        const subEq = equipment.find(e => e.id === p.equipment_id);
+        return {
+          equipment_id: p.equipment_id,
+          name: subEq?.name || 'Sous-équipement',
+          reference: subEq?.reference || '',
+          quantity: p.quantity || 1,
+          checked: false
+        };
+      }) : []);
+
+      return {
+        id: item.id || `item-${idx}`,
+        equipment_id: item.equipment_id || item.id,
+        name: item.name || item.equipment_name || 'Equipement',
+        reference: item.reference || eq?.reference || '',
+        quantity: item.quantity || 1,
+        checked: false,
+        is_pack,
+        pack_items
+      };
+    });
     setReturnChecklist(items);
 
     // Fetch withdrawal photos
@@ -173,6 +199,35 @@ const ReturnFlow = ({ onBack }) => {
     setStep(2);
   };
 
+  const toggleReturnCheck = (idx) => {
+    setReturnChecklist(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const nextChecked = !item.checked;
+      return {
+        ...item,
+        checked: nextChecked,
+        pack_items: item.pack_items 
+          ? item.pack_items.map(pi => ({ ...pi, checked: nextChecked }))
+          : []
+      };
+    }));
+  };
+
+  const toggleReturnSubCheck = (packIdx, subIdx) => {
+    setReturnChecklist(prev => prev.map((item, i) => {
+      if (i !== packIdx) return item;
+      const updatedPackItems = item.pack_items.map((pi, sIdx) => 
+        sIdx === subIdx ? { ...pi, checked: !pi.checked } : pi
+      );
+      const allSubChecked = updatedPackItems.every(pi => pi.checked);
+      return {
+        ...item,
+        checked: allSubChecked,
+        pack_items: updatedPackItems
+      };
+    }));
+  };
+
   const handleCompleteReturn = async () => {
     if (!returnOperator.trim()) return toast.error('Veuillez saisir le nom de l\'opérateur');
     setIsFinalizing(true);
@@ -190,6 +245,8 @@ const ReturnFlow = ({ onBack }) => {
           name: item.name,
           quantity: item.quantity,
           checked: item.checked,
+          is_pack: item.is_pack,
+          pack_items: item.pack_items,
         })),
         email: emailData,
       });
@@ -321,20 +378,52 @@ const ReturnFlow = ({ onBack }) => {
           >
             {allChecked ? 'Tout decocher' : 'Tout cocher'}
           </button>
-          {returnChecklist.map((item, idx) => (
-            <label key={item.id} className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-3 cursor-pointer" data-testid={`return-check-${idx}`}>
-              <input
-                type="checkbox"
-                checked={item.checked}
-                onChange={() => setReturnChecklist(prev => prev.map((it, i) => i === idx ? { ...it, checked: !it.checked } : it))}
-                className="w-5 h-5 rounded"
-              />
-              <div className="flex-1">
-                <p className={`text-sm font-medium ${item.checked ? 'text-emerald-700 line-through' : 'text-slate-800'}`}>{item.name}</p>
+          {returnChecklist.map((item, idx) => {
+            const hasSubItems = item.pack_items && item.pack_items.length > 0;
+            return (
+              <div key={item.id} className="bg-white border border-slate-200 rounded-xl p-3" data-testid={`return-check-${idx}`}>
+                {/* Main line */}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={item.checked}
+                    onChange={() => toggleReturnCheck(idx)}
+                    className="w-5 h-5 rounded cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium ${item.checked ? 'text-emerald-700 line-through' : 'text-slate-800'} truncate`}>
+                      {item.name}
+                    </p>
+                    {item.reference && <p className="text-xs text-slate-400">Ref: {item.reference}</p>}
+                  </div>
+                  <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">x{item.quantity}</span>
+                </div>
+                
+                {/* Sub-items list with a small indent / arborescence style */}
+                {hasSubItems && (
+                  <div className="mt-3 pl-6 ml-2 border-l border-dashed border-slate-200 space-y-2">
+                    {item.pack_items.map((subItem, sIdx) => (
+                      <label key={sIdx} className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={subItem.checked}
+                          onChange={() => toggleReturnSubCheck(idx, sIdx)}
+                          className="w-4 h-4 rounded text-slate-705 border-slate-300 focus:ring-slate-500 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs ${subItem.checked ? 'text-slate-400 line-through' : 'text-slate-500'} font-medium truncate`}>
+                            {subItem.name}
+                          </p>
+                          {subItem.reference && <p className="text-[10px] text-slate-400">Ref: {subItem.reference}</p>}
+                        </div>
+                        <span className="text-[10px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded">x{subItem.quantity * item.quantity}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
-              <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">x{item.quantity}</span>
-            </label>
-          ))}
+            );
+          })}
           {!allChecked && returnChecklist.some(i => !i.checked) && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
               <Camera className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
