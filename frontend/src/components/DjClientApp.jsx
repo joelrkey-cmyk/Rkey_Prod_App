@@ -182,7 +182,7 @@ const DjClientApp = ({ isPublic = false }) => {
             selectedOptions: c.selected_options || [],
             requestedOptions: c.requested_options || [],
             chatMessages: c.chat_messages || [],
-            selectedPdfNotes: c.selected_pdf_notes || [],
+            selectedPdfNotes: c.selected_pdf_notes || ['__deroulement_soiree'],
             eventDocuments: c.event_documents || [],
             notifications: c.notifications || { admin: {}, dj: {}, client: {} },
             cateringNotes: c.catering_notes || "",
@@ -247,6 +247,15 @@ const DjClientApp = ({ isPublic = false }) => {
         setDessertNotes(ev.dessertNotes || "");
         setDedicaces(ev.dedicaces || "");
         setChatMessages(ev.chatMessages || []);
+        
+        // Initialize Planning info to stay synced with contracts
+        setPlanningLocalInfo({
+          setup_date: ev.contractInfo?.setup_date || "",
+          setup_time: ev.contractInfo?.setup_time || "",
+          start_time: ev.contractInfo?.start_time || "",
+          end_time: ev.contractInfo?.end_time === "Illimité" ? "" : (ev.contractInfo?.end_time || ""),
+          unlimited_time: ev.contractInfo?.unlimited_time || false
+        });
       }
     }
   }, [currentRoute.eventId, events]);
@@ -1486,7 +1495,7 @@ const DjClientApp = ({ isPublic = false }) => {
     };
 
     const DocumentsTipsSection = () => {
-      const selectedPdfs = ev.selectedPdfNotes || [];
+      const selectedPdfs = ev.selectedPdfNotes || ['__deroulement_soiree'];
       const eventDocuments = ev.eventDocuments || [];
       const isAdminOrDj = currentRoute.role === 'admin' || currentRoute.role === 'dj';
 
@@ -1738,10 +1747,50 @@ const DjClientApp = ({ isPublic = false }) => {
             {/* SECTION ANIMATIONS ET INTERVENTIONS */}
             <div>
               <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Animations et interventions</h4>
-              {(displayGlobalDocs.length === 0 && animationEventDocs.length === 0) ? (
+              {(displayGlobalDocs.length === 0 && animationEventDocs.length === 0 && !isAdminOrDj && !selectedPdfs.includes('__deroulement_soiree')) ? (
                  <p className="text-sm text-slate-500 italic">Aucun document d'animation pour cet événement.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Item Virtuel: Déroulement de soirée (premier à gauche, toujours visible pour Admin/DJ, ou s'il est coché pour le client) */}
+                  {(isAdminOrDj || selectedPdfs.includes('__deroulement_soiree')) && (
+                    <div 
+                      onClick={() => handleTogglePdf('__deroulement_soiree')}
+                      className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between ${isAdminOrDj ? 'cursor-pointer' : ''} ${selectedPdfs.includes('__deroulement_soiree') ? "border-amber-500 bg-amber-50/40" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {isAdminOrDj && (
+                          <div className="mt-1 flex-shrink-0 flex items-center justify-center w-5 h-5 rounded border border-amber-300">
+                            {selectedPdfs.includes('__deroulement_soiree') && <Check className="w-4 h-4 text-amber-600 font-bold" />}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-slate-800 leading-tight">Déroulement de soirée</p>
+                            <span className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-medium px-1.5 py-0.5 rounded border">Dynamique</span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-2">Généré selon vos choix de déroulement & styles musicaux</p>
+                        </div>
+                      </div>
+                      {(currentRoute.role !== 'client' || selectedPdfs.includes('__deroulement_soiree')) && (
+                        <div className="mt-4 flex justify-end">
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              if (currentRoute.role === 'client') {
+                                generateClientPDF();
+                              } else {
+                                generateDjPDF();
+                              }
+                            }} 
+                            className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center"
+                          >
+                            <Download className="w-4 h-4" /> Télécharger
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Event Specific Animation Docs */}
                   {animationEventDocs.map((doc) => (
                     <div 

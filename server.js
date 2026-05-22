@@ -1570,8 +1570,8 @@ api.get('/public/dj-client/:slug', async (req, res) => {
 
   const normalizedRequestedSlug = normalizeString(slug);
 
-  // Fetch all non-trash contracts so DJs can see all upcoming & past events!
-  const contracts = await db.collection('contracts2').find({ status: { $ne: 'trash' } }, { projection: { _id: 0 } }).toArray();
+  // Fetch only sent, archived, or completed contracts to exclude drafts/tests/simulations!
+  const contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0 } }).toArray();
   
   const mappedEvents = contracts.map(c => {
     const info = c.client_info || {};
