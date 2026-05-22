@@ -217,8 +217,31 @@ export default function AgendaPrestationApp() {
         let endDate = new Date(r.end_date);
         if (isNaN(startDate) || isNaN(endDate)) return;
         
+        const itemsList = r.equipment_items || r.items || [];
+        const itemRefs = [];
+        if (Array.isArray(itemsList)) {
+          itemsList.forEach(item => {
+            const ref = item.reference || '';
+            if (ref && !itemRefs.includes(ref)) {
+              itemRefs.push(ref);
+            }
+          });
+        }
+        
+        let refsText = itemRefs.join('/');
+        
         let equipmentOpts = '';
-        if (r.equipment && Array.isArray(r.equipment)) {
+        if (Array.isArray(itemsList) && itemsList.length > 0) {
+          const equips = itemsList.map(item => {
+            const name = item.equipment_name || item.name || '';
+            const qty = item.quantity || 1;
+            const ref = item.reference || '';
+            return `${name}${ref ? ` [${ref}]` : ''} (x${qty})`;
+          }).filter(Boolean);
+          if (equips.length > 0) {
+            equipmentOpts = `\nMatériel: ${equips.join(', ')}`;
+          }
+        } else if (r.equipment && Array.isArray(r.equipment)) {
           const equips = r.equipment.map(e => typeof e === 'string' ? e : e.name).filter(Boolean);
           if (equips.length > 0) {
             equipmentOpts = `\nMatériel: ${equips.join(', ')}`;
@@ -226,6 +249,7 @@ export default function AgendaPrestationApp() {
         }
 
         let pubTitle = r.event_name || r.event || 'Réservation DJ';
+        let fullTitle = `[Matériel] ${refsText ? `${refsText} - ` : ''}${pubTitle}${equipmentOpts}`;
 
         let signature = `${officialId}_${startDate.toISOString().split('T')[0]}_reservation_${r.id}`;
         if (eventSignatures.has(signature)) return;
@@ -233,7 +257,7 @@ export default function AgendaPrestationApp() {
 
         parsedEvents.push({
           id: `res_${r.id}`,
-          title: `[Matériel] ${pubTitle}${equipmentOpts}`,
+          title: fullTitle,
           start: startDate,
           end: endDate,
           allDay: true,

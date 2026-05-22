@@ -217,6 +217,26 @@ function MaterielView() {
     }
   };
 
+  const toggleCategoryVisibility = async (category) => {
+    try {
+      setIsSavingCategory(true);
+      const isVisibleNow = category.visible_catalogue !== false;
+      const response = await axios.put(`${BACKEND_URL}/api/location/categories/${category.id}`, { 
+        visible_catalogue: !isVisibleNow 
+      });
+      
+      if (response.data.success) {
+        toast.success(!isVisibleNow ? 'Catégorie rendue visible sur le catalogue' : 'Catégorie masquée du catalogue');
+        fetchCategories();
+      }
+    } catch (error) {
+      console.error('Error toggling category visibility:', error);
+      toast.error('Erreur lors de la mise à jour de la visibilité');
+    } finally {
+      setIsSavingCategory(false);
+    }
+  };
+
   const reorderCategories = async (newOrder) => {
     try {
       setIsSavingCategory(true);
@@ -1547,12 +1567,31 @@ function MaterielView() {
                   <>
                     <div className="flex items-center gap-3">
                       <span className="text-xl">{category.icon}</span>
-                      <span className="font-medium">{category.name}</span>
-                      <span className="text-xs text-gray-400">
-                        ({equipment.filter(e => e.category === category.name).length} équipements)
-                      </span>
+                      <div className="flex flex-col">
+                        <span className={`font-medium ${category.visible_catalogue === false ? 'text-gray-400 line-through decoration-slate-300' : 'text-slate-800'}`}>
+                          {category.name}
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          {equipment.filter(e => e.category === category.name).length} équipements {category.visible_catalogue === false && "• 🚫 Masqué du catalogue"}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex gap-1 items-center">
+                      {/* Toggle visibility button */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleCategoryVisibility(category)}
+                        disabled={isSavingCategory}
+                        className="h-8 w-8 p-0"
+                        title={category.visible_catalogue !== false ? "Masquer du catalogue" : "Afficher sur le catalogue"}
+                      >
+                        {category.visible_catalogue !== false ? (
+                          <Eye className="w-4 h-4 text-emerald-600" />
+                        ) : (
+                          <EyeOff className="w-4 h-4 text-slate-400" />
+                        )}
+                      </Button>
                       {/* Edit button */}
                       <Button
                         variant="ghost"

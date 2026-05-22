@@ -1,5 +1,5 @@
 // Page de configuration des options matériel et notes techniques
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Badge } from '../ui/badge';
@@ -10,6 +10,153 @@ import { Textarea } from '../ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck } from 'lucide-react';
 import { toast } from 'sonner';
+
+// Composant autocomplétion intelligente et de recherche pour l'équipement de location
+const EquipmentSearchSelector = ({ equipmentList, value, onChange, placeholder = "Tapez pour rechercher (nom, référence, catégorie)..." }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const selectedEquipment = equipmentList.find(eq => eq.id === value);
+
+  // Filtrer l'équipement par nom, référence ou catégorie
+  const filteredEquipment = equipmentList.filter(eq => {
+    const searchLow = searchTerm.toLowerCase();
+    return (
+      (eq.name || "").toLowerCase().includes(searchLow) ||
+      (eq.reference || "").toLowerCase().includes(searchLow) ||
+      (eq.category || "").toLowerCase().includes(searchLow)
+    );
+  });
+
+  return (
+    <div className="relative w-full" ref={dropdownRef}>
+      <Label className="text-xs text-slate-500 block mb-1">Équipement lié :</Label>
+      
+      {/* Zone cliquable montrant la sélection actuelle */}
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-between w-full text-sm border rounded-md px-3 py-2 bg-white cursor-pointer hover:border-slate-400 transition-colors focus-within:ring-2 focus-within:ring-blue-100"
+      >
+        {selectedEquipment ? (
+          <div className="flex items-center space-x-1.5 overflow-hidden">
+            {selectedEquipment.category && (
+              <span className="text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">
+                {selectedEquipment.category}
+              </span>
+            )}
+            {selectedEquipment.reference && (
+              <span className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded shrink-0">
+                {selectedEquipment.reference}
+              </span>
+            )}
+            <span className="truncate text-slate-800 font-medium">
+              {selectedEquipment.name}
+            </span>
+          </div>
+        ) : (
+          <span className="text-slate-400">-- Aucun équipement lié --</span>
+        )}
+        <div className="flex items-center space-x-1.5 shrink-0">
+          {selectedEquipment && (
+            <button
+              type="button"
+              id="clear-linked-equipment-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange("");
+                setSearchTerm("");
+              }}
+              className="text-slate-450 hover:text-slate-755 text-sm font-bold px-1 hover:bg-slate-100 rounded"
+              title="Détacher l'équipement"
+            >
+              ×
+            </button>
+          )}
+          <span className="text-slate-400 text-[10px]">▼</span>
+        </div>
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-xl max-h-64 overflow-y-auto">
+          <div className="sticky top-0 bg-slate-50 p-2 border-b">
+            <input
+              id="equipment-search-input"
+              type="text"
+              className="w-full text-xs border rounded-md px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              placeholder={placeholder}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="py-1">
+            <button
+              id="option-none-btn"
+              type="button"
+              className="w-full text-left px-3 py-2 text-xs text-rose-500 hover:bg-slate-50 border-b border-dashed transition-colors"
+              onClick={() => {
+                onChange("");
+                setIsOpen(false);
+                setSearchTerm("");
+              }}
+            >
+              Pas de liaison (Détacher l'équipement)
+            </button>
+            {filteredEquipment.length === 0 ? (
+              <div className="px-3 py-4 text-xs text-slate-400 text-center">Aucun équipement trouvé</div>
+            ) : (
+              filteredEquipment.map(eq => (
+                <button
+                  key={eq.id}
+                  id={`select-eq-item-${eq.id}`}
+                  type="button"
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 border-b border-slate-50 last:border-b-0 flex items-center justify-between text-xs transition-colors"
+                  onClick={() => {
+                    onChange(eq.id);
+                    setIsOpen(false);
+                    setSearchTerm("");
+                  }}
+                >
+                  <div className="flex items-center space-x-1.5 overflow-hidden mr-2">
+                    {eq.category && (
+                      <span className="text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 px-1 py-0.5 rounded shrink-0">
+                        {eq.category}
+                      </span>
+                    )}
+                    {eq.reference && (
+                      <span className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded shrink-0">
+                        {eq.reference}
+                      </span>
+                    )}
+                    <span className="font-medium text-slate-700 truncate">{eq.name}</span>
+                  </div>
+                  {eq.daily_price && (
+                    <span className="text-[10px] text-slate-400 shrink-0 font-medium bg-slate-50 px-1.5 py-0.5 rounded">
+                      {eq.daily_price}€/j
+                    </span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const EVENT_CATEGORIES = [
   "Mariage",
@@ -432,21 +579,15 @@ export const ConfigurationPage = ({
                               </div>
                             </div>
                             <div className="space-y-1 mt-2">
-                              <Label className="text-xs text-slate-500">Lier à un équipement de location :</Label>
-                              <select 
-                                className="w-full text-sm border rounded-md px-3 py-2 bg-white"
+                              <EquipmentSearchSelector 
+                                equipmentList={equipmentList}
                                 value={option.linked_equipment_id || ""}
-                                onChange={(e) => { 
-                                  const updated = [...selectedOptions]; 
-                                  updated[index].linked_equipment_id = e.target.value; 
-                                  setSelectedOptions(updated); 
+                                onChange={(val) => {
+                                  const updated = [...selectedOptions];
+                                  updated[index].linked_equipment_id = val;
+                                  setSelectedOptions(updated);
                                 }}
-                              >
-                                <option value="">-- Aucun équipement lié --</option>
-                                {equipmentList.map(eq => (
-                                  <option key={eq.id} value={eq.id}>{eq.name}</option>
-                                ))}
-                              </select>
+                              />
                             </div>
                             <div>
                               <Button onClick={() => saveEditedOption(index)} size="sm" variant="outline" disabled={isSaving}>{isSaving ? "..." : "Valider"}</Button>
@@ -460,12 +601,27 @@ export const ConfigurationPage = ({
                               {(option.event_categories && option.event_categories.length > 0) && (
                                 <p className="text-xs text-blue-600 mt-1">Limité à : {option.event_categories.join(', ')}</p>
                               )}
-                              {option.linked_equipment_id && (
-                                <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1">
-                                  <Music className="w-3 h-3" /> 
-                                  Lié à : {equipmentList.find(eq => eq.id === option.linked_equipment_id)?.name || "Équipement introuvable"}
-                                </p>
-                              )}
+                              {option.linked_equipment_id && (() => {
+                                const eq = equipmentList.find(eq => eq.id === option.linked_equipment_id);
+                                if (!eq) return <p className="text-xs text-rose-500 mt-1">Équipement lié introuvable</p>;
+                                return (
+                                  <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1.5 flex-wrap">
+                                    <Music className="w-3.5 h-3.5 shrink-0" /> 
+                                    <span>Lié à :</span>
+                                    {eq.category && (
+                                      <span className="text-[9px] font-bold uppercase bg-slate-100 text-slate-600 px-1 py-0.5 rounded">
+                                        {eq.category}
+                                      </span>
+                                    )}
+                                    {eq.reference && (
+                                      <span className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded">
+                                        {eq.reference}
+                                      </span>
+                                    )}
+                                    <span className="font-semibold text-slate-700">{eq.name}</span>
+                                  </p>
+                                );
+                              })()}
                             </div>
                           </div>
                         )}
@@ -504,17 +660,11 @@ export const ConfigurationPage = ({
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-sm text-slate-700 font-medium">Lier à un équipement de location :</Label>
-                      <select 
-                        className="w-full text-sm border rounded-md px-3 py-2 bg-white"
+                      <EquipmentSearchSelector 
+                        equipmentList={equipmentList}
                         value={newOption.linked_equipment_id || ""}
-                        onChange={(e) => setNewOption({...newOption, linked_equipment_id: e.target.value})}
-                      >
-                        <option value="">-- Aucun équipement lié --</option>
-                        {equipmentList.map(eq => (
-                          <option key={eq.id} value={eq.id}>{eq.name}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => setNewOption({...newOption, linked_equipment_id: val})}
+                      />
                       <p className="text-xs text-slate-500">
                         Si un équipement est lié, une réservation sera automatiquement créée lorsque le contrat comportant cette option sera signé.
                       </p>

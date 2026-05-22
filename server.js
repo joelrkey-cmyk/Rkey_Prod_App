@@ -2295,7 +2295,15 @@ api.get('/location/equipment', authMiddleware, async (req, res) => {
   res.json(await autoSignGcsUrlsInObject(items));
 });
 api.get('/catalogue/equipements', async (req, res) => {
-  const items = cleanList(await db.collection('location_equipment').find({ publier_catalogue: true }, { projection: { _id: 0 } }).sort({ name: 1 }).toArray());
+  const hiddenCats = await db.collection('location_categories').find({ visible_catalogue: false }).toArray();
+  const hiddenCatNames = hiddenCats.map(c => c.name);
+  
+  const query = { publier_catalogue: true };
+  if (hiddenCatNames.length > 0) {
+    query.category = { $nin: hiddenCatNames };
+  }
+  
+  const items = cleanList(await db.collection('location_equipment').find(query, { projection: { _id: 0 } }).sort({ name: 1 }).toArray());
   res.json(await autoSignGcsUrlsInObject(items));
 });
 api.post('/location/equipment', authMiddleware, async (req, res) => {
@@ -2552,7 +2560,7 @@ api.get('/location/categories', authMiddleware, async (req, res) => {
   res.json({ categories: cats, success: true });
 });
 api.get('/location/categories/public', async (req, res) => {
-  const cats = cleanList(await db.collection('location_categories').find({}, { projection: { _id: 0 } }).sort({ order: 1, sort_order: 1, name: 1 }).toArray());
+  const cats = cleanList(await db.collection('location_categories').find({ visible_catalogue: { $ne: false } }, { projection: { _id: 0 } }).sort({ order: 1, sort_order: 1, name: 1 }).toArray());
   res.json({ categories: cats });
 });
 api.post('/location/categories', authMiddleware, async (req, res) => {

@@ -179,6 +179,7 @@ const DjClientApp = ({ isPublic = false }) => {
             dessert: c.dessert || "",
             dessertNotes: c.dessert_notes || "",
             dedicaces: c.dedicaces || "",
+            customWeddingEvents: c.custom_wedding_events || [],
             selectedOptions: c.selected_options || [],
             requestedOptions: c.requested_options || [],
             chatMessages: c.chat_messages || [],
@@ -222,6 +223,7 @@ const DjClientApp = ({ isPublic = false }) => {
   const [dessert, setDessert] = useState("");
   const [dessertNotes, setDessertNotes] = useState("");
   const [dedicaces, setDedicaces] = useState("");
+  const [customWeddingEvents, setCustomWeddingEvents] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
 
   useEffect(() => {
@@ -230,33 +232,44 @@ const DjClientApp = ({ isPublic = false }) => {
     }
   }, [chatMessages]);
 
+  const lastLoadedEventIdRef = useRef(null);
+
   useEffect(() => {
     if (currentRoute.eventId) {
       const ev = events.find(e => e.id === currentRoute.eventId);
       if (ev) {
-        setScheduleItems(ev.scheduleItems || []);
-        setNotes(ev.djNotes || "");
-        setPlaylistLink(ev.playlistLink || "");
-        setManualMustPlay(ev.manualMustPlay || "");
-        setBlacklist(ev.blacklist || "");
-        setEntreeMaries(ev.entreeMaries || "");
-        setEntreeMariesNotes(ev.entreeMariesNotes || "");
-        setOuvertureBal(ev.ouvertureBal || "");
-        setOuvertureBalNotes(ev.ouvertureBalNotes || "");
-        setDessert(ev.dessert || "");
-        setDessertNotes(ev.dessertNotes || "");
-        setDedicaces(ev.dedicaces || "");
-        setChatMessages(ev.chatMessages || []);
-        
-        // Initialize Planning info to stay synced with contracts
-        setPlanningLocalInfo({
-          setup_date: ev.contractInfo?.setup_date || "",
-          setup_time: ev.contractInfo?.setup_time || "",
-          start_time: ev.contractInfo?.start_time || "",
-          end_time: ev.contractInfo?.end_time === "Illimité" ? "" : (ev.contractInfo?.end_time || ""),
-          unlimited_time: ev.contractInfo?.unlimited_time || false
-        });
+        if (lastLoadedEventIdRef.current !== currentRoute.eventId) {
+          lastLoadedEventIdRef.current = currentRoute.eventId;
+          setScheduleItems(ev.scheduleItems || []);
+          setNotes(ev.djNotes || "");
+          setPlaylistLink(ev.playlistLink || "");
+          setManualMustPlay(ev.manualMustPlay || "");
+          setBlacklist(ev.blacklist || "");
+          setEntreeMaries(ev.entreeMaries || "");
+          setEntreeMariesNotes(ev.entreeMariesNotes || "");
+          setOuvertureBal(ev.ouvertureBal || "");
+          setOuvertureBalNotes(ev.ouvertureBalNotes || "");
+          setDessert(ev.dessert || "");
+          setDessertNotes(ev.dessertNotes || "");
+          setDedicaces(ev.dedicaces || "");
+          setCustomWeddingEvents(ev.customWeddingEvents || []);
+          setChatMessages(ev.chatMessages || []);
+          
+          // Initialize Planning info to stay synced with contracts
+          setPlanningLocalInfo({
+            setup_date: ev.contractInfo?.setup_date || "",
+            setup_time: ev.contractInfo?.setup_time || "",
+            start_time: ev.contractInfo?.start_time || "",
+            end_time: ev.contractInfo?.end_time === "Illimité" ? "" : (ev.contractInfo?.end_time || ""),
+            unlimited_time: ev.contractInfo?.unlimited_time || false
+          });
+        } else {
+          // Keep chat messages alive and synced with background refetches
+          setChatMessages(ev.chatMessages || []);
+        }
       }
+    } else {
+      lastLoadedEventIdRef.current = null;
     }
   }, [currentRoute.eventId, events]);
 
@@ -303,6 +316,46 @@ const DjClientApp = ({ isPublic = false }) => {
       console.error("Erreur lors de la sauvegarde: ", e);
     }
   };
+
+  const handleAddCustomWeddingEvent = () => {
+    const newItem = {
+      id: "cw-" + Date.now(),
+      title: "",
+      track: "",
+      notes: ""
+    };
+    const updated = [...customWeddingEvents, newItem];
+    setCustomWeddingEvents(updated);
+    if (currentRoute.eventId) {
+      updateContractDb(currentRoute.eventId, { custom_wedding_events: updated });
+    }
+  };
+
+  const handleUpdateCustomWeddingEvent = (id, field, value) => {
+    const updated = customWeddingEvents.map(item => {
+      if (item.id === id) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    });
+    setCustomWeddingEvents(updated);
+  };
+
+  const handleSaveCustomWeddingEvents = () => {
+    if (currentRoute.eventId) {
+      updateContractDb(currentRoute.eventId, { custom_wedding_events: customWeddingEvents });
+    }
+  };
+
+  const handleDeleteCustomWeddingEvent = (id) => {
+    const updated = customWeddingEvents.filter(item => item.id !== id);
+    setCustomWeddingEvents(updated);
+    if (currentRoute.eventId) {
+      updateContractDb(currentRoute.eventId, { custom_wedding_events: updated });
+    }
+    toast.success("Événement de mariage personnalisé supprimé");
+  };
+
   const [copiedLink, setCopiedLink] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
@@ -904,7 +957,18 @@ const DjClientApp = ({ isPublic = false }) => {
 
           {isMariage && (
             <div className="border rounded-lg p-5 bg-indigo-50 border-indigo-200">
-              <h4 className="font-semibold text-indigo-700 mb-3 text-base">Section Mariage</h4>
+              <div className="flex items-center justify-between mb-4 border-b border-indigo-100 pb-2">
+                <h4 className="font-semibold text-indigo-700 text-base">Section Mariage</h4>
+                {(role === 'client' || role === 'admin') && (
+                  <button 
+                    type="button"
+                    onClick={handleAddCustomWeddingEvent}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xs font-semibold shadow-sm transition-all"
+                  >
+                    <Plus className="w-4 h-4" /> Ajouter un moment
+                  </button>
+                )}
+              </div>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Entrée des mariés</label>
@@ -966,6 +1030,63 @@ const DjClientApp = ({ isPublic = false }) => {
                     placeholder="Observations..."
                   />
                 </div>
+
+                {/* Custom Wedding Events */}
+                {customWeddingEvents.map((item) => (
+                  <div key={item.id} className="relative border-t border-indigo-200/60 pt-4 mt-4 bg-indigo-50/50 p-3 rounded-lg border border-indigo-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex-1 mr-2">
+                        <label className="block text-xs font-semibold text-indigo-800 uppercase tracking-wider mb-1">Nom du moment</label>
+                        <input
+                          type="text"
+                          value={item.title}
+                          onChange={(e) => handleUpdateCustomWeddingEvent(item.id, 'title', e.target.value)}
+                          onBlur={handleSaveCustomWeddingEvents}
+                          placeholder="Ex: Danse avec le papa"
+                          className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm font-semibold text-gray-800 placeholder-gray-400 bg-white"
+                          disabled={role !== 'client' && role !== 'admin'}
+                        />
+                      </div>
+                      {(role === 'client' || role === 'admin') && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCustomWeddingEvent(item.id)}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded transition-all mt-5"
+                          title="Supprimer ce moment"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Titre exact du morceau</label>
+                        <input
+                          type="text"
+                          value={item.track}
+                          onChange={(e) => handleUpdateCustomWeddingEvent(item.id, 'track', e.target.value)}
+                          onBlur={handleSaveCustomWeddingEvents}
+                          className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
+                          placeholder="Ex: Henri Salvador - Jardin d'hiver"
+                          disabled={role !== 'client' && role !== 'admin'}
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Observation / Note</label>
+                        <input
+                          type="text"
+                          value={item.notes}
+                          onChange={(e) => handleUpdateCustomWeddingEvent(item.id, 'notes', e.target.value)}
+                          onBlur={handleSaveCustomWeddingEvents}
+                          className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-gray-50 text-gray-600"
+                          placeholder="Observations..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -1103,6 +1224,28 @@ const DjClientApp = ({ isPublic = false }) => {
           const splitText = doc.splitTextToSize(dessert, 180);
           doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
         }
+        if (customWeddingEvents && customWeddingEvents.length > 0) {
+          customWeddingEvents.forEach(item => {
+            if (item.title || item.track || item.notes) {
+              if (y > 270) { doc.addPage(); y = 20; }
+              const dispTitle = item.title || "Événement personnalisé";
+              doc.setFontSize(12); doc.setTextColor(67, 56, 202); 
+              doc.text(`${dispTitle}:`, 15, y); y += 6;
+              
+              if (item.track) {
+                doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+                const splitTrack = doc.splitTextToSize(`Musique: ${item.track}`, 180);
+                doc.text(splitTrack, 15, y); y += splitTrack.length * 5;
+              }
+              if (item.notes) {
+                doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+                const splitNotes = doc.splitTextToSize(`Observation: ${item.notes}`, 180);
+                doc.text(splitNotes, 15, y); y += splitNotes.length * 5;
+              }
+              y += 5;
+            }
+          });
+        }
       }
 
       if (dedicaces) {
@@ -1223,6 +1366,28 @@ const DjClientApp = ({ isPublic = false }) => {
           doc.setFontSize(10); doc.setTextColor(75, 85, 99);
           const splitText = doc.splitTextToSize(dessert, 180);
           doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        }
+        if (customWeddingEvents && customWeddingEvents.length > 0) {
+          customWeddingEvents.forEach(item => {
+            if (item.title || item.track || item.notes) {
+              if (y > 270) { doc.addPage(); y = 20; }
+              const dispTitle = item.title || "Evénement personnalisé";
+              doc.setFontSize(12); doc.setTextColor(67, 56, 202); 
+              doc.text(`${dispTitle}:`, 15, y); y += 6;
+              
+              if (item.track) {
+                doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+                const splitTrack = doc.splitTextToSize(`Musique: ${item.track}`, 180);
+                doc.text(splitTrack, 15, y); y += splitTrack.length * 5;
+              }
+              if (item.notes) {
+                doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+                const splitNotes = doc.splitTextToSize(`Observation: ${item.notes}`, 180);
+                doc.text(splitNotes, 15, y); y += splitNotes.length * 5;
+              }
+              y += 5;
+            }
+          });
         }
       }
 
