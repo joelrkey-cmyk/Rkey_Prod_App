@@ -189,7 +189,8 @@ const DjClientApp = ({ isPublic = false }) => {
                setup_time: info.setup_time || "",
                start_time: info.start_time || "",
                end_time: info.unlimited_time ? "Illimité" : (info.end_time || ""),
-               unlimited_time: info.unlimited_time || false
+               unlimited_time: info.unlimited_time || false,
+               guest_count: info.guest_count || ""
             },
             scheduleItems: c.event_order || [],
             djNotes: c.dj_notes || "",
@@ -1562,6 +1563,10 @@ const DjClientApp = ({ isPublic = false }) => {
                   <p className="font-medium text-gray-900">{info.phone2}</p>
                 </div>
                 )}
+                <div>
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nombre d'invités attendus</p>
+                  <p className="font-medium text-gray-900">{ev.rawClientInfo?.guest_count || "Non précisé"}</p>
+                </div>
                 <div className="sm:col-span-2">
                   <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Lieu de l'événement</p>
                   <p className="font-medium text-gray-900">{info.location}</p>

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Separator } from "./ui/separator";
-import { FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy } from "lucide-react";
+import { FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import apiService from "../services/api";
 import FormSubmissionsSelector from "./FormSubmissionsSelector";
@@ -987,6 +987,9 @@ function Contracts2App() {
           {/* ═══════════════════════════════════════════════ */}
           <TabsContent value="create">
             <div className="mb-6 flex justify-center space-x-2">
+              <Button onClick={() => setActiveTab("history")} variant="outline" className="px-4 py-3 text-sm flex items-center gap-1.5 border-slate-300 text-slate-700 hover:bg-slate-100">
+                <ArrowLeft className="h-4 w-4" /> Retour au Sommaire
+              </Button>
               <Button onClick={resetForm} variant="outline" className="px-4 py-3 text-sm">Reset</Button>
               <Button onClick={() => {
                 // Pré-remplir un mariage test
