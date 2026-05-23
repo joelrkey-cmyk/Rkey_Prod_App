@@ -743,6 +743,157 @@ async function connectDB() {
 
     await ensureAdminUser();
 
+    // Legacy contracts automation import
+    try {
+      const importData = [
+        {
+          name: "Aline et Valentin Benoît",
+          event_location: "Ferme d’Argentin",
+          event_date: "2026-08-01",
+          setup_date: "2026-07-31",
+          email: "alineohl@hotmail.fr",
+          phone: "0685226338",
+          phone2: "0632262708"
+        },
+        {
+          name: "Marie et Xavier Frey / Caroline DeTaddeo",
+          event_location: "Mussig",
+          event_date: "2026-07-18",
+          setup_date: "2026-07-17",
+          email: "frey.j@hotmail.fr / carolinedetaddeo@gmail.com",
+          phone: "0606993860",
+          phone2: "0648440399"
+        },
+        {
+          name: "Chloé et Kevin GERBER",
+          event_location: "APP - Ebersheim",
+          event_date: "2026-06-13",
+          setup_date: "2026-06-12",
+          email: "chloeluna1306@gmail.com",
+          phone: "0789886993",
+          phone2: "0787181877"
+        },
+        {
+          name: "Nathan et Eline Heraief",
+          event_location: "Château Burrus - St Croix aux Mines",
+          event_date: "2026-09-26",
+          setup_date: "2026-09-25",
+          email: "eline.achard@gmail.com",
+          phone: "0631976741",
+          phone2: ""
+        },
+        {
+          name: "Bilger Valentin et Shala Lisa",
+          event_location: "Salle Polyvalente de Pulversheim",
+          event_date: "2026-09-12",
+          setup_date: "2026-09-11",
+          email: "valentin.bilger@icloud.com",
+          phone: "0601854678",
+          phone2: "0640147454"
+        }
+      ];
+
+      console.log("[Legacy Import] Starting legacy contracts check...");
+      const contractsColl = db.collection('contracts2');
+
+      for (const item of importData) {
+        const existing = await contractsColl.findOne({ "client_info.name": item.name, "client_info.event_date": item.event_date });
+        if (!existing) {
+          console.log(`[Legacy Import] Creating contract for ${item.name} on ${item.event_date}...`);
+          const contract = {
+            id: uuidv4(),
+            client_info: {
+              name: item.name,
+              email: item.email,
+              phone: item.phone,
+              phone2: item.phone2 || "",
+              address: "",
+              company: "",
+              event_type: "Mariage",
+              event_date: item.event_date,
+              event_location: item.event_location,
+              setup_date: item.setup_date,
+              setup_time: "À définir",
+              start_time: "17h00",
+              end_time: "04h00",
+              unlimited_time: false,
+              custom_event_type: "",
+              event_note: "",
+              guest_count: ""
+            },
+            dj_profile: "stephane",
+            dj_profile_data: {
+              name: "Stéphane JACOBY (Stefan Edison)",
+              nom_complet: "Stéphane JACOBY",
+              nom_artistique: "Stefan Edison",
+              email: "stephane@rkey-prod.fr",
+              phone: "06 31 21 61 14",
+              address: "5 rue du Hohlandsbourg, 67390 Marckolsheim",
+              siret: "42121827200019",
+              titre: "Animateur DJ",
+              statut_artiste: "freelance",
+              iban: "FR76 4061 8804 8700 0401 4272 395",
+              bic: ""
+            },
+            contract_mode: "mandataire",
+            base_price: 0,
+            frais_mandat: 0,
+            cachet_artiste: 0,
+            pack_sonorisation: false,
+            pack_lumiere: false,
+            selected_options: [],
+            options_tarif_notes: "",
+            discount_amount: 0,
+            invoice_number: "",
+            custom_deposit_amount: 0,
+            no_deposit_required: false,
+            selected_rib: "",
+            deposit_paid: false,
+            deposit_payment_method: "",
+            deposit_paid_date: "",
+            has_limiteur_son: false,
+            has_detecteur_fumee: false,
+            has_no_limiteur_ni_detecteur: false,
+            selected_notes: [],
+            selected_pdf_notes: [],
+            predefined_notes: [],
+            selected_music_styles: [],
+            dj_notes: "",
+            blacklist: "",
+            catering_notes: "",
+            catering_drinks: "",
+            background_music_aperitif: "",
+            selected_events: [],
+            custom_repas_events: [],
+            custom_musique_events: [],
+            event_notes: "",
+            event_order: [],
+            hypnosis_program: {
+              intro_time: "",
+              has_spectacle: false,
+              spectacle_time: "",
+              ambient_music: "",
+              has_repas_interventions: false,
+              interventions_count: "",
+              extra_notes: ""
+            },
+            technician_contact: "",
+            cgv_text: "",
+            status: "draft",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          await contractsColl.insertOne(contract);
+          await syncContractReservations(contract);
+          console.log(`[Legacy Import] Successfully imported contract for ${item.name}!`);
+        } else {
+          console.log(`[Legacy Import] Contract already exists for ${item.name} (${item.event_date})`);
+        }
+      }
+    } catch (importErr) {
+      console.error("[Legacy Import] Error during legacy import:", importErr);
+    }
+
     // Automatically repair mangled UTF-8 filenames caused by Multer latin1 interpretation in existing database documents
     try {
       const notesCollection = db.collection('contract_technical_pdf_notes');
