@@ -34,6 +34,27 @@ export const ContractHistory = ({
   const [filterYear, setFilterYear] = useState('All');
   const [filterTime, setFilterTime] = useState('All');
 
+  const getContractTotal = (contract) => {
+    const optionsTotal = contract.selected_options?.filter(option => option.selected).reduce((sum, option) => sum + option.price, 0) || 0;
+    const isDir = (() => {
+      const p = contract.dj_profile_data || {};
+      return p.nom_artistique?.toLowerCase().includes("r'key") || 
+             p.nom_artistique?.toLowerCase().includes("rkey") || 
+             p.titre?.includes("Gérant") || 
+             p.statut_artiste === 'dirigeant';
+    })();
+
+    if (isDir) {
+      return Math.max(0, (contract.base_price || 0) + optionsTotal - (contract.discount_amount || 0));
+    }
+    if (contract.contract_mode === 'entreprise') {
+      return Math.max(0, (contract.base_price || 0) + optionsTotal - (contract.discount_amount || 0));
+    }
+    const mandataireRate = (contract.frais_mandat || 0) + (contract.cachet_artiste || 0);
+    const baseRate = (mandataireRate === 0 && (contract.base_price || 0) > 0) ? contract.base_price : mandataireRate;
+    return Math.max(0, baseRate + optionsTotal - (contract.discount_amount || 0));
+  };
+
   const archiveYears = useMemo(() => {
     const years = new Set();
     archivedContracts.forEach(c => {
@@ -237,7 +258,7 @@ export const ContractHistory = ({
                     <div className="flex items-center space-x-4">
                       <div className="text-right">
                         <div className="text-xl font-bold text-gray-900">
-                          {(contract.base_price + (contract.selected_options?.filter(opt => opt.selected).reduce((sum, opt) => sum + opt.price, 0) || 0) - (contract.discount_amount || 0)).toLocaleString()}€
+                          {getContractTotal(contract).toLocaleString()}€
                         </div>
                         <div className="text-sm text-gray-500">
                           Créé le {new Date(contract.created_at).toLocaleDateString('fr-FR')}
