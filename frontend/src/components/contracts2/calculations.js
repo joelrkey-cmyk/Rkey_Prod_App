@@ -12,7 +12,7 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
   if (customDepositAmount > 0) return customDepositAmount;
 
   const optionsTotal = selectedOptions
-    .filter(option => option.selected)
+    .filter(option => option.selected && !option.is_addition_post_signature && !option.added_post_signature)
     .reduce((sum, option) => sum + option.price, 0);
   const deposit = (basePrice * 0.5) + optionsTotal - discountAmount;
   return Math.max(0, Math.round(deposit * 100) / 100);
@@ -37,7 +37,7 @@ export const calculateContractDepositAmount = (contract) => {
   if (contract.custom_deposit_amount > 0) return contract.custom_deposit_amount;
 
   const optionsTotal = (contract.selected_options || [])
-    .filter(option => option.selected)
+    .filter(option => option.selected !== false && !option.is_addition_post_signature && !option.added_post_signature)
     .reduce((sum, option) => sum + option.price, 0);
   const deposit = (contract.base_price * 0.5) + optionsTotal - (contract.discount_amount || 0);
   return Math.max(0, Math.round(deposit * 100) / 100);

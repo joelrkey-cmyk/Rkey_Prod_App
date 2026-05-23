@@ -742,6 +742,56 @@ async function connectDB() {
     console.log(`Connected to MongoDB: ${DB_NAME}`);
 
     await ensureAdminUser();
+
+    // Automatically repair mangled UTF-8 filenames caused by Multer latin1 interpretation in existing database documents
+    try {
+      const notesCollection = db.collection('contract_technical_pdf_notes');
+      const allNotes = await notesCollection.find({}).toArray();
+      for (const note of allNotes) {
+        let needsUpdate = false;
+        const updatedFields = {};
+        
+        const decodedFilename = decodeMangledUtf8(note.filename);
+        if (decodedFilename !== note.filename) {
+          updatedFields.filename = decodedFilename;
+          needsUpdate = true;
+        }
+        
+        const decodedTitle = decodeMangledUtf8(note.title);
+        if (decodedTitle !== note.title) {
+          updatedFields.title = decodedTitle;
+          needsUpdate = true;
+        }
+        
+        if (needsUpdate) {
+          await notesCollection.updateOne({ _id: note._id }, { $set: updatedFields });
+          console.log(`[Migration] Repaired note filename/title:`, updatedFields);
+        }
+      }
+      
+      const contractsCollection = db.collection('contracts2');
+      const allContracts = await contractsCollection.find({ "event_documents": { $exists: true } }).toArray();
+      for (const contract of allContracts) {
+        if (!Array.isArray(contract.event_documents)) continue;
+        let contractNeedsUpdate = false;
+        const updatedDocs = contract.event_documents.map(doc => {
+          const decodedFilename = decodeMangledUtf8(doc.filename);
+          if (decodedFilename !== doc.filename) {
+            contractNeedsUpdate = true;
+            return { ...doc, filename: decodedFilename };
+          }
+          return doc;
+        });
+        
+        if (contractNeedsUpdate) {
+          await contractsCollection.updateOne({ _id: contract._id }, { $set: { event_documents: updatedDocs } });
+          console.log(`[Migration] Repaired event_documents in contract ${contract.id || contract._id}`);
+        }
+      }
+    } catch (e) {
+      console.error('Error during UTF-8 mangled filenames migration:', e);
+    }
+
     // TTL index: auto-delete uploaded form files after 24 hours
     try {
       await db.collection('form_files').createIndex({ created_at: 1 }, { expireAfterSeconds: 86400 });
@@ -847,6 +897,35 @@ function cleanList(docs) { return docs.map(clean); }
 
 // File upload config
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+function decodeMulterFilename(originalName) {
+  if (!originalName) return '';
+  try {
+    // Multer parses headers as ISO-8859-1 (latin1); convert back to proper UTF-8
+    return Buffer.from(originalName, 'latin1').toString('utf8');
+  } catch (e) {
+    return originalName;
+  }
+}
+
+function decodeMangledUtf8(str) {
+  if (!str) return '';
+  try {
+    // UTF-8 sequences (2-byte or 3-byte) interpreted as ISO-8859-1 / Latin-1:
+    // 2-byte: starting with 0xC0-0xDF followed by 0x80-0xBF
+    // 3-byte: starting with 0xE0-0xEF followed by two 0x80-0xBF bytes
+    const hasMangled = /([\u00C0-\u00DF][\u0080-\u00BF]|[\u00E0-\u00EF][\u0080-\u00BF]{2})/.test(str);
+    if (hasMangled) {
+      const decoded = Buffer.from(str, 'latin1').toString('utf8');
+      if (!decoded.includes('\uFFFD')) { // No replacement character ''
+        return decoded;
+      }
+    }
+    return str;
+  } catch (e) {
+    return str;
+  }
+}
 
 // ─── SMTP helper ───
 async function getSmtpConfig() {
@@ -1401,10 +1480,11 @@ api.get('/contract-pdf-notes', authMiddleware, async (req, res) => {
 api.post('/contract-pdf-notes', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'No file' });
   const noteId = uuidv4();
+  const decodedFilename = decodeMulterFilename(req.file.originalname);
   const note = {
     id: noteId,
-    title: req.body.title || req.file.originalname,
-    filename: req.file.originalname,
+    title: req.body.title || decodedFilename,
+    filename: decodedFilename,
     order: parseInt(req.body.order) || 0,
     created_at: new Date().toISOString()
   };
@@ -1619,7 +1699,14 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   });
   
   if (clientEvents.length > 0) {
-    return res.json({ role: 'client', events: clientEvents, slug, availableOptions: options });
+    const cleanedClientEvents = clientEvents.map(event => {
+      const cloned = { ...event };
+      if (cloned.event_documents) {
+        cloned.event_documents = cloned.event_documents.filter(d => !d.hiddenForClient);
+      }
+      return cloned;
+    });
+    return res.json({ role: 'client', events: cleanedClientEvents, slug, availableOptions: options });
   }
   
   return res.status(404).json({ error: 'Not found' });
@@ -1635,11 +1722,13 @@ api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, r
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const category = req.body.category || 'Animations et interventions';
   const docId = uuidv4();
+  const decodedFilename = decodeMulterFilename(req.file.originalname);
   const newDoc = {
     id: docId,
-    filename: req.file.originalname,
+    filename: decodedFilename,
     category: category,
-    uploaded_at: new Date().toISOString()
+    uploaded_at: new Date().toISOString(),
+    ...(category === 'Administrative' ? { hiddenForClient: true } : {})
   };
   if (bucket) {
     const ext = path.extname(req.file.originalname) || '';
@@ -1654,7 +1743,7 @@ api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, r
     { id: req.params.id }, 
     { $push: { event_documents: newDoc } }
   );
-  res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at } });
+  res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at, hiddenForClient: newDoc.hiddenForClient || false } });
 });
 
 api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
@@ -1994,9 +2083,10 @@ api.post('/forms/:id/duplicate', authMiddleware, async (req, res) => {
 api.post('/forms/upload-file', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'No file' });
   try {
+    const decodedFilename = decodeMulterFilename(req.file.originalname);
     const fileDoc = {
       file_id: uuidv4(),
-      filename: req.file.originalname,
+      filename: decodedFilename,
       content_type: req.file.mimetype,
       data: req.file.buffer.toString('base64'),
       size: req.file.size,
@@ -4058,7 +4148,7 @@ api.post('/devis2/pages/upload', authMiddleware, upload.single('file'), async (r
   try {
     const { label, category, is_tarif } = req.body;
     const pageId = uuidv4();
-    const filename = req.file.originalname;
+    const filename = decodeMulterFilename(req.file.originalname);
     
     let gcsPath = '';
     

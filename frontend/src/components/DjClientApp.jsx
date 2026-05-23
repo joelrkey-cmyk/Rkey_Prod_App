@@ -9,6 +9,24 @@ import { defaultCompanySettings, musicStyles as availableMusicStyles } from './c
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
 
+const fixMangledFilenameDisplay = (str) => {
+  if (!str) return '';
+  try {
+    const hasMangled = /([\u00C0-\u00DF][\u0080-\u00BF]|[\u00E0-\u00EF][\u0080-\u00BF]{2})/.test(str);
+    if (hasMangled) {
+      const rawBytes = Array.from(str).map(c => c.charCodeAt(0));
+      const decoder = new TextDecoder('utf-8');
+      const decoded = decoder.decode(new Uint8Array(rawBytes));
+      if (!decoded.includes('\uFFFD')) {
+        return decoded;
+      }
+    }
+    return str;
+  } catch (e) {
+    return str;
+  }
+};
+
 const DjClientApp = ({ isPublic = false }) => {
   const { slug } = useParams();
   
@@ -1766,6 +1784,29 @@ const DjClientApp = ({ isPublic = false }) => {
           toast.error("Erreur lors de la suppression.");
         }
       };
+
+      const handleToggleEventDocVisibility = (docId) => {
+        if (!isAdminOrDj) return;
+        const newEventDocs = eventDocuments.map(d => {
+          if (d.id === docId) {
+            return { ...d, hiddenForClient: !d.hiddenForClient };
+          }
+          return d;
+        });
+
+        const updatedEvents = [...events];
+        const idx = updatedEvents.findIndex(e => e.id === ev.id);
+        if (idx !== -1) {
+          ev.eventDocuments = newEventDocs;
+          updatedEvents[idx].eventDocuments = newEventDocs;
+          setEvents(updatedEvents);
+        }
+
+        if (currentRoute.eventId) {
+          updateContractDb(currentRoute.eventId, { event_documents: newEventDocs });
+        }
+        toast.success("Visibilité du document mise à jour.");
+      };
       
       const handleFileUpload = async (event) => {
         const file = event.target.files[0];
@@ -1814,10 +1855,14 @@ const DjClientApp = ({ isPublic = false }) => {
       const visibleDocs = pdfNotes;
       const displayGlobalDocs = isAdminOrDj ? visibleDocs : visibleDocs.filter(doc => selectedPdfs.includes(doc.id));
       
-      const administrativeDocs = eventDocuments.filter(d => d.category === 'Administrative');
-      const animationEventDocs = eventDocuments.filter(d => d.category !== 'Administrative');
+      const visibleEventDocs = isAdminOrDj 
+        ? eventDocuments 
+        : eventDocuments.filter(d => !d.hiddenForClient);
+
+      const administrativeDocs = visibleEventDocs.filter(d => d.category === 'Administrative');
+      const animationEventDocs = visibleEventDocs.filter(d => d.category !== 'Administrative');
       
-      const hasAnyDocs = displayGlobalDocs.length > 0 || eventDocuments.length > 0;
+      const hasAnyDocs = displayGlobalDocs.length > 0 || visibleEventDocs.length > 0;
 
       return (
         <div className={`bg-white rounded-xl shadow-lg border p-6 mb-6 mt-6 transition-all ring-1 ring-slate-100 ${getSectionHighlightClass('documents') ? getSectionHighlightClass('documents') : ''}`}>
@@ -1880,21 +1925,51 @@ const DjClientApp = ({ isPublic = false }) => {
                 {administrativeDocs.map((doc) => (
                   <div 
                     key={doc.id}
-                    className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between relative group"
+                    className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between relative group ${
+                      doc.hiddenForClient && isAdminOrDj
+                        ? "border-rose-200 bg-rose-50/20 opacity-90 hover:border-rose-350"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
                   >
+                    {isAdminOrDj && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleToggleEventDocVisibility(doc.id); }}
+                        className="absolute top-2 left-2 text-slate-400 hover:text-indigo-600 bg-white shadow-xs rounded-full p-1 transition flex items-center justify-center border border-slate-100"
+                        title={doc.hiddenForClient ? "Montrer au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
+                      >
+                        {doc.hiddenForClient ? (
+                          <EyeOff className="w-4 h-4 text-rose-500" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-emerald-600" />
+                        )}
+                      </button>
+                    )}
                     {currentRoute.role === 'admin' && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
-                        className="absolute top-2 right-2 text-slate-400 hover:text-red-500 hidden group-hover:flex bg-white/80 rounded-full p-1 transition"
+                        className="absolute top-2 right-2 text-slate-400 hover:text-red-500 hidden group-hover:flex bg-white/80 rounded-full p-1 transition shadow-xs border border-slate-100"
                         title="Supprimer ce document"
                       >
                         <X className="w-4 h-4" />
                       </button>
                     )}
-                    <div className="flex items-start gap-3">
+                    <div className={`flex items-start gap-3 ${isAdminOrDj ? "mt-4" : ""}`}>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-800 leading-tight truncate" title={doc.filename}>{doc.filename}</p>
+                        <p className="font-medium text-slate-800 leading-tight truncate" title={fixMangledFilenameDisplay(doc.filename)}>{fixMangledFilenameDisplay(doc.filename)}</p>
                         <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
+                        {isAdminOrDj && (
+                          <div className="mt-2">
+                            {doc.hiddenForClient ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-150 px-2 py-0.5 rounded-full">
+                                <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded-full">
+                                <Eye className="w-2.5 h-2.5" /> Client : Visible
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="mt-4 flex justify-end">
@@ -1960,21 +2035,51 @@ const DjClientApp = ({ isPublic = false }) => {
                   {animationEventDocs.map((doc) => (
                     <div 
                       key={doc.id}
-                      className="p-4 rounded-lg border-2 border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between relative group"
+                      className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between relative group ${
+                        doc.hiddenForClient && isAdminOrDj
+                          ? "border-rose-200 bg-rose-50/20 opacity-90 hover:border-rose-350"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
                     >
+                      {isAdminOrDj && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleToggleEventDocVisibility(doc.id); }}
+                          className="absolute top-2 left-2 text-slate-400 hover:text-indigo-600 bg-white shadow-xs rounded-full p-1 transition flex items-center justify-center border border-slate-100"
+                          title={doc.hiddenForClient ? "Montrer au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
+                        >
+                          {doc.hiddenForClient ? (
+                            <EyeOff className="w-4 h-4 text-rose-500" />
+                          ) : (
+                            <Eye className="w-4 h-4 text-emerald-600" />
+                          )}
+                        </button>
+                      )}
                       {currentRoute.role === 'admin' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
-                          className="absolute top-2 right-2 text-slate-400 hover:text-red-500 hidden group-hover:flex bg-white/80 rounded-full p-1 transition"
+                          className="absolute top-2 right-2 text-slate-400 hover:text-red-500 hidden group-hover:flex bg-white/80 rounded-full p-1 transition shadow-xs border border-slate-100"
                           title="Supprimer ce document"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       )}
-                      <div className="flex items-start gap-3">
+                      <div className={`flex items-start gap-3 ${isAdminOrDj ? "mt-4" : ""}`}>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-slate-800 leading-tight truncate" title={doc.filename}>{doc.filename}</p>
+                         <p className="font-medium text-slate-800 leading-tight truncate" title={fixMangledFilenameDisplay(doc.filename)}>{fixMangledFilenameDisplay(doc.filename)}</p>
                           <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
+                          {isAdminOrDj && (
+                            <div className="mt-2">
+                              {doc.hiddenForClient ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-150 px-2 py-0.5 rounded-full">
+                                  <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded-full">
+                                  <Eye className="w-2.5 h-2.5" /> Client : Visible
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="mt-4 flex justify-end">
@@ -2003,7 +2108,7 @@ const DjClientApp = ({ isPublic = false }) => {
                             </div>
                           )}
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-slate-800 leading-tight truncate" title={doc.title || doc.filename}>{doc.title || doc.filename}</p>
+                            <p className="font-medium text-slate-800 leading-tight truncate" title={fixMangledFilenameDisplay(doc.title || doc.filename)}>{fixMangledFilenameDisplay(doc.title || doc.filename)}</p>
                             <p className="text-xs text-slate-500 mt-1">Guide/Tips PDF</p>
                           </div>
                         </div>
@@ -2067,6 +2172,11 @@ const DjClientApp = ({ isPublic = false }) => {
       // Calcul du total
       const totalPrestation = Math.max(0, baseRate + optionsTotal - discountAmount);
 
+      // Distinguer les options qui sont des ajouts après signature pour ne pas recalculer l'acompte à la hausse (ce qui fausserait le solde restant dû)
+      const additions = contractOptions.filter(opt => opt.is_addition_post_signature || opt.added_post_signature);
+      const additionsTotal = additions.reduce((acc, opt) => acc + (Number(opt.price) || 0), 0);
+      const originalOptionsTotal = optionsTotal - additionsTotal;
+
       // Calcul de l'acompte (deposit)
       let depositAmount = 0;
       if (c.no_deposit_required) {
@@ -2076,8 +2186,9 @@ const DjClientApp = ({ isPublic = false }) => {
       } else if (Number(c.deposit_amount) > 0) {
         depositAmount = Number(c.deposit_amount);
       } else {
-        // 50% du total
-        depositAmount = Math.round((totalPrestation * 0.5) * 100) / 100;
+        // Acompte de 50% sur le total d'origine hors ajouts post-signature
+        const originalTotal = Math.max(0, baseRate + originalOptionsTotal - discountAmount);
+        depositAmount = Math.round((originalTotal * 0.5) * 100) / 100;
       }
 
       // L'acompte est versé si expressément coché OU si le contrat est déjà signé / archivé / complété
@@ -2088,6 +2199,11 @@ const DjClientApp = ({ isPublic = false }) => {
       if (isDepositPaid) {
         amountPaid = depositAmount > 0 ? depositAmount : 0;
       }
+
+      // Total de la prestation d'origine (sans les ajouts post-signature)
+      const originalTotalPrestation = Math.max(0, baseRate + originalOptionsTotal - discountAmount);
+      // Solde d'origine restant (hors ajouts)
+      const originalRemainingBalance = Math.max(0, originalTotalPrestation - amountPaid);
 
       // Solde restant
       const remainingBalance = Math.max(0, totalPrestation - amountPaid);
@@ -2181,7 +2297,7 @@ const DjClientApp = ({ isPublic = false }) => {
           const alreadySelected = contractOptions.some(opt => opt.name === optToValidate.name);
           const updatedContractOptions = alreadySelected 
             ? contractOptions 
-            : [...contractOptions, optToValidate];
+            : [...contractOptions, { ...optToValidate, is_addition_post_signature: true, added_post_signature: true }];
 
           const payload = { 
             requested_options: updatedRequestedOptions,
@@ -2207,6 +2323,40 @@ const DjClientApp = ({ isPublic = false }) => {
           }
         } catch (e) {
           console.error("Error validating requested option", e);
+          toast.error("Erreur de connexion");
+        } finally {
+          setOptionsSubmitting(false);
+        }
+      };
+
+      const removePostSignatureOption = async (optToRemove) => {
+        if (!window.confirm(`Êtes-vous sûr de vouloir supprimer l'option "${optToRemove.name}" ?`)) return;
+        setOptionsSubmitting(true);
+        try {
+          const updatedContractOptions = contractOptions.filter(opt => opt.name !== optToRemove.name);
+          const payload = { 
+            selected_options: updatedContractOptions
+          };
+          
+          const token = localStorage.getItem('access_token');
+          const headers = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+          
+          const endpoint = isPublic ? `/api/public/dj-client/${ev.id}` : `/api/contracts2/${ev.id}`;
+          const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(payload)
+          });
+          
+          if (res.ok) {
+            await fetchContractsAsEvents();
+            toast.success("Option supprimée avec succès !");
+          } else {
+            toast.error("Erreur lors de la suppression de l'option");
+          }
+        } catch (e) {
+          console.error("Error removing post signature option", e);
           toast.error("Erreur de connexion");
         } finally {
           setOptionsSubmitting(false);
@@ -2284,7 +2434,30 @@ const DjClientApp = ({ isPublic = false }) => {
             <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Solde restant dû</span>
-                <span className="text-xl font-bold text-indigo-600">{remainingBalance.toFixed(2)} €</span>
+                <span className="text-xl font-bold text-indigo-600">
+                  {additions.length > 0 ? `${originalRemainingBalance.toFixed(2)} €` : `${remainingBalance.toFixed(2)} €`}
+                </span>
+                
+                {additions.length > 0 && (
+                  <div className="mt-2 space-y-1 border-t border-dashed border-slate-150 pt-1.5">
+                    {additions.map((opt, index) => (
+                      <div key={index} className="flex justify-between items-center text-[11px] text-slate-600 font-medium">
+                        <span className="truncate max-w-[140px] text-amber-600" title={opt.name}>+ {opt.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-amber-600">+{Number(opt.price).toFixed(2)} €</span>
+                          <button
+                            onClick={() => removePostSignatureOption(opt)}
+                            disabled={optionsSubmitting}
+                            title="Supprimer cette option"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-0.5 rounded transition-colors focus:outline-none"
+                          >
+                            <X className="w-3 h-3 stroke-[3]" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 flex items-center justify-between">
                 <span>Dû le jour J :</span>
