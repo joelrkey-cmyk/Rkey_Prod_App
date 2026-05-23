@@ -36,6 +36,7 @@ const DjClientApp = ({ isPublic = false }) => {
   const [planningLocalInfo, setPlanningLocalInfo] = useState({});
   const [docsUploading, setDocsUploading] = useState(false);
   const [docsUploadCategory, setDocsUploadCategory] = useState("Administrative");
+  const [previewDoc, setPreviewDoc] = useState(null); // { title: string, url: string, type: 'pdf' | 'html' }
   const [optionsBasket, setOptionsBasket] = useState([]);
   const [optionsSubmitting, setOptionsSubmitting] = useState(false);
   const [chatNewMessage, setChatNewMessage] = useState("");
@@ -206,7 +207,7 @@ const DjClientApp = ({ isPublic = false }) => {
             selectedOptions: c.selected_options || [],
             requestedOptions: c.requested_options || [],
             chatMessages: c.chat_messages || [],
-            selectedPdfNotes: c.selected_pdf_notes || ['__deroulement_soiree'],
+            selectedPdfNotes: c.selected_pdf_notes || [],
             eventDocuments: c.event_documents || [],
             notifications: c.notifications || { admin: {}, dj: {}, client: {} },
             cateringNotes: c.catering_notes || "",
@@ -1163,7 +1164,7 @@ const DjClientApp = ({ isPublic = false }) => {
       }
     };
 
-    const generateClientPDF = () => {
+    const generateClientPDF = (shouldPreview = false) => {
       const doc = new jsPDF();
       let y = 15;
 
@@ -1289,10 +1290,14 @@ const DjClientApp = ({ isPublic = false }) => {
         doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
       }
 
-      doc.save(`Recapitulatif_${ev.client.name.replace(/\s+/g, '_')}.pdf`);
+      if (shouldPreview) {
+        return doc.output('bloburl');
+      } else {
+        doc.save(`Recapitulatif_${ev.client.name.replace(/\s+/g, '_')}.pdf`);
+      }
     };
 
-    const generateDjPDF = () => {
+    const generateDjPDF = (shouldPreview = false) => {
       const doc = new jsPDF();
       let y = 15;
 
@@ -1441,7 +1446,11 @@ const DjClientApp = ({ isPublic = false }) => {
         doc.text(splitText, 15, y);
       }
 
-      doc.save(`Fiche_DJ_${ev.client.name.replace(/\s+/g, '_')}.pdf`);
+      if (shouldPreview) {
+        return doc.output('bloburl');
+      } else {
+        doc.save(`Fiche_DJ_${ev.client.name.replace(/\s+/g, '_')}.pdf`);
+      }
     };
 
     const ClientInfoSection = () => {
@@ -1683,7 +1692,7 @@ const DjClientApp = ({ isPublic = false }) => {
     };
 
     const DocumentsTipsSection = () => {
-      const selectedPdfs = ev.selectedPdfNotes || ['__deroulement_soiree'];
+      const selectedPdfs = ev.selectedPdfNotes || [];
       const eventDocuments = ev.eventDocuments || [];
       const isAdminOrDj = currentRoute.role === 'admin' || currentRoute.role === 'dj';
 
@@ -1976,152 +1985,118 @@ const DjClientApp = ({ isPublic = false }) => {
             {/* SECTION ADMINISTRATIVE */}
             <div>
               <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Administratif</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden divide-y divide-slate-200/60 shadow-xs">
+                {!(ev && ev.rawContractData) && administrativeDocs.length === 0 && (
+                  <p className="text-sm text-slate-500 italic p-4">Aucun document administratif.</p>
+                )}
                 
                 {/* Contrat raccourci */}
                 {ev && ev.rawContractData && (
-                    <div className="p-4 rounded-lg border-2 border-indigo-200 bg-indigo-50 hover:border-indigo-300 transition-all flex flex-col justify-between">
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-slate-800 leading-tight truncate" title={`Contrat ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`}>
+                  <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-150 flex-shrink-0">
+                        <FileText className="w-5 h-5 text-indigo-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={`Contrat ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`}>
                             Contrat {ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}
                           </p>
-                          <p className="text-xs text-slate-500 mt-1">Contrat original sans signature</p>
+                          <span className="bg-indigo-50 text-indigo-700 border-indigo-100 text-[10px] font-bold px-2 py-0.5 rounded-full border">Généré</span>
                         </div>
-                      </div>
-                      <div className="mt-4 flex justify-end">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDownloadClientContract(); }} 
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
-                          <Download className="w-4 h-4" /> Télécharger
-                        </button>
+                        <p className="text-xs text-slate-500 mt-1">Contrat original sans signature</p>
                       </div>
                     </div>
+                    
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          const isEntreprise = ev.rawContractData.contract_mode === 'entreprise' || ev.rawContractData.contractMode === 'entreprise';
+                          const html = isEntreprise ? generateEntrepriseHTML(ev.rawContractData, defaultCompanySettings) : generateMandatHTML(ev.rawContractData, defaultCompanySettings);
+                          setPreviewDoc({ 
+                            title: `Contrat - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`, 
+                            type: 'html', 
+                            url: html 
+                          }); 
+                        }} 
+                        className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                        title="Aperçu rapide"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDownloadClientContract(); }} 
+                        className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                        title="Télécharger"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {administrativeDocs.map((doc) => (
                   <div 
                     key={doc.id}
-                    className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between relative group ${
-                      doc.hiddenForClient && isAdminOrDj
-                        ? "border-rose-200 bg-rose-50/20 opacity-90 hover:border-rose-350"
-                        : "border-slate-200 bg-white hover:border-slate-300"
+                    className={`flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150 ${
+                      doc.hiddenForClient && isAdminOrDj ? "bg-rose-50/10" : ""
                     }`}
                   >
-                    {isAdminOrDj && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleToggleEventDocVisibility(doc.id); }}
-                        className="absolute top-2 left-2 text-slate-400 hover:text-indigo-600 bg-white shadow-xs rounded-full p-1 transition flex items-center justify-center border border-slate-100"
-                        title={doc.hiddenForClient ? "Montrer au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
-                      >
-                        {doc.hiddenForClient ? (
-                          <EyeOff className="w-4 h-4 text-rose-500" />
-                        ) : (
-                          <Eye className="w-4 h-4 text-emerald-600" />
-                        )}
-                      </button>
-                    )}
-                    {currentRoute.role === 'admin' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
-                        className="absolute top-2 right-2 text-slate-400 hover:text-red-500 hidden group-hover:flex bg-white/80 rounded-full p-1 transition shadow-xs border border-slate-100"
-                        title="Supprimer ce document"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                    <div className={`flex items-start gap-3 ${isAdminOrDj ? "mt-4" : ""}`}>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-800 leading-tight truncate" title={fixMangledFilenameDisplay(doc.filename)}>{fixMangledFilenameDisplay(doc.filename)}</p>
-                        <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
-                        {isAdminOrDj && (
-                          <div className="mt-2">
-                            {doc.hiddenForClient ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-150 px-2 py-0.5 rounded-full">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                        doc.hiddenForClient && isAdminOrDj ? "bg-rose-50 border border-rose-100" : "bg-slate-50 border border-slate-100"
+                      }`}>
+                        <FileText className={`w-5 h-5 ${doc.hiddenForClient && isAdminOrDj ? "text-rose-500" : "text-slate-500"}`} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-slate-800 text-sm leading-tight truncate max-w-[150px] sm:max-w-xs md:max-w-md lg:max-w-lg" title={fixMangledFilenameDisplay(doc.filename)}>
+                            {fixMangledFilenameDisplay(doc.filename)}
+                          </p>
+                          {isAdminOrDj && (
+                            doc.hiddenForClient ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full">
                                 <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded-full">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
                                 <Eye className="w-2.5 h-2.5" /> Client : Visible
                               </span>
-                            )}
-                          </div>
-                        )}
+                            )
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">Ajouté le {doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''}</p>
                       </div>
                     </div>
-                    <div className="mt-4 flex justify-end">
+
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          const previewUrl = `${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/${doc.id}?preview=true`;
+                          setPreviewDoc({ 
+                            title: doc.filename, 
+                            type: 'pdf', 
+                            url: previewUrl 
+                          }); 
+                        }} 
+                        className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                        title="Aperçu rapide"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
                       <button 
                         onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
-                        className="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
-                        <Download className="w-4 h-4" /> Télécharger
+                        className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                        title="Télécharger"
+                      >
+                        <Download className="w-4 h-4" />
                       </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* SECTION ANIMATIONS ET INTERVENTIONS */}
-            <div>
-              <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Animations et interventions</h4>
-              {(displayGlobalDocs.length === 0 && animationEventDocs.length === 0 && !isAdminOrDj && !selectedPdfs.includes('__deroulement_soiree')) ? (
-                 <p className="text-sm text-slate-500 italic">Aucun document d'animation pour cet événement.</p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* Item Virtuel: Déroulement de soirée (premier à gauche, toujours visible pour Admin/DJ, ou s'il est coché pour le client) */}
-                  {(isAdminOrDj || selectedPdfs.includes('__deroulement_soiree')) && (
-                    <div 
-                      onClick={() => handleTogglePdf('__deroulement_soiree')}
-                      className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between ${isAdminOrDj ? 'cursor-pointer' : ''} ${selectedPdfs.includes('__deroulement_soiree') ? "border-amber-500 bg-amber-50/40" : "border-slate-200 bg-white hover:border-slate-300"}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        {isAdminOrDj && (
-                          <div className="mt-1 flex-shrink-0 flex items-center justify-center w-5 h-5 rounded border border-amber-300">
-                            {selectedPdfs.includes('__deroulement_soiree') && <Check className="w-4 h-4 text-amber-600 font-bold" />}
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold text-slate-800 leading-tight">Déroulement de soirée</p>
-                            <span className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-medium px-1.5 py-0.5 rounded border">Dynamique</span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-2">Généré selon vos choix de déroulement & styles musicaux</p>
-                        </div>
-                      </div>
-                      {(currentRoute.role !== 'client' || selectedPdfs.includes('__deroulement_soiree')) && (
-                        <div className="mt-4 flex justify-end">
-                          <button 
-                            onClick={(e) => { 
-                              e.stopPropagation(); 
-                              if (currentRoute.role === 'client') {
-                                generateClientPDF();
-                              } else {
-                                generateDjPDF();
-                              }
-                            }} 
-                            className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center"
-                          >
-                            <Download className="w-4 h-4" /> Télécharger
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Event Specific Animation Docs */}
-                  {animationEventDocs.map((doc) => (
-                    <div 
-                      key={doc.id}
-                      className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between relative group ${
-                        doc.hiddenForClient && isAdminOrDj
-                          ? "border-rose-200 bg-rose-50/20 opacity-90 hover:border-rose-350"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
                       {isAdminOrDj && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleToggleEventDocVisibility(doc.id); }}
-                          className="absolute top-2 left-2 text-slate-400 hover:text-indigo-600 bg-white shadow-xs rounded-full p-1 transition flex items-center justify-center border border-slate-100"
+                          className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
                           title={doc.hiddenForClient ? "Montrer au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
                         >
                           {doc.hiddenForClient ? (
@@ -2134,37 +2109,106 @@ const DjClientApp = ({ isPublic = false }) => {
                       {currentRoute.role === 'admin' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
-                          className="absolute top-2 right-2 text-slate-400 hover:text-red-500 hidden group-hover:flex bg-white/80 rounded-full p-1 transition shadow-xs border border-slate-100"
+                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
                           title="Supprimer ce document"
                         >
                           <X className="w-4 h-4" />
                         </button>
                       )}
-                      <div className={`flex items-start gap-3 ${isAdminOrDj ? "mt-4" : ""}`}>
-                        <div className="flex-1 min-w-0">
-                         <p className="font-medium text-slate-800 leading-tight truncate" title={fixMangledFilenameDisplay(doc.filename)}>{fixMangledFilenameDisplay(doc.filename)}</p>
-                          <p className="text-xs text-slate-500 mt-1">PDF Ajouté ({doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''})</p>
-                          {isAdminOrDj && (
-                            <div className="mt-2">
-                              {doc.hiddenForClient ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-150 px-2 py-0.5 rounded-full">
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* SECTION ANIMATIONS ET INTERVENTIONS */}
+            <div>
+              <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Animations et interventions</h4>
+              {(displayGlobalDocs.length === 0 && animationEventDocs.length === 0 && !isAdminOrDj) ? (
+                 <p className="text-sm text-slate-500 italic">Aucun document d'animation pour cet événement.</p>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden divide-y divide-slate-200/60 shadow-xs">
+                  
+                  {/* Event Specific Animation Docs */}
+                  {animationEventDocs.map((doc) => (
+                    <div 
+                      key={doc.id}
+                      className={`flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150 ${
+                        doc.hiddenForClient && isAdminOrDj ? "bg-rose-50/10" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          doc.hiddenForClient && isAdminOrDj ? "bg-rose-50 border border-rose-100" : "bg-slate-50 border border-slate-100"
+                        }`}>
+                          <FileText className={`w-5 h-5 ${doc.hiddenForClient && isAdminOrDj ? "text-rose-500" : "text-slate-500"}`} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-slate-800 text-sm leading-tight truncate max-w-[150px] sm:max-w-xs md:max-w-md lg:max-w-lg" title={fixMangledFilenameDisplay(doc.filename)}>
+                              {fixMangledFilenameDisplay(doc.filename)}
+                            </p>
+                            {isAdminOrDj && (
+                              doc.hiddenForClient ? (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full">
                                   <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded-full">
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
                                   <Eye className="w-2.5 h-2.5" /> Client : Visible
                                 </span>
-                              )}
-                            </div>
-                          )}
+                              )
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">Ajouté le {doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''}</p>
                         </div>
                       </div>
-                      <div className="mt-4 flex justify-end">
+
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            const previewUrl = `${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/${doc.id}?preview=true`;
+                            setPreviewDoc({ 
+                              title: doc.filename, 
+                              type: 'pdf', 
+                              url: previewUrl 
+                            }); 
+                          }} 
+                          className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                          title="Aperçu rapide"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
-                          <Download className="w-4 h-4" /> Télécharger
+                          className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                          title="Télécharger"
+                        >
+                          <Download className="w-4 h-4" />
                         </button>
+                        {isAdminOrDj && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleToggleEventDocVisibility(doc.id); }}
+                            className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                            title={doc.hiddenForClient ? "Montrer au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
+                          >
+                            {doc.hiddenForClient ? (
+                              <EyeOff className="w-4 h-4 text-rose-500" />
+                            ) : (
+                              <Eye className="w-4 h-4 text-emerald-600" />
+                            )}
+                          </button>
+                        )}
+                        {currentRoute.role === 'admin' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
+                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                            title="Supprimer ce document"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -2175,29 +2219,57 @@ const DjClientApp = ({ isPublic = false }) => {
                     return (
                       <div 
                         key={doc.id}
-                        onClick={() => handleTogglePdf(doc.id)}
-                        className={`p-4 rounded-lg border-2 transition-all flex flex-col justify-between ${isAdminOrDj ? 'cursor-pointer' : ''} ${isSelected ? "border-indigo-500 bg-indigo-50" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                        onClick={() => { if (isAdminOrDj) handleTogglePdf(doc.id); }}
+                        className={`flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150 ${isAdminOrDj ? 'cursor-pointer' : ''}`}
                       >
-                        <div className="flex items-start gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
                           {isAdminOrDj && (
-                            <div className="mt-1 flex-shrink-0 flex items-center justify-center w-5 h-5 rounded border border-indigo-200">
-                              {isSelected && <Check className="w-4 h-4 text-indigo-600" />}
+                            <div className="flex items-center justify-center flex-shrink-0">
+                              <input 
+                                type="checkbox" 
+                                checked={isSelected} 
+                                onChange={() => {}} 
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 pointer-events-none" 
+                              />
                             </div>
                           )}
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-slate-800 leading-tight truncate" title={fixMangledFilenameDisplay(doc.title || doc.filename)}>{fixMangledFilenameDisplay(doc.title || doc.filename)}</p>
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-150 flex-shrink-0">
+                            <FileText className="w-5 h-5 text-indigo-500" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={fixMangledFilenameDisplay(doc.title || doc.filename)}>
+                              {fixMangledFilenameDisplay(doc.title || doc.filename)}
+                            </p>
                             <p className="text-xs text-slate-500 mt-1">Guide/Tips PDF</p>
                           </div>
                         </div>
-                        {(currentRoute.role !== 'admin' && (!isAdminOrDj || isSelected)) && (
-                          <div className="mt-4 flex justify-end">
+
+                        <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <button 
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              const previewUrl = `${BACKEND_URL}/api/public/contract-pdf-notes/${doc.id}/download?preview=true`;
+                              setPreviewDoc({ 
+                                title: doc.title || doc.filename, 
+                                type: 'pdf', 
+                                url: previewUrl 
+                              }); 
+                            }} 
+                            className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                            title="Aperçu rapide"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          {(currentRoute.role !== 'admin' && (!isAdminOrDj || isSelected)) && (
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleDownloadPdf(doc.id); }} 
-                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-md shadow-sm text-sm font-medium transition flex items-center gap-1 w-full justify-center">
-                              <Download className="w-4 h-4" /> Télécharger
+                              className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                              title="Télécharger"
+                            >
+                              <Download className="w-4 h-4" />
                             </button>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -3094,7 +3166,27 @@ const DjClientApp = ({ isPublic = false }) => {
 
   const DjStandaloneListView = () => {
     const activeDj = currentRoute.activeDj || { name: 'DJ' };
-    const myEvents = events.filter(e => e.dj.name === activeDj.name);
+    
+    const normalizeString = (str) => {
+      if (!str) return '';
+      return str.toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // remove accents
+        .replace(/[^a-z0-9]/g, ''); // keep only alpha-numeric characters
+    };
+    
+    const activeDjNorm = normalizeString(activeDj.name);
+    
+    const myEvents = events.filter(e => {
+      if (!e.dj) return false;
+      return normalizeString(e.dj.name) === activeDjNorm || 
+             normalizeString(e.dj.login) === activeDjNorm ||
+             (e.rawContractData && (
+                normalizeString(e.rawContractData.dj_profile) === activeDjNorm ||
+                (e.rawContractData.dj_profile_data && normalizeString(e.rawContractData.dj_profile_data.nom_artistique) === activeDjNorm)
+             ));
+    });
+
     const past = myEvents.filter(e => e.date < today);
     const future = myEvents.filter(e => e.date >= today);
 
@@ -3293,6 +3385,61 @@ const DjClientApp = ({ isPublic = false }) => {
               <Eye className="w-4 h-4" /> Fermer l'aperçu Client (Admin)
             </button>
          </div>
+      )}
+
+      {/* Dynamic Document Preview Modal */}
+      {previewDoc && (
+        <div 
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 sm:p-6"
+          onClick={() => setPreviewDoc(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden relative animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-slate-50 flex-shrink-0">
+              <div className="min-w-0 pr-4">
+                <h3 className="text-base font-bold text-slate-800 truncate" title={previewDoc.title}>
+                  Aperçu : {previewDoc.title}
+                </h3>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {previewDoc.type === 'pdf' && (
+                  <a 
+                    href={previewDoc.url.replace('?preview=true', '').replace('&preview=true', '')} 
+                    download 
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Télécharger
+                  </a>
+                )}
+                <button 
+                  onClick={() => setPreviewDoc(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+                  title="Fermer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content of preview */}
+            <div className="flex-1 bg-slate-100 overflow-y-auto relative min-h-0">
+              {previewDoc.type === 'pdf' ? (
+                <iframe 
+                  src={previewDoc.url} 
+                  className="w-full h-full border-0 select-text bg-white" 
+                  title={previewDoc.title}
+                />
+              ) : (
+                <div className="max-w-4xl mx-auto my-6 bg-white p-6 sm:p-10 shadow-md border rounded-xl overflow-x-auto select-text font-serif text-slate-900 leading-relaxed">
+                  <div dangerouslySetInnerHTML={{ __html: previewDoc.url }} />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

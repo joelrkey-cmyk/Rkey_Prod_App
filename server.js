@@ -1716,15 +1716,18 @@ api.get('/public/contract-pdf-notes/:id/download', async (req, res) => {
   const note = await db.collection('contract_technical_pdf_notes').findOne({ id: req.params.id });
   if (!note) return res.status(404).json({ detail: 'Not found' });
   
+  const isInline = req.query.preview === 'true' || req.query.inline === 'true';
+  const disposition = isInline ? 'inline' : 'attachment';
+
   if (note.gcs_path && bucket) {
     const file = bucket.file(note.gcs_path);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${note.filename || note.title}.pdf"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${note.filename || note.title}.pdf"`);
     file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
   } else if (note.pdf_data) {
     const buffer = Buffer.from(note.pdf_data, 'base64');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${note.filename || note.title}.pdf"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${note.filename || note.title}.pdf"`);
     res.send(buffer);
   } else {
     res.status(404).json({ detail: 'Not found' });
@@ -2006,15 +2009,18 @@ api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
   const doc = contract.event_documents.find(d => d.id === req.params.docId);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
   
+  const isInline = req.query.preview === 'true' || req.query.inline === 'true';
+  const disposition = isInline ? 'inline' : 'attachment';
+
   if (doc.gcs_path && bucket) {
     const file = bucket.file(doc.gcs_path);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.filename)}"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
     file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
   } else if (doc.pdf_data) {
     const buffer = Buffer.from(doc.pdf_data, 'base64');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(doc.filename)}"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
     res.send(buffer);
   } else {
     res.status(404).json({ error: 'Not found' });
@@ -4394,8 +4400,28 @@ api.delete('/devis2/pages/:id', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 api.post('/devis2/pages/reorder', authMiddleware, async (req, res) => {
-  for (const item of (req.body.pages || [])) await db.collection('devis2_pages').updateOne({ id: item.id }, { $set: { sort_order: item.sort_order } });
-  res.json({ success: true });
+  try {
+    if (req.body.page_ids && Array.isArray(req.body.page_ids)) {
+      for (let i = 0; i < req.body.page_ids.length; i++) {
+        const id = req.body.page_ids[i];
+        await db.collection('devis2_pages').updateOne(
+          { id },
+          { $set: { sort_order: i, order: i } }
+        );
+      }
+    } else if (req.body.pages && Array.isArray(req.body.pages)) {
+      for (const item of req.body.pages) {
+        await db.collection('devis2_pages').updateOne(
+          { id: item.id },
+          { $set: { sort_order: item.sort_order, order: item.sort_order } }
+        );
+      }
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error reordering devis pages:', error);
+    res.status(500).json({ detail: error.message });
+  }
 });
 api.post('/devis2/pages/upload', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'No file' });

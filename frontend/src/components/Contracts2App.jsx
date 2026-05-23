@@ -146,7 +146,7 @@ function Contracts2App() {
 
   const [predefinedNotes, setPredefinedNotes] = useState(fallbackPredefinedNotes);
   const [pdfNotes, setPdfNotes] = useState([]);
-  const [selectedPdfNotes, setSelectedPdfNotes] = useState(['__deroulement_soiree']);
+  const [selectedPdfNotes, setSelectedPdfNotes] = useState([]);
 
   const [selectedSubmission, setSelectedSubmission] = useState(null);
 
@@ -399,7 +399,7 @@ function Contracts2App() {
         setHasDetecteurFumee(parsed.hasDetecteurFumee || false);
         setHasNoLimiteurNiDetecteur(parsed.hasNoLimiteurNiDetecteur || false);
         setTechnicianContact(parsed.technicianContact || { name: "", email: "", phone: "" });
-        setSelectedPdfNotes(parsed.selectedPdfNotes || ['__deroulement_soiree']);
+        setSelectedPdfNotes(parsed.selectedPdfNotes || []);
         setCgvText(parsed.cgvText || "");
       } catch (e) {
         console.error('Failed to restore state:', e);
@@ -762,7 +762,7 @@ function Contracts2App() {
     setHasLimiteurSon(contract.has_limiteur_son || false);
     setHasDetecteurFumee(contract.has_detecteur_fumee || false);
     setHasNoLimiteurNiDetecteur(contract.has_no_limiteur_ni_detecteur || false);
-    setSelectedPdfNotes(contract.selected_pdf_notes || ['__deroulement_soiree']);
+    setSelectedPdfNotes(contract.selected_pdf_notes || []);
     setSelectedNotes(contract.selected_notes || []);
     setSelectedMusicStyles(contract.selected_music_styles || []);
     setDjNotes(contract.dj_notes || "");
@@ -1458,25 +1458,6 @@ function Contracts2App() {
                      <Textarea value={djNotes} onChange={(e) => setDjNotes(e.target.value)} rows={3} className="border-slate-300 focus:border-blue-500" placeholder="Informations complémentaires, remarques particulières..." />
                   </div>
                   <div className="grid grid-cols-1 gap-3">
-                    {/* Item Virtuel: Déroulement de soirée */}
-                    <div 
-                      className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${selectedPdfNotes.includes('__deroulement_soiree') ? "border-amber-500 bg-amber-50" : "border-slate-200 bg-white hover:border-slate-300"}`}
-                      onClick={() => {
-                        setSelectedPdfNotes(prev => prev.includes('__deroulement_soiree') ? prev.filter(i => i !== '__deroulement_soiree') : [...prev, '__deroulement_soiree']);
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3 flex-1">
-                          <Checkbox checked={selectedPdfNotes.includes('__deroulement_soiree')} readOnly />
-                          <div className="flex-1">
-                            <p className="font-medium text-slate-800">Déroulement de soirée</p>
-                            <p className="text-xs text-slate-500">Généré selon vos choix de déroulement & styles musicaux</p>
-                          </div>
-                          <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200">Dynamique</Badge>
-                        </div>
-                      </div>
-                    </div>
-
                     {/* PDF uploadés */}
                     {pdfNotes.map((note) => (
                       <div 

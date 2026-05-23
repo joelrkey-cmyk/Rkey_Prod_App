@@ -300,11 +300,32 @@ const DevisEnvoiApp = () => {
   };
 
   const movePage = async (pageId, direction) => {
-    const currentIndex = availablePages.findIndex(p => p.id === pageId); if (currentIndex === -1) return;
-    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1; if (newIndex < 0 || newIndex >= availablePages.length) return;
-    const newPages = [...availablePages]; [newPages[currentIndex], newPages[newIndex]] = [newPages[newIndex], newPages[currentIndex]];
-    try { await api.post('/devis2/pages/reorder', { page_ids: newPages.map(p => p.id) }); setAvailablePages(newPages); toast.success('Ordre mis à jour'); }
-    catch (error) { console.error('Error reordering pages:', error); toast.error('Erreur lors de la réorganisation'); }
+    const page = availablePages.find(p => p.id === pageId);
+    if (!page) return;
+    const cat = page.category || 'artiste';
+    const pagesInCategory = availablePages.filter(p => (p.category || 'artiste') === cat);
+    const categoryIndex = pagesInCategory.findIndex(p => p.id === pageId);
+    if (categoryIndex === -1) return;
+
+    const targetIndexInCategory = direction === 'up' ? categoryIndex - 1 : categoryIndex + 1;
+    if (targetIndexInCategory < 0 || targetIndexInCategory >= pagesInCategory.length) return;
+
+    const targetPage = pagesInCategory[targetIndexInCategory];
+    const currentIndex = availablePages.findIndex(p => p.id === pageId);
+    const targetIndex = availablePages.findIndex(p => p.id === targetPage.id);
+    if (currentIndex === -1 || targetIndex === -1) return;
+
+    const newPages = [...availablePages];
+    [newPages[currentIndex], newPages[targetIndex]] = [newPages[targetIndex], newPages[currentIndex]];
+
+    try {
+      await api.post('/devis2/pages/reorder', { page_ids: newPages.map(p => p.id) });
+      setAvailablePages(newPages);
+      toast.success('Ordre mis à jour');
+    } catch (error) {
+      console.error('Error reordering pages:', error);
+      toast.error('Erreur lors de la réorganisation');
+    }
   };
 
   const openEditPage = (page) => { setEditingPage(page); setPageForm({ label: page.label, category: page.category, is_tarif: page.is_tarif || false }); };
@@ -592,15 +613,15 @@ const DevisEnvoiApp = () => {
                       return (
                         <div key={categoryKey} className="space-y-1.5">
                           <h4 className="text-sm font-semibold text-gray-700 bg-gray-100 px-2 py-1 rounded">{categoryLabel}</h4>
-                          {pagesInCategory.map((page) => {
+                          {pagesInCategory.map((page, catIndex) => {
                             const globalIndex = availablePages.findIndex(p => p.id === page.id);
                             return (
                               <div key={page.id} className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ml-2 ${selectedPages.includes(page.id || page.key) ? 'bg-orange-50 border-orange-300' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}>
                                 <Checkbox id={page.id || page.key} checked={selectedPages.includes(page.id || page.key)} onCheckedChange={() => handlePageToggle(page.id || page.key)} disabled={page.exists === false} data-testid={`page-checkbox-${page.key}`} />
                                 {page.exists === false && <div className="text-red-500" title="Fichier manquant"><XCircle className="w-4 h-4" /></div>}
                                 <div className="flex flex-col gap-0.5">
-                                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => movePage(page.id, 'up')} disabled={globalIndex === 0}><ChevronUp className="w-3 h-3" /></Button>
-                                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => movePage(page.id, 'down')} disabled={globalIndex === availablePages.length - 1}><ChevronDown className="w-3 h-3" /></Button>
+                                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => movePage(page.id, 'up')} disabled={catIndex === 0}><ChevronUp className="w-3 h-3" /></Button>
+                                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => movePage(page.id, 'down')} disabled={catIndex === pagesInCategory.length - 1}><ChevronDown className="w-3 h-3" /></Button>
                                 </div>
                                 <div className="flex-1 min-w-0"><p className={`font-medium truncate text-sm ${page.exists === false ? 'text-red-500 line-through' : ''}`}>{page.label}{page.exists === false && <span className="text-xs ml-2 text-red-400">(fichier manquant)</span>}</p></div>
                                 {selectedPages.includes(page.id || page.key) && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
