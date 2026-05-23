@@ -27,7 +27,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
     return contract.selected_notes && contract.selected_notes.length > 0;
   };
 
-  const hasTechnicalRoomInfo = contract.has_limiteur_son || contract.has_detecteur_fumee || contract.has_no_limiteur_ni_detecteur;
+  const hasTechnicalRoomInfo = contract.has_limiteur_son || contract.has_detecteur_fumee || contract.has_no_limiteur_ni_detecteur || contract.has_wifi || contract.has_4g_5g;
 
   // PAGE 1 - INFOS CLIENT + GRILLE TARIFAIRE + CONDITIONS PAIEMENT
   const page1HTML = `
@@ -368,6 +368,8 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
               ${contract.has_limiteur_son ? '⚠️ Salle équipée d\'un limiteur de son<br>' : ''}
               ${contract.has_detecteur_fumee ? '🚫 Détecteur de fumée : Machines à fumée proscrites<br>' : ''}
               ${contract.has_no_limiteur_ni_detecteur ? '✅ Aucune contrainte sonore ou fumée spécifique<br>' : ''}
+              ${contract.has_wifi ? '📶 Wi-Fi disponible dans la salle<br>' : ''}
+              ${contract.has_4g_5g ? '📱 Réseau 4G/5G disponible<br>' : ''}
               ${!hasTechnicalRoomInfo ? 'Non renseigné' : ''}
             </div>
           </div>
@@ -433,6 +435,8 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
               ${contract.has_limiteur_son ? '• La salle dispose d\'un <strong>limiteur de son</strong> - Le DJ adaptera son matériel en conséquence<br>' : ''}
               ${contract.has_detecteur_fumee ? '• 🚨 La salle dispose d\'un <strong>détecteur de fumée</strong> - L\'utilisation de fumigènes/machines à fumée est à proscrire<br>' : ''}
               ${contract.has_no_limiteur_ni_detecteur ? '• La salle ne dispose <strong>ni de limiteur de son, ni de détecteur de fumée</strong><br>' : ''}
+              ${contract.has_wifi ? '• La salle dispose d\'une connexion <strong>Wi-Fi</strong> disponible<br>' : ''}
+              ${contract.has_4g_5g ? '• La salle dispose d\'une couverture réseau <strong>4G/5G</strong> disponible<br>' : ''}
             </div>
           ` : ''}
         </div>
@@ -452,6 +456,8 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             ${contract.has_limiteur_son ? '• La salle dispose d\'un <strong>limiteur de son</strong> - Le DJ adaptera son matériel en conséquence<br>' : ''}
             ${contract.has_detecteur_fumee ? '• 🚨 La salle dispose d\'un <strong>détecteur de fumée</strong> - L\'utilisation de fumigènes/machines à fumée est à proscrire<br>' : ''}
             ${contract.has_no_limiteur_ni_detecteur ? '• La salle ne dispose <strong>ni de limiteur de son, ni de détecteur de fumée</strong><br>' : ''}
+            ${contract.has_wifi ? '• La salle dispose d\'une connexion <strong>Wi-Fi</strong> disponible<br>' : ''}
+            ${contract.has_4g_5g ? '• La salle dispose d\'une couverture réseau <strong>4G/5G</strong> disponible<br>' : ''}
           </div>
         </div>
         

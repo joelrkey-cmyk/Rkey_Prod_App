@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
-import { generateMandatHTML, generateEntrepriseHTML } from './contracts2/mandatHtmlGenerator';
+import { generateMandatHTML, generateEntrepriseHTML, generateArtisteHTML } from './contracts2/mandatHtmlGenerator';
 import { defaultCompanySettings, musicStyles as availableMusicStyles } from './contracts2/constants';
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -215,13 +215,18 @@ const DjClientApp = ({ isPublic = false }) => {
             cateringDrinks: c.catering_drinks || false,
             selectedMusicStyles: c.selected_music_styles || [],
             backgroundMusicAperitif: c.background_music_aperitif || "",
-            showMusicStylesToClient: c.show_music_styles_to_client !== undefined ? c.show_music_styles_to_client : true,
+            showMusicStylesToClient: c.show_music_styles_to_client !== undefined ? c.show_music_styles_to_client : false,
+            showFondSonoreToClient: c.show_fond_sonore_to_client !== undefined ? c.show_fond_sonore_to_client : false,
+            showMandatToClient: c.show_mandat_to_client !== undefined ? c.show_mandat_to_client : false,
+            showArtisteToClient: c.show_artiste_to_client !== undefined ? c.show_artiste_to_client : false,
             client_photo: c.client_photo || null,
             venue_photos: c.venue_photos || [],
             venue_notes: c.venue_notes || "",
             has_limiteur_son: c.has_limiteur_son || false,
             has_detecteur_fumee: c.has_detecteur_fumee || false,
-            has_no_limiteur_ni_detecteur: c.has_no_limiteur_ni_detecteur || false
+            has_no_limiteur_ni_detecteur: c.has_no_limiteur_ni_detecteur || false,
+            has_wifi: c.has_wifi || false,
+            has_4g_5g: c.has_4g_5g || false
          };
       });
       
@@ -311,7 +316,7 @@ const DjClientApp = ({ isPublic = false }) => {
           if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload) section = 'planning';
           if ('client_photo' in payload) section = 'client_info';
           if ('selected_pdf_notes' in payload) section = 'documents';
-          if ('venue_photos' in payload || 'venue_notes' in payload || 'has_limiteur_son' in payload || 'has_detecteur_fumee' in payload || 'has_no_limiteur_ni_detecteur' in payload) section = 'venue';
+          if ('venue_photos' in payload || 'venue_notes' in payload || 'has_limiteur_son' in payload || 'has_detecteur_fumee' in payload || 'has_no_limiteur_ni_detecteur' in payload || 'has_wifi' in payload || 'has_4g_5g' in payload) section = 'venue';
           if ('catering_notes' in payload || 'catering_drinks' in payload) section = 'catering';
           
           if (section && currentRoute.role) {
@@ -850,8 +855,8 @@ const DjClientApp = ({ isPublic = false }) => {
         
         <div className="space-y-6">
           
-          {/* FOND SONORE APPENDED HERE */}
-          {(!isClient || ev.showMusicStylesToClient) && (
+           {/* FOND SONORE APPENDED HERE */}
+          {(!isClient || ev.showFondSonoreToClient) && (
             <div className="border rounded-lg p-5 bg-indigo-50 border-indigo-200">
               <div className="flex justify-between items-center mb-3">
                 <h4 className="font-semibold text-indigo-700 text-base">Fond Sonore (Apéritif / Accueil)</h4>
@@ -859,18 +864,18 @@ const DjClientApp = ({ isPublic = false }) => {
                   <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700 bg-white py-1.5 px-3 rounded-full border border-gray-200 hover:bg-gray-50 transition">
                     <input 
                       type="checkbox" 
-                      checked={ev.showMusicStylesToClient || false} 
+                      checked={ev.showFondSonoreToClient || false} 
                       onChange={e => {
                         const val = e.target.checked;
-                        updateContractDb(currentRoute.eventId, { show_music_styles_to_client: val });
+                        updateContractDb(currentRoute.eventId, { show_fond_sonore_to_client: val });
                         const newEvents = [...events];
                         const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
-                        newEvents[idx].showMusicStylesToClient = val;
+                        newEvents[idx].showFondSonoreToClient = val;
                         setEvents(newEvents);
                       }} 
                       className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" 
                     />
-                    {!ev.showMusicStylesToClient ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-green-600" />}
+                    {!ev.showFondSonoreToClient ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-green-600" />}
                     Montrer au client
                   </label>
                 )}
@@ -900,36 +905,59 @@ const DjClientApp = ({ isPublic = false }) => {
           )}
 
           {/* STYLES MUSICAUX ABORDES */}
-          <div className="border rounded-lg p-5 bg-gray-50 border-gray-200">
-            <div className="flex justify-between items-center mb-3">
-              <h4 className="font-semibold text-gray-700 text-base">Styles Musicaux Abordés</h4>
-              {isAdminOrDj && (
-                <button type="button" onClick={selectAllMusicStyles} className="text-xs text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-full border border-purple-200 transition">
-                  Tout sélectionner
-                </button>
+          {(!isClient || ev.showMusicStylesToClient) && (
+            <div className="border rounded-lg p-5 bg-gray-50 border-gray-200">
+              <div className="flex justify-between items-center mb-3">
+                <h4 className="font-semibold text-gray-700 text-base">Styles Musicaux Abordés</h4>
+                <div className="flex items-center gap-2">
+                  {isAdminOrDj && (
+                    <>
+                      <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700 bg-white py-1.5 px-3 rounded-full border border-gray-200 hover:bg-gray-50 transition mr-2">
+                        <input 
+                          type="checkbox" 
+                          checked={ev.showMusicStylesToClient || false} 
+                          onChange={e => {
+                            const val = e.target.checked;
+                            updateContractDb(currentRoute.eventId, { show_music_styles_to_client: val });
+                            const newEvents = [...events];
+                            const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                            newEvents[idx].showMusicStylesToClient = val;
+                            setEvents(newEvents);
+                          }} 
+                          className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500" 
+                        />
+                        {!ev.showMusicStylesToClient ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-green-600" />}
+                        Montrer au client
+                      </label>
+                      <button type="button" onClick={selectAllMusicStyles} className="text-xs text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-full border border-purple-200 transition">
+                        Tout sélectionner
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2">
+                {availableMusicStyles.map((style) => (
+                  <div 
+                    key={style} 
+                    className={`p-2 px-4 rounded-lg border-2 transition-all text-center text-sm ${
+                      (ev.selectedMusicStyles || []).includes(style) 
+                        ? "border-purple-500 bg-purple-50 text-purple-700 font-medium cursor-pointer" 
+                        : "border-slate-200 bg-white text-slate-500"
+                    } ${isAdminOrDj ? "cursor-pointer hover:border-slate-300" : ""}`} 
+                    onClick={() => handleMusicStyleToggle(style)}
+                  >
+                    {style}
+                  </div>
+                ))}
+              </div>
+              
+              {isClient && (!ev.selectedMusicStyles || ev.selectedMusicStyles.length === 0) && (
+                <p className="text-gray-500 text-sm italic mt-2">Le DJ n'a pas encore défini de styles musicaux.</p>
               )}
             </div>
-            
-            <div className="flex flex-wrap gap-2">
-              {availableMusicStyles.map((style) => (
-                <div 
-                  key={style} 
-                  className={`p-2 px-4 rounded-lg border-2 transition-all text-center text-sm ${
-                    (ev.selectedMusicStyles || []).includes(style) 
-                      ? "border-purple-500 bg-purple-50 text-purple-700 font-medium cursor-pointer" 
-                      : "border-slate-200 bg-white text-slate-500"
-                  } ${isAdminOrDj ? "cursor-pointer hover:border-slate-300" : ""}`} 
-                  onClick={() => handleMusicStyleToggle(style)}
-                >
-                  {style}
-                </div>
-              ))}
-            </div>
-            
-            {isClient && (!ev.selectedMusicStyles || ev.selectedMusicStyles.length === 0) && (
-              <p className="text-gray-500 text-sm italic mt-2">Le DJ n'a pas encore défini de styles musicaux.</p>
-            )}
-          </div>
+          )}
 
           <div className="border rounded-lg p-5 bg-gray-50 border-gray-200">
             <h4 className="font-semibold text-green-700 mb-3 text-base">À passer absolument</h4>
@@ -1756,6 +1784,89 @@ const DjClientApp = ({ isPublic = false }) => {
         }
       };
 
+      const getProfileDataForContract = (profileKey) => {
+        if (profileKey === 'joel') return { name: "Joël RUTTKAY (Joël R'Key)", nom_complet: "Joël RUTTKAY", nom_artistique: "Joël R'Key", email: "info@rkey-prod.fr", phone: "07 83 55 36 74", address: "5 rue du Hohlandsbourg, 67390 Marckolsheim", siret: "99992355000019", titre: "Gérant de R'KEY PROD", statut_artiste: "dirigeant", iban: "", bic: "" };
+        if (profileKey === 'stephane') return { name: "Stéphane JACOBY (Stefan Edison)", nom_complet: "Stéphane JACOBY", nom_artistique: "Stefan Edison", email: "stephane@rkey-prod.fr", phone: "06 31 21 61 14", address: "5 rue du Hohlandsbourg, 67390 Marckolsheim", siret: "42121827200019", titre: "Animateur DJ", statut_artiste: "freelance", iban: "FR76 4061 8804 8700 0401 4272 395", bic: "" };
+        if (Array.isArray(djProfiles)) {
+          if (typeof profileKey === 'number' && djProfiles[profileKey]) {
+            const p = djProfiles[profileKey];
+            return {
+              name: p.nom_complet || p.nom_artistique || '',
+              nom_complet: p.nom_complet || '',
+              nom_artistique: p.nom_artistique || '',
+              email: p.email || '',
+              phone: p.telephone || '',
+              address: p.adresse || '',
+              siret: p.siret || '',
+              titre: p.titre || 'Animateur DJ',
+              statut_artiste: p.statut_artiste || 'freelance',
+              iban: p.iban || '',
+              bic: p.bic || ''
+            };
+          }
+          const found = djProfiles.find(p => p.nom_artistique?.toLowerCase() === profileKey?.toLowerCase() || p._id === profileKey);
+          if (found) {
+            return {
+              name: found.nom_complet || found.nom_artistique || '',
+              nom_complet: found.nom_complet || '',
+              nom_artistique: found.nom_artistique || '',
+              email: found.email || '',
+              phone: found.telephone || '',
+              address: found.adresse || '',
+              siret: found.siret || '',
+              titre: found.titre || 'Animateur DJ',
+              statut_artiste: found.statut_artiste || 'freelance',
+              iban: found.iban || '',
+              bic: found.bic || ''
+            };
+          }
+        }
+        return { name: "", nom_complet: "", nom_artistique: "", email: "", phone: "", address: "", siret: "", titre: "Animateur DJ", statut_artiste: "dirigeant", iban: "", bic: "" };
+      };
+
+      const resolveProfileForContract = (contract) => {
+        const snapshot = contract.dj_profile_data && (contract.dj_profile_data.name || contract.dj_profile_data.nom_complet)
+          ? contract.dj_profile_data
+          : getProfileDataForContract(contract.dj_profile);
+        const current = getProfileDataForContract(contract.dj_profile);
+        return { ...current, ...snapshot, bic: snapshot.bic || current.bic || "" };
+      };
+
+      const handleDownloadMandat = async () => {
+        if (!ev || !ev.rawContractData) {
+          toast.error("Données du contrat indisponibles.");
+          return;
+        }
+        const data = ev.rawContractData;
+        const html = generateMandatHTML(data, defaultCompanySettings);
+        let cName = (data.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+        await exportHTMLToPDF(html, `Contrat_Mandat_RKeyProd_${cName}.pdf`);
+      };
+
+      const handleDownloadArtiste = async () => {
+        if (!ev || !ev.rawContractData) {
+          toast.error("Données du contrat indisponibles.");
+          return;
+        }
+        const data = ev.rawContractData;
+        const html = generateArtisteHTML(data, resolveProfileForContract);
+        let cName = (data.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+        const profile = resolveProfileForContract(data);
+        const artistName = (profile.nom_artistique || profile.nom_complet || 'Artiste').replace(/[^a-zA-Z0-9]/g, '_');
+        await exportHTMLToPDF(html, `Contrat_Artiste_${artistName}_${cName}.pdf`);
+      };
+
+      const handleDownloadEntreprise = async () => {
+        if (!ev || !ev.rawContractData) {
+          toast.error("Données du contrat indisponibles.");
+          return;
+        }
+        const data = ev.rawContractData;
+        const html = generateEntrepriseHTML(data, defaultCompanySettings);
+        let cName = (data.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+        await exportHTMLToPDF(html, `Contrat_Prestation_RKeyProd_${cName}.pdf`);
+      };
+
       const handleDownloadClientContract = async () => {
         if (!ev || !ev.rawContractData) {
             toast.error("Données du contrat indisponibles.");
@@ -1996,50 +2107,229 @@ const DjClientApp = ({ isPublic = false }) => {
                 )}
                 
                 {/* Contrat raccourci */}
-                {ev && ev.rawContractData && (
-                  <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-150 flex-shrink-0">
-                        <FileText className="w-5 h-5 text-indigo-500" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={`Contrat ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`}>
-                            Contrat {ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}
-                          </p>
-                          <span className="bg-indigo-50 text-indigo-700 border-indigo-100 text-[10px] font-bold px-2 py-0.5 rounded-full border">Généré</span>
+                {ev && ev.rawContractData && (() => {
+                  const c = ev.rawContractData || {};
+                  const isDirigeant = 
+                    c.dj_profile_data?.nom_artistique?.toLowerCase().includes("r'key") || 
+                    c.dj_profile_data?.nom_artistique?.toLowerCase().includes("rkey") || 
+                    c.dj_profile_data?.titre?.includes("Gérant") || 
+                    c.dj_profile_data?.statut_artiste === 'dirigeant' ||
+                    c.dj_profile?.toLowerCase().includes("r'key") || 
+                    c.dj_profile?.toLowerCase().includes("rkey");
+
+                  const isEntreprise = c.contract_mode === 'entreprise' || c.contractMode === 'entreprise';
+                  const isMandatMode = !isDirigeant && !isEntreprise;
+
+                  if (isMandatMode) {
+                    const renderMandat = isAdminOrDj || ev.showMandatToClient;
+                    const renderArtiste = isAdminOrDj || ev.showArtisteToClient;
+
+                    if (!renderMandat && !renderArtiste) return null;
+
+                    return (
+                      <>
+                        {/* 1. Mandat R'Key Prod */}
+                        {renderMandat && (
+                          <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-150 flex-shrink-0">
+                                <FileText className="w-5 h-5 text-indigo-500" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={`Mandat R'Key Prod - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`}>
+                                    Mandat R'Key Prod (Frais de mandat & gestion)
+                                  </p>
+                                  <span className="bg-indigo-50 text-indigo-700 border-indigo-100 text-[10px] font-bold px-2 py-0.5 rounded-full border">Généré</span>
+                                  {isAdminOrDj && (
+                                    !ev.showMandatToClient ? (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full">
+                                        <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                                        <Eye className="w-2.5 h-2.5" /> Client : Visible
+                                      </span>
+                                    )
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">Contrat de mandat sans signature</p>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  const html = generateMandatHTML(ev.rawContractData, defaultCompanySettings);
+                                  setPreviewDoc({ 
+                                    title: `Mandat R'Key Prod - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`, 
+                                    type: 'html', 
+                                    url: html 
+                                  }); 
+                                }} 
+                                className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                                title="Aperçu rapide"
+                              >
+                                <FileSearch className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDownloadMandat(); }} 
+                                className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                                title="Télécharger"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                              {isAdminOrDj && (
+                                <button
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    const val = !ev.showMandatToClient;
+                                    updateContractDb(currentRoute.eventId, { show_mandat_to_client: val });
+                                    const newEvents = [...events];
+                                    const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                                    newEvents[idx].showMandatToClient = val;
+                                    setEvents(newEvents);
+                                  }}
+                                  className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                                  title={!ev.showMandatToClient ? "Rendre visible au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
+                                >
+                                  {!ev.showMandatToClient ? (
+                                    <EyeOff className="w-4 h-4 text-rose-500" />
+                                  ) : (
+                                    <Eye className="w-4 h-4 text-emerald-600" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. Engagement Artiste */}
+                        {renderArtiste && (
+                          <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-violet-50 border border-violet-150 flex-shrink-0">
+                                <FileText className="w-5 h-5 text-violet-500" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={`Contrat Artiste DJ - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`}>
+                                    Contrat Artiste (Engagement DJ)
+                                  </p>
+                                  <span className="bg-violet-50 text-violet-700 border-violet-100 text-[10px] font-bold px-2 py-0.5 rounded-full border">Généré</span>
+                                  {isAdminOrDj && (
+                                    !ev.showArtisteToClient ? (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full">
+                                        <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                                        <Eye className="w-2.5 h-2.5" /> Client : Visible
+                                      </span>
+                                    )
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">Contrat d'engagement de l'artiste DJ</p>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation(); 
+                                  const html = generateArtisteHTML(ev.rawContractData, resolveProfileForContract);
+                                  setPreviewDoc({ 
+                                    title: `Contrat Artiste DJ - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`, 
+                                    type: 'html', 
+                                    url: html 
+                                  }); 
+                                }} 
+                                className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                                title="Aperçu rapide"
+                              >
+                                <FileSearch className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDownloadArtiste(); }} 
+                                className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                                title="Télécharger"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                              {isAdminOrDj && (
+                                <button
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    const val = !ev.showArtisteToClient;
+                                    updateContractDb(currentRoute.eventId, { show_artiste_to_client: val });
+                                    const newEvents = [...events];
+                                    const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                                    newEvents[idx].showArtisteToClient = val;
+                                    setEvents(newEvents);
+                                  }}
+                                  className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                                  title={!ev.showArtisteToClient ? "Rendre visible au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
+                                >
+                                  {!ev.showArtisteToClient ? (
+                                    <EyeOff className="w-4 h-4 text-rose-500" />
+                                  ) : (
+                                    <Eye className="w-4 h-4 text-emerald-600" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  }
+
+                  // Non-mandat: Entreprise
+                  return (
+                    <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-150 flex-shrink-0">
+                          <FileText className="w-5 h-5 text-indigo-500" />
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">Contrat original sans signature</p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={`Contrat Prestation - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`}>
+                              Contrat Prestation R'Key Prod
+                            </p>
+                            <span className="bg-indigo-50 text-indigo-700 border-indigo-100 text-[10px] font-bold px-2 py-0.5 rounded-full border">Généré</span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">Contrat original sans signature</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            const html = generateEntrepriseHTML(ev.rawContractData, defaultCompanySettings);
+                            setPreviewDoc({ 
+                              title: `Contrat - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`, 
+                              type: 'html', 
+                              url: html 
+                            }); 
+                          }} 
+                          className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                          title="Aperçu rapide"
+                        >
+                          <FileSearch className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDownloadEntreprise(); }} 
+                          className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                          title="Télécharger"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          const isEntreprise = ev.rawContractData.contract_mode === 'entreprise' || ev.rawContractData.contractMode === 'entreprise';
-                          const html = isEntreprise ? generateEntrepriseHTML(ev.rawContractData, defaultCompanySettings) : generateMandatHTML(ev.rawContractData, defaultCompanySettings);
-                          setPreviewDoc({ 
-                            title: `Contrat - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`, 
-                            type: 'html', 
-                            url: html 
-                          }); 
-                        }} 
-                        className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
-                        title="Aperçu rapide"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleDownloadClientContract(); }} 
-                        className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
-                        title="Télécharger"
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {administrativeDocs.map((doc) => (
                   <div 
@@ -2089,7 +2379,7 @@ const DjClientApp = ({ isPublic = false }) => {
                         className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
                         title="Aperçu rapide"
                       >
-                        <Eye className="w-4 h-4" />
+                        <FileSearch className="w-4 h-4" />
                       </button>
                       <button 
                         onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
@@ -2183,7 +2473,7 @@ const DjClientApp = ({ isPublic = false }) => {
                           className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
                           title="Aperçu rapide"
                         >
-                          <Eye className="w-4 h-4" />
+                          <FileSearch className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
@@ -2263,7 +2553,7 @@ const DjClientApp = ({ isPublic = false }) => {
                             className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
                             title="Aperçu rapide"
                           >
-                            <Eye className="w-4 h-4" />
+                            <FileSearch className="w-4 h-4" />
                           </button>
                           {(currentRoute.role !== 'admin' && (!isAdminOrDj || isSelected)) && (
                             <button 
@@ -2994,7 +3284,7 @@ const DjClientApp = ({ isPublic = false }) => {
             {/* Checkboxes from Contracts */}
             <div>
               <h4 className="font-semibold text-gray-700 mb-3">Contraintes Techniques de la salle</h4>
-                <div className="flex gap-4 flex-wrap">
+                <div className="flex gap-4 flex-wrap mb-4">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={ev.has_limiteur_son || false} onChange={e => {
                       const val = e.target.checked;
@@ -3015,6 +3305,24 @@ const DjClientApp = ({ isPublic = false }) => {
                       updateContractDb(currentRoute.eventId, { has_no_limiteur_ni_detecteur: val, ...(val ? {has_limiteur_son: false, has_detecteur_fumee: false} : {}) });
                     }} />
                     Aucun
+                  </label>
+                </div>
+
+                <h4 className="font-semibold text-gray-700 mb-3">Connectivité de la salle</h4>
+                <div className="flex gap-4 flex-wrap">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={ev.has_wifi || false} onChange={e => {
+                      const val = e.target.checked;
+                      updateContractDb(currentRoute.eventId, { has_wifi: val });
+                    }} />
+                    Wi-Fi
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={ev.has_4g_5g || false} onChange={e => {
+                      const val = e.target.checked;
+                      updateContractDb(currentRoute.eventId, { has_4g_5g: val });
+                    }} />
+                    4G/5G
                   </label>
                 </div>
               </div>

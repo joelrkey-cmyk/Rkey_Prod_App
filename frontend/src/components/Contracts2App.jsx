@@ -131,6 +131,8 @@ function Contracts2App() {
   const [hasLimiteurSon, setHasLimiteurSon] = useState(false);
   const [hasDetecteurFumee, setHasDetecteurFumee] = useState(false);
   const [hasNoLimiteurNiDetecteur, setHasNoLimiteurNiDetecteur] = useState(false);
+  const [hasWifi, setHasWifi] = useState(false);
+  const [has4g5g, setHas4g5g] = useState(false);
   
   const [technicianContact, setTechnicianContact] = useState({ name: "", email: "", phone: "" });
 
@@ -398,6 +400,8 @@ function Contracts2App() {
         setHasLimiteurSon(parsed.hasLimiteurSon || false);
         setHasDetecteurFumee(parsed.hasDetecteurFumee || false);
         setHasNoLimiteurNiDetecteur(parsed.hasNoLimiteurNiDetecteur || false);
+        setHasWifi(parsed.hasWifi || false);
+        setHas4g5g(parsed.has4g5g || false);
         setTechnicianContact(parsed.technicianContact || { name: "", email: "", phone: "" });
         setSelectedPdfNotes(parsed.selectedPdfNotes || []);
         setCgvText(parsed.cgvText || "");
@@ -417,11 +421,11 @@ function Contracts2App() {
       customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, 
       hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, 
       depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, 
-      hasDetecteurFumee, hasNoLimiteurNiDetecteur, technicianContact,
+      hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact,
       selectedPdfNotes, cgvText
     };
     sessionStorage.setItem('contracts2_form_state', JSON.stringify(state));
-  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, technicianContact, selectedPdfNotes, cgvText]);
+  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText]);
 
   const loadContracts = async () => {
     try {
@@ -683,6 +687,8 @@ function Contracts2App() {
       has_limiteur_son: hasLimiteurSon || false,
       has_detecteur_fumee: hasDetecteurFumee || false,
       has_no_limiteur_ni_detecteur: hasNoLimiteurNiDetecteur || false,
+      has_wifi: hasWifi || false,
+      has_4g_5g: has4g5g || false,
       selected_notes: selectedNotes,
       selected_pdf_notes: selectedPdfNotes,
       predefined_notes: predefinedNotes,
@@ -762,6 +768,8 @@ function Contracts2App() {
     setHasLimiteurSon(contract.has_limiteur_son || false);
     setHasDetecteurFumee(contract.has_detecteur_fumee || false);
     setHasNoLimiteurNiDetecteur(contract.has_no_limiteur_ni_detecteur || false);
+    setHasWifi(contract.has_wifi || false);
+    setHas4g5g(contract.has_4g_5g || false);
     setSelectedPdfNotes(contract.selected_pdf_notes || []);
     setSelectedNotes(contract.selected_notes || []);
     setSelectedMusicStyles(contract.selected_music_styles || []);
@@ -907,6 +915,8 @@ function Contracts2App() {
     has_limiteur_son: hasLimiteurSon,
     has_detecteur_fumee: hasDetecteurFumee,
     has_no_limiteur_ni_detecteur: hasNoLimiteurNiDetecteur,
+    has_wifi: hasWifi,
+    has_4g_5g: has4g5g,
     selected_pdf_notes: selectedPdfNotes,
     invoice_number: invoiceNumber
   });
@@ -1496,6 +1506,15 @@ function Contracts2App() {
                       </div>
                       <div className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${hasNoLimiteurNiDetecteur ? "border-green-500 bg-green-50" : "border-slate-200 bg-white hover:border-slate-300"}`} onClick={() => { const nv = !hasNoLimiteurNiDetecteur; setHasNoLimiteurNiDetecteur(nv); if (nv) { setHasLimiteurSon(false); setHasDetecteurFumee(false); } }}>
                         <div className="flex items-center space-x-3"><Checkbox checked={hasNoLimiteurNiDetecteur} onCheckedChange={(checked) => { setHasNoLimiteurNiDetecteur(checked); if (checked) { setHasLimiteurSon(false); setHasDetecteurFumee(false); } }} /><p className="font-medium text-slate-800 text-sm">Aucun</p></div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                      <div className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${hasWifi ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"}`} onClick={() => { setHasWifi(!hasWifi); }}>
+                        <div className="flex items-center space-x-3"><Checkbox checked={hasWifi} onCheckedChange={(checked) => { setHasWifi(checked); }} /><p className="font-medium text-slate-800 text-sm">Wi-Fi disponible dans la salle</p></div>
+                      </div>
+                      <div className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${has4g5g ? "border-sky-500 bg-sky-50" : "border-slate-200 bg-white hover:border-slate-300"}`} onClick={() => { setHas4g5g(!has4g5g); }}>
+                        <div className="flex items-center space-x-3"><Checkbox checked={has4g5g} onCheckedChange={(checked) => { setHas4g5g(checked); }} /><p className="font-medium text-slate-800 text-sm">Réseau 4G/5G disponible</p></div>
                       </div>
                     </div>
                   </div>
