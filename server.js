@@ -1840,8 +1840,19 @@ api.get('/public/dj-client/:slug', async (req, res) => {
            (e.dj_profile_data?.nom_artistique && normalizeString(e.dj_profile_data.nom_artistique) === normalizedRequestedSlug);
   });
   
-  if (djEvents.length > 0) {
-    return res.json({ role: 'dj', events: djEvents, slug, availableOptions: options });
+  // Check if the slug matches a DJ profile from db, even if they have 0 events currently
+  const allDjProfiles = await db.collection('dj_profiles').find({}).toArray();
+  const matchedDjProfile = allDjProfiles.find(p => {
+    return normalizeString(p.nom_artistique) === normalizedRequestedSlug ||
+           normalizeString(p.nom_complet) === normalizedRequestedSlug ||
+           normalizeString(p.id) === normalizedRequestedSlug;
+  });
+
+  if (djEvents.length > 0 || matchedDjProfile) {
+    const djName = matchedDjProfile 
+      ? (matchedDjProfile.nom_artistique || matchedDjProfile.nom_complet) 
+      : (djEvents[0]?.dj_profile_data?.nom_artistique || djEvents[0]?.dj_profile || "DJ");
+    return res.json({ role: 'dj', events: djEvents, slug, djName, availableOptions: options });
   }
   
   // Check if it's a Client slug
@@ -1867,6 +1878,98 @@ api.put('/public/dj-client/:id', async (req, res) => {
   const id = req.params.id;
   await db.collection('contracts2').updateOne({ id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
   res.json({ success: true });
+});
+
+// Helper to convert images (PNG, JPG, HEIC, etc.) to PDF format
+async function convertToPdfBuffer(fileBuffer, originalName, mimeType) {
+  const ext = path.extname(originalName).toLowerCase();
+  
+  if (ext === '.pdf' || mimeType === 'application/pdf') {
+    return {
+      buffer: fileBuffer,
+      filename: originalName
+    };
+  }
+  
+  let jpegBuffer;
+  let pdfFilename = originalName.replace(/\.[^./]+$/, "") + ".pdf";
+  
+  try {
+    if (ext === '.heic' || ext === '.heif' || mimeType?.toLowerCase()?.includes('heic') || mimeType?.toLowerCase()?.includes('heif')) {
+      const heicConvert = require('heic-convert');
+      // Convert single image HEIC to JPEG
+      const converted = await heicConvert({
+        buffer: fileBuffer,
+        format: 'JPEG',
+        quality: 0.85
+      });
+      // Further normalize with sharp to a standard JPEG buffer
+      jpegBuffer = await sharp(converted).jpeg({ quality: 85 }).toBuffer();
+    } else {
+      // Standard image formats: JPG, PNG, WEBP, GIF etc -> normalize to standard JPEG with sharp
+      jpegBuffer = await sharp(fileBuffer).jpeg({ quality: 85 }).toBuffer();
+    }
+    
+    // Convert standard JPEG buffer to PDF using pdf-lib
+    const pdfDoc = await PDFDocument.create();
+    const embeddedImage = await pdfDoc.embedJpg(jpegBuffer);
+    const { width, height } = embeddedImage.scale(1.0);
+    
+    const page = pdfDoc.addPage([width, height]);
+    page.drawImage(embeddedImage, {
+      x: 0,
+      y: 0,
+      width: width,
+      height: height,
+    });
+    
+    const pdfBytes = await pdfDoc.save();
+    return {
+      buffer: Buffer.from(pdfBytes),
+      filename: pdfFilename
+    };
+  } catch (err) {
+    console.error("[PdfConversion] Failed to convert picture/HEIC to PDF:", err);
+    throw err;
+  }
+}
+
+api.post('/public/dj-client/:id/documents/convert-visit-sheet', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const category = req.body.category || 'Animations et interventions';
+  const docId = uuidv4();
+  const decodedOriginalname = decodeMulterFilename(req.file.originalname);
+  
+  try {
+    const { buffer: pdfBuffer, filename: convertedFilename } = await convertToPdfBuffer(req.file.buffer, decodedOriginalname, req.file.mimetype);
+    
+    const newDoc = {
+      id: docId,
+      filename: convertedFilename,
+      category: category,
+      uploaded_at: new Date().toISOString(),
+      ...(category === 'Administrative' ? { hiddenForClient: true } : {})
+    };
+    
+    if (bucket) {
+      const gcsPath = `contract-event-documents/${req.params.id}/${docId}.pdf`;
+      const file = bucket.file(gcsPath);
+      await file.save(pdfBuffer, { metadata: { contentType: 'application/pdf' } });
+      newDoc.gcs_path = gcsPath;
+    } else {
+      newDoc.pdf_data = pdfBuffer.toString('base64');
+    }
+    
+    await db.collection('contracts2').updateOne(
+      { id: req.params.id }, 
+      { $push: { event_documents: newDoc } }
+    );
+    
+    res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at, hiddenForClient: newDoc.hiddenForClient || false } });
+  } catch (err) {
+    console.error("[ConvertVisitSheet] Error:", err);
+    res.status(500).json({ error: "Erreur lors de la conversion ou de l'upload: " + err.message });
+  }
 });
 
 api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, res) => {

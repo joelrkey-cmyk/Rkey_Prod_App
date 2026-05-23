@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { generateMandatHTML, generateEntrepriseHTML } from './contracts2/mandatHtmlGenerator';
@@ -112,11 +112,16 @@ const DjClientApp = ({ isPublic = false }) => {
              const data = await publicRes.json();
              allContracts = data.events || [];
              setAvailableOptions(data.availableOptions || []);
-             if (allContracts.length > 0 && currentRoute.view === 'list') {
+             if (currentRoute.view === 'list') {
                  if (data.role === 'client') {
-                     setCurrentRoute({ view: 'detail', role: 'client', eventId: allContracts[0].id, mode: 'standalone_client' });
+                     if (allContracts.length > 0) {
+                         setCurrentRoute({ view: 'detail', role: 'client', eventId: allContracts[0].id, mode: 'standalone_client' });
+                     } else {
+                         setCurrentRoute({ view: 'detail', role: 'client', eventId: null, mode: 'standalone_client' });
+                     }
                  } else if (data.role === 'dj') {
-                     setCurrentRoute({ view: 'dj-list', role: 'dj', activeDj: { name: allContracts[0].dj_profile_data?.nom_artistique || allContracts[0].dj_profile }, mode: 'standalone_dj' });
+                     const djName = data.djName || (allContracts[0]?.dj_profile_data?.nom_artistique || allContracts[0]?.dj_profile || slug);
+                     setCurrentRoute({ view: 'dj-list', role: 'dj', activeDj: { name: djName }, mode: 'standalone_dj' });
                  }
              }
          }
@@ -1852,6 +1857,65 @@ const DjClientApp = ({ isPublic = false }) => {
         }
       };
 
+      const handleVisitSheetUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const allowedTypes = [
+          "application/pdf", 
+          "image/png", 
+          "image/jpeg", 
+          "image/jpg", 
+          "image/heic", 
+          "image/heif"
+        ];
+        const fileExt = file.name.split('.').pop().toLowerCase();
+        const isHeic = fileExt === 'heic' || fileExt === 'heif';
+        
+        if (!allowedTypes.includes(file.type) && !isHeic) {
+          toast.error("Format non supporté. Veuillez choisir un PDF, PNG, JPG ou HEIC.");
+          return;
+        }
+        
+        setDocsUploading(true);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("category", docsUploadCategory);
+
+        try {
+          const response = await fetch(`${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/convert-visit-sheet`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || "Upload failed");
+          }
+
+          const result = await response.json();
+          if (result.success) {
+            toast.success("Document ajouté avec succès.");
+            const newDoc = result.document;
+            const newEventDocs = [...eventDocuments, newDoc];
+            ev.eventDocuments = newEventDocs;
+            
+            const updatedEvents = [...events];
+            const idx = updatedEvents.findIndex(e => e.id === ev.id);
+            if (idx !== -1) {
+                updatedEvents[idx].eventDocuments = newEventDocs;
+                setEvents(updatedEvents);
+            }
+          }
+        } catch (error) {
+          console.error("Error uploading visit sheet:", error);
+          toast.error("Erreur lors de l'envoi de la fiche : " + error.message);
+        } finally {
+          setDocsUploading(false);
+          event.target.value = null; // Reset input
+        }
+      };
+
       const visibleDocs = pdfNotes;
       const displayGlobalDocs = isAdminOrDj ? visibleDocs : visibleDocs.filter(doc => selectedPdfs.includes(doc.id));
       
@@ -1884,13 +1948,13 @@ const DjClientApp = ({ isPublic = false }) => {
                  <option value="Administrative">Administratif</option>
                  <option value="Animations et interventions">Animations</option>
                </select>
-               <label className={`cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center gap-2 ${docsUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+               <label className={`cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center gap-2 ${docsUploading ? 'opacity-50 pointer-events-none' : ''}`}>
                  {docsUploading ? (
                     <><RefreshCw className="animate-spin w-4 h-4" /> Envoi...</>
                  ) : (
-                    <><Upload className="w-4 h-4" /> Ajouter un PDF</>
-                 )}
-                 <input type="file" accept="application/pdf" className="hidden" onChange={handleFileUpload} disabled={docsUploading} />
+                    <><Upload className="w-4 h-4" /> Ajouter document (PDF et images)</>
+                  )}
+                 <input type="file" accept="application/pdf, image/png, image/jpeg, image/jpg, .heic, .heif" className="hidden" onChange={handleVisitSheetUpload} disabled={docsUploading} />
                </label>
             </div>
           </div>
