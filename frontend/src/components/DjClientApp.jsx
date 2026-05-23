@@ -2305,6 +2305,7 @@ const DjClientApp = ({ isPublic = false }) => {
       // Base rate parsing with fallback for legacy/migrated contracts
       let baseRate = 0;
       const isEntreprise = c.contract_mode === 'entreprise' || c.contractMode === 'entreprise';
+      const isMandatMode = !isDirigeant && !isEntreprise;
       
       if (isDirigeant) {
         baseRate = basePrice;
@@ -2335,6 +2336,8 @@ const DjClientApp = ({ isPublic = false }) => {
       let depositAmount = 0;
       if (c.no_deposit_required) {
         depositAmount = 0;
+      } else if (isMandatMode) {
+        depositAmount = fraisMandat;
       } else if (Number(c.custom_deposit_amount) > 0) {
         depositAmount = Number(c.custom_deposit_amount);
       } else if (Number(c.deposit_amount) > 0) {
@@ -2350,7 +2353,9 @@ const DjClientApp = ({ isPublic = false }) => {
 
       // Montant déjà réglé
       let amountPaid = 0;
-      if (isDepositPaid) {
+      if (isMandatMode) {
+        amountPaid = fraisMandat; // For mandate mode, the already paid amount corresponds to the mandate and management fees
+      } else if (isDepositPaid) {
         amountPaid = depositAmount > 0 ? depositAmount : 0;
       }
 
@@ -2533,10 +2538,23 @@ const DjClientApp = ({ isPublic = false }) => {
                 <span className="text-xl font-bold text-slate-800">{totalPrestation.toFixed(2)} €</span>
               </div>
               <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 space-y-0.5">
-                <div className="flex justify-between">
-                  <span>Tarif de base :</span>
-                  <span>{baseRate.toFixed(2)} €</span>
-                </div>
+                {isMandatMode ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span>Frais de mandat & gestion :</span>
+                      <span>{fraisMandat.toFixed(2)} €</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Cachet DJ/Artiste :</span>
+                      <span>{cachetArtiste.toFixed(2)} €</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between">
+                    <span>Tarif de base :</span>
+                    <span>{baseRate.toFixed(2)} €</span>
+                  </div>
+                )}
                 {optionsTotal > 0 && (
                   <div className="flex justify-between font-medium text-slate-600">
                     <span>Options :</span>
@@ -2552,15 +2570,17 @@ const DjClientApp = ({ isPublic = false }) => {
               </div>
             </div>
 
-            {/* Déjà réglé (Acompte) */}
+            {/* Déjà réglé (Acompte / Mandat) */}
             <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
               <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Paiement déjà versé</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  {isMandatMode ? "Frais de mandat & gestion (Réglé)" : "Paiement déjà versé"}
+                </span>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xl font-bold text-emerald-600">
                     {amountPaid > 0 ? `${amountPaid.toFixed(2)} €` : "0,00 €"}
                   </span>
-                  {isDepositPaid && (
+                  {(isDepositPaid || isMandatMode) && (
                     <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100 uppercase">
                       Reçu
                     </span>
@@ -2571,6 +2591,10 @@ const DjClientApp = ({ isPublic = false }) => {
                 {c.no_deposit_required ? (
                   <span className="text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded block">
                     Confiance / Externe (Aucun acompte requis)
+                  </span>
+                ) : isMandatMode ? (
+                  <span className="text-emerald-700 font-medium block">
+                    Frais de mandat perçus à la création du contrat.
                   </span>
                 ) : isDepositPaid ? (
                   <span className="text-emerald-700 font-medium block">
@@ -2584,10 +2608,12 @@ const DjClientApp = ({ isPublic = false }) => {
               </div>
             </div>
 
-            {/* Solde restant */}
+            {/* Solde restant (Cachet) */}
             <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
               <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Solde restant dû</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  {isMandatMode ? "Cachet Artiste restants" : "Solde restant dû"}
+                </span>
                 <span className="text-xl font-bold text-indigo-600">
                   {additions.length > 0 ? `${originalRemainingBalance.toFixed(2)} €` : `${remainingBalance.toFixed(2)} €`}
                 </span>
@@ -2614,7 +2640,7 @@ const DjClientApp = ({ isPublic = false }) => {
                 )}
               </div>
               <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 flex items-center justify-between">
-                <span>Dû le jour J :</span>
+                <span>{isMandatMode ? "Dû le jour J (au DJ) :" : "Dû le jour J :"}</span>
                 <span className="font-semibold text-slate-800">{remainingBalance.toFixed(2)} €</span>
               </div>
             </div>
