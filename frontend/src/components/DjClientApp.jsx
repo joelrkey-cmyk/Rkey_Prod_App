@@ -1858,8 +1858,8 @@ const DjClientApp = ({ isPublic = false }) => {
       };
 
       const handleVisitSheetUpload = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
         
         const allowedTypes = [
           "application/pdf", 
@@ -1869,51 +1869,64 @@ const DjClientApp = ({ isPublic = false }) => {
           "image/heic", 
           "image/heif"
         ];
-        const fileExt = file.name.split('.').pop().toLowerCase();
-        const isHeic = fileExt === 'heic' || fileExt === 'heif';
-        
-        if (!allowedTypes.includes(file.type) && !isHeic) {
-          toast.error("Format non supporté. Veuillez choisir un PDF, PNG, JPG ou HEIC.");
-          return;
-        }
-        
+
         setDocsUploading(true);
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("category", docsUploadCategory);
+        let successCount = 0;
+        let localEventDocs = [...(ev.eventDocuments || [])];
 
-        try {
-          const response = await fetch(`${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/convert-visit-sheet`, {
-            method: "POST",
-            body: formData,
-          });
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || "Upload failed");
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const fileExt = file.name.split('.').pop().toLowerCase();
+          const isHeic = fileExt === 'heic' || fileExt === 'heif';
+          
+          if (!allowedTypes.includes(file.type) && !isHeic) {
+            toast.error(`Format non supporté pour "${file.name}". Veuillez choisir un PDF, PNG, JPG ou HEIC.`);
+            continue;
           }
 
-          const result = await response.json();
-          if (result.success) {
-            toast.success("Document ajouté avec succès.");
-            const newDoc = result.document;
-            const newEventDocs = [...eventDocuments, newDoc];
-            ev.eventDocuments = newEventDocs;
-            
-            const updatedEvents = [...events];
-            const idx = updatedEvents.findIndex(e => e.id === ev.id);
-            if (idx !== -1) {
-                updatedEvents[idx].eventDocuments = newEventDocs;
-                setEvents(updatedEvents);
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("category", docsUploadCategory);
+
+          try {
+            const response = await fetch(`${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/convert-visit-sheet`, {
+              method: "POST",
+              body: formData,
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(errorData.error || "Upload failed");
             }
+
+            const result = await response.json();
+            if (result.success) {
+              successCount++;
+              const newDoc = result.document;
+              localEventDocs.push(newDoc);
+              
+              ev.eventDocuments = [...localEventDocs];
+              setEvents(prevEvents => {
+                const updatedEvents = [...prevEvents];
+                const idx = updatedEvents.findIndex(e => e.id === ev.id);
+                if (idx !== -1) {
+                  updatedEvents[idx].eventDocuments = [...localEventDocs];
+                }
+                return updatedEvents;
+              });
+            }
+          } catch (error) {
+            console.error(`Error uploading "${file.name}":`, error);
+            toast.error(`Erreur lors de l'envoi de "${file.name}" : ` + error.message);
           }
-        } catch (error) {
-          console.error("Error uploading visit sheet:", error);
-          toast.error("Erreur lors de l'envoi de la fiche : " + error.message);
-        } finally {
-          setDocsUploading(false);
-          event.target.value = null; // Reset input
         }
+
+        if (successCount > 0) {
+          toast.success(`${successCount} document(s) ajouté(s) avec succès.`);
+        }
+
+        setDocsUploading(false);
+        event.target.value = null; // Reset input
       };
 
       const visibleDocs = pdfNotes;
@@ -1954,7 +1967,7 @@ const DjClientApp = ({ isPublic = false }) => {
                  ) : (
                     <><Upload className="w-4 h-4" /> Ajouter document (PDF et images)</>
                   )}
-                 <input type="file" accept="application/pdf, image/png, image/jpeg, image/jpg, .heic, .heif" className="hidden" onChange={handleVisitSheetUpload} disabled={docsUploading} />
+                 <input type="file" accept="application/pdf, image/png, image/jpeg, image/jpg, .heic, .heif" className="hidden" onChange={handleVisitSheetUpload} disabled={docsUploading} multiple />
                </label>
             </div>
           </div>
