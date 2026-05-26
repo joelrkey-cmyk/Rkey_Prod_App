@@ -884,7 +884,6 @@ const DjClientApp = ({ isPublic = false }) => {
               <tr className="border-b text-sm text-gray-500 bg-gray-50">
                 <th className="py-3 px-4 rounded-tl-lg font-semibold">Événement</th>
                 <th className="py-3 px-4 font-semibold">Date</th>
-                <th className="py-3 px-4 font-semibold">Accès DJ</th>
                 <th className="py-3 px-4 rounded-tr-lg font-semibold">Accès Client</th>
               </tr>
             </thead>
@@ -900,7 +899,7 @@ const DjClientApp = ({ isPublic = false }) => {
                   : "hover:bg-gray-50 transition-all duration-200";
 
                 const cellBorder = "py-4";
-                const firstCellBorder = isRowHighlit ? "border-l-4 border-l-red-500 pl-3 py-4" : "pl-4 py-4";
+                const firstCellBorder = "pl-4 py-4";
                 const lastCellBorder = "pr-4 py-4";
 
                 return (
@@ -932,28 +931,6 @@ const DjClientApp = ({ isPublic = false }) => {
                     <td className={`px-4 text-gray-600 whitespace-nowrap min-w-[125px] ${rowBg} ${cellBorder}`}>
                       {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
                     </td>
-                    <td className={`px-4 ${rowBg} ${cellBorder}`}>
-                      <div className="text-sm font-medium mb-1">{ev.dj.name}</div>
-                      <div className="flex items-center gap-1">
-                        <div className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded truncate max-w-[150px]">
-                          {getDjLink(ev.dj)}
-                        </div>
-                        <button 
-                          onClick={() => { navigator.clipboard.writeText(`https://${getDjLink(ev.dj)}`); toast.success("Lien DJ copié"); }} 
-                          className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition" 
-                          title="Copier le lien DJ"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button 
-                          onClick={() => setCurrentRoute({ view: 'dj-list', role: 'dj', eventId: null, mode: 'standalone_dj', activeDj: ev.dj })} 
-                          className="p-1.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded transition" 
-                          title="Ouvrir le portail DJ"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
                     <td className={`px-4 ${rowBg} ${lastCellBorder}`}>
                       <div className="text-sm font-medium mb-1">{ev.client.name}</div>
                       <div className="flex items-center gap-1">
@@ -980,7 +957,7 @@ const DjClientApp = ({ isPublic = false }) => {
                 );
               })}
               {eventsList.length === 0 && (
-                <tr><td colSpan="5" className="py-8 text-center text-gray-500 italic">Aucon événement.</td></tr>
+                <tr><td colSpan="3" className="py-8 text-center text-gray-500 italic">Aucun événement.</td></tr>
               )}
             </tbody>
           </table>
@@ -991,44 +968,77 @@ const DjClientApp = ({ isPublic = false }) => {
 
   const AdminListView = () => (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:justify-between md:items-center bg-white p-6 rounded-xl shadow-sm border border-gray-200 gap-4">
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Shield className="w-8 h-8 text-indigo-600" />
-          Mirador Administrateur - DJ/Client
-        </h2>
-        <div className="flex flex-col sm:flex-row gap-4 items-center flex-1 justify-end ml-4">
-          <div className="relative w-full sm:max-w-xs">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-gray-400" />
+      <div className="flex flex-col bg-white p-6 rounded-xl shadow-sm border border-gray-200 gap-4">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Shield className="w-8 h-8 text-indigo-600" />
+            Mirador Administrateur - DJ/Client
+          </h2>
+          <div className="flex flex-col sm:flex-row gap-4 items-center flex-1 justify-end ml-4">
+            <div className="relative w-full sm:max-w-xs">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                placeholder="Nom, entreprise ou lieu..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-            <input
-              type="text"
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="Nom, entreprise ou lieu..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          <button 
-            onClick={() => window.location.href = '/contracts2'} 
-            className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-indigo-700 transition"
-          >
-            <Plus className="w-5 h-5" /> Ajouter un événement
-          </button>
-          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 p-2 rounded-lg w-full sm:w-auto">
-            <Filter className="w-5 h-5 text-gray-500" />
-            <select 
-              value={selectedDjFilter}
-              onChange={(e) => setSelectedDjFilter(e.target.value)}
-              className="bg-transparent border-none text-sm font-medium focus:ring-0 text-gray-700 outline-none"
+            <button 
+              onClick={() => window.location.href = '/contracts2'} 
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-indigo-700 transition"
             >
-              <option value="all">Tous les artistes</option>
-              {djProfiles.map(dj => (
-                <option key={dj.id} value={dj.nom_artistique}>{dj.nom_artistique}</option>
-              ))}
-            </select>
+              <Plus className="w-5 h-5" /> Ajouter un événement
+            </button>
+            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 p-2 rounded-lg w-full sm:w-auto">
+              <Filter className="w-5 h-5 text-gray-500" />
+              <select 
+                value={selectedDjFilter}
+                onChange={(e) => setSelectedDjFilter(e.target.value)}
+                className="bg-transparent border-none text-sm font-medium focus:ring-0 text-gray-700 outline-none"
+              >
+                <option value="all">Tous les artistes</option>
+                {djProfiles.map(dj => (
+                  <option key={dj.id} value={dj.nom_artistique}>{dj.nom_artistique}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
+
+        {djProfiles.length > 0 && (
+          <div className="border-t border-gray-100 pt-3 flex flex-wrap items-center gap-2.5">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-gray-400" />
+              Accès Artistes (Clic pour copier) :
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {djProfiles.map(dj => {
+                const name = dj.nom_artistique || '';
+                const slug = name.toLowerCase().replace(/\s+/g, '-');
+                const link = `rkeyprodapp.fr/${slug}`;
+                return (
+                  <button
+                    key={dj.id || name}
+                    onClick={() => {
+                      navigator.clipboard.writeText(`https://${link}`);
+                      toast.success(`Lien de l'artiste ${name} copié !`);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100 transition shadow-xs cursor-pointer group active:scale-95"
+                    title={`Copier le lien direct de ${name}`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 group-hover:bg-indigo-600 transition-colors"></span>
+                    <span>{name}</span>
+                    <Copy className="w-3 h-3 text-indigo-400 group-hover:text-indigo-600 ml-0.5 shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -4433,18 +4443,20 @@ const DjClientApp = ({ isPublic = false }) => {
               <ArrowLeft className="w-5 h-5" /> {isDjStandalone ? "Retour à mes événements" : "Retour à la liste"}
             </button>
             
-            <div className="flex gap-2">
-              {isDashboard && (
-                <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'admin' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'admin' ? 'bg-indigo-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue Admin</button>
-              )}
-              
-              {(isDashboard || isDjStandalone) && (
-                <>
-                  <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'dj' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'dj' ? 'bg-yellow-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue DJ</button>
-                  <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'client' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'client' ? 'bg-green-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue Client</button>
-                </>
-              )}
-            </div>
+            {!isPublic && (
+              <div className="flex gap-2">
+                {isDashboard && (
+                  <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'admin' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'admin' ? 'bg-indigo-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue Admin</button>
+                )}
+                
+                {(isDashboard || isDjStandalone) && (
+                  <>
+                    <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'dj' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'dj' ? 'bg-yellow-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue DJ</button>
+                    <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'client' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'client' ? 'bg-green-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue Client</button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 
