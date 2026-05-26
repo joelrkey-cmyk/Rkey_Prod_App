@@ -226,7 +226,9 @@ const DjClientApp = ({ isPublic = false }) => {
             has_detecteur_fumee: c.has_detecteur_fumee || false,
             has_no_limiteur_ni_detecteur: c.has_no_limiteur_ni_detecteur || false,
             has_wifi: c.has_wifi || false,
-            has_4g_5g: c.has_4g_5g || false
+            has_4g_5g: c.has_4g_5g || false,
+            optionsTarifNotes: c.options_tarif_notes || "",
+            showOptionsTarifNotesToClient: c.show_options_tarif_notes_to_client !== undefined ? c.show_options_tarif_notes_to_client : false
          };
       });
       
@@ -311,7 +313,7 @@ const DjClientApp = ({ isPublic = false }) => {
       if (!payload.notifications) {
           let section = null;
           if ('chat_messages' in payload) section = 'chat';
-          if ('requested_options' in payload) section = 'options';
+          if ('requested_options' in payload || 'options_tarif_notes' in payload || 'show_options_tarif_notes_to_client' in payload) section = 'options';
           if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload) section = 'playlist';
           if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload) section = 'planning';
           if ('client_photo' in payload) section = 'client_info';
@@ -3057,6 +3059,64 @@ const DjClientApp = ({ isPublic = false }) => {
               )}
             </div>
           </div>
+
+          {/* Note sur les tarifs */}
+          {role === 'client' ? (
+            ev.showOptionsTarifNotesToClient && (
+              <div className="mt-6 pt-6 border-t border-slate-200">
+                <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  📝 Note sur les tarifs (optionnel)
+                </h4>
+                {ev.optionsTarifNotes ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700 whitespace-pre-wrap">
+                    {ev.optionsTarifNotes}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 italic">Aucune note spécifique sur les tarifs.</p>
+                )}
+              </div>
+            )
+          ) : (
+            <div className="mt-6 pt-6 border-t border-slate-200">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+                  📝 Note sur les tarifs (optionnel)
+                </h4>
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200/60 transition-colors">
+                  <input
+                    type="checkbox"
+                    className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                    checked={ev.showOptionsTarifNotesToClient || false}
+                    onChange={e => {
+                      const val = e.target.checked;
+                      const newEvents = [...events];
+                      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                      if (idx !== -1) {
+                        newEvents[idx].showOptionsTarifNotesToClient = val;
+                        setEvents(newEvents);
+                      }
+                      updateContractDb(currentRoute.eventId, { show_options_tarif_notes_to_client: val });
+                    }}
+                  />
+                  Rendre visible pour le client
+                </label>
+              </div>
+              <textarea
+                className="w-full border rounded-lg p-3 text-sm min-h-[100px] focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                placeholder="Ajouter des notes sur les tarifs ou sur un accord particulier..."
+                value={ev.optionsTarifNotes || ''}
+                onChange={e => {
+                  const newEvents = [...events];
+                  const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                  if (idx !== -1) {
+                    newEvents[idx].optionsTarifNotes = e.target.value;
+                    setEvents(newEvents);
+                  }
+                }}
+                onBlur={e => updateContractDb(currentRoute.eventId, { options_tarif_notes: e.target.value })}
+              />
+            </div>
+          )}
         </div>
       );
     };
