@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { generateMandatHTML, generateEntrepriseHTML, generateArtisteHTML } from './contracts2/mandatHtmlGenerator';
@@ -58,16 +58,279 @@ const DjClientApp = ({ isPublic = false }) => {
   const [selectedDjFilter, setSelectedDjFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [events, setEvents] = useState([]);
+  const [availableOptions, setAvailableOptions] = useState([]);
+  const [pdfNotes, setPdfNotes] = useState([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+
+  // PWA Support States
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showIOSInstallTip, setShowIOSInstallTip] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        return Notification.permission;
+      }
+    } catch (e) {
+      console.warn("Notification permission check blocked:", e);
+    }
+    return 'default';
+  });
+  const [lastNotificationCount, setLastNotificationCount] = useState(0);
+  const [dismissedPwa, setDismissedPwa] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem('rkey_dismiss_pwa') === 'true';
+      }
+    } catch (e) {
+      console.warn("localStorage read blocked in this context:", e);
+    }
+    return false;
+  });
+
+  const dismissPwaBanner = () => {
+    setDismissedPwa(true);
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem('rkey_dismiss_pwa', 'true');
+      }
+    } catch (e) {
+      console.warn("localStorage write blocked in this context:", e);
+    }
+  };
+
+  const installPWA = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsStandalone(true);
+        setDeferredPrompt(null);
+        toast.success("Installation lancée ! Merci 🎉");
+      }
+    } else {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      if (isIOS) {
+        setShowIOSInstallTip(true);
+      } else {
+        toast.info(
+          "Pour installer l'application sur votre appareil : cliquez sur l'icône de partage ou les 3 points du navigateur, puis sélectionnez 'Ajouter à l'écran d'accueil' ou 'Installer'."
+        );
+      }
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      toast.error("Votre navigateur ou appareil ne prend pas en charge les notifications natives.");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        toast.success("Notifications push activées avec succès ! 🔔");
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification("Application R'Key Prod", {
+              body: "Félicitations ! Vous recevrez désormais les notifications push en direct de l'application. 🎧",
+              icon: '/favicon.svg',
+              badge: '/favicon.svg'
+            });
+          });
+        } else {
+          new Notification("Application R'Key Prod", {
+            body: "Félicitations ! Vous recevrez désormais les notifications push en direct de l'application. 🎧",
+            icon: '/favicon.svg'
+          });
+        }
+      } else {
+        toast.info("Notifications refusées.");
+      }
+    } catch (e) {
+      console.error("Permission request failed", e);
+    }
+  };
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    const checkStandalone = () => {
+      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+        setIsStandalone(true);
+      }
+    };
+    checkStandalone();
+    window.addEventListener('resize', checkStandalone);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('resize', checkStandalone);
+    };
+  }, []);
+
+  // Monitor updates of notifications to trigger local pushes
+  useEffect(() => {
+    const currentUnreadCount = events.reduce((sum, ev) => {
+      const roleNotifs = ev.notifications && ev.notifications[currentRoute.role] 
+        ? Object.keys(ev.notifications[currentRoute.role]) 
+        : [];
+      return sum + roleNotifs.length;
+    }, 0);
+
+    // Update document title badger
+    if (currentUnreadCount > 0) {
+      document.title = `(${currentUnreadCount}) R'Key Prod App`;
+    } else {
+      document.title = "R'Key Prod App";
+    }
+
+    // Trigger local push notification on new updates
+    if (currentUnreadCount > lastNotificationCount) {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        const msg = `Nouveau message ou modification dans votre portail R'Key Prod !`;
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then((reg) => {
+            reg.showNotification("✨ Mise à jour R'Key Prod", {
+              body: msg,
+              icon: '/favicon.svg',
+              badge: '/favicon.svg',
+              vibrate: [100, 50, 100]
+            });
+          });
+        } else {
+          new Notification("✨ Mise à jour R'Key Prod", {
+            body: msg,
+            icon: '/favicon.svg'
+          });
+        }
+      }
+    }
+    setLastNotificationCount(currentUnreadCount);
+  }, [events, currentRoute.role]);
+
+  const renderPWABanner = () => {
+    if (dismissedPwa || isStandalone) return null;
+    if (currentRoute.role !== 'dj' && currentRoute.role !== 'client') return null;
+
+    return (
+      <div className="md:hidden mb-6 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 text-white rounded-2xl p-4 shadow-lg border border-indigo-500 relative overflow-hidden animate-in slide-in-from-top duration-300">
+        <div className="absolute top-0 right-0 p-1">
+          <button 
+            onClick={dismissPwaBanner}
+            className="p-1 px-2.5 text-white/75 hover:text-white rounded-lg hover:bg-white/10 transition"
+            title="Ignorer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        
+        <div className="flex gap-3 items-start pr-8">
+          <div className="p-2 bg-white/10 rounded-xl shrink-0">
+            <Smartphone className="w-5 h-5 text-yellow-300 animate-bounce" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="text-sm font-black tracking-wide flex items-center gap-1.5">
+              <span>Ajouter à l'écran d'accueil</span>
+              <span className="bg-amber-400 text-indigo-950 font-black text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider">PWA</span>
+            </h4>
+            <p className="text-xs text-indigo-100 leading-relaxed">
+              Installez l'application R'Key Prod sur votre smartphone pour l'utiliser comme une vraie app avec alertes en temps réel et accès rapide !
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4 pt-4 border-t border-white/10">
+          <button
+            onClick={installPWA}
+            className="w-full bg-white hover:bg-indigo-55 text-indigo-950 hover:text-indigo-900 font-extrabold py-2 px-3 rounded-lg transition text-xs flex items-center justify-center gap-2 shadow-sm"
+          >
+            <DownloadCloud className="w-4 h-4 text-indigo-600" />
+            Installer l'application
+          </button>
+
+          {notificationPermission !== 'granted' && (
+            <button
+              onClick={requestNotificationPermission}
+              className="w-full bg-indigo-500/40 hover:bg-indigo-500/60 text-white font-extrabold py-2 px-3 rounded-lg transition text-xs border border-white/15 flex items-center justify-center gap-2"
+            >
+              <Bell className="w-4 h-4 text-yellow-300 animate-pulse" />
+              Activer les notifications push
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderIOSInstallModal = () => {
+    if (!showIOSInstallTip) return null;
+
+    return (
+      <div 
+        className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs animate-in fade-in duration-200"
+        onClick={() => setShowIOSInstallTip(false)}
+      >
+        <div 
+          className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-sm p-6 text-slate-900 border border-slate-100 shadow-2xl relative animate-in slide-in-from-bottom duration-300"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="text-center space-y-4">
+            <div className="mx-auto w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600">
+              <Smartphone className="w-6 h-6 animate-pulse" />
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-base font-extrabold text-slate-900">Ajouter à l'écran d'accueil</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Suivez ces instructions simples pour installer l'application sur votre iPhone ou iPad :
+              </p>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-2xl text-left space-y-3 border border-slate-100">
+              <div className="flex gap-3 items-start">
+                <span className="flex items-center justify-center w-5 h-5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full shrink-0">1</span>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Appuyez sur le bouton de partage en bas de Safari <span className="inline-block bg-white border border-slate-200 p-1 rounded-md text-[10px] uppercase font-bold text-slate-600">Partager <Share2 className="w-3 h-3 inline-block text-indigo-500" /></span>
+                </p>
+              </div>
+              <div className="flex gap-3 items-start">
+                <span className="flex items-center justify-center w-5 h-5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full shrink-0">2</span>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Faites défiler le menu vers le bas et appuyez sur <span className="font-bold text-slate-800">"Sur l'écran d'accueil"</span>
+                </p>
+              </div>
+              <div className="flex gap-3 items-start">
+                <span className="flex items-center justify-center w-5 h-5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full shrink-0">3</span>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  Cliquez sur <span className="font-extrabold text-indigo-600">"Ajouter"</span> en haut à droite. 🎉
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowIOSInstallTip(false)}
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl transition text-xs select-none"
+            >
+              C'est noté !
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   useEffect(() => {
     fetchDjProfiles();
     fetchContractsAsEvents();
     fetchPdfNotes();
   }, []);
-
-  const [events, setEvents] = useState([]);
-  const [availableOptions, setAvailableOptions] = useState([]);
-  const [pdfNotes, setPdfNotes] = useState([]);
-  const [isLoadingEvents, setIsLoadingEvents] = useState(true);
 
   const fetchPdfNotes = async () => {
     try {
@@ -330,8 +593,8 @@ const DjClientApp = ({ isPublic = false }) => {
           let section = null;
           if ('chat_messages' in payload) section = 'chat';
           if ('requested_options' in payload || 'options_tarif_notes' in payload || 'show_options_tarif_notes_to_client' in payload) section = 'options';
-          if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload || 'playlist_audio_files' in payload) section = 'playlist';
-          if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload) section = 'planning';
+          if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload || 'playlist_audio_files' in payload || 'dedicaces' in payload) section = 'playlist';
+          if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload || 'entree_maries' in payload || 'entree_maries_notes' in payload || 'ouverture_bal' in payload || 'ouverture_bal_notes' in payload || 'dessert' in payload || 'dessert_notes' in payload || 'custom_wedding_events' in payload) section = 'planning';
           if ('client_photo' in payload) section = 'client_info';
           if ('selected_pdf_notes' in payload) section = 'documents';
           if ('venue_photos' in payload || 'venue_notes' in payload || 'has_limiteur_son' in payload || 'has_detecteur_fumee' in payload || 'has_no_limiteur_ni_detecteur' in payload || 'has_wifi' in payload || 'has_4g_5g' in payload) section = 'venue';
@@ -498,115 +761,233 @@ const DjClientApp = ({ isPublic = false }) => {
     return `rkeyprodapp.fr/${type}-${clientName}`;
   };
 
-  const EventTable = ({ eventsList }) => (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left bg-white">
-        <thead>
-          <tr className="border-b text-sm text-gray-500 bg-gray-50">
-            <th className="py-3 px-4 rounded-tl-lg font-semibold">Événement</th>
-            <th className="py-3 px-4 font-semibold">Date</th>
-            <th className="py-3 px-4 font-semibold">Accès DJ</th>
-            <th className="py-3 px-4 rounded-tr-lg font-semibold">Accès Client</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
+  const EventTable = ({ eventsList }) => {
+    const sectionNamesFr = {
+      chat: "Discussion",
+      options: "Tarifs & Options",
+      playlist: "Playlist & Styles",
+      planning: "Déroulement / Planning",
+      client_info: "Infos Client",
+      documents: "Documents administratifs",
+      venue: "Fiche Technique Salle",
+      catering: "Repas Artiste"
+    };
+
+    return (
+      <div className="w-full">
+        {/* Mobile View: Cards layout */}
+        <div className="md:hidden space-y-3 p-1">
           {eventsList.map(ev => {
             const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
             const notifCount = notifKeys.length;
             const hasChatNotif = notifKeys.includes('chat');
+            const listFr = notifKeys.map(k => sectionNamesFr[k] || k).join(', ');
             const isRowHighlit = notifCount > 0 && currentRoute.role === 'admin';
 
-            const rowBg = isRowHighlit 
-              ? "bg-red-50/70 hover:bg-red-100/80 transition-colors" 
-              : "hover:bg-gray-50 transition-colors";
-
-            const cellBorder = isRowHighlit ? "border-y-2 border-red-500 py-3" : "py-4";
-            const firstCellBorder = isRowHighlit ? "border-y-2 border-l-4 border-l-red-600 border-red-500 pl-4 py-3 rounded-l-xl" : "py-4";
-            const lastCellBorder = isRowHighlit ? "border-y-2 border-r-4 border-r-red-500 border-red-500 pr-4 py-3 rounded-r-xl" : "py-4";
-
             return (
-              <tr 
-                key={ev.id} 
-                className={`transition-all duration-200 group/row ${isRowHighlit ? 'shadow-sm' : ''}`}
+              <div 
+                key={ev.id}
+                className={`p-4 rounded-xl border transition-all duration-200 bg-white shadow-xs ${
+                  isRowHighlit 
+                    ? "border-red-300 bg-red-50/10 ring-1 ring-red-100" 
+                    : "border-slate-150 hover:border-slate-300"
+                }`}
               >
-                <td className={`px-4 flex items-center gap-2 ${rowBg} ${firstCellBorder}`}>
-                  <button 
-                    onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
-                    className="font-bold text-gray-900 hover:text-indigo-600 hover:underline transition-colors text-left relative"
-                  >
-                    {ev.name}
-                  </button>
-                  {notifCount > 0 && (
-                    <div className="flex items-center gap-1.5 ml-2">
-                      <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[11px] font-black rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
-                        {notifCount}
-                      </span>
-                      {isRowHighlit && (
-                        <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-md font-extrabold uppercase tracking-wider animate-pulse flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-red-600 rounded-full"></span>
-                          Nouveau
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </td>
-                <td className={`px-4 text-gray-600 whitespace-nowrap ${rowBg} ${cellBorder}`}>
-                  {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
-                </td>
-                <td className={`px-4 ${rowBg} ${cellBorder}`}>
-                  <div className="text-sm font-medium mb-1">{ev.dj.name}</div>
-                  <div className="flex items-center gap-1">
-                    <div className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded truncate max-w-[150px]">
-                      {getDjLink(ev.dj)}
-                    </div>
+                <div className="flex justify-between items-start gap-2">
+                  <div className="min-w-0 flex-1">
                     <button 
-                      onClick={() => { navigator.clipboard.writeText(`https://${getDjLink(ev.dj)}`); toast.success("Lien DJ copié"); }} 
-                      className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition" 
-                      title="Copier le lien DJ"
+                      onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
+                      className="text-sm font-extrabold text-slate-900 hover:text-indigo-605 hover:underline transition-colors text-left leading-tight pr-1"
                     >
-                      <Copy className="w-3.5 h-3.5" />
+                      {ev.name}
                     </button>
-                    <button 
-                      onClick={() => setCurrentRoute({ view: 'dj-list', role: 'dj', eventId: null, mode: 'standalone_dj', activeDj: ev.dj })} 
-                      className="p-1.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded transition" 
-                      title="Ouvrir le portail DJ"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
+                    {ev.client?.name && (
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        Client : <span className="font-semibold text-slate-700">{ev.client.name}</span>
+                      </div>
+                    )}
+                    {notifCount > 0 && (
+                      <div className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold text-red-700 bg-red-50/80 px-2 py-0.5 rounded-md border border-red-100 animate-pulse">
+                        <Bell className="w-3 h-3 text-red-550 shrink-0" />
+                        Changements : {listFr}
+                      </div>
+                    )}
                   </div>
-                </td>
-                <td className={`px-4 ${rowBg} ${lastCellBorder}`}>
-                  <div className="text-sm font-medium mb-1">{ev.client.name}</div>
-                  <div className="flex items-center gap-1">
-                    <div className="text-xs text-green-600 bg-green-50 border border-green-100 px-2 py-1 rounded truncate max-w-[150px]">
-                      {getClientLink(ev)}
-                    </div>
-                    <button 
-                      onClick={() => { navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
-                      className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition" 
-                      title="Copier le lien Client"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                    <button 
-                      onClick={() => setCurrentRoute({ view: 'detail', role: 'client', eventId: ev.id, mode: 'standalone_client' })} 
-                      className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition" 
-                      title="Ouvrir le portail Client"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="flex-shrink-0 text-right">
+                    <span className="inline-block text-[10px] font-extrabold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md whitespace-nowrap">
+                      {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
+                    </span>
                   </div>
-                </td>
-              </tr>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 mt-3 pt-3 border-t border-dashed border-slate-100">
+                  {/* DJ Access */}
+                  <div className="bg-indigo-50/30 p-2 rounded-lg border border-indigo-100/50 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Artiste/DJ</span>
+                      <div className="font-bold text-slate-800 text-xs truncate">{ev.dj?.name || 'Non assigné'}</div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button 
+                        onClick={() => { navigator.clipboard.writeText(`https://${getDjLink(ev.dj)}`); toast.success("Lien DJ copié"); }} 
+                        className="p-1 px-2 bg-white text-indigo-700 hover:bg-indigo-50 rounded border border-indigo-200 transition text-[10px] font-bold flex items-center gap-1"
+                        title="Copier le lien DJ"
+                      >
+                        <Copy className="w-2.5 h-2.5" /> Copier
+                      </button>
+                      <button 
+                        onClick={() => setCurrentRoute({ view: 'dj-list', role: 'dj', eventId: null, mode: 'standalone_dj', activeDj: ev.dj })} 
+                        className="p-1 bg-yellow-50 text-yellow-700 hover:bg-yellow-105 rounded border border-yellow-200 transition" 
+                        title="Ouvrir le portail DJ"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Client Access */}
+                  <div className="bg-green-50/30 p-2 rounded-lg border border-green-100/50 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Client</span>
+                      <div className="font-bold text-slate-800 text-xs truncate">{ev.client?.name || 'Inconnu'}</div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button 
+                        onClick={() => { navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
+                        className="p-1 px-2 bg-white text-green-700 hover:bg-green-50 rounded border border-green-200 transition text-[10px] font-bold flex items-center gap-1"
+                        title="Copier le lien Client"
+                      >
+                        <Copy className="w-2.5 h-2.5" /> Copier
+                      </button>
+                      <button 
+                        onClick={() => setCurrentRoute({ view: 'detail', role: 'client', eventId: ev.id, mode: 'standalone_client' })} 
+                        className="p-1 bg-green-50 text-green-705 hover:bg-green-100 rounded border border-green-200 transition" 
+                        title="Ouvrir le portail Client"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             );
           })}
           {eventsList.length === 0 && (
-            <tr><td colSpan="5" className="py-8 text-center text-gray-500 italic">Aucun événement.</td></tr>
+            <div className="py-8 text-center text-gray-500 italic bg-white rounded-xl border">Aucun événement.</div>
           )}
-        </tbody>
-      </table>
-    </div>
-  );
+        </div>
+
+        {/* Desktop View: Table layout */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-left bg-white">
+            <thead>
+              <tr className="border-b text-sm text-gray-500 bg-gray-50">
+                <th className="py-3 px-4 rounded-tl-lg font-semibold">Événement</th>
+                <th className="py-3 px-4 font-semibold">Date</th>
+                <th className="py-3 px-4 font-semibold">Accès DJ</th>
+                <th className="py-3 px-4 rounded-tr-lg font-semibold">Accès Client</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {eventsList.map(ev => {
+                const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
+                const notifCount = notifKeys.length;
+                const hasChatNotif = notifKeys.includes('chat');
+                const isRowHighlit = notifCount > 0 && currentRoute.role === 'admin';
+
+                const rowBg = isRowHighlit 
+                  ? "bg-rose-50/40 group-hover/row:bg-rose-50/80 transition-all duration-200" 
+                  : "hover:bg-gray-50 transition-all duration-200";
+
+                const cellBorder = "py-4";
+                const firstCellBorder = isRowHighlit ? "border-l-4 border-l-red-500 pl-3 py-4" : "pl-4 py-4";
+                const lastCellBorder = "pr-4 py-4";
+
+                return (
+                  <tr 
+                    key={ev.id} 
+                    className={`transition-all duration-200 group/row border-b border-gray-100 last:border-b-0 ${isRowHighlit ? 'bg-rose-50/20' : ''}`}
+                  >
+                    <td className={`px-4 flex items-center gap-2 ${rowBg} ${firstCellBorder}`}>
+                      <button 
+                        onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
+                        className="font-bold text-gray-900 hover:text-indigo-600 hover:underline transition-colors text-left relative"
+                      >
+                        {ev.name}
+                      </button>
+                      {notifCount > 0 && (
+                        <div className="flex items-center gap-1.5 ml-2">
+                          <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[11px] font-black rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
+                            {notifCount}
+                          </span>
+                          {isRowHighlit && (
+                            <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-md font-extrabold uppercase tracking-wider animate-pulse flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                              Nouveau
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className={`px-4 text-gray-600 whitespace-nowrap min-w-[125px] ${rowBg} ${cellBorder}`}>
+                      {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
+                    </td>
+                    <td className={`px-4 ${rowBg} ${cellBorder}`}>
+                      <div className="text-sm font-medium mb-1">{ev.dj.name}</div>
+                      <div className="flex items-center gap-1">
+                        <div className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded truncate max-w-[150px]">
+                          {getDjLink(ev.dj)}
+                        </div>
+                        <button 
+                          onClick={() => { navigator.clipboard.writeText(`https://${getDjLink(ev.dj)}`); toast.success("Lien DJ copié"); }} 
+                          className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition" 
+                          title="Copier le lien DJ"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => setCurrentRoute({ view: 'dj-list', role: 'dj', eventId: null, mode: 'standalone_dj', activeDj: ev.dj })} 
+                          className="p-1.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded transition" 
+                          title="Ouvrir le portail DJ"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                    <td className={`px-4 ${rowBg} ${lastCellBorder}`}>
+                      <div className="text-sm font-medium mb-1">{ev.client.name}</div>
+                      <div className="flex items-center gap-1">
+                        <div className="text-xs text-green-600 bg-green-50 border border-green-100 px-2 py-1 rounded truncate max-w-[150px]">
+                          {getClientLink(ev)}
+                        </div>
+                        <button 
+                          onClick={() => { navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
+                          className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition" 
+                          title="Copier le lien Client"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => setCurrentRoute({ view: 'detail', role: 'client', eventId: ev.id, mode: 'standalone_client' })} 
+                          className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition" 
+                          title="Ouvrir le portail Client"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {eventsList.length === 0 && (
+                <tr><td colSpan="5" className="py-8 text-center text-gray-500 italic">Aucon événement.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   const AdminListView = () => (
     <div className="space-y-6">
@@ -654,14 +1035,15 @@ const DjClientApp = ({ isPublic = false }) => {
         
         {/* Événements avec Notifications (Prioritaires) */}
         {priorityEvents.length > 0 && (
-          <div className="mb-8 border-2 border-red-200 bg-red-50/10 rounded-2xl p-5 shadow-sm">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-red-600">
+          <div className="mb-8 border-2 border-red-200 bg-red-50/20 rounded-2xl p-5 shadow-sm relative overflow-hidden animate-in fade-in duration-300">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2.5 text-red-750">
               <span className="flex h-3 w-3 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
               </span>
-              Actions Requises - Nouvelles Notifications
-              <span className="bg-red-100 text-red-700 text-xs py-1 px-2.5 rounded-full font-bold">
+              <Bell className="w-5 h-5 text-red-500 animate-bounce" />
+              Notifications en cours
+              <span className="bg-red-500 text-white text-xs font-black rounded-full flex items-center justify-center border border-red-600 shadow-sm min-w-6 h-6 px-1.5 animate-pulse">
                 {priorityEvents.length}
               </span>
             </h3>
@@ -891,7 +1273,8 @@ const DjClientApp = ({ isPublic = false }) => {
     const isClient = role === 'client';
     const isAdminOrDj = role === 'admin' || role === 'dj';
 
-    const audioFiles = ev.playlistAudioFiles || [];
+    const allAudioFiles = ev.playlistAudioFiles || [];
+    const audioFiles = isClient ? allAudioFiles.filter(a => !a.isSurprise) : allAudioFiles;
 
     const handleUploadAudio = async (file) => {
       const isAudio = file.type === 'audio/mpeg' || file.type === 'audio/mp3' || file.type === 'audio/wav' || file.type === 'audio/x-wav' || file.name.endsWith('.mp3') || file.name.endsWith('.wav');
@@ -915,10 +1298,11 @@ const DjClientApp = ({ isPublic = false }) => {
             id: 'audio-' + Date.now(),
             name: data.originalName || file.name,
             url: data.url,
+            isSurprise: true,
             note: '',
             uploadedAt: new Date().toISOString()
           };
-          const updatedList = [...audioFiles, newAudioFile];
+          const updatedList = [...allAudioFiles, newAudioFile];
           
           const newEvents = [...events];
           const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
@@ -965,7 +1349,7 @@ const DjClientApp = ({ isPublic = false }) => {
         });
         
         if (response.ok) {
-          const updatedList = audioFiles.filter(a => a.id !== audioId);
+          const updatedList = allAudioFiles.filter(a => a.id !== audioId);
           const newEvents = [...events];
           const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
           if (idx !== -1) {
@@ -984,7 +1368,7 @@ const DjClientApp = ({ isPublic = false }) => {
     };
 
     const handleNoteUpdate = (audioId, newNote) => {
-      const updatedList = audioFiles.map(a => a.id === audioId ? { ...a, note: newNote } : a);
+      const updatedList = allAudioFiles.map(a => a.id === audioId ? { ...a, note: newNote } : a);
       const newEvents = [...events];
       const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
       if (idx !== -1) {
@@ -994,8 +1378,20 @@ const DjClientApp = ({ isPublic = false }) => {
     };
 
     const handleNoteBlur = (audioId, finalNote) => {
-      const updatedList = audioFiles.map(a => a.id === audioId ? { ...a, note: finalNote } : a);
+      const updatedList = allAudioFiles.map(a => a.id === audioId ? { ...a, note: finalNote } : a);
       updateContractDb(currentRoute.eventId, { playlist_audio_files: updatedList });
+    };
+
+    const handleToggleAudioSurprise = (audioId) => {
+      const updatedList = allAudioFiles.map(a => a.id === audioId ? { ...a, isSurprise: !a.isSurprise } : a);
+      const newEvents = [...events];
+      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+      if (idx !== -1) {
+        newEvents[idx].playlistAudioFiles = updatedList;
+        setEvents(newEvents);
+      }
+      updateContractDb(currentRoute.eventId, { playlist_audio_files: updatedList });
+      toast.success("Statut Surprise du fichier mis à jour !");
     };
 
     const handleMusicStyleToggle = (style) => {
@@ -1408,22 +1804,54 @@ const DjClientApp = ({ isPublic = false }) => {
                 </h5>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {audioFiles.map((file) => (
-                    <div key={file.id} className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-sm flex flex-col justify-between relative group hover:border-indigo-200 transition-all">
+                    <div 
+                      key={file.id} 
+                      className={`rounded-xl border p-4 shadow-sm flex flex-col justify-between relative group hover:border-indigo-300 transition-all ${
+                        file.isSurprise 
+                          ? "bg-purple-50/30 border-purple-200" 
+                          : "bg-white border-slate-200/80"
+                      }`}
+                    >
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <Music className="w-4 h-4 text-indigo-500 flex-shrink-0" />
-                          <span className="text-sm font-semibold truncate text-slate-800" title={file.name}>
-                            {file.name}
-                          </span>
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <Music className={`w-4 h-4 flex-shrink-0 ${file.isSurprise ? "text-purple-500" : "text-indigo-500"}`} />
+                          <div className="flex flex-col min-w-0 flex-1">
+                            <span className="text-sm font-semibold truncate text-slate-800" title={file.name}>
+                              {file.name}
+                            </span>
+                            {file.isSurprise && (
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded flex items-center gap-1 w-fit">
+                                  <Gift className="w-3 h-3" /> Surprise
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteAudio(file.id)}
-                          className="text-slate-400 hover:text-red-500 p-1 rounded-lg hover:bg-slate-50 transition-colors"
-                          title="Supprimer le fichier"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {isAdminOrDj && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleAudioSurprise(file.id)}
+                              className={`p-1.5 rounded-lg transition-colors border ${
+                                file.isSurprise 
+                                  ? "text-purple-600 bg-purple-100/60 hover:bg-purple-100 border-purple-200" 
+                                  : "text-slate-400 hover:text-purple-600 hover:bg-slate-100 border-transparent"
+                              }`}
+                              title={file.isSurprise ? "Rendre visible au client (Actuellement Surprise)" : "Masquer pour le client (Définir comme Surprise)"}
+                            >
+                              <Gift className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAudio(file.id)}
+                            className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                            title="Supprimer le fichier"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
 
                       {/* Native Audio Preview */}
@@ -2485,7 +2913,8 @@ const DjClientApp = ({ isPublic = false }) => {
                </div>
             </h3>
             
-            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
+            {isAdminOrDj && (
+              <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
                <select 
                  className="text-sm border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1.5"
                  value={docsUploadCategory}
@@ -2504,6 +2933,7 @@ const DjClientApp = ({ isPublic = false }) => {
                  <input type="file" accept="application/pdf, image/png, image/jpeg, image/jpg, .heic, .heif" className="hidden" onChange={handleVisitSheetUpload} disabled={docsUploading} multiple />
                </label>
             </div>
+            )}
           </div>
           
           <div className="space-y-8">
@@ -3681,9 +4111,13 @@ const DjClientApp = ({ isPublic = false }) => {
               onChange={(e) => setChatNewMessage(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Écrivez votre message..."
-              className="flex-1 border border-orange-200 rounded-md p-2.5 focus:ring-2 focus:ring-orange-500 focus:outline-none focus:border-orange-500 bg-white placeholder-orange-300"
+              className="flex-1 border border-orange-200 rounded-md p-2.5 text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none focus:border-orange-500 bg-white placeholder-orange-300 min-w-0"
             />
-            <button onClick={handleSendMessage} disabled={!chatNewMessage.trim()} className="bg-orange-600 text-white px-5 py-2.5 rounded-md font-medium hover:bg-orange-700 disabled:opacity-50 transition-colors shadow-sm disabled:shadow-none font-semibold">
+            <button 
+              onClick={handleSendMessage} 
+              disabled={!chatNewMessage.trim()} 
+              className="bg-orange-600 text-white px-3 sm:px-5 py-2.5 rounded-md text-xs sm:text-sm hover:bg-orange-700 disabled:opacity-50 transition-colors shadow-sm disabled:shadow-none font-semibold whitespace-nowrap flex-shrink-0 flex items-center justify-center"
+            >
               Envoyer
             </button>
           </div>
@@ -4162,6 +4596,17 @@ const DjClientApp = ({ isPublic = false }) => {
         .replace(/[\u0300-\u036f]/g, "") // remove accents
         .replace(/[^a-z0-9]/g, ''); // keep only alpha-numeric characters
     };
+
+    const sectionNamesFr = {
+      chat: "Discussion",
+      options: "Tarifs & Options",
+      playlist: "Playlist & Styles",
+      planning: "Déroulement / Planning",
+      client_info: "Infos Client",
+      documents: "Documents administratifs",
+      venue: "Fiche Technique Salle",
+      catering: "Repas Artiste"
+    };
     
     const activeDjNorm = normalizeString(activeDj.name);
     
@@ -4226,24 +4671,26 @@ const DjClientApp = ({ isPublic = false }) => {
 
         <div className="grid gap-6">
             {priorityDjEvents.length > 0 && (
-                <div className="border-2 border-red-200 bg-red-50/10 rounded-2xl p-5 shadow-sm">
-                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-red-600 animate-pulse-subtle">
+                <div className="border-2 border-red-200 bg-red-50/20 rounded-2xl p-5 shadow-sm relative overflow-hidden animate-in fade-in duration-300">
+                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2.5 text-red-750">
                       <span className="flex h-3 w-3 relative">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                       </span>
-                      Actions Requises - Nouveaux Messages / Changements
-                      <span className="bg-red-100 text-red-700 text-xs py-1 px-2.5 rounded-full font-bold">
+                      <Bell className="w-5 h-5 text-red-500 animate-bounce" />
+                      Notifications en cours
+                      <span className="bg-red-500 text-white text-xs font-black rounded-full flex items-center justify-center border border-red-600 shadow-sm min-w-6 h-6 px-1.5 animate-pulse">
                         {priorityDjEvents.length}
                       </span>
                     </h3>
-                    <div className="overflow-x-auto bg-white border border-red-100 rounded-xl shadow-xs">
+
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto bg-white border border-red-100 rounded-xl shadow-xs">
                         <table className="w-full text-left">
                             <thead className="bg-gray-50 text-sm text-gray-500 border-b">
                                 <tr>
                                     <th className="p-4 font-semibold">Événement</th>
                                     <th className="p-4 font-semibold">Date</th>
-                                    <th className="p-4 font-semibold">Client</th>
                                     <th className="p-4"></th>
                                 </tr>
                             </thead>
@@ -4262,14 +4709,13 @@ const DjClientApp = ({ isPublic = false }) => {
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="p-4">
-                                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
+                                        <td className="p-4 min-w-[125px]">
+                                            <span className="text-xs bg-yellow-105 text-yellow-800 px-2 py-1 rounded font-medium">
                                                 {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
                                             </span>
                                         </td>
-                                        <td className="p-4 text-gray-700 font-medium">{ev.client.name}</td>
                                         <td className="p-4 text-right">
-                                            <button className="text-yellow-600 font-bold text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
+                                            <button className="text-yellow-605 font-bold text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
                                                 Ouvrir <ChevronRight className="w-4 h-4"/>
                                             </button>
                                         </td>
@@ -4278,6 +4724,42 @@ const DjClientApp = ({ isPublic = false }) => {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-3">
+                        {priorityDjEvents.map(ev => {
+                            const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
+                            const notifCount = notifKeys.length;
+                            const listFr = notifKeys.map(k => sectionNamesFr[k] || k).join(', ');
+                            return (
+                                <div 
+                                    key={ev.id} 
+                                    onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}
+                                    className="p-4 bg-white rounded-xl border border-red-150 shadow-xs hover:border-red-300 transition-all flex flex-col gap-1.5 cursor-pointer text-left"
+                                >
+                                    <div className="flex justify-between items-start gap-2">
+                                        <div className="min-w-0 flex-1">
+                                            <h4 className="font-extrabold text-sm text-slate-900 leading-tight">
+                                                {ev.name}
+                                            </h4>
+                                            {ev.client?.name && (
+                                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                                    Client : <span className="font-semibold text-slate-700">{ev.client.name}</span>
+                                                </p>
+                                            )}
+                                        </div>
+                                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
+                                            {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-[11px] text-red-750 bg-red-50/50 py-1 px-2.5 rounded-lg border border-red-100 mt-1">
+                                        <Bell className="w-3.5 h-3.5 text-red-505 animate-pulse flex-shrink-0" />
+                                        <span>Modifié : <span className="font-bold">{listFr}</span></span>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -4300,47 +4782,86 @@ const DjClientApp = ({ isPublic = false }) => {
                                 {djStandaloneExpandedYears[year] !== false ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                             </button>
                             {djStandaloneExpandedYears[year] !== false && (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left bg-white">
-                                        <thead className="bg-gray-50 text-sm text-gray-500 border-b border-t">
-                                            <tr>
-                                                <th className="p-4 font-semibold">Événement</th>
-                                                <th className="p-4 font-semibold">Date</th>
-                                                <th className="p-4 font-semibold">Client</th>
-                                                <th className="p-4"></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-gray-100">
-                                            {futureByYear[year].map(ev => {
-                                                const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
-                                                const notifCount = notifKeys.length;
-                                                const hasChatNotif = notifKeys.includes('chat');
-                                                return (
-                                                <tr key={ev.id} className="hover:bg-yellow-50 transition cursor-pointer group" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
-                                                    <td className="p-4 font-medium text-gray-900 group-hover:text-yellow-700 flex items-center gap-2">
-                                                        {ev.name}
-                                                        {notifCount > 0 && (
-                                                            <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
-                                                                {notifCount}
+                                <div className="w-full">
+                                    {/* Desktop Table View */}
+                                    <div className="hidden md:block overflow-x-auto">
+                                        <table className="w-full text-left bg-white">
+                                            <thead className="bg-gray-50 text-sm text-gray-500 border-b border-t">
+                                                <tr>
+                                                    <th className="p-4 font-semibold">Événement</th>
+                                                    <th className="p-4 font-semibold">Date</th>
+                                                    <th className="p-4"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {futureByYear[year].map(ev => {
+                                                    const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
+                                                    const notifCount = notifKeys.length;
+                                                    const hasChatNotif = notifKeys.includes('chat');
+                                                    return (
+                                                    <tr key={ev.id} className="hover:bg-yellow-50 transition cursor-pointer group" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
+                                                        <td className="p-4 font-medium text-gray-900 group-hover:text-yellow-700 flex items-center gap-2">
+                                                            {ev.name}
+                                                            {notifCount > 0 && (
+                                                                <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
+                                                                    {notifCount}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="p-4 min-w-[125px]">
+                                                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
+                                                                {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
                                                             </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="p-4">
-                                                        <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
+                                                        </td>
+                                                        <td className="p-4 text-right">
+                                                            <button className="text-yellow-600 font-medium text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
+                                                                Ouvrir <ChevronRight className="w-4 h-4"/>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Mobile Cards View */}
+                                    <div className="md:hidden p-4 space-y-3 bg-white">
+                                        {futureByYear[year].map(ev => {
+                                            const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
+                                            const notifCount = notifKeys.length;
+                                            const listFr = notifKeys.map(k => sectionNamesFr[k] || k).join(', ');
+                                            return (
+                                                <div 
+                                                    key={ev.id} 
+                                                    onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}
+                                                    className="p-4 bg-white rounded-xl border border-slate-150 hover:border-slate-350 transition-all flex flex-col gap-1.5 cursor-pointer text-left"
+                                                >
+                                                    <div className="flex justify-between items-start gap-2">
+                                                        <div className="min-w-0 flex-1">
+                                                            <h4 className="font-extrabold text-sm text-slate-900 leading-tight">
+                                                                {ev.name}
+                                                            </h4>
+                                                            {ev.client?.name && (
+                                                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                                                    Client : <span className="font-semibold text-slate-705">{ev.client.name}</span>
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <span className="text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md whitespace-nowrap shrink-0">
                                                             {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
                                                         </span>
-                                                    </td>
-                                                    <td className="p-4 text-gray-600">{ev.client.name}</td>
-                                                    <td className="p-4 text-right">
-                                                        <button className="text-yellow-600 font-medium text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
-                                                            Ouvrir <ChevronRight className="w-4 h-4"/>
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
+                                                    </div>
+                                                    {notifCount > 0 && (
+                                                        <div className="flex items-center gap-1.5 text-[11px] text-red-750 bg-red-50/50 py-1 px-2.5 rounded-lg border border-red-100 mt-1">
+                                                            <Bell className="w-3.5 h-3.5 text-red-505 animate-pulse flex-shrink-0" />
+                                                            <span>Notif : <span className="font-bold">{listFr}</span></span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -4353,28 +4874,55 @@ const DjClientApp = ({ isPublic = false }) => {
             <h3 className="text-xl font-bold text-gray-800 mt-6">Historique</h3>
             {past.length > 0 ? (
                 <div className="bg-white rounded-xl border overflow-hidden shadow-sm">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-50 text-sm text-gray-500 border-b">
-                            <tr><th className="p-4 font-semibold">Événement</th><th className="p-4 font-semibold">Date</th><th className="p-4 font-semibold">Client</th><th className="p-4"></th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {past.map(ev => (
-                                <tr key={ev.id} className="hover:bg-gray-50 transition cursor-pointer" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
-                                    <td className="p-4 font-medium">{ev.name}</td>
-                                    <td className="p-4 text-gray-600">
-                                        {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
-                                    </td>
-                                    <td className="p-4 text-gray-600">{ev.client.name}</td>
-                                    <td className="p-4 text-right">
-                                        <button className="text-yellow-600 hover:underline text-sm font-medium">Consulter</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    {/* Desktop View */}
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-left bg-white">
+                            <thead className="bg-gray-50 text-sm text-gray-500 border-b">
+                                <tr><th className="p-4 font-semibold">Événement</th><th className="p-4 font-semibold">Date</th><th className="p-4"></th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {past.map(ev => (
+                                    <tr key={ev.id} className="hover:bg-gray-50 transition cursor-pointer" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
+                                        <td className="p-4 font-medium">{ev.name}</td>
+                                        <td className="p-4 text-gray-605 min-w-[125px]">
+                                            {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <button className="text-yellow-600 hover:underline text-sm font-medium">Consulter</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Mobile View */}
+                    <div className="md:hidden divide-y divide-gray-100 bg-white">
+                        {past.map(ev => (
+                            <div 
+                                key={ev.id} 
+                                onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}
+                                className="p-4 hover:bg-gray-50 transition cursor-pointer flex justify-between items-center gap-2 text-left"
+                            >
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="font-semibold text-sm text-slate-800 leading-tight">
+                                        {ev.name}
+                                    </h4>
+                                    {ev.client?.name && (
+                                        <p className="text-[11px] text-slate-505 mt-0.5">
+                                            Client : <span className="font-semibold text-slate-650">{ev.client.name}</span>
+                                        </p>
+                                    )}
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border px-1.5 py-0.5 rounded whitespace-nowrap shrink-0">
+                                    {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             ) : (
-                <p className="text-gray-500">Aucun historique.</p>
+                <p className="text-gray-500 bg-gray-50 p-4 rounded-xl border border-gray-200">Aucun historique.</p>
             )}
         </div>
       </div>
@@ -4420,6 +4968,8 @@ const DjClientApp = ({ isPublic = false }) => {
 
   return (
     <div className="p-6 max-w-6xl mx-auto pb-24 relative">
+      {renderPWABanner()}
+      {renderIOSInstallModal()}
       {hasAnyNotifications() && (
           <div className="flex justify-end mb-4">
               <button onClick={clearAllNotifications} className="bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:text-indigo-800 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2">

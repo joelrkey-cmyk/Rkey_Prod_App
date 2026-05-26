@@ -1281,12 +1281,29 @@ api.get('/notifications/unread-count', authMiddleware, async (req, res) => {
   try {
     const contracts = await db.collection('contracts2').find(
       { status: { $nin: ['trash'] } },
-      { projection: { notifications: 1 } }
+      { projection: { notifications: 1, dj_profile: 1, dj_profile_data: 1 } }
     ).toArray();
     let count = 0;
+    const userRole = req.user?.role || 'admin';
+    const userName = (req.user?.full_name || req.user?.username || '').toLowerCase();
+
     contracts.forEach(c => {
-      if (c.notifications && c.notifications.admin && typeof c.notifications.admin === 'object') {
-        count += Object.keys(c.notifications.admin).length;
+      if (userRole === 'admin') {
+        if (c.notifications && c.notifications.admin && typeof c.notifications.admin === 'object') {
+          count += Object.keys(c.notifications.admin).length;
+        }
+      } else {
+        const djName = (c.dj_profile_data?.nom_artistique || c.dj_profile || '').toLowerCase();
+        const userNameLower = userName.toLowerCase();
+        const isAssigned = djName.includes(userNameLower) || userNameLower.includes(djName) || 
+                           (userNameLower === 'joel' && djName.includes('joël')) ||
+                           (userNameLower === 'joël' && djName.includes('joel')) ||
+                           (userNameLower === 'stefan' && djName.includes('stéphane')) ||
+                           (userNameLower === 'stéphane' && djName.includes('stefan'));
+                           
+        if (isAssigned && c.notifications && c.notifications.dj && typeof c.notifications.dj === 'object') {
+          count += Object.keys(c.notifications.dj).length;
+        }
       }
     });
     res.json({ count });

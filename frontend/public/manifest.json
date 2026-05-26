@@ -1,0 +1,21 @@
+{
+  "short_name": "R'Key Prod",
+  "name": "R'Key Prod App - Devis & Contrats DJ",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    },
+    {
+      "src": "favicon.ico",
+      "type": "image/x-icon",
+      "sizes": "64x64 32x32 24x24 16x16"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#ffffff",
+  "theme_color": "#f97316",
+  "display": "standalone",
+  "orientation": "portrait"
+}
