@@ -488,8 +488,13 @@ const HomePage = () => {
               className="flex flex-col items-center gap-2 group w-20"
               data-testid={`app-icon-${app.route.replace('/', '')}`}
             >
-              <div className={`w-16 h-16 ${app.color} rounded-2xl flex items-center justify-center text-white shadow-md group-hover:shadow-lg group-hover:scale-110 transition-all duration-200`}>
+              <div className={`w-16 h-16 ${app.color} rounded-2xl flex items-center justify-center text-white shadow-md group-hover:shadow-lg group-hover:scale-110 transition-all duration-200 relative`}>
                 {app.icon}
+                {app.key === 'dj-client' && unreadNotifications > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 h-6 min-w-6 px-1.5 bg-red-500 border-2 border-white text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-bounce transform translate-x-1 -translate-y-1">
+                    {unreadNotifications}
+                  </span>
+                )}
               </div>
               <span className="text-xs font-medium text-gray-700 text-center leading-tight">{app.name}</span>
             </button>

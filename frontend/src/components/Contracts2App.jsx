@@ -1375,8 +1375,43 @@ function Contracts2App() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {/* Mode Dirigeant ou Mode Entreprise: Prix de base simple */}
-                  {(isDirigeant() || contractMode === 'entreprise') && (
-                    <div className="space-y-2"><Label className="text-slate-700">Prix de base</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={basePrice} onChange={(e) => setBasePrice(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="10" /></div></div>
+                  {(isDirigeant() || contractMode === 'entreprise') ? (
+                    <div className="space-y-2">
+                      <Label className="text-slate-700">Prix de base</Label>
+                      <div className="flex items-center space-x-2">
+                        <Euro className="h-4 w-4 text-slate-500" />
+                        <Input 
+                          type="number" 
+                          value={basePrice} 
+                          onChange={(e) => setBasePrice(Number(e.target.value))} 
+                          className="border-slate-300 focus:border-blue-500 w-32" 
+                          min="0" 
+                          step="10" 
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 bg-slate-50 p-4 rounded-xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div>
+                        <Label className="text-slate-700 font-bold block text-sm">Montant Prestation de Base TTC</Label>
+                        <p className="text-xs text-slate-500 max-w-md">Montant total servant de base de calcul pour le mandat et la déduction du cachet de l'artiste.</p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Euro className="h-4 w-4 text-slate-500" />
+                        <Input 
+                          type="number" 
+                          value={basePrice} 
+                          onChange={(e) => {
+                            const newBase = Number(e.target.value) || 0;
+                            setBasePrice(newBase);
+                            setCachetArtiste(Math.max(0, newBase - fraisMandat));
+                          }} 
+                          className="border-slate-300 focus:border-blue-500 w-32 font-bold" 
+                          min="0" 
+                          step="10" 
+                        />
+                      </div>
+                    </div>
                   )}
 
                   {/* Mode Mandat: Frais + Cachet */}
@@ -1387,7 +1422,21 @@ function Contracts2App() {
                         <p className="text-xs text-orange-600">Part R'KEY PROD</p>
                         <div className="flex items-center space-x-2">
                           <Euro className="h-4 w-4 text-orange-500" />
-                          <Input type="number" value={fraisMandat} onChange={(e) => setFraisMandat(Number(e.target.value))} className="border-orange-300 focus:border-orange-500" min="0" step="10" data-testid="frais-mandat-input" />
+                          <Input 
+                            type="number" 
+                            value={fraisMandat} 
+                            onChange={(e) => {
+                              const newFrais = Number(e.target.value) || 0;
+                              setFraisMandat(newFrais);
+                              const target = basePrice > 0 ? basePrice : (newFrais + cachetArtiste);
+                              if (basePrice === 0) setBasePrice(target);
+                              setCachetArtiste(Math.max(0, target - newFrais));
+                            }} 
+                            className="border-orange-300 focus:border-orange-500 w-full" 
+                            min="0" 
+                            step="10" 
+                            data-testid="frais-mandat-input" 
+                          />
                         </div>
                       </div>
                       <div className="space-y-2 p-4 bg-purple-50 rounded-lg border border-purple-200">
@@ -1395,7 +1444,19 @@ function Contracts2App() {
                         <p className="text-xs text-purple-600">Part du DJ partenaire</p>
                         <div className="flex items-center space-x-2">
                           <Euro className="h-4 w-4 text-purple-500" />
-                          <Input type="number" value={cachetArtiste} onChange={(e) => setCachetArtiste(Number(e.target.value))} className="border-purple-300 focus:border-purple-500" min="0" step="10" data-testid="cachet-artiste-input" />
+                          <Input 
+                            type="number" 
+                            value={cachetArtiste} 
+                            onChange={(e) => {
+                              const newCachet = Number(e.target.value) || 0;
+                              setCachetArtiste(newCachet);
+                              setBasePrice(fraisMandat + newCachet);
+                            }} 
+                            className="border-purple-300 focus:border-purple-500 w-full" 
+                            min="0" 
+                            step="10" 
+                            data-testid="cachet-artiste-input" 
+                          />
                         </div>
                       </div>
                     </div>

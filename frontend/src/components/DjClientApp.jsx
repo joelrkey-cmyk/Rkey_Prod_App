@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { generateMandatHTML, generateEntrepriseHTML, generateArtisteHTML } from './contracts2/mandatHtmlGenerator';
@@ -43,6 +43,8 @@ const DjClientApp = ({ isPublic = false }) => {
   const chatContainerRef = useRef(null);
   const [venueUploading, setVenueUploading] = useState(false);
   const [djStandaloneExpandedYears, setDjStandaloneExpandedYears] = useState({});
+  const [isEditingClientInfo, setIsEditingClientInfo] = useState(false);
+  const [clientInfoEditData, setClientInfoEditData] = useState({});
   
   const SCHEDULE_CATEGORIES = [
     { title: "Événements du Repas", type: 'repas', options: ["Apéritif", "Entrée", "Plat", "Fromage", "Dessert"] },
@@ -296,6 +298,17 @@ const DjClientApp = ({ isPublic = false }) => {
             end_time: ev.contractInfo?.end_time === "Illimité" ? "" : (ev.contractInfo?.end_time || ""),
             unlimited_time: ev.contractInfo?.unlimited_time || false
           });
+          
+          setIsEditingClientInfo(false);
+          setClientInfoEditData({
+            name: ev.contractInfo?.name || "",
+            company: ev.contractInfo?.company || "",
+            email: ev.contractInfo?.email || "",
+            phone: ev.contractInfo?.phone || "",
+            phone2: ev.contractInfo?.phone2 || "",
+            guest_count: ev.rawClientInfo?.guest_count || "",
+            event_location: ev.contractInfo?.location || ""
+          });
         } else {
           // Keep chat messages alive and synced with background refetches
           setChatMessages(ev.chatMessages || []);
@@ -416,8 +429,18 @@ const DjClientApp = ({ isPublic = false }) => {
     return djMatch && searchMatch;
   });
 
-  const pastEvents = filteredEvents.filter(e => e.date < today);
-  const futureEvents = filteredEvents.filter(e => e.date >= today);
+  const priorityEvents = filteredEvents.filter(e => {
+    const notifs = e.notifications && e.notifications[currentRoute.role] ? Object.keys(e.notifications[currentRoute.role]) : [];
+    return notifs.length > 0;
+  });
+
+  const remainingEvents = filteredEvents.filter(e => {
+    const notifs = e.notifications && e.notifications[currentRoute.role] ? Object.keys(e.notifications[currentRoute.role]) : [];
+    return notifs.length === 0;
+  });
+
+  const pastEvents = remainingEvents.filter(e => e.date < today);
+  const futureEvents = remainingEvents.filter(e => e.date >= today);
   
   const futureByYear = futureEvents.reduce((acc, ev) => {
     const year = ev.date.substring(0, 4);
@@ -606,6 +629,25 @@ const DjClientApp = ({ isPublic = false }) => {
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
         
+        {/* Événements avec Notifications (Prioritaires) */}
+        {priorityEvents.length > 0 && (
+          <div className="mb-8 border-2 border-red-200 bg-red-50/10 rounded-2xl p-5 shadow-sm">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-red-600">
+              <span className="flex h-3 w-3 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+              </span>
+              Actions Requises - Nouvelles Notifications
+              <span className="bg-red-100 text-red-700 text-xs py-1 px-2.5 rounded-full font-bold">
+                {priorityEvents.length}
+              </span>
+            </h3>
+            <div className="bg-white rounded-xl border border-red-100 overflow-hidden shadow-xs">
+              {EventTable({ eventsList: priorityEvents })}
+            </div>
+          </div>
+        )}
+
         {/* Réservé et À venir (Par Année) */}
         <div className="mb-8">
           <h3 className="text-xl font-bold mb-6 ml-2 text-gray-800">Événements en cours ou à venir</h3>
@@ -1732,10 +1774,40 @@ const DjClientApp = ({ isPublic = false }) => {
 
       return (
         <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('client_info')}`} onClick={() => { if (ev.notifications && ev.notifications[currentRoute.role] && ev.notifications[currentRoute.role]['client_info']) toggleSection('client_info'); }}>
-          <h3 className="text-lg font-bold mb-6 flex items-center gap-2">
-            <User className="w-5 h-5 text-indigo-600" />
-            Informations Client
-          </h3>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <User className="w-5 h-5 text-indigo-600" />
+              Informations Client
+            </h3>
+            {currentRoute.role === 'admin' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isEditingClientInfo) {
+                    setIsEditingClientInfo(false);
+                    setClientInfoEditData({
+                      name: ev.contractInfo?.name || "",
+                      company: ev.contractInfo?.company || "",
+                      email: ev.contractInfo?.email || "",
+                      phone: ev.contractInfo?.phone || "",
+                      phone2: ev.contractInfo?.phone2 || "",
+                      guest_count: ev.rawClientInfo?.guest_count || "",
+                      event_location: ev.contractInfo?.location || ""
+                    });
+                  } else {
+                    setIsEditingClientInfo(true);
+                  }
+                }}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm border ${
+                  isEditingClientInfo 
+                    ? 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300' 
+                    : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                }`}
+              >
+                {isEditingClientInfo ? "Annuler" : "Modifier les infos (Admin)"}
+              </button>
+            )}
+          </div>
           
           <div className="flex flex-col md:flex-row gap-8">
             <div className="w-full md:w-1/3 max-w-[240px] flex flex-col mx-auto md:mx-0">
@@ -1780,40 +1852,140 @@ const DjClientApp = ({ isPublic = false }) => {
             </div>
             
             <div className="w-full md:w-2/3 flex-1 flex flex-col justify-center">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nom & Prénom</p>
-                  <p className="font-medium text-gray-900">{info.name}</p>
+              {isEditingClientInfo ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Nom & Prénom</label>
+                    <input
+                      type="text"
+                      value={clientInfoEditData.name || ''}
+                      onChange={(e) => setClientInfoEditData({ ...clientInfoEditData, name: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Entreprise</label>
+                    <input
+                      type="text"
+                      value={clientInfoEditData.company || ''}
+                      onChange={(e) => setClientInfoEditData({ ...clientInfoEditData, company: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={clientInfoEditData.email || ''}
+                      onChange={(e) => setClientInfoEditData({ ...clientInfoEditData, email: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Téléphone 1</label>
+                    <input
+                      type="text"
+                      value={clientInfoEditData.phone || ''}
+                      onChange={(e) => setClientInfoEditData({ ...clientInfoEditData, phone: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Téléphone 2</label>
+                    <input
+                      type="text"
+                      value={clientInfoEditData.phone2 || ''}
+                      onChange={(e) => setClientInfoEditData({ ...clientInfoEditData, phone2: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Nbre d'invités attendus</label>
+                    <input
+                      type="text"
+                      value={clientInfoEditData.guest_count || ''}
+                      onChange={(e) => setClientInfoEditData({ ...clientInfoEditData, guest_count: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Lieu de l'événement</label>
+                    <input
+                      type="text"
+                      value={clientInfoEditData.event_location || ''}
+                      onChange={(e) => setClientInfoEditData({ ...clientInfoEditData, event_location: e.target.value })}
+                      className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 flex justify-end gap-3 mt-4 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsEditingClientInfo(false);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-100 transition"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const mergedClientInfo = {
+                          ...ev.rawClientInfo,
+                          name: clientInfoEditData.name || "",
+                          company: clientInfoEditData.company || "",
+                          email: clientInfoEditData.email || "",
+                          phone: clientInfoEditData.phone || "",
+                          phone2: clientInfoEditData.phone2 || "",
+                          event_location: clientInfoEditData.event_location || "",
+                          guest_count: clientInfoEditData.guest_count || ""
+                        };
+                        await updateContractDb(ev.id, { client_info: mergedClientInfo });
+                        setIsEditingClientInfo(false);
+                        toast.success("Informations client sauvegardées !");
+                      }}
+                      className="px-4 py-2 bg-indigo-650 hover:bg-indigo-750 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Check className="w-4 h-4" /> Enregistrer
+                    </button>
+                  </div>
                 </div>
-                {info.company && (
-                <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Entreprise</p>
-                  <p className="font-medium text-gray-900">{info.company}</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nom & Prénom</p>
+                    <p className="font-medium text-gray-900">{info.name}</p>
+                  </div>
+                  {info.company && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Entreprise</p>
+                      <p className="font-medium text-gray-900">{info.company}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</p>
+                    <p className="font-medium text-gray-900 break-all">{info.email}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 1</p>
+                    <p className="font-medium text-gray-900">{info.phone}</p>
+                  </div>
+                  {info.phone2 && (
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 2</p>
+                      <p className="font-medium text-gray-900">{info.phone2}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nombre d'invités attendus</p>
+                    <p className="font-medium text-gray-900">{ev.rawClientInfo?.guest_count || "Non précisé"}</p>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Lieu de l'événement</p>
+                    <p className="font-medium text-gray-900">{info.location}</p>
+                  </div>
                 </div>
-                )}
-                <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Email</p>
-                  <p className="font-medium text-gray-900 break-all">{info.email}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 1</p>
-                  <p className="font-medium text-gray-900">{info.phone}</p>
-                </div>
-                {info.phone2 && (
-                <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Téléphone 2</p>
-                  <p className="font-medium text-gray-900">{info.phone2}</p>
-                </div>
-                )}
-                <div>
-                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Nombre d'invités attendus</p>
-                  <p className="font-medium text-gray-900">{ev.rawClientInfo?.guest_count || "Non précisé"}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Lieu de l'événement</p>
-                  <p className="font-medium text-gray-900">{info.location}</p>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -3033,6 +3205,60 @@ const DjClientApp = ({ isPublic = false }) => {
             Tarifs et Options de l'Événement
           </h3>
 
+          {role === 'admin' && (
+            <div className="mb-6 p-5 bg-gradient-to-r from-indigo-50/70 to-blue-50/70 rounded-2xl border border-indigo-150 shadow-xs" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">
+                    <Settings className="w-3.5 h-3.5" /> Espace Administrateur
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-850 mt-1">Gestion manuelle des frais de mandat</h4>
+                  <p className="text-xs text-slate-650 leading-relaxed max-w-xl">
+                    Saisissez manuellement les frais de mandat. Le cachet artiste restant sera automatiquement déduit du montant TTC actuel ({totalPrestation.toFixed(2)} €).
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-semibold text-slate-600">Frais de mandat :</span>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="any"
+                      key={fraisMandat}
+                      defaultValue={fraisMandat}
+                      onBlur={async (e) => {
+                        const newFrais = Number(e.target.value) || 0;
+                        const calculatedCachet = Math.max(0, totalPrestation - newFrais);
+                        await updateContractDb(ev.id, {
+                          frais_mandat: newFrais,
+                          cachet_artiste: calculatedCachet
+                        });
+                        toast.success("Montants de mandat et cachet mis à jour !");
+                      }}
+                      placeholder="Ex: 500"
+                      className="w-32 pl-3 pr-8 py-2 text-sm font-bold text-indigo-900 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm transition outline-none"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">€</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-4 pt-3 border-t border-indigo-100/50 grid grid-cols-2 sm:grid-cols-3 gap-4 text-center">
+                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50/50">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Prestation TTC</span>
+                  <span className="text-sm font-bold text-slate-850">{totalPrestation.toFixed(2)} €</span>
+                </div>
+                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50/50">
+                  <span className="text-[10px] uppercase font-bold text-indigo-400 block">Frais Mandat Versés</span>
+                  <span className="text-sm font-bold text-indigo-750">{fraisMandat.toFixed(2)} €</span>
+                </div>
+                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50/50 col-span-2 sm:col-span-1">
+                  <span className="text-[10px] uppercase font-bold text-emerald-500 block">Cachet Artiste Restant</span>
+                  <span className="text-sm font-extrabold text-emerald-700">{(totalPrestation - fraisMandat).toFixed(2)} €</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Tableaux de bord financier simple & esthétique */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200/50">
             {/* Total prestation */}
@@ -3742,6 +3968,50 @@ const DjClientApp = ({ isPublic = false }) => {
           </div>
         )}
 
+        {(() => {
+          const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
+          if (notifKeys.length === 0) return null;
+          
+          const sectionNamesFr = {
+            chat: "Discussion",
+            options: "Tarifs & Options",
+            playlist: "Playlist & Styles",
+            planning: "Déroulement / Planning",
+            client_info: "Infos Client",
+            documents: "Documents administratifs",
+            venue: "Fiche Technique Salle",
+            catering: "Repas Artiste"
+          };
+          
+          const listFr = notifKeys.map(k => sectionNamesFr[k] || k).join(', ');
+          
+          return (
+            <div className="bg-red-50 border-2 border-red-200 text-red-950 px-5 py-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <Bell className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-red-800 text-sm">Nouvelles notifications sur cet événement !</h4>
+                  <p className="text-xs text-red-700 mt-1">
+                    Changements détectés dans : <span className="font-semibold">{listFr}</span> (voir les encadrés entourés en rouge ci-dessous).
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const updatedNotifs = { ...ev.notifications, [currentRoute.role]: {} };
+                  setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, notifications: updatedNotifs } : e));
+                  updateContractDb(ev.id, { notifications: updatedNotifs });
+                  toast.success("Notifications marquées comme lues !");
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-705 text-white font-bold rounded-lg text-xs shadow-sm transition flex-shrink-0 flex items-center justify-center gap-1.5 self-start sm:self-center"
+              >
+                <Check className="w-4 h-4" />
+                Marquer comme lu
+              </button>
+            </div>
+          );
+        })()}
+
         {ClientInfoSection()}
         {ChatSection()}
         {PlanningSection()}
@@ -3798,8 +4068,18 @@ const DjClientApp = ({ isPublic = false }) => {
              ));
     });
 
-    const past = myEvents.filter(e => e.date < today);
-    const future = myEvents.filter(e => e.date >= today);
+    const priorityDjEvents = myEvents.filter(e => {
+      const notifs = e.notifications && e.notifications[currentRoute.role] ? Object.keys(e.notifications[currentRoute.role]) : [];
+      return notifs.length > 0;
+    });
+
+    const remainingDjEvents = myEvents.filter(e => {
+      const notifs = e.notifications && e.notifications[currentRoute.role] ? Object.keys(e.notifications[currentRoute.role]) : [];
+      return notifs.length === 0;
+    });
+
+    const past = remainingDjEvents.filter(e => e.date < today);
+    const future = remainingDjEvents.filter(e => e.date >= today);
 
     const futureByYear = future.reduce((acc, ev) => {
       const year = ev.date.substring(0, 4);
@@ -3838,6 +4118,63 @@ const DjClientApp = ({ isPublic = false }) => {
         </div>
 
         <div className="grid gap-6">
+            {priorityDjEvents.length > 0 && (
+                <div className="border-2 border-red-200 bg-red-50/10 rounded-2xl p-5 shadow-sm">
+                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-red-600 animate-pulse-subtle">
+                      <span className="flex h-3 w-3 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                      </span>
+                      Actions Requises - Nouveaux Messages / Changements
+                      <span className="bg-red-100 text-red-700 text-xs py-1 px-2.5 rounded-full font-bold">
+                        {priorityDjEvents.length}
+                      </span>
+                    </h3>
+                    <div className="overflow-x-auto bg-white border border-red-100 rounded-xl shadow-xs">
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-50 text-sm text-gray-500 border-b">
+                                <tr>
+                                    <th className="p-4 font-semibold">Événement</th>
+                                    <th className="p-4 font-semibold">Date</th>
+                                    <th className="p-4 font-semibold">Client</th>
+                                    <th className="p-4"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {priorityDjEvents.map(ev => {
+                                    const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
+                                    const notifCount = notifKeys.length;
+                                    const hasChatNotif = notifKeys.includes('chat');
+                                    return (
+                                    <tr key={ev.id} className="hover:bg-yellow-50/50 transition cursor-pointer group" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
+                                        <td className="p-4 font-bold text-gray-950 flex items-center gap-2">
+                                            {ev.name}
+                                            {notifCount > 0 && (
+                                                <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
+                                                    {notifCount}
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="p-4">
+                                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
+                                                {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
+                                            </span>
+                                        </td>
+                                        <td className="p-4 text-gray-700 font-medium">{ev.client.name}</td>
+                                        <td className="p-4 text-right">
+                                            <button className="text-yellow-600 font-bold text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
+                                                Ouvrir <ChevronRight className="w-4 h-4"/>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
             <h3 className="text-xl font-bold text-gray-800">Vos événements à venir</h3>
             {Object.keys(futureByYear).length > 0 ? (
                 <div className="space-y-4">

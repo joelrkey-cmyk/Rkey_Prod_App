@@ -32,6 +32,7 @@ const Navigation = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [switching, setSwitching] = useState(false);
+  const [djClientNotifications, setDjClientNotifications] = useState(0);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -43,6 +44,27 @@ const Navigation = () => {
         .catch(() => {});
     }
   }, [user]);
+
+  useEffect(() => {
+    const fetchNotifsCount = async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        const res = await fetch(`${BACKEND_URL}/api/notifications/unread-count`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setDjClientNotifications(data.count || 0);
+        }
+      } catch (err) {
+        console.error("Error loading notification count in Nav:", err);
+      }
+    };
+    fetchNotifsCount();
+    const interval = setInterval(fetchNotifsCount, 20000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Close menu on outside click
   useEffect(() => {
@@ -123,6 +145,11 @@ const Navigation = () => {
                   data-testid={`nav-${item.key}`}
                 >
                   <Icon className="w-[18px] h-[18px]" />
+                  {item.key === 'dj-client' && djClientNotifications > 0 && (
+                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center shadow-sm animate-bounce z-15 border border-white">
+                      {djClientNotifications}
+                    </span>
+                  )}
                   <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] font-medium px-2 py-1 rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
                     {item.label}
                   </span>

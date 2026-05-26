@@ -1277,7 +1277,24 @@ api.delete('/home-notes/:id', authMiddleware, async (req, res) => {
   await db.collection('home_notes').deleteOne({ id: req.params.id });
   res.json({ success: true });
 });
-api.get('/notifications/unread-count', authMiddleware, (req, res) => res.json({ count: 0 }));
+api.get('/notifications/unread-count', authMiddleware, async (req, res) => {
+  try {
+    const contracts = await db.collection('contracts2').find(
+      { status: { $nin: ['trash'] } },
+      { projection: { notifications: 1 } }
+    ).toArray();
+    let count = 0;
+    contracts.forEach(c => {
+      if (c.notifications && c.notifications.admin && typeof c.notifications.admin === 'object') {
+        count += Object.keys(c.notifications.admin).length;
+      }
+    });
+    res.json({ count });
+  } catch (error) {
+    console.error("Error in /notifications/unread-count:", error);
+    res.json({ count: 0 });
+  }
+});
 
 // ══════════ GLOBAL SETTINGS ══════════
 api.get('/global-settings', authMiddleware, async (req, res) => {
@@ -2794,7 +2811,8 @@ api.post('/public/upload/audio', upload.single('file'), async (req, res) => {
   }
 
   try {
-    const ext = path.extname(req.file.originalname) || '';
+    const decodedName = decodeMulterFilename(req.file.originalname);
+    const ext = path.extname(decodedName) || '';
     const fileId = uuidv4();
     const gcsPath = `playlist-audio/${fileId}${ext}`;
     const file = b.file(gcsPath);
@@ -2803,7 +2821,7 @@ api.post('/public/upload/audio', upload.single('file'), async (req, res) => {
       metadata: { contentType: req.file.mimetype }
     });
     
-    return res.json({ url: `/api/gcs/${gcsPath}`, originalName: req.file.originalname });
+    return res.json({ url: `/api/gcs/${gcsPath}`, originalName: decodedName });
   } catch (error) {
     console.error('Error uploading audio to GCS:', error);
     res.status(500).json({ detail: 'Erreur lors du téléversement du fichier audio vers Google Cloud Storage: ' + error.message });

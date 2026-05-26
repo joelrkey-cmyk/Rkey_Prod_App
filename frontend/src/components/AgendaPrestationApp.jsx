@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import axios from 'axios';
-import { Trash2, Shield, CalendarDays, Loader2 } from 'lucide-react';
+import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import API_BASE_URL from '../utils/apiUrl';
 
@@ -56,8 +56,14 @@ export default function AgendaPrestationApp() {
   const [events, setEvents] = useState([]);
   const [djs, setDjs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState({ hidden_djs: [], deleted_djs: [] });
+  const [settings, setSettings] = useState({ hidden_djs: [], deleted_djs: [], deleted_events: [] });
   const [showConfirmDelete, setShowConfirmDelete] = useState(null);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  
+  const [undoableEvent, setUndoableEvent] = useState(null);
+  const [undoSeconds, setUndoSeconds] = useState(5);
+  const undoRef = useRef(null);
+  const timerRef = useRef(null);
   
   const [calendarView, setCalendarView] = useState('month');
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -79,7 +85,8 @@ export default function AgendaPrestationApp() {
 
       const loadedSettings = {
         hidden_djs: settingsRes.data.hidden_djs || [],
-        deleted_djs: settingsRes.data.deleted_djs || []
+        deleted_djs: settingsRes.data.deleted_djs || [],
+        deleted_events: settingsRes.data.deleted_events || []
       };
       setSettings(loadedSettings);
       
@@ -184,12 +191,17 @@ export default function AgendaPrestationApp() {
         parsedEvents.push({
           id: `contract_${c.id}`,
           title: fullTitle,
+          cleanTitle: title,
           start: eventDate,
           end: eventDate,
           allDay: true,
           djId: officialId,
           djName: assignedDj.name,
-          status: String(c.status)
+          clientName: client,
+          eventType: type,
+          status: String(c.status),
+          type: 'Contrat Prestation',
+          details: optionsDetails ? optionsDetails.trim() : ''
         });
       });
 
@@ -257,19 +269,26 @@ export default function AgendaPrestationApp() {
         parsedEvents.push({
           id: `res_${r.id}`,
           title: fullTitle,
+          cleanTitle: pubTitle,
           start: startDate,
           end: endDate,
           allDay: true,
           djId: officialId,
           djName: assignedDj.name,
-          status: 'reservation'
+          clientName: r.client_name || r.client?.name || r.user_name || 'Client Réservation',
+          eventType: 'Réservation Matériel',
+          status: 'reservation',
+          type: 'Réservation Matériel',
+          details: refsText ? `Référence: ${refsText}${equipmentOpts ? ` | ${equipmentOpts.trim()}` : ''}` : (equipmentOpts ? equipmentOpts.trim() : '')
         });
       });
 
       const availableDjs = Array.from(officialDjMap.values()).filter(d => !loadedSettings.deleted_djs.includes(d.id));
       setDjs(availableDjs);
 
-      const filteredEvents = parsedEvents.filter(e => !loadedSettings.deleted_djs.includes(e.djId));
+      const filteredEvents = parsedEvents
+        .filter(e => !loadedSettings.deleted_djs.includes(e.djId))
+        .filter(e => !loadedSettings.deleted_events.includes(e.id));
       setEvents(filteredEvents);
 
     } catch (error) {
@@ -310,6 +329,69 @@ export default function AgendaPrestationApp() {
       toast.error("Erreur lors de la suppression");
     }
   };
+
+  const handleDeleteEvent = (event) => {
+    setSelectedEvent(null);
+    
+    if (undoRef.current) {
+      commitDeletion(undoRef.current);
+    }
+    
+    undoRef.current = event;
+    setUndoableEvent(event);
+    setUndoSeconds(5);
+    
+    setEvents(prev => prev.filter(e => e.id !== event.id));
+    
+    if (timerRef.current) clearInterval(timerRef.current);
+    
+    timerRef.current = setInterval(() => {
+      setUndoSeconds(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          commitDeletion(undoRef.current);
+          setUndoableEvent(null);
+          undoRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleUndoDelete = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    if (undoRef.current) {
+      const restored = undoRef.current;
+      setEvents(prev => [...prev, restored]);
+      toast.success("Suppression annulée !");
+    }
+    setUndoableEvent(null);
+    undoRef.current = null;
+  };
+
+  const commitDeletion = async (eventToDelete) => {
+    if (!eventToDelete) return;
+    try {
+      const updatedDeletedEvents = [...(settings.deleted_events || []), eventToDelete.id];
+      const updatedSettings = { ...settings, deleted_events: updatedDeletedEvents };
+      setSettings(updatedSettings);
+      
+      await axios.put(`${API}/agenda-settings`, updatedSettings);
+      toast.info("L'événement a été retiré de l'agenda.");
+    } catch (err) {
+      console.error("Error committing event deletion:", err);
+      toast.error("Erreur technique lors de la suppression définitive.");
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
 
   const eventStyleGetter = (event) => {
     if (settings.hidden_djs.includes(event.djId)) {
@@ -419,8 +501,7 @@ export default function AgendaPrestationApp() {
                       setCalendarView('agenda');
                     }}
                     onSelectEvent={(event) => {
-                      setCalendarDate(event.start);
-                      setCalendarView('agenda');
+                      setSelectedEvent(event);
                     }}
                     length={calendarView === 'agenda' ? 1 : undefined}
                     messages={{
@@ -472,6 +553,97 @@ export default function AgendaPrestationApp() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 bg-slate-200/60 px-2.5 py-1 rounded-md">
+                {selectedEvent.type || 'Événement'}
+              </span>
+              <button 
+                onClick={() => setSelectedEvent(null)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 space-y-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-950 leading-tight">
+                  {selectedEvent.cleanTitle || selectedEvent.title}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 font-medium">
+                  <CalendarDays className="w-4 h-4 text-indigo-500" />
+                  {format(selectedEvent.start, 'dd MMMM yyyy', { locale: fr })}
+                </p>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 space-y-3">
+                <div className="flex items-center gap-2.5 text-sm">
+                  <User className="w-4.5 h-4.5 text-slate-400" />
+                  <span className="text-slate-500">Client :</span>
+                  <span className="font-semibold text-slate-800">{selectedEvent.clientName || 'Inconnu'}</span>
+                </div>
+                
+                <div className="flex items-center gap-2.5 text-sm">
+                  <Shield className="w-4.5 h-4.5 text-slate-400" />
+                  <span className="text-slate-500">DJ assigné :</span>
+                  <span className="font-semibold text-slate-800">{selectedEvent.djName}</span>
+                </div>
+
+                {selectedEvent.details && (
+                  <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
+                    <span className="font-bold text-slate-400 block uppercase tracking-wider text-[10px] mb-1">Détails de la prestation / Matériel</span>
+                    {selectedEvent.details}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer with actions */}
+            <div className="p-4 bg-slate-50 border-t flex flex-col sm:flex-row justify-between gap-3">
+              <button 
+                onClick={() => {
+                  if (window.confirm("Masquer définitivement cet événement du planning de prestation ? (Le contrat d'origine ou la réservation ne seront pas modifiés)")) {
+                    handleDeleteEvent(selectedEvent);
+                  }
+                }}
+                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 hover:text-red-700 rounded-lg text-sm font-semibold transition"
+                title="Supprime cet événement uniquement de la vue Prestation"
+              >
+                <Trash2 className="w-4 h-4" />
+                Masquer de cet agenda
+              </button>
+              
+              <button 
+                onClick={() => setSelectedEvent(null)}
+                className="px-4 py-2 bg-slate-250 hover:bg-slate-350 text-slate-800 rounded-lg text-sm font-semibold transition"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {undoableEvent && (
+        <div className="fixed bottom-6 right-6 md:right-1/2 md:translate-x-1/2 z-50 bg-slate-900 border border-slate-800 text-white px-5 py-4 rounded-xl shadow-2xl flex items-center justify-between gap-4 animate-in fade-in slide-in-from-bottom-5 duration-300 min-w-[320px] max-w-md">
+          <div className="flex-1 text-sm font-medium text-left">
+            <div>Événement masqué avec succès</div>
+            <div className="text-xs text-slate-350 mt-1 truncate max-w-[240px]">{undoableEvent.cleanTitle || undoableEvent.title}</div>
+          </div>
+          <button 
+            onClick={handleUndoDelete}
+            className="text-xs font-bold uppercase text-indigo-400 hover:text-indigo-300 px-3 py-1.5 bg-slate-800 hover:bg-slate-750 border border-slate-750 rounded-lg transition-all"
+          >
+            Annuler ({undoSeconds}s)
+          </button>
         </div>
       )}
     </div>
