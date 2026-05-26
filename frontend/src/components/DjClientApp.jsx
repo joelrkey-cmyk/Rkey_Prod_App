@@ -122,6 +122,48 @@ const DjClientApp = ({ isPublic = false }) => {
     }
   };
 
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+  const subscribeUserToPush = async (reg) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/push/vapid-public-key`);
+      const { publicKey } = await res.json();
+      const applicationServerKey = urlBase64ToUint8Array(publicKey);
+
+      const subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey
+      });
+
+      await fetch(`${BACKEND_URL}/api/push/subscribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('access_token') ? { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` } : {})
+        },
+        body: JSON.stringify({
+          subscription,
+          role: currentRoute.role, // 'admin', 'dj', 'client'
+          eventId: currentRoute.eventId // if viewing a specific event
+        })
+      });
+      console.log('User is subscribed to Web Push backend.');
+    } catch (e) {
+      console.error('Failed to subscribe the user: ', e);
+    }
+  };
+
   const requestNotificationPermission = async () => {
     if (!('Notification' in window)) {
       toast.error("Votre navigateur ou appareil ne prend pas en charge les notifications natives.");
@@ -134,15 +176,16 @@ const DjClientApp = ({ isPublic = false }) => {
         toast.success("Notifications push activées avec succès ! 🔔");
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.ready.then((reg) => {
+            subscribeUserToPush(reg);
             reg.showNotification("Application R'Key Prod", {
-              body: "Félicitations ! Vous recevrez désormais les notifications push en direct de l'application. 🎧",
+              body: "Félicitations ! Vous recevrez désormais les notifications en direct (même l'application fermée). 🎧",
               icon: '/favicon.svg',
               badge: '/favicon.svg'
             });
           });
         } else {
           new Notification("Application R'Key Prod", {
-            body: "Félicitations ! Vous recevrez désormais les notifications push en direct de l'application. 🎧",
+            body: "Félicitations ! Vous recevrez désormais les notifications en direct. 🎧",
             icon: '/favicon.svg'
           });
         }
@@ -153,6 +196,17 @@ const DjClientApp = ({ isPublic = false }) => {
       console.error("Permission request failed", e);
     }
   };
+
+  // Attempt to restore background push notifications automatically if permission previously granted
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then((reg) => {
+          subscribeUserToPush(reg);
+        });
+      }
+    }
+  }, [currentRoute.role, currentRoute.eventId]);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
@@ -699,9 +753,12 @@ const DjClientApp = ({ isPublic = false }) => {
       const ev = events.find(e => e.id === eventId);
       const finalPayload = { ...payload };
 
+      let section = null;
+      let targetRolesToNotify = [];
+      let titleForPush = "Nouvelle mise à jour";
+
       if (!payload.notifications) {
-          let section = null;
-          if ('chat_messages' in payload) section = 'chat';
+          if ('chat_messages' in payload) { section = 'chat'; titleForPush = "Nouveau message"; }
           if ('requested_options' in payload || 'options_tarif_notes' in payload || 'show_options_tarif_notes_to_client' in payload) section = 'options';
           if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload || 'playlist_audio_files' in payload || 'dedicaces' in payload) section = 'playlist';
           if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload || 'entree_maries' in payload || 'entree_maries_notes' in payload || 'ouverture_bal' in payload || 'ouverture_bal_notes' in payload || 'dessert' in payload || 'dessert_notes' in payload || 'custom_wedding_events' in payload) section = 'planning';
@@ -718,6 +775,7 @@ const DjClientApp = ({ isPublic = false }) => {
                   newNotifs[r][section] = true;
               });
               finalPayload.notifications = newNotifs;
+              targetRolesToNotify = rolesToNotify;
           }
       }
 
@@ -732,6 +790,21 @@ const DjClientApp = ({ isPublic = false }) => {
         headers,
         body: JSON.stringify(finalPayload)
       });
+      
+      if (!payload.notifications && targetRolesToNotify.length > 0) {
+        fetch(`${BACKEND_URL}/api/push/notify`, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+             eventId,
+             targetRoles: targetRolesToNotify,
+             title: titleForPush,
+             body: "Il y a du nouveau sur l'application My DJ concernant votre événement.",
+             url: window.location.href
+           })
+        }).catch(err => console.error("Push notify trigger failed:", err));
+      }
+
       fetchContractsAsEvents();
     } catch(e) {
       console.error("Erreur lors de la sauvegarde: ", e);

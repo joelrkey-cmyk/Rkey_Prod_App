@@ -12,6 +12,16 @@ const sharp = require('sharp');
 const { google } = require('googleapis');
 const { Storage } = require('@google-cloud/storage');
 const fs = require('fs');
+const webpush = require('web-push');
+
+const VAPID_PUB = process.env.VAPID_PUBLIC_KEY || "BHu7ALPSDk_qShRlTY1jiy0iaeE6FE0b03No89GNGjOmkZGWzRenNoN3DvRE1IwuCU0cYlk2Zdk_WE-EqR0tYYM";
+const VAPID_PRIV = process.env.VAPID_PRIVATE_KEY || "e2E1vKj58H2CluRXZr8N-aw8ro58tDQRSg06vPax0RU";
+
+webpush.setVapidDetails(
+  process.env.VAPID_SUBJECT || 'mailto:joel.rkey@gmail.com',
+  VAPID_PUB,
+  VAPID_PRIV
+);
 
 // --- Google Cloud Storage Setup ---
 const BUCKET_NAME = 'rkey-prod-storage-01';
@@ -1111,6 +1121,73 @@ function createTransporter(cfg) {
 // API ROUTES - all prefixed with /api
 // ═══════════════════════════════════════════
 const api = express.Router();
+
+// --- Push Notification Routes ---
+api.get('/push/vapid-public-key', (req, res) => {
+  res.json({ publicKey: VAPID_PUB });
+});
+
+api.post('/push/subscribe', async (req, res) => {
+  try {
+    const { subscription, role, eventId } = req.body;
+    if (!subscription || !subscription.endpoint) {
+      return res.status(400).json({ error: 'Subscription or endpoint missing' });
+    }
+    const db = getDb();
+    await db.collection('push_subscriptions').updateOne(
+      { endpoint: subscription.endpoint },
+      { $set: { subscription, role, eventId, createdAt: new Date() } },
+      { upsert: true }
+    );
+    res.status(201).json({ message: 'Subscription saved.' });
+  } catch (error) {
+    console.error('Error saving subscription', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+api.post('/push/notify', async (req, res) => {
+  try {
+    const { eventId, targetRoles, title, body, url } = req.body;
+    const db = getDb();
+
+    // targetRoles e.g. ['admin', 'dj', 'client']
+    const query = {};
+    if (eventId) {
+      query.$or = [
+        { role: 'admin' }, // admin gets all notifications usually, or depends on targetRoles
+        { eventId }
+      ];
+    }
+    
+    // Actually, just find based on eventId + role OR just role=admin
+    const subs = await db.collection('push_subscriptions').find().toArray();
+    const validSubs = subs.filter(sub => {
+      // If admin is in targetRoles, notify all admins
+      if (targetRoles.includes('admin') && sub.role === 'admin') return true;
+      // For DJ or Client, they must match the specific event
+      if (targetRoles.includes(sub.role) && sub.eventId === eventId) return true;
+      return false;
+    });
+
+    const payload = JSON.stringify({ title, body, url });
+    const promises = validSubs.map(sub => 
+      webpush.sendNotification(sub.subscription, payload).catch(err => {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          db.collection('push_subscriptions').deleteOne({ _id: sub._id }); // cleanup
+        } else {
+          console.error("Push error: ", err);
+        }
+      })
+    );
+
+    await Promise.all(promises);
+    res.status(200).json({ success: true, count: validSubs.length });
+  } catch (error) {
+    console.error('Notify error', error);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
 
 api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
   let serviceAccountEmail = null;
