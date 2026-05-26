@@ -3205,60 +3205,6 @@ const DjClientApp = ({ isPublic = false }) => {
             Tarifs et Options de l'Événement
           </h3>
 
-          {role === 'admin' && (
-            <div className="mb-6 p-5 bg-gradient-to-r from-indigo-50/70 to-blue-50/70 rounded-2xl border border-indigo-150 shadow-xs" onClick={(e) => e.stopPropagation()}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800">
-                    <Settings className="w-3.5 h-3.5" /> Espace Administrateur
-                  </div>
-                  <h4 className="text-sm font-bold text-slate-850 mt-1">Gestion manuelle des frais de mandat</h4>
-                  <p className="text-xs text-slate-650 leading-relaxed max-w-xl">
-                    Saisissez manuellement les frais de mandat. Le cachet artiste restant sera automatiquement déduit du montant TTC actuel ({totalPrestation.toFixed(2)} €).
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs font-semibold text-slate-600">Frais de mandat :</span>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="any"
-                      key={fraisMandat}
-                      defaultValue={fraisMandat}
-                      onBlur={async (e) => {
-                        const newFrais = Number(e.target.value) || 0;
-                        const calculatedCachet = Math.max(0, totalPrestation - newFrais);
-                        await updateContractDb(ev.id, {
-                          frais_mandat: newFrais,
-                          cachet_artiste: calculatedCachet
-                        });
-                        toast.success("Montants de mandat et cachet mis à jour !");
-                      }}
-                      placeholder="Ex: 500"
-                      className="w-32 pl-3 pr-8 py-2 text-sm font-bold text-indigo-900 bg-white border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 shadow-sm transition outline-none"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400">€</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-4 pt-3 border-t border-indigo-100/50 grid grid-cols-2 sm:grid-cols-3 gap-4 text-center">
-                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50/50">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Prestation TTC</span>
-                  <span className="text-sm font-bold text-slate-850">{totalPrestation.toFixed(2)} €</span>
-                </div>
-                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50/50">
-                  <span className="text-[10px] uppercase font-bold text-indigo-400 block">Frais Mandat Versés</span>
-                  <span className="text-sm font-bold text-indigo-750">{fraisMandat.toFixed(2)} €</span>
-                </div>
-                <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-50/50 col-span-2 sm:col-span-1">
-                  <span className="text-[10px] uppercase font-bold text-emerald-500 block">Cachet Artiste Restant</span>
-                  <span className="text-sm font-extrabold text-emerald-700">{(totalPrestation - fraisMandat).toFixed(2)} €</span>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Tableaux de bord financier simple & esthétique */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200/50">
             {/* Total prestation */}
@@ -3270,13 +3216,37 @@ const DjClientApp = ({ isPublic = false }) => {
               <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 space-y-0.5">
                 {isMandatMode ? (
                   <>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center py-0.5" onClick={(e) => e.stopPropagation()}>
                       <span>Frais de mandat & gestion :</span>
-                      <span>{fraisMandat.toFixed(2)} €</span>
+                      {role === 'admin' ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            step="any"
+                            key={fraisMandat}
+                            defaultValue={fraisMandat}
+                            onBlur={async (e) => {
+                              const newFrais = Number(e.target.value) || 0;
+                              const refPrice = basePrice || baseRate;
+                              const calculatedCachet = Math.max(0, refPrice - newFrais);
+                              await updateContractDb(ev.id, {
+                                frais_mandat: newFrais,
+                                cachet_artiste: calculatedCachet
+                              });
+                              await fetchContractsAsEvents();
+                              toast.success("Frais de mandat & Cachet artiste mis à jour !");
+                            }}
+                            className="w-16 px-1.5 py-0.5 text-xs font-bold text-indigo-900 bg-white border border-indigo-200 rounded text-right focus:ring-1 focus:ring-indigo-500 transition outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                          <span className="text-[10px] font-bold text-slate-400">€</span>
+                        </div>
+                      ) : (
+                        <span className="font-semibold text-slate-700">{fraisMandat.toFixed(2)} €</span>
+                      )}
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center py-0.5">
                       <span>Cachet DJ/Artiste :</span>
-                      <span>{cachetArtiste.toFixed(2)} €</span>
+                      <span className="font-semibold text-slate-700">{cachetArtiste.toFixed(2)} €</span>
                     </div>
                   </>
                 ) : (
