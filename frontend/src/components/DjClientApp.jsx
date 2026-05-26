@@ -447,8 +447,8 @@ const DjClientApp = ({ isPublic = false }) => {
     }
   };
 
-  const fetchContractsAsEvents = async () => {
-    setIsLoadingEvents(true);
+  const fetchContractsAsEvents = async (silent = false) => {
+    if (!silent) setIsLoadingEvents(true);
     try {
       const token = localStorage.getItem('access_token');
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -465,8 +465,8 @@ const DjClientApp = ({ isPublic = false }) => {
          if (publicRes.ok) {
              const data = await publicRes.json();
              allContracts = data.events || [];
-             setAvailableOptions(data.availableOptions || []);
-             if (currentRoute.view === 'list') {
+             if (!silent) setAvailableOptions(data.availableOptions || []);
+             if (!silent && currentRoute.view === 'list') {
                  if (data.role === 'client') {
                      if (allContracts.length > 0) {
                          setCurrentRoute({ view: 'detail', role: 'client', eventId: allContracts[0].id, mode: 'standalone_client' });
@@ -487,12 +487,12 @@ const DjClientApp = ({ isPublic = false }) => {
 
           if (optionsRes.ok) {
               const opts = await optionsRes.json();
-              setAvailableOptions(opts);
+              if (!silent) setAvailableOptions(opts);
           } else {
               const fallbackRes = await fetch(`${BACKEND_URL}/api/contract-options`, { headers });
               if (fallbackRes.ok) {
                   const fOpts = await fallbackRes.json();
-                  setAvailableOptions(fOpts.options || fOpts || []);
+                  if (!silent) setAvailableOptions(fOpts.options || fOpts || []);
               }
           }
           
@@ -589,14 +589,36 @@ const DjClientApp = ({ isPublic = false }) => {
       });
       
       mappedEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
-      setEvents(mappedEvents);
+      if (silent) {
+        setEvents(prev => {
+          if (JSON.stringify(prev.map(e => e.chatMessages)) !== JSON.stringify(mappedEvents.map(e => e.chatMessages)) ||
+              JSON.stringify(prev.map(e => e.notifications)) !== JSON.stringify(mappedEvents.map(e => e.notifications))) {
+            return mappedEvents;
+          }
+          return prev;
+        });
+      } else {
+        setEvents(mappedEvents);
+      }
     } catch (error) {
       console.error("Error fetching contracts as events:", error);
-      toast.error("Erreur lors du chargement des événements");
+      if (!silent) toast.error("Erreur lors du chargement des événements");
     } finally {
-      setIsLoadingEvents(false);
+      if (!silent) setIsLoadingEvents(false);
     }
   };
+
+  useEffect(() => {
+    // Only start polling when data is fully loaded and user is authenticated/public
+    if (isLoadingEvents) return;
+    
+    // Poll every 5 seconds to pull new chat messages & notifications silently
+    const chatPollInterval = setInterval(() => {
+      fetchContractsAsEvents(true); // silent fetch
+    }, 5000);
+    
+    return () => clearInterval(chatPollInterval);
+  }, [isLoadingEvents, isPublic, slug, currentRoute.role]);
 
   const [scheduleItems, setScheduleItems] = useState([]);
   
