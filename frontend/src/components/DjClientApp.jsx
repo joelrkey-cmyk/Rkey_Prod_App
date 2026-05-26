@@ -215,6 +215,8 @@ const DjClientApp = ({ isPublic = false }) => {
             notifications: c.notifications || { admin: {}, dj: {}, client: {} },
             cateringNotes: c.catering_notes || "",
             cateringDrinks: c.catering_drinks || false,
+            cateringHotMealNoTable: c.catering_hot_meal_no_table || false,
+            cateringHotMealNoTableQty: c.catering_hot_meal_no_table_qty !== undefined ? c.catering_hot_meal_no_table_qty : "",
             selectedMusicStyles: c.selected_music_styles || [],
             backgroundMusicAperitif: c.background_music_aperitif || "",
             showMusicStylesToClient: c.show_music_styles_to_client !== undefined ? c.show_music_styles_to_client : false,
@@ -333,7 +335,7 @@ const DjClientApp = ({ isPublic = false }) => {
           if ('client_photo' in payload) section = 'client_info';
           if ('selected_pdf_notes' in payload) section = 'documents';
           if ('venue_photos' in payload || 'venue_notes' in payload || 'has_limiteur_son' in payload || 'has_detecteur_fumee' in payload || 'has_no_limiteur_ni_detecteur' in payload || 'has_wifi' in payload || 'has_4g_5g' in payload) section = 'venue';
-          if ('catering_notes' in payload || 'catering_drinks' in payload) section = 'catering';
+          if ('catering_notes' in payload || 'catering_drinks' in payload || 'catering_hot_meal_no_table' in payload || 'catering_hot_meal_no_table_qty' in payload) section = 'catering';
           
           if (section && currentRoute.role) {
               const rolesToNotify = ['admin', 'dj', 'client'].filter(r => r !== currentRoute.role);
@@ -512,69 +514,90 @@ const DjClientApp = ({ isPublic = false }) => {
             const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
             const notifCount = notifKeys.length;
             const hasChatNotif = notifKeys.includes('chat');
+            const isRowHighlit = notifCount > 0 && currentRoute.role === 'admin';
+
+            const rowBg = isRowHighlit 
+              ? "bg-red-50/70 hover:bg-red-100/80 transition-colors" 
+              : "hover:bg-gray-50 transition-colors";
+
+            const cellBorder = isRowHighlit ? "border-y-2 border-red-500 py-3" : "py-4";
+            const firstCellBorder = isRowHighlit ? "border-y-2 border-l-4 border-l-red-600 border-red-500 pl-4 py-3 rounded-l-xl" : "py-4";
+            const lastCellBorder = isRowHighlit ? "border-y-2 border-r-4 border-r-red-500 border-red-500 pr-4 py-3 rounded-r-xl" : "py-4";
+
             return (
-              <tr key={ev.id} className="hover:bg-gray-50 transition-colors">
-                <td className="py-4 px-4 flex items-center gap-2">
+              <tr 
+                key={ev.id} 
+                className={`transition-all duration-200 group/row ${isRowHighlit ? 'shadow-sm' : ''}`}
+              >
+                <td className={`px-4 flex items-center gap-2 ${rowBg} ${firstCellBorder}`}>
                   <button 
                     onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
-                    className="font-medium text-gray-900 hover:text-indigo-600 hover:underline transition-colors text-left relative"
+                    className="font-bold text-gray-900 hover:text-indigo-600 hover:underline transition-colors text-left relative"
                   >
                     {ev.name}
                   </button>
                   {notifCount > 0 && (
-                    <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
-                      {notifCount}
-                    </span>
+                    <div className="flex items-center gap-1.5 ml-2">
+                      <span className={`flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[11px] font-black rounded-full shadow-sm ${hasChatNotif ? 'animate-pulse' : ''}`}>
+                        {notifCount}
+                      </span>
+                      {isRowHighlit && (
+                        <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-md font-extrabold uppercase tracking-wider animate-pulse flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 bg-red-600 rounded-full"></span>
+                          Nouveau
+                        </span>
+                      )}
+                    </div>
                   )}
                 </td>
-                <td className="py-4 px-4 text-gray-600 whitespace-nowrap">
+                <td className={`px-4 text-gray-600 whitespace-nowrap ${rowBg} ${cellBorder}`}>
                   {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
                 </td>
-                <td className="py-4 px-4">
+                <td className={`px-4 ${rowBg} ${cellBorder}`}>
                   <div className="text-sm font-medium mb-1">{ev.dj.name}</div>
                   <div className="flex items-center gap-1">
                     <div className="text-xs text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded truncate max-w-[150px]">
                       {getDjLink(ev.dj)}
                     </div>
-                  <button 
-                    onClick={() => { navigator.clipboard.writeText(`https://${getDjLink(ev.dj)}`); toast.success("Lien DJ copié"); }} 
-                    className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition" 
-                    title="Copier le lien DJ"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                  <button 
-                    onClick={() => setCurrentRoute({ view: 'dj-list', role: 'dj', eventId: null, mode: 'standalone_dj', activeDj: ev.dj })} 
-                    className="p-1.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded transition" 
-                    title="Ouvrir le portail DJ"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </td>
-              <td className="py-4 px-4">
-                <div className="text-sm font-medium mb-1">{ev.client.name}</div>
-                <div className="flex items-center gap-1">
-                  <div className="text-xs text-green-600 bg-green-50 border border-green-100 px-2 py-1 rounded truncate max-w-[150px]">
-                    {getClientLink(ev)}
+                    <button 
+                      onClick={() => { navigator.clipboard.writeText(`https://${getDjLink(ev.dj)}`); toast.success("Lien DJ copié"); }} 
+                      className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition" 
+                      title="Copier le lien DJ"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => setCurrentRoute({ view: 'dj-list', role: 'dj', eventId: null, mode: 'standalone_dj', activeDj: ev.dj })} 
+                      className="p-1.5 text-gray-500 hover:text-yellow-600 hover:bg-yellow-50 rounded transition" 
+                      title="Ouvrir le portail DJ"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => { navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
-                    className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition" 
-                    title="Copier le lien Client"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                  <button 
-                    onClick={() => setCurrentRoute({ view: 'detail', role: 'client', eventId: ev.id, mode: 'standalone_client' })} 
-                    className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition" 
-                    title="Ouvrir le portail Client"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </td>
-            </tr>
+                </td>
+                <td className={`px-4 ${rowBg} ${lastCellBorder}`}>
+                  <div className="text-sm font-medium mb-1">{ev.client.name}</div>
+                  <div className="flex items-center gap-1">
+                    <div className="text-xs text-green-600 bg-green-50 border border-green-100 px-2 py-1 rounded truncate max-w-[150px]">
+                      {getClientLink(ev)}
+                    </div>
+                    <button 
+                      onClick={() => { navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
+                      className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition" 
+                      title="Copier le lien Client"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => setCurrentRoute({ view: 'detail', role: 'client', eventId: ev.id, mode: 'standalone_client' })} 
+                      className="p-1.5 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded transition" 
+                      title="Ouvrir le portail Client"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
             );
           })}
           {eventsList.length === 0 && (
@@ -2997,6 +3020,45 @@ const DjClientApp = ({ isPublic = false }) => {
         }
       }
 
+      const handleFraisChange = (valStr) => {
+        const newFrais = Number(valStr) || 0;
+        const refPrice = basePrice || baseRate;
+        const calculatedCachet = Math.max(0, refPrice - newFrais);
+        
+        setEvents(prevEvents => {
+          return prevEvents.map(item => {
+            if (item.id === ev.id) {
+              const currentRaw = item.rawContractData || {};
+              return {
+                ...item,
+                rawContractData: {
+                  ...currentRaw,
+                  frais_mandat: newFrais,
+                  cachet_artiste: calculatedCachet
+                }
+              };
+            }
+            return item;
+          });
+        });
+      };
+
+      const saveFraisToDb = (valStr) => {
+        const newFrais = Number(valStr) || 0;
+        const refPrice = basePrice || baseRate;
+        const calculatedCachet = Math.max(0, refPrice - newFrais);
+        
+        updateContractDb(ev.id, {
+          frais_mandat: newFrais,
+          cachet_artiste: calculatedCachet
+        }).then(() => {
+          toast.success("Frais de mandat & Cachet artiste enregistrés !");
+        }).catch(err => {
+          console.error("Erreur mise à jour:", err);
+          toast.error("Erreur lors de la sauvegarde.");
+        });
+      };
+
       const contractOptions = ev.selectedOptions || [];
       const optionsTotal = contractOptions.reduce((acc, opt) => acc + (Number(opt.price) || 0), 0);
 
@@ -3223,18 +3285,17 @@ const DjClientApp = ({ isPublic = false }) => {
                           <input
                             type="number"
                             step="any"
-                            key={fraisMandat}
-                            defaultValue={fraisMandat}
-                            onBlur={async (e) => {
-                              const newFrais = Number(e.target.value) || 0;
-                              const refPrice = basePrice || baseRate;
-                              const calculatedCachet = Math.max(0, refPrice - newFrais);
-                              await updateContractDb(ev.id, {
-                                frais_mandat: newFrais,
-                                cachet_artiste: calculatedCachet
-                              });
-                              await fetchContractsAsEvents();
-                              toast.success("Frais de mandat & Cachet artiste mis à jour !");
+                            value={fraisMandat === 0 ? "" : fraisMandat}
+                            onChange={(e) => {
+                              handleFraisChange(e.target.value);
+                            }}
+                            onBlur={(e) => {
+                              saveFraisToDb(e.target.value);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.currentTarget.blur();
+                              }
                             }}
                             className="w-16 px-1.5 py-0.5 text-xs font-bold text-indigo-900 bg-white border border-indigo-200 rounded text-right focus:ring-1 focus:ring-indigo-500 transition outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
@@ -3649,31 +3710,33 @@ const DjClientApp = ({ isPublic = false }) => {
           
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-6 rounded-2xl border border-gray-100">
-              <div className="col-span-1 md:col-span-2">
-                <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Conditions de repas (selon contrat)</p>
-                {isAdmin ? (
-                  <textarea
-                    className="w-full border border-gray-300 rounded-lg p-3 text-sm min-h-[80px] bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
-                    placeholder="Précisez les conditions de repas convenues..."
-                    value={ev.cateringNotes || ''}
-                    onChange={e => {
-                      const newEvents = [...events];
-                      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
-                      newEvents[idx].cateringNotes = e.target.value;
-                      setEvents(newEvents);
-                    }}
-                    onBlur={e => updateContractDb(currentRoute.eventId, { catering_notes: e.target.value })}
-                  />
-                ) : (
-                  <p className="font-medium text-gray-900 bg-white p-3 rounded border border-gray-200 min-h-[60px] whitespace-pre-wrap">
-                    {ev.cateringNotes || "Aucune condition spécifique renseignée."}
-                  </p>
-                )}
-              </div>
+              {(isAdmin || (ev.cateringNotes && ev.cateringNotes.trim())) && (
+                <div className="col-span-1 md:col-span-2">
+                  <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Conditions de repas (selon contrat)</p>
+                  {isAdmin ? (
+                    <textarea
+                      className="w-full border border-gray-300 rounded-lg p-3 text-sm min-h-[80px] bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
+                      placeholder="Précisez les conditions de repas convenues..."
+                      value={ev.cateringNotes || ''}
+                      onChange={e => {
+                        const newEvents = [...events];
+                        const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                        newEvents[idx].cateringNotes = e.target.value;
+                        setEvents(newEvents);
+                      }}
+                      onBlur={e => updateContractDb(currentRoute.eventId, { catering_notes: e.target.value })}
+                    />
+                  ) : (
+                    <p className="font-medium text-gray-900 bg-white p-3 rounded border border-gray-200 min-h-[60px] whitespace-pre-wrap">
+                      {ev.cateringNotes}
+                    </p>
+                  )}
+                </div>
+              )}
               
               <div className="flex items-center gap-3">
                 {isAdmin ? (
-                   <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-700">
+                   <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-700 bg-white p-3 rounded-xl border border-gray-200 shadow-xs w-full select-none">
                      <input type="checkbox" checked={ev.cateringDrinks || false} onChange={e => {
                        const val = e.target.checked;
                        updateContractDb(currentRoute.eventId, { catering_drinks: val });
@@ -3681,15 +3744,89 @@ const DjClientApp = ({ isPublic = false }) => {
                        const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
                        newEvents[idx].cateringDrinks = val;
                        setEvents(newEvents);
-                     }} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500" />
+                     }} className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300" />
                      Boissons comprises
                    </label>
                 ) : (
-                   <div className="flex items-center gap-2 font-medium text-gray-700 bg-white p-3 rounded border border-gray-200">
+                   <div className="flex items-center gap-2 font-medium text-gray-700 bg-white p-3 rounded-xl border border-gray-200 shadow-xs w-full">
                      {ev.cateringDrinks ? (
-                       <><CheckCircle className="w-5 h-5 text-green-500" /> Boissons comprises dans le catering</>
+                       <><CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" /> Boissons comprises dans le catering</>
                      ) : (
-                       <><XCircle className="w-5 h-5 text-red-500" /> Boissons non comprises</>
+                       <><XCircle className="w-5 h-5 text-red-500 flex-shrink-0" /> Boissons non comprises (hors catering)</>
+                     )}
+                   </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                {isAdmin ? (
+                   <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-gray-200 shadow-xs w-full">
+                     {/* Quantité input box in front of the checkbox */}
+                     <div className="flex items-center gap-1 flex-shrink-0">
+                       <span className="text-[10px] uppercase font-bold text-slate-400">Qté:</span>
+                       <input 
+                         type="number"
+                         min="0"
+                         placeholder="0"
+                         value={ev.cateringHotMealNoTableQty === 0 && !ev.cateringHotMealNoTable ? "" : ev.cateringHotMealNoTableQty}
+                         onChange={e => {
+                           const valStr = e.target.value;
+                           const valNum = valStr === '' ? 0 : (parseInt(valStr, 10) || 0);
+                           
+                           const newEvents = [...events];
+                           const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                           newEvents[idx].cateringHotMealNoTableQty = valNum;
+                           
+                           if (valNum > 0 && !newEvents[idx].cateringHotMealNoTable) {
+                             newEvents[idx].cateringHotMealNoTable = true;
+                           }
+                           setEvents(newEvents);
+                         }}
+                         onBlur={e => {
+                           const valStr = e.target.value;
+                           const valNum = valStr === '' ? 0 : (parseInt(valStr, 10) || 0);
+                           const isChecked = valNum > 0 || ev.cateringHotMealNoTable;
+                           updateContractDb(currentRoute.eventId, { 
+                             catering_hot_meal_no_table_qty: valNum,
+                             catering_hot_meal_no_table: isChecked
+                           });
+                         }}
+                         className="w-12 px-1.5 py-1 text-xs font-bold text-center text-indigo-900 bg-gray-50 border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 focus:bg-white outline-none transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                       />
+                     </div>
+                     <label className="flex items-center gap-2 cursor-pointer font-medium text-gray-700 select-none text-sm flex-1">
+                       <input 
+                         type="checkbox" 
+                         checked={ev.cateringHotMealNoTable || false} 
+                         onChange={e => {
+                           const val = e.target.checked;
+                           const newEvents = [...events];
+                           const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                           newEvents[idx].cateringHotMealNoTable = val;
+                           
+                           let newQty = newEvents[idx].cateringHotMealNoTableQty;
+                           if (val && (!newQty || Number(newQty) === 0)) {
+                             newQty = 1;
+                             newEvents[idx].cateringHotMealNoTableQty = 1;
+                           }
+                           
+                           updateContractDb(currentRoute.eventId, { 
+                             catering_hot_meal_no_table: val,
+                             catering_hot_meal_no_table_qty: newQty
+                           });
+                           setEvents(newEvents);
+                         }}
+                         className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300"
+                       />
+                       repas chaud (pas de place à table)
+                     </label>
+                   </div>
+                ) : (
+                   <div className="flex items-center gap-2 font-medium text-gray-700 bg-white p-3 rounded-xl border border-gray-200 shadow-xs w-full">
+                     {ev.cateringHotMealNoTable ? (
+                       <><CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" /> {ev.cateringHotMealNoTableQty || 0} repas chaud(s) (pas de place à table)</>
+                     ) : (
+                       <><XCircle className="w-5 h-5 text-red-500 flex-shrink-0" /> Pas de repas chaud (pas de place à table)</>
                      )}
                    </div>
                 )}

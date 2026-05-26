@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Separator } from "./ui/separator";
-import { FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft } from "lucide-react";
+import { X, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import apiService from "../services/api";
 import FormSubmissionsSelector from "./FormSubmissionsSelector";
@@ -140,6 +140,7 @@ function Contracts2App() {
   const [archivedContracts, setArchivedContracts] = useState([]);
   const [showTrash, setShowTrash] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   const [showSignaturePad, setShowSignaturePad] = useState(false);
   const [clientSignature, setClientSignature] = useState(null);
@@ -800,7 +801,73 @@ function Contracts2App() {
   };
 
   const handlePreviewContract = (contract) => {
-    previewContractPdf(contract, generateContractHTMLLocal, loadSignatureImages);
+    const isMandat = contract.contract_mode === 'mandataire';
+    const isEntreprise = contract.contract_mode === 'entreprise';
+    
+    const clientName = contract.client_info?.name || 'Client';
+    const docs = [];
+    
+    if (isMandat) {
+      docs.push({
+        label: "Mandat d'encaissement R'Key Prod",
+        html: generateMandatHTML(contract, companySettings)
+      });
+      docs.push({
+        label: "Contrat d'Engagement Artiste DJ",
+        html: generateArtisteHTML(contract, resolveProfile)
+      });
+    } else if (isEntreprise) {
+      docs.push({
+        label: "Contrat de Prestation (Entreprise)",
+        html: generateEntrepriseHTML(contract, companySettings)
+      });
+    } else {
+      docs.push({
+        label: "Contrat Administratif",
+        html: generateContractHTMLLocal(contract, null, signatureImages)
+      });
+    }
+    
+    setPreviewDoc({
+      title: `Contrat de ${clientName}`,
+      contract,
+      documents: docs,
+      activeDocIndex: 0
+    });
+  };
+
+  const handleExportSpecificPDF = async (contract, docLabel) => {
+    try {
+      const isMandatDoc = docLabel.includes("Mandat");
+      const isArtisteDoc = docLabel.includes("Artiste") || docLabel.includes("Engagement");
+      const isEntrepriseDoc = docLabel.includes("Entreprise") || docLabel.includes("Prestation");
+      
+      let html;
+      let filename;
+      const cName = (contract.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+      const dateStr = new Date().toISOString().split('T')[0];
+      
+      if (isMandatDoc) {
+        html = generateMandatHTML(contract, companySettings);
+        filename = `Contrat_Mandat_RKeyProd_${cName}_${dateStr}.pdf`;
+      } else if (isArtisteDoc) {
+        html = generateArtisteHTML(contract, resolveProfile);
+        const artisteP = resolveProfile(contract);
+        const artistName = (artisteP.nom_artistique || artisteP.nom_complet || 'Artiste').replace(/[^a-zA-Z0-9]/g, '_');
+        filename = `Contrat_Artiste_${artistName}_${cName}_${dateStr}.pdf`;
+      } else if (isEntrepriseDoc) {
+        html = generateEntrepriseHTML(contract, companySettings);
+        filename = `Contrat_Prestation_RKeyProd_${cName}_${dateStr}.pdf`;
+      } else {
+        html = generateContractHTMLLocal(contract, null, signatureImages);
+        filename = `Contrat_Administratif_${cName}_${dateStr}.pdf`;
+      }
+      
+      await exportHTMLToPDF(html, filename);
+    } catch (error) {
+      console.error("Erreur d'exportation PDF:", error);
+      toast.error("Erreur lors de la génération du PDF");
+    }
   };
 
   // Export PDF pour Document 1 (Mandat R'KEY PROD)
@@ -1934,6 +2001,70 @@ function Contracts2App() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Real Document Preview Modal (In-App) */}
+      {previewDoc && (
+        <div 
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/65 backdrop-blur-xs p-4 sm:p-6 text-slate-800"
+          onClick={() => setPreviewDoc(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden relative animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-4 border-b bg-slate-50 flex-shrink-0 gap-4">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-800 truncate" title={previewDoc.title}>
+                  Aperçu : {previewDoc.title}
+                </h3>
+              </div>
+              
+              {/* Document switcher if multiple exist */}
+              {previewDoc.documents.length > 1 && (
+                <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl border border-slate-300/50 self-start">
+                  {previewDoc.documents.map((doc, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setPreviewDoc(prev => ({ ...prev, activeDocIndex: idx }))}
+                      className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                        previewDoc.activeDocIndex === idx
+                          ? "bg-white text-indigo-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-800"
+                      }`}
+                    >
+                      {doc.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button 
+                  onClick={() => handleExportSpecificPDF(previewDoc.contract, previewDoc.documents[previewDoc.activeDocIndex].label)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5 h-auto"
+                >
+                  <Download className="w-3.5 h-3.5" /> Télécharger PDF
+                </Button>
+                <button 
+                  onClick={() => setPreviewDoc(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+                  title="Fermer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content of preview */}
+            <div className="flex-1 bg-slate-150 overflow-y-auto relative min-h-0 p-4">
+              <div className="max-w-4xl mx-auto my-4 bg-white p-6 sm:p-10 shadow-md border rounded-xl overflow-x-auto select-text font-serif text-slate-900 leading-relaxed">
+                <div dangerouslySetInnerHTML={{ __html: previewDoc.documents[previewDoc.activeDocIndex].html }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
