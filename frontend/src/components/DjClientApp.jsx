@@ -4978,6 +4978,64 @@ const DjClientApp = ({ isPublic = false }) => {
       : 'ring-2 ring-red-400 border-red-400 relative';
   };
 
+  if (isPublic && isLoadingEvents) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-900 select-none">
+        <div className="flex flex-col items-center space-y-8 text-center max-w-md">
+          {/* Brand/Logo concept slanted matching the R'KEY PROD orange style */}
+          <div className="transform skew-x-[-12deg] tracking-tighter leading-none select-none">
+            <span className="text-5xl font-black text-orange-600 block">
+              R'KEY
+            </span>
+            <span className="text-5xl font-black text-orange-600 block mt-1">
+              PROD
+            </span>
+          </div>
+          
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-full border-4 border-orange-600/20"></div>
+            <div className="absolute inset-0 rounded-full border-4 border-orange-600 border-t-transparent animate-spin"></div>
+          </div>
+          
+          <div className="space-y-2">
+            <h3 className="text-white text-lg font-bold tracking-wide">Accès Sécurisé</h3>
+            <p className="text-slate-400 text-sm">
+              Connexion sécurisée à votre espace événementiel en cours...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPublic && events.length === 0) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-900 select-none">
+        <div className="flex flex-col items-center space-y-6 text-center max-w-md bg-slate-900/80 backdrop-blur-md p-8 rounded-3xl border border-slate-800 shadow-2xl">
+          <div className="transform skew-x-[-12deg] tracking-tighter leading-none mb-4">
+            <span className="text-3xl font-black text-orange-600 block">
+              R'KEY
+            </span>
+            <span className="text-3xl font-black text-orange-600 block mt-1">
+              PROD
+            </span>
+          </div>
+          
+          <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center border border-red-500/20">
+            <Shield className="w-8 h-8" />
+          </div>
+          
+          <div className="space-y-2">
+            <h3 className="text-white text-xl font-bold">Lien introuvable</h3>
+            <p className="text-slate-400 text-sm leading-relaxed">
+              Ce lien d'accès n'est plus actif ou l'événement a expiré. Veuillez contacter directement l'équipe de production pour renouveler vos accès.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-6xl mx-auto pb-24 relative">
       {renderPWABanner()}
@@ -4989,7 +5047,7 @@ const DjClientApp = ({ isPublic = false }) => {
               </button>
           </div>
       )}
-      {currentRoute.view === 'list' && currentRoute.mode !== 'standalone_dj' && AdminListView()}
+      {!isPublic && currentRoute.view === 'list' && currentRoute.mode !== 'standalone_dj' && AdminListView()}
       {currentRoute.view === 'dj-list' && currentRoute.mode === 'standalone_dj' && DjStandaloneListView()}
       {currentRoute.view === 'detail' && DetailView()}
       
