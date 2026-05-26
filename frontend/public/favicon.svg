@@ -1,14 +1,202 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <style>
-    .text-title {
-      font-family: 'Arial Black', 'Impact', 'Montserrat', system-ui, -apple-system, sans-serif;
-      font-weight: 900;
-      font-style: italic;
-      fill: #ea580c;
-    }
-  </style>
-  <g transform="skewX(-12) translate(50, 0)">
-    <text x="10" y="210" font-size="200" class="text-title" letter-spacing="-12">R'KEY</text>
-    <text x="10" y="410" font-size="200" class="text-title" letter-spacing="-8">PROD</text>
+<svg viewBox="0 0 512 512" width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Metallic golden-bronze gradients -->
+    <linearGradient id="bronzeBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#451a03" />
+      <stop offset="25%" stop-color="#b45309" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="75%" stop-color="#78350f" />
+      <stop offset="100%" stop-color="#1e0c02" />
+    </linearGradient>
+
+    <linearGradient id="goldGleam" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#cf8c3a" />
+      <stop offset="30%" stop-color="#fae6cd" />
+      <stop offset="50%" stop-color="#cc832d" />
+      <stop offset="85%" stop-color="#673909" />
+      <stop offset="100%" stop-color="#cf8c3a" />
+    </linearGradient>
+
+    <radialGradient id="innerEclipse" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="70%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </radialGradient>
+
+    <linearGradient id="neonGlowLine" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#ea580c" />
+      <stop offset="50%" stop-color="#fb923c" />
+      <stop offset="100%" stop-color="#ea580c" />
+    </linearGradient>
+
+    <!-- Text/Glow Filters -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    
+    <filter id="intenseNeon" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur1" />
+      <feGaussianBlur stdDeviation="12" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Curved Text Paths scaled for 512x512 -->
+    <!-- Top text path - clockwise from left to right -->
+    <path id="pathMyDjTop" d="M 80,256 A 176,176 0 0,1 432,256" fill="none" />
+    
+    <!-- Bottom text path - counter-clockwise from left to right -->
+    <path id="pathMyDjBottom" d="M 80,256 A 176,176 0 0,0 432,256" fill="none" />
+  </defs>
+
+  <!-- Ambient dark slate card background to make the circle pop -->
+  <rect width="512" height="512" fill="#020617" rx="112" />
+
+  <!-- Outer Metallic Ring -->
+  <circle cx="256" cy="256" r="236" fill="url(#bronzeBorder)" stroke="#78350f" stroke-width="3" />
+  
+  <!-- Mid Ring / Highlight Ring -->
+  <circle cx="256" cy="256" r="224" fill="none" stroke="url(#goldGleam)" stroke-width="10" />
+  <circle cx="256" cy="256" r="216" fill="#020617" />
+
+  <!-- Dark vinyl grid / Record concentric circles -->
+  <circle cx="256" cy="256" r="208" fill="url(#innerEclipse)" stroke="#b45309" stroke-width="1.5" stroke-opacity="0.4" />
+  <circle cx="256" cy="256" r="192" fill="none" stroke="#b45309" stroke-width="1" stroke-opacity="0.2" />
+  <circle cx="256" cy="256" r="176" fill="none" stroke="#b45309" stroke-width="1" stroke-opacity="0.15" />
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#b45309" stroke-width="1" stroke-opacity="0.1" />
+
+  <!-- Outer text background shading -->
+  <path d="M 80,256 A 176,176 0 0,1 432,256" fill="none" stroke="#ea580c" stroke-width="3" stroke-opacity="0.3" filter="url(#neonGlow)" />
+  <path d="M 80,256 A 176,176 0 0,0 432,256" fill="none" stroke="#f97316" stroke-width="3" stroke-opacity="0.2" />
+
+  <!-- Equalizer Waveform Background -->
+  <g opacity="0.35" transform="translate(72, 200) scale(1.6)">
+    <!-- Symmetrical Soundwaves -->
+    <rect x="10" y="20" width="4" height="25" fill="#f97316" rx="2" />
+    <rect x="18" y="15" width="4" height="35" fill="#ea580c" rx="2" />
+    <rect x="26" y="10" width="4" height="45" fill="#fb923c" rx="2" />
+    <rect x="34" y="5" width="4" height="55" fill="#f97316" rx="2" />
+    <rect x="42" y="12" width="4" height="40" fill="#f97316" rx="2" />
+    <rect x="50" y="18" width="4" height="30" fill="#ea580c" rx="2" />
+    <rect x="58" y="22" width="4" height="20" fill="#ea580c" rx="2" />
+    
+    <!-- Middle gap for DJ -->
+    <g opacity="0.2">
+      <rect x="66" y="25" width="4" height="15" fill="#94a3b8" rx="1" />
+      <rect x="74" y="28" width="4" height="10" fill="#94a3b8" rx="1" />
+      <rect x="82" y="28" width="4" height="10" fill="#94a3b8" rx="1" />
+      <rect x="90" y="28" width="4" height="10" fill="#94a3b8" rx="1" />
+      <rect x="98" y="25" width="4" height="15" fill="#94a3b8" rx="1" />
+    </g>
+
+    {/* Right side soundwaves */}
+    <rect x="106" y="22" width="4" height="20" fill="#ea580c" rx="2" />
+    <rect x="114" y="18" width="4" height="30" fill="#ea580c" rx="2" />
+    <rect x="122" y="12" width="4" height="40" fill="#f97316" rx="2" />
+    <rect x="130" y="5" width="4" height="55" fill="#fb923c" rx="2" />
+    <rect x="138" y="10" width="4" height="45" fill="#fb923c" rx="2" />
+    <rect x="146" y="15" width="4" height="35" fill="#ea580c" rx="2" />
+    <rect x="154" y="20" width="4" height="25" fill="#f97316" rx="2" />
   </g>
+
+  <!-- DJ System Console Deck Assembly -->
+  <g transform="translate(90, 256) scale(1.6)">
+    <!-- Base Deck Plate -->
+    <path d="M 12,38 L 196,38 L 168,74 L 40,74 Z" fill="#1e293b" stroke="#475569" stroke-width="2" />
+    <path d="M 12,38 L 196,38" stroke="url(#neonGlowLine)" stroke-width="1.5" filter="url(#neonGlow)" />
+    <path d="M 40,74 L 168,74" stroke="#ea580c" stroke-width="1" stroke-opacity="0.6" />
+
+    <!-- Left Turntable -->
+    <ellipse cx="55" cy="53" rx="26" ry="14" fill="#0f172a" stroke="#b45309" stroke-width="1.5" />
+    <ellipse cx="55" cy="53" rx="18" ry="9" fill="#020617" stroke="#475569" stroke-width="1" />
+    <ellipse cx="55" cy="53" rx="8" ry="4" fill="#fb923c" />
+    
+    <!-- Right Turntable -->
+    <ellipse cx="149" cy="53" rx="26" ry="14" fill="#0f172a" stroke="#b45309" stroke-width="1.5" />
+    <ellipse cx="149" cy="53" rx="18" ry="9" fill="#020617" stroke="#475569" stroke-width="1" />
+    <ellipse cx="149" cy="53" rx="8" ry="4" fill="#fb923c" />
+
+    <!-- Mixer controls -->
+    <g transform="translate(90, 44)" fill="#475569">
+      <rect x="0" y="0" width="3" height="15" fill="#ea580c" />
+      <rect x="8" y="2" width="4" height="12" fill="#fb923c" />
+      <rect x="16" y="0" width="3" height="15" fill="#ea580c" />
+      <circle cx="2" cy="20" r="1.5" fill="#10b981" />
+      <circle cx="10" cy="22" r="1.5" fill="#ef4444" />
+      <circle cx="18" cy="20" r="1.5" fill="#3b82f6" />
+    </g>
+  </g>
+
+  <!-- DJ Artist Silhouette -->
+  <g transform="translate(136, 154) scale(1.6)">
+    <!-- Shadow Behind DJ -->
+    <path d="M 35,45 C 20,45 12,65 14,80 L 14,94 L 138,94 L 138,80 C 140,65 132,45 117,45 C 110,45 92,62 76,62 C 60,62 42,45 35,45 Z" fill="#020617" opacity="0.6" />
+
+    <!-- Body and shoulders -->
+    <path d="M 35,45 C 20,45 14,58 14,76 C 14,84 15,92 16,102 L 136,102 C 137,92 138,84 138,76 C 138,58 132,45 117,45 C 104,45 94,58 76,58 C 58,58 48,45 35,45 Z" fill="#0f172a" stroke="#fb923c" stroke-width="1" />
+    <path d="M 52,58 C 52,58 64,72 76,72 C 88,72 100,58 100,58" fill="none" stroke="#ea580c" stroke-width="2" stroke-opacity="0.4" />
+
+    <!-- Arms -->
+    <path d="M 18,52 C 5,56 -10,65 -22,78 C -24,80 -25,84 -23,86 C -20,88 -14,86 -10,82 C 2,72 12,64 22,60" fill="none" stroke="#0f172a" stroke-width="15" stroke-linecap="round" />
+    <path d="M 18,52 C 5,56 -10,65 -22,78" fill="none" stroke="#fb923c" stroke-width="1.5" stroke-opacity="0.8" />
+    
+    <path d="M 132,54 C 146,58 152,70 156,84 C 158,88 162,90 164,88 C 166,86 164,80 160,74 C 150,56 142,48 130,48" fill="none" stroke="#0f172a" stroke-width="14" stroke-linecap="round" />
+    <path d="M 132,54 C 146,58 152,70 156,84" fill="none" stroke="#fb923c" stroke-width="1.5" stroke-opacity="0.8" />
+
+    <!-- Head & Earphones -->
+    <circle cx="76" cy="24" r="16" fill="#0f172a" stroke="#fb923c" stroke-width="1.5" />
+    <path d="M 76,12 C 70,12 60,18 60,26" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" />
+    <path d="M 76,12 C 82,12 92,18 92,26" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" />
+    
+    <path d="M 57,26 C 57,10 95,10 95,26" fill="none" stroke="#f59e0b" stroke-width="4.5" stroke-linecap="round" filter="url(#neonGlow)" />
+    
+    <rect x="54" y="20" width="6" height="12" rx="3" fill="#f59e0b" stroke="#78350f" stroke-width="1" />
+    <rect x="92" y="20" width="6" height="12" rx="3" fill="#f59e0b" stroke="#78350f" stroke-width="1" />
+  </g>
+
+  <!-- Inner Border Ring -->
+  <circle cx="256" cy="256" r="184" fill="none" stroke="#ea580c" stroke-width="3" stroke-opacity="0.75" />
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#fb923c" stroke-width="1" stroke-opacity="0.5" />
+
+  <!-- Curved Text TOP: "MY DJ" -->
+  <text
+    fill="#ff7a00"
+    font-family="system-ui, -apple-system, sans-serif"
+    font-weight="900"
+    font-size="48"
+    letter-spacing="6"
+    filter="url(#intenseNeon)"
+  >
+    <textPath href="#pathMyDjTop" startOffset="50%" text-anchor="middle">
+      MY DJ
+    </textPath>
+  </text>
+
+  <!-- Curved Text BOTTOM: "by R'Key Prod" -->
+  <text
+    fill="#ffffff"
+    font-family="system-ui, -apple-system, sans-serif"
+    font-weight="750"
+    font-size="24"
+    letter-spacing="4"
+    filter="url(#neonGlow)"
+  >
+    <textPath href="#pathMyDjBottom" startOffset="50%" text-anchor="middle">
+      by R'Key Prod
+    </textPath>
+  </text>
+
+  <!-- Inner Highlight Reflection -->
+  <path
+    d="M 45,256 A 211,211 0 0,1 467,256"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="2.5"
+    stroke-opacity="0.15"
+    stroke-linecap="round"
+  />
 </svg>

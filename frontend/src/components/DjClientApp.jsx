@@ -216,55 +216,110 @@ const DjClientApp = ({ isPublic = false }) => {
     setLastNotificationCount(currentUnreadCount);
   }, [events, currentRoute.role]);
 
-  const renderPWABanner = () => {
-    if (dismissedPwa || isStandalone) return null;
+  const [dismissedStandalonePush, setDismissedStandalonePush] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem('mydj_dismiss_push') === 'true';
+      }
+    } catch (e) {
+      console.warn("localStorage read blocked in this context:", e);
+    }
+    return false;
+  });
+
+  const renderStandalonePushBanner = () => {
+    if (!isStandalone || notificationPermission === 'granted' || dismissedStandalonePush) return null;
     if (currentRoute.role !== 'dj' && currentRoute.role !== 'client') return null;
 
     return (
-      <div className="md:hidden mb-6 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 text-white rounded-2xl p-4 shadow-lg border border-indigo-500 relative overflow-hidden animate-in slide-in-from-top duration-300">
+      <div className="md:hidden mb-6 bg-gradient-to-br from-rose-600 via-orange-500 to-amber-500 text-white rounded-2xl p-5 shadow-2xl relative overflow-hidden animate-in slide-in-from-top duration-300">
         <div className="absolute top-0 right-0 p-1">
           <button 
-            onClick={dismissPwaBanner}
-            className="p-1 px-2.5 text-white/75 hover:text-white rounded-lg hover:bg-white/10 transition"
+            onClick={() => {
+              setDismissedStandalonePush(true);
+              try { window.localStorage.setItem('mydj_dismiss_push', 'true'); } catch(e){}
+            }}
+            className="p-1 px-2.5 text-white/60 hover:text-white rounded-lg hover:bg-white/10 transition"
             title="Ignorer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
         
-        <div className="flex gap-3 items-start pr-8">
-          <div className="p-2 bg-white/10 rounded-xl shrink-0">
-            <Smartphone className="w-5 h-5 text-yellow-300 animate-bounce" />
+        <div className="flex gap-4 items-start pr-8">
+          <div className="p-3 bg-white/20 text-white rounded-xl shrink-0 backdrop-blur-md border border-white/30 shadow-inner">
+            <Bell className="w-6 h-6 animate-bounce" />
           </div>
-          <div className="space-y-1">
-            <h4 className="text-sm font-black tracking-wide flex items-center gap-1.5">
-              <span>Ajouter à l'écran d'accueil</span>
-              <span className="bg-amber-400 text-indigo-950 font-black text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider">PWA</span>
+          <div className="space-y-1.5">
+            <h4 className="text-base font-black text-white tracking-wide flex items-center gap-2 drop-shadow-sm">
+              🔔 Alertes en temps réel
             </h4>
-            <p className="text-xs text-indigo-100 leading-relaxed">
-              Installez l'application R'Key Prod sur votre smartphone pour l'utiliser comme une vraie app avec alertes en temps réel et accès rapide !
+            <p className="text-sm text-yellow-50 drop-shadow-sm leading-relaxed">
+              Activez les notifications pour ne louper aucune mise à jour de planning, nouveau message ou changement important sur votre événement !
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4 pt-4 border-t border-white/10">
+        <div className="flex gap-3 mt-4 pt-4 border-t border-white/20">
+          <button
+            onClick={requestNotificationPermission}
+            className="flex-1 bg-white hover:bg-stone-50 text-orange-700 font-extrabold py-2.5 px-3 rounded-xl transition text-sm flex items-center justify-center gap-2 shadow-lg"
+          >
+            <Bell className="w-4 h-4" />
+            Activer maintenant
+          </button>
+          <button
+            onClick={() => {
+              setDismissedStandalonePush(true);
+              try { window.localStorage.setItem('mydj_dismiss_push', 'true'); } catch(e){}
+            }}
+            className="bg-transparent hover:bg-white/10 text-white font-semibold py-2.5 px-4 rounded-xl transition text-sm border border-white/30"
+          >
+            Plus tard
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPWABanner = () => {
+    if (dismissedPwa || isStandalone) return null;
+    if (currentRoute.role !== 'dj' && currentRoute.role !== 'client') return null;
+
+    return (
+      <div className="md:hidden mb-6 bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 text-white rounded-2xl p-5 shadow-2xl relative overflow-hidden animate-in slide-in-from-top duration-300">
+        <div className="absolute top-0 right-0 p-1">
+          <button 
+            onClick={dismissPwaBanner}
+            className="p-1 px-2.5 text-white/60 hover:text-white rounded-lg hover:bg-white/10 transition"
+            title="Ignorer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        
+        <div className="flex gap-4 items-start pr-8">
+          <div className="p-3 bg-white/20 text-white rounded-xl shrink-0 backdrop-blur-md border border-white/30 shadow-inner">
+            <Smartphone className="w-6 h-6 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="text-sm font-black tracking-wide text-white uppercase drop-shadow-sm">
+              Installer l'application My DJ
+            </h4>
+            <p className="text-sm text-yellow-50 drop-shadow-sm leading-relaxed mt-1">
+              Installez l'application pour ne rien louper de votre événement et pour garder le contact avec votre DJ !
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-white/20">
           <button
             onClick={installPWA}
-            className="w-full bg-white hover:bg-indigo-55 text-indigo-950 hover:text-indigo-900 font-extrabold py-2 px-3 rounded-lg transition text-xs flex items-center justify-center gap-2 shadow-sm"
+            className="w-full bg-white hover:bg-stone-50 text-orange-700 font-extrabold py-3 px-4 rounded-xl transition text-sm flex items-center justify-center gap-2 shadow-lg"
           >
-            <DownloadCloud className="w-4 h-4 text-indigo-600" />
+            <DownloadCloud className="w-5 h-5" />
             Installer l'application
           </button>
-
-          {notificationPermission !== 'granted' && (
-            <button
-              onClick={requestNotificationPermission}
-              className="w-full bg-indigo-500/40 hover:bg-indigo-500/60 text-white font-extrabold py-2 px-3 rounded-lg transition text-xs border border-white/15 flex items-center justify-center gap-2"
-            >
-              <Bell className="w-4 h-4 text-yellow-300 animate-pulse" />
-              Activer les notifications push
-            </button>
-          )}
         </div>
       </div>
     );
@@ -5062,6 +5117,7 @@ const DjClientApp = ({ isPublic = false }) => {
   return (
     <div className="p-6 max-w-6xl mx-auto pb-24 relative">
       {renderPWABanner()}
+      {renderStandalonePushBanner()}
       {renderIOSInstallModal()}
       {hasAnyNotifications() && (
           <div className="flex justify-end mb-4">
