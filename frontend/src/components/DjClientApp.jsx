@@ -228,7 +228,8 @@ const DjClientApp = ({ isPublic = false }) => {
             has_wifi: c.has_wifi || false,
             has_4g_5g: c.has_4g_5g || false,
             optionsTarifNotes: c.options_tarif_notes || "",
-            showOptionsTarifNotesToClient: c.show_options_tarif_notes_to_client !== undefined ? c.show_options_tarif_notes_to_client : false
+            showOptionsTarifNotesToClient: c.show_options_tarif_notes_to_client !== undefined ? c.show_options_tarif_notes_to_client : false,
+            playlistAudioFiles: c.playlist_audio_files || []
          };
       });
       
@@ -314,7 +315,7 @@ const DjClientApp = ({ isPublic = false }) => {
           let section = null;
           if ('chat_messages' in payload) section = 'chat';
           if ('requested_options' in payload || 'options_tarif_notes' in payload || 'show_options_tarif_notes_to_client' in payload) section = 'options';
-          if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload) section = 'playlist';
+          if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload || 'playlist_audio_files' in payload) section = 'playlist';
           if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload) section = 'planning';
           if ('client_photo' in payload) section = 'client_info';
           if ('selected_pdf_notes' in payload) section = 'documents';
@@ -389,6 +390,9 @@ const DjClientApp = ({ isPublic = false }) => {
   };
 
   const [copiedLink, setCopiedLink] = useState(false);
+  const [audioUploading, setAudioUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef(null);
 
   const today = new Date().toISOString().split('T')[0];
   
@@ -822,6 +826,113 @@ const DjClientApp = ({ isPublic = false }) => {
     const isClient = role === 'client';
     const isAdminOrDj = role === 'admin' || role === 'dj';
 
+    const audioFiles = ev.playlistAudioFiles || [];
+
+    const handleUploadAudio = async (file) => {
+      const isAudio = file.type === 'audio/mpeg' || file.type === 'audio/mp3' || file.type === 'audio/wav' || file.type === 'audio/x-wav' || file.name.endsWith('.mp3') || file.name.endsWith('.wav');
+      if (!isAudio) {
+        toast.error("Format non supporté (MP3 ou WAV uniquement)");
+        return;
+      }
+
+      setAudioUploading(true);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/public/upload/audio`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        if (response.ok && data.url) {
+          const newAudioFile = {
+            id: 'audio-' + Date.now(),
+            name: data.originalName || file.name,
+            url: data.url,
+            note: '',
+            uploadedAt: new Date().toISOString()
+          };
+          const updatedList = [...audioFiles, newAudioFile];
+          
+          const newEvents = [...events];
+          const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+          if (idx !== -1) {
+            newEvents[idx].playlistAudioFiles = updatedList;
+            setEvents(newEvents);
+          }
+          updateContractDb(currentRoute.eventId, { playlist_audio_files: updatedList });
+          toast.success("Fichier audio ajouté !");
+        } else {
+          toast.error(data.detail || "Erreur de chargement du fichier");
+        }
+      } catch (err) {
+        console.error("Audio Upload error: ", err);
+        toast.error("Erreur de connexion au serveur");
+      } finally {
+        setAudioUploading(false);
+      }
+    };
+
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      setIsDragOver(true);
+    };
+
+    const handleDragLeave = () => {
+      setIsDragOver(false);
+    };
+
+    const handleDrop = (e) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleUploadAudio(e.dataTransfer.files[0]);
+      }
+    };
+
+    const handleDeleteAudio = async (audioId) => {
+      if (!window.confirm("Voulez-vous vraiment supprimer ce fichier ?")) return;
+      
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/playlist-audio/${audioId}`, {
+          method: 'DELETE'
+        });
+        
+        if (response.ok) {
+          const updatedList = audioFiles.filter(a => a.id !== audioId);
+          const newEvents = [...events];
+          const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+          if (idx !== -1) {
+            newEvents[idx].playlistAudioFiles = updatedList;
+            setEvents(newEvents);
+          }
+          toast.success("Fichier audio supprimé !");
+        } else {
+          const errData = await response.json();
+          toast.error(errData.error || "Erreur lors de la suppression du fichier");
+        }
+      } catch (err) {
+        console.error("Error deleting audio file:", err);
+        toast.error("Erreur de connexion au serveur");
+      }
+    };
+
+    const handleNoteUpdate = (audioId, newNote) => {
+      const updatedList = audioFiles.map(a => a.id === audioId ? { ...a, note: newNote } : a);
+      const newEvents = [...events];
+      const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+      if (idx !== -1) {
+        newEvents[idx].playlistAudioFiles = updatedList;
+        setEvents(newEvents);
+      }
+    };
+
+    const handleNoteBlur = (audioId, finalNote) => {
+      const updatedList = audioFiles.map(a => a.id === audioId ? { ...a, note: finalNote } : a);
+      updateContractDb(currentRoute.eventId, { playlist_audio_files: updatedList });
+    };
+
     const handleMusicStyleToggle = (style) => {
       if (!isAdminOrDj) return;
       const currentStyles = ev.selectedMusicStyles || [];
@@ -1173,6 +1284,107 @@ const DjClientApp = ({ isPublic = false }) => {
               className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-red-500 bg-white"
               placeholder="Ex: Pas de hard rock, éviter The Black Eyed Peas..."
             />
+          </div>
+
+          {/* Section d'upload de fichiers audio */}
+          <div className="border rounded-lg p-5 bg-indigo-50/40 border-indigo-150 mt-6" id="section-audio-upload">
+            <h4 className="font-bold text-indigo-800 mb-1 text-base flex items-center gap-2">
+              🎵 Dépôt de Fichiers Audio (MP3 / WAV)
+            </h4>
+            <p className="text-xs text-slate-500 mb-4">
+              Idéal pour fournir des versions spécifiques de morceaux, des montages, des audios d'interventions ou de surprises.
+            </p>
+
+            {/* Drag and Drop Zone */}
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current && fileInputRef.current.click()}
+              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
+                isDragOver
+                  ? "border-indigo-600 bg-indigo-50/80 scale-[1.01]"
+                  : "border-indigo-200 bg-white hover:bg-slate-50 hover:border-indigo-400"
+              }`}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept=".mp3,.wav,audio/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleUploadAudio(e.target.files[0]);
+                  }
+                }}
+              />
+              
+              {audioUploading ? (
+                <div className="flex flex-col items-center gap-2 animate-pulse">
+                  <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+                  <span className="text-sm font-medium text-indigo-700 font-sans">Téléversement du fichier en cours...</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <Upload className="w-8 h-8 text-indigo-500" />
+                  <span className="text-sm font-medium text-slate-700 font-sans">
+                    Déposez votre fichier ici, ou <span className="text-indigo-600 underline cursor-pointer">parcourez vos fichiers</span>
+                  </span>
+                  <span className="text-xs text-slate-400">MP3 ou WAV uniquement</span>
+                </div>
+              )}
+            </div>
+
+            {/* Audio Files List */}
+            {audioFiles.length > 0 && (
+              <div className="mt-6 space-y-4">
+                <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Fichiers téléversés ({audioFiles.length})
+                </h5>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {audioFiles.map((file) => (
+                    <div key={file.id} className="bg-white rounded-xl border border-slate-200/80 p-4 shadow-sm flex flex-col justify-between relative group hover:border-indigo-200 transition-all">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Music className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                          <span className="text-sm font-semibold truncate text-slate-800" title={file.name}>
+                            {file.name}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAudio(file.id)}
+                          className="text-slate-400 hover:text-red-500 p-1 rounded-lg hover:bg-slate-50 transition-colors"
+                          title="Supprimer le fichier"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Native Audio Preview */}
+                      <div className="my-2">
+                        <audio src={file.url.startsWith('http') ? file.url : `${BACKEND_URL}${file.url}`} controls className="w-full h-8" />
+                      </div>
+
+                      {/* Note Input */}
+                      <div className="mt-2.5">
+                        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1">
+                          Note / Description de cet audio :
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50/50 hover:bg-white focus:bg-white"
+                          placeholder="À quoi sert ce fichier ? (ex: Musique d'arrivée du gâteau)"
+                          value={file.note || ''}
+                          onChange={(e) => handleNoteUpdate(file.id, e.target.value)}
+                          onBlur={(e) => handleNoteBlur(file.id, e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

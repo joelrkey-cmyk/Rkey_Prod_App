@@ -2785,6 +2785,80 @@ api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
   }
 });
 
+api.post('/public/upload/audio', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ detail: 'Aucun fichier' });
+  
+  const b = getGcsBucket();
+  if (!b) {
+    return res.status(500).json({ detail: "Le stockage Google Cloud Storage n'est pas disponible ou configuré sur ce serveur." });
+  }
+
+  try {
+    const ext = path.extname(req.file.originalname) || '';
+    const fileId = uuidv4();
+    const gcsPath = `playlist-audio/${fileId}${ext}`;
+    const file = b.file(gcsPath);
+    
+    await file.save(req.file.buffer, {
+      metadata: { contentType: req.file.mimetype }
+    });
+    
+    return res.json({ url: `/api/gcs/${gcsPath}`, originalName: req.file.originalname });
+  } catch (error) {
+    console.error('Error uploading audio to GCS:', error);
+    res.status(500).json({ detail: 'Erreur lors du téléversement du fichier audio vers Google Cloud Storage: ' + error.message });
+  }
+});
+
+api.delete('/public/dj-client/:id/playlist-audio/:audioId', async (req, res) => {
+  try {
+    const { id, audioId } = req.params;
+    const contract = await db.collection('contracts2').findOne({ id });
+    if (!contract || !contract.playlist_audio_files) {
+      return res.status(404).json({ error: 'Contrat ou fichiers audio non trouvés' });
+    }
+    
+    const audioToDelete = contract.playlist_audio_files.find(a => a.id === audioId);
+    if (audioToDelete) {
+      let gcsPath = audioToDelete.url;
+      if (gcsPath.includes('/api/gcs/')) {
+        gcsPath = gcsPath.substring(gcsPath.indexOf('/api/gcs/') + 9);
+      } else if (gcsPath.includes('gcs/')) {
+        gcsPath = gcsPath.substring(gcsPath.indexOf('gcs/') + 4);
+      }
+      if (gcsPath.startsWith('/')) {
+        gcsPath = gcsPath.substring(1);
+      }
+      
+      const b = getGcsBucket();
+      if (b && gcsPath) {
+        const file = b.file(gcsPath);
+        try {
+          const [exists] = await file.exists();
+          if (exists) {
+            await file.delete();
+            console.log(`Successfully deleted audio file ${gcsPath} from GCS`);
+          } else {
+            console.warn(`File ${gcsPath} did not exist on GCS, skipping file.delete`);
+          }
+        } catch (gcsDelErr) {
+          console.error('Failed to delete audio from GCS bucket:', gcsDelErr.message);
+        }
+      }
+    }
+
+    await db.collection('contracts2').updateOne(
+      { id },
+      { $pull: { playlist_audio_files: { id: audioId } } }
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting playlist audio file:', err);
+    res.status(500).json({ error: 'Erreur interne lors de la suppression' });
+  }
+});
+
 api.post('/upload/venue-photo', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'No image' });
   
