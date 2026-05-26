@@ -6,7 +6,6 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import axios from 'axios';
 import { Trash2, Shield, CalendarDays, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import Navigation from './Navigation';
 import API_BASE_URL from '../utils/apiUrl';
 
 const locales = {
@@ -340,7 +339,6 @@ export default function AgendaPrestationApp() {
 
   return (
     <div className="w-full flex-col h-screen bg-slate-50 text-left items-stretch overflow-hidden flex">
-      <Navigation />
       <div className="flex-1 flex flex-col min-h-0 w-full">
         <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0 w-full">
           <div className="flex items-center gap-3">
