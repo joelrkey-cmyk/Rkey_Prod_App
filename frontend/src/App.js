@@ -1,6 +1,6 @@
 import React from "react";
 import "./App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from 'sonner';
 import { AuthProvider } from "./contexts/AuthContext";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -39,6 +39,26 @@ const SmartHomePage = () => {
   return <HomePage />;
 };
 
+const PwaRedirect = ({ children }) => {
+  const savedSlug = localStorage.getItem('client_pwa_slug');
+  const savedUser = localStorage.getItem('user');
+  let isAdmin = false;
+  try {
+    if (savedUser) {
+      const u = JSON.parse(savedUser);
+      if (u && u.role === 'admin') {
+        isAdmin = true;
+      }
+    }
+  } catch (e) {}
+
+  if (savedSlug && !isAdmin) {
+    return <Navigate to={`/${savedSlug}`} replace />;
+  }
+  
+  return children;
+};
+
 function App() {
   return (
     <ErrorBoundary>
@@ -57,9 +77,11 @@ function App() {
               
               {/* Page d'accueil - protégée */}
               <Route path="/" element={
-                <ProtectedRoute>
-                  <SmartHomePage />
-                </ProtectedRoute>
+                <PwaRedirect>
+                  <ProtectedRoute>
+                    <SmartHomePage />
+                  </ProtectedRoute>
+                </PwaRedirect>
               } />
               
               <Route path="/contracts2" element={

@@ -5000,6 +5000,29 @@ api.get('/quotes', authMiddleware, async (req, res) => {
 // ═══════════════════════════════════════════
 // MOUNT API + STATIC FILES
 // ═══════════════════════════════════════════
+// Dynamic PWA Manifest for standalone mode (My DJ)
+app.get('/api/pwa-manifest', (req, res) => {
+  const slug = req.query.slug || '';
+  const manifest = {
+    "short_name": "My DJ",
+    "name": "My DJ",
+    "icons": [
+      {
+        "src": "/favicon.svg",
+        "type": "image/svg+xml",
+        "sizes": "192x192 512x512"
+      }
+    ],
+    "start_url": slug ? `/${slug}` : "/",
+    "background_color": "#0f172a",
+    "theme_color": "#f97316",
+    "display": "standalone",
+    "orientation": "portrait"
+  };
+  res.setHeader('Content-Type', 'application/json');
+  res.send(JSON.stringify(manifest, null, 2));
+});
+
 // Serve widget HTML files (BEFORE api router so /api/widgets/* is served as static files)
 app.use('/api/widgets', express.static(path.join(__dirname, 'frontend', 'public', 'api', 'widgets')));
 

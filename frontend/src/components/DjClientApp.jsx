@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { generateMandatHTML, generateEntrepriseHTML, generateArtisteHTML } from './contracts2/mandatHtmlGenerator';
 import { defaultCompanySettings, musicStyles as availableMusicStyles } from './contracts2/constants';
+import MyDjLogo from './MyDjLogo';
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -327,6 +328,33 @@ const DjClientApp = ({ isPublic = false }) => {
   };
 
   useEffect(() => {
+    if (isPublic && slug) {
+      const manifestLink = document.querySelector("link[rel='manifest']");
+      const originalHref = manifestLink ? manifestLink.getAttribute('href') : '/manifest.json';
+      
+      if (manifestLink) {
+        manifestLink.setAttribute('href', `/api/pwa-manifest?slug=${encodeURIComponent(slug)}`);
+      }
+      
+      const originalTitle = document.title;
+      const formattedName = slug
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+        .replace(/\bEt\b/gi, 'Et');
+      document.title = `My DJ - ${formattedName}`;
+
+      return () => {
+        document.title = originalTitle;
+        const resetLink = document.querySelector("link[rel='manifest']");
+        if (resetLink) {
+          resetLink.setAttribute('href', originalHref);
+        }
+      };
+    }
+  }, [isPublic, slug]);
+
+  useEffect(() => {
     fetchDjProfiles();
     fetchContractsAsEvents();
     fetchPdfNotes();
@@ -373,6 +401,11 @@ const DjClientApp = ({ isPublic = false }) => {
       let allContracts = [];
       
       if (isPublic && slug) {
+         try {
+           localStorage.setItem('client_pwa_slug', slug);
+         } catch (e) {
+           console.warn('Failed to save client_pwa_slug to localStorage', e);
+         }
          const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${slug}`);
          if (publicRes.ok) {
              const data = await publicRes.json();
@@ -4980,28 +5013,22 @@ const DjClientApp = ({ isPublic = false }) => {
 
   if (isPublic && isLoadingEvents) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-900 select-none">
-        <div className="flex flex-col items-center space-y-8 text-center max-w-md">
-          {/* Brand/Logo concept slanted matching the R'KEY PROD orange style */}
-          <div className="transform skew-x-[-12deg] tracking-tighter leading-none select-none">
-            <span className="text-5xl font-black text-orange-600 block">
-              R'KEY
-            </span>
-            <span className="text-5xl font-black text-orange-600 block mt-1">
-              PROD
-            </span>
-          </div>
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-950 select-none">
+        <div className="flex flex-col items-center space-y-8 text-center max-w-sm">
+          {/* Logo component */}
+          <MyDjLogo className="w-56 h-56" glow={true} />
           
-          <div className="relative w-16 h-16">
-            <div className="absolute inset-0 rounded-full border-4 border-orange-600/20"></div>
-            <div className="absolute inset-0 rounded-full border-4 border-orange-600 border-t-transparent animate-spin"></div>
-          </div>
-          
-          <div className="space-y-2">
-            <h3 className="text-white text-lg font-bold tracking-wide">Accès Sécurisé</h3>
+          <div className="space-y-3 mt-4">
+            <h3 className="text-white text-xl font-bold tracking-wide">Accès Sécurisé</h3>
             <p className="text-slate-400 text-sm">
-              Connexion sécurisée à votre espace événementiel en cours...
+              Connexion sécurisée à votre espace événementiel...
             </p>
+          </div>
+          
+          {/* Visual premium spinner */}
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900 border border-slate-800 shadow-xl">
+            <Loader2 className="w-4 h-4 text-orange-500 animate-spin" />
+            <span className="text-xs font-semibold text-slate-300">Chargement de vos données...</span>
           </div>
         </div>
       </div>
@@ -5010,25 +5037,21 @@ const DjClientApp = ({ isPublic = false }) => {
 
   if (isPublic && events.length === 0) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-900 select-none">
-        <div className="flex flex-col items-center space-y-6 text-center max-w-md bg-slate-900/80 backdrop-blur-md p-8 rounded-3xl border border-slate-800 shadow-2xl">
-          <div className="transform skew-x-[-12deg] tracking-tighter leading-none mb-4">
-            <span className="text-3xl font-black text-orange-600 block">
-              R'KEY
-            </span>
-            <span className="text-3xl font-black text-orange-600 block mt-1">
-              PROD
-            </span>
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-950 select-none">
+        <div className="flex flex-col items-center space-y-6 text-center max-w-md bg-slate-900/40 backdrop-blur-md p-8 rounded-3xl border border-slate-900 shadow-2xl relative">
+          <div className="absolute inset-0 bg-red-600/5 blur-3xl rounded-3xl pointer-events-none" />
+          
+          {/* Logo without heavy pulses */}
+          <MyDjLogo className="w-36 h-36" glow={false} />
+          
+          <div className="w-12 h-12 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center border border-red-500/20">
+            <Shield className="w-6 h-6" />
           </div>
           
-          <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center border border-red-500/20">
-            <Shield className="w-8 h-8" />
-          </div>
-          
-          <div className="space-y-2">
-            <h3 className="text-white text-xl font-bold">Lien introuvable</h3>
+          <div className="space-y-2 relative z-10">
+            <h3 className="text-white text-xl font-bold">Espace introuvable</h3>
             <p className="text-slate-400 text-sm leading-relaxed">
-              Ce lien d'accès n'est plus actif ou l'événement a expiré. Veuillez contacter directement l'équipe de production pour renouveler vos accès.
+              Ce lien d'accès n'est pas actif ou l'événement associé a expiré. Veuillez contacter directement votre DJ ou l'équipe de production pour renouveler vos accès.
             </p>
           </div>
         </div>
