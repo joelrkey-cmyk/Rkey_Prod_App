@@ -706,6 +706,11 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Serve frontend build (MUST BE BEFORE API ROUTES for Hostinger)
+const frontendPath = path.join(__dirname, 'frontend', 'build');
+console.log(`Serving frontend from: ${frontendPath}`);
+app.use(express.static(frontendPath));
+
 app.post('/api/log-client-error', (req, res) => {
   console.log("=== CLIENT REACT ERROR ===", req.body);
   try {
@@ -5146,12 +5151,6 @@ api.use((err, req, res, next) => {
 });
 
 app.use('/api', api);
-
-// Serve frontend build
-const frontendPath = path.join(__dirname, 'frontend', 'build');
-
-console.log(`Serving frontend from: ${frontendPath}`);
-app.use(express.static(frontendPath));
 
 // SPA fallback - all non-API and non-file routes serve index.html
 app.use((req, res, next) => {
