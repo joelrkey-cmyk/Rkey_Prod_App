@@ -14,8 +14,6 @@ const { Storage } = require('@google-cloud/storage');
 const fs = require('fs');
 const webpush = require('web-push');
 
-const frontendPath = path.resolve(__dirname, 'frontend', 'build');
-
 const VAPID_PUB = process.env.VAPID_PUBLIC_KEY || "BHu7ALPSDk_qShRlTY1jiy0iaeE6FE0b03No89GNGjOmkZGWzRenNoN3DvRE1IwuCU0cYlk2Zdk_WE-EqR0tYYM";
 const VAPID_PRIV = process.env.VAPID_PRIVATE_KEY || "e2E1vKj58H2CluRXZr8N-aw8ro58tDQRSg06vPax0RU";
 
@@ -699,23 +697,10 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const app = express();
 const PORT = 3000;
 
-// Global MIME Type Middleware
-app.use((req, res, next) => {
-  if (req.url.endsWith('.css')) {
-    res.header('Content-Type', 'text/css');
-  } else if (req.url.endsWith('.js')) {
-    res.header('Content-Type', 'application/javascript');
-  }
-  next();
-});
-
 // ─── Middleware ───
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Serve frontend build
-app.use(express.static(frontendPath));
 
 app.post('/api/log-client-error', (req, res) => {
   console.log("=== CLIENT REACT ERROR ===", req.body);
@@ -5158,9 +5143,17 @@ api.use((err, req, res, next) => {
 
 app.use('/api', api);
 
-// SPA fallback - all non-API routes serve index.html
-app.get('*', (req, res, next) => {
-  if (req.originalUrl.startsWith('/api') || req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|json|woff|woff2|ttf|otf)$/i)) {
+// Serve frontend build
+const frontendPath = path.join(__dirname, 'frontend', 'build');
+
+console.log(`Serving frontend from: ${frontendPath}`);
+app.use(express.static(frontendPath));
+
+// SPA fallback - all non-API and non-file routes serve index.html
+app.use((req, res, next) => {
+  // ONLY handle GET requests for SPA fallback
+  // API calls and static assets should never return index.html
+  if (req.method !== 'GET' || req.originalUrl.startsWith('/api') || req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|json|woff|woff2|ttf|otf)$/i)) {
     return next();
   }
   
