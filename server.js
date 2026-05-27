@@ -697,6 +697,15 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const app = express();
 const PORT = 3000;
 
+// Hostinger specific static path mapping
+app.use('/static', express.static(path.join(__dirname, 'frontend', 'build', 'static')));
+
+// Force CSS MIME type
+app.use((req, res, next) => {
+  if (req.url.endsWith('.css')) res.setHeader('Content-Type', 'text/css');
+  next();
+});
+
 // ─── Middleware ───
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
