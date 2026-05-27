@@ -589,7 +589,7 @@ function EnvoiView({ pendingQuoteToSend, setPendingQuoteToSend }) {
       } else {
         doc.setFont('helvetica', 'italic');
         doc.setTextColor(120, 120, 120);
-        doc.text("Aucune information de livraison", colLeftX, yLeft);
+        doc.text("Retrait et retour en agence", colLeftX, yLeft);
         doc.setTextColor(0, 0, 0);
       }
 
@@ -685,20 +685,21 @@ function EnvoiView({ pendingQuoteToSend, setPendingQuoteToSend }) {
       toast.info("Génération et envoi du devis en cours...", { duration: 3000 });
 
       // Fetch full quote data, equipment and clients for PDF generation
-      const [quoteRes, equipmentRes, clientsRes, settingsRes] = await Promise.all([
+      const [quoteRes, equipmentRes, clientsRes, settingsRes, cgvRes] = await Promise.all([
         axios.get(`${API}/quotes/${selectedQuoteId}`),
         axios.get(`${API}/equipment`),
         axios.get(`${API}/clients`),
-        axios.get(`${BACKEND_URL}/api/global-settings`).catch(() => ({ data: [] }))
+        axios.get(`${BACKEND_URL}/api/global-settings`).catch(() => ({ data: {} })),
+        axios.get(`${BACKEND_URL}/api/location/settings/cgv`).catch(() => ({ data: { cgv: '' } }))
       ]);
       const quote = quoteRes.data;
       const equipmentList = equipmentRes.data || [];
       const clientsList = clientsRes.data || [];
-      const settings = Array.isArray(settingsRes.data) ? settingsRes.data : [];
-      const companySettings = settings.find(s => s.type === 'company') || {};
+      const companySettings = settingsRes.data || {};
+      const cgvText = cgvRes.data?.cgv || '';
 
       // Generate the beautiful PDF as base64
-      const pdfResult = generateQuotePDF(quote, clientsList, equipmentList, companySettings, { returnBase64: true });
+      const pdfResult = generateQuotePDF(quote, clientsList, equipmentList, companySettings, { returnBase64: true, cgvText });
       if (!pdfResult || !pdfResult.base64) {
         toast.error('Erreur lors de la génération du PDF');
         return;

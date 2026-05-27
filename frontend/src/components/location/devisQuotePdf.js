@@ -423,7 +423,7 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
       doc.setFontSize(9);
       doc.setFont('helvetica', 'italic');
       doc.setTextColor(120, 120, 120);
-      doc.text("Aucune information de livraison", colLeftX, yLeft);
+      doc.text("Retrait et retour en agence", colLeftX, yLeft);
       doc.setTextColor(0, 0, 0);
       yLeft += 5;
     }
@@ -528,13 +528,14 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     // Position after box
     yRight = boxTopY + cautionBoxH + 3;
 
-    // Moyens de paiement (aligned with box at colRightX + 3)
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(7);
-    doc.setTextColor(80, 80, 80);
-    doc.text("Moyens de paiement acceptés : Carte bleue, Espèces, Virement bancaire.", colRightX + 3, yRight);
-    doc.setTextColor(0, 0, 0);
-    yRight += 6;
+    const bankName = companySettings.bank_name || '';
+    const bankIban = companySettings.bank_iban || '';
+    const bankBic = companySettings.bank_bic || '';
+    const bankTitulaire = companySettings.bank_titulaire || "";
+    const companySiret = companySettings.company_siret || '';
+    const companyTvaFooter = companySettings.company_tva || '';
+
+    yRight += 2;
 
     // Signature compacte
     doc.setFontSize(9);
@@ -553,13 +554,6 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     // RIB et SIRET en pied de page
     const pageHeight = doc.internal.pageSize.getHeight();
     const footerY = pageHeight - 18;
-    
-    const bankName = companySettings.bank_name || 'Tiime';
-    const bankIban = companySettings.bank_iban || 'FR76 1679 8000 0100 0192 2357 858';
-    const bankBic = companySettings.bank_bic || 'TRZOFR21XXX';
-    const bankTitulaire = companySettings.bank_titulaire || "R'KEY PROD";
-    const companySiret = companySettings.company_siret || '99992355000019';
-    const companyTvaFooter = companySettings.company_tva || 'FR72999923550';
 
     doc.setDrawColor(200, 200, 200);
     doc.line(margin, footerY - 3, pageWidth - margin, footerY - 3);
@@ -567,9 +561,54 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(120, 120, 120);
-    doc.text(`Banque : ${bankName}  |  Titulaire : ${bankTitulaire}  |  IBAN : ${bankIban}  |  BIC : ${bankBic}`, pageWidth / 2, footerY + 1, { align: 'center' });
-    doc.text(`SIRET : ${companySiret}  |  TVA : ${companyTvaFooter}`, pageWidth / 2, footerY + 5, { align: 'center' });
+
+    const bankParts = [];
+    if (bankName) bankParts.push(`Banque : ${bankName}`);
+    if (bankTitulaire) bankParts.push(`Titulaire : ${bankTitulaire}`);
+    if (bankIban) bankParts.push(`IBAN : ${bankIban}`);
+    if (bankBic) bankParts.push(`BIC : ${bankBic}`);
+    if (bankParts.length > 0) {
+      doc.text(bankParts.join('  |  '), pageWidth / 2, footerY + 1, { align: 'center' });
+    } else {
+      doc.text("Détails bancaires non renseignés", pageWidth / 2, footerY + 1, { align: 'center' });
+    }
+    
+    const companyParts = [];
+    if (companySiret) companyParts.push(`SIRET : ${companySiret}`);
+    if (companyTvaFooter) companyParts.push(`TVA : ${companyTvaFooter}`);
+    if (companyParts.length > 0) {
+      doc.text(companyParts.join('  |  '), pageWidth / 2, footerY + 5, { align: 'center' });
+    }
     doc.setTextColor(0, 0, 0);
+
+    // ==============================
+    // PAGE SUPPLÉMENTAIRE : CGV (si demandées)
+    // ==============================
+    if (options.cgvText) {
+      doc.addPage();
+      
+      let cgvYPos = 20;
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text("CONDITIONS GÉNÉRALES DE LOCATION", pageWidth / 2, cgvYPos, { align: 'center' });
+      cgvYPos += 10;
+      
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      
+      // On sépare le texte brut par lignes en tenant compte de la largeur
+      const cgvLines = doc.splitTextToSize(options.cgvText, pageWidth - 2 * margin);
+      
+      // On imprime ligne par ligne pour gérer les sauts de page dans les CGV, si trop long
+      cgvLines.forEach(line => {
+        if (cgvYPos > pageHeight - 20) {
+          doc.addPage();
+          cgvYPos = 20;
+        }
+        doc.text(line, margin, cgvYPos);
+        cgvYPos += 4;
+      });
+    }
 
     const clientForFilename = clients.find(c => c.id === quoteData.client_id);
     const clientNameForFile = clientForFilename 

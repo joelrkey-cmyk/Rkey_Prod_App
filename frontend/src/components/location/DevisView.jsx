@@ -110,6 +110,8 @@ function DevisView({ setCurrentView }) {
   const [showEnvoiView, setShowEnvoiView] = useState(false);
   const [companySettings, setCompanySettings] = useState({});
   
+  const [cgvText, setCgvText] = useState('');
+  
   // Filtres pour la liste des devis
   const [searchTerm, setSearchTerm] = useState('');
   const [yearFilter, setYearFilter] = useState('all');
@@ -172,8 +174,12 @@ function DevisView({ setCurrentView }) {
       const token = localStorage.getItem('access_token');
       const res = await axios.get(`${BACKEND_URL}/api/global-settings`, { headers: { Authorization: `Bearer ${token}` } });
       setCompanySettings(res.data || {});
+      
+      // Also fetch CGV for PDF inclusion
+      const cgvRes = await axios.get(`${BACKEND_URL}/api/location/settings/cgv`);
+      setCgvText(cgvRes.data?.cgv || '');
     } catch (err) {
-      console.error('Error fetching company settings:', err);
+      console.error('Error fetching company settings or CGV:', err);
     }
   };
 
@@ -463,7 +469,7 @@ function DevisView({ setCurrentView }) {
       if (exportPDF && savedQuote) {
         try {
           // Utiliser directement le devis retourné par le serveur au lieu de faire un GET séparé
-          await generateQuotePDF(savedQuote, clients, equipment, companySettings);
+          await generateQuotePDF(savedQuote, clients, equipment, companySettings, { cgvText });
         } catch (pdfError) {
           console.error('Error generating PDF:', pdfError);
           toast.error('Devis sauvegardé mais erreur lors de la génération du PDF');
@@ -772,7 +778,7 @@ function DevisView({ setCurrentView }) {
 
   // Exporter un devis existant en PDF depuis la liste (utilise le générateur partagé)
   const handleExportPDFFromList = (quote) => {
-    generateQuotePDF(quote, clients, equipment, companySettings);
+    generateQuotePDF(quote, clients, equipment, companySettings, { cgvText });
   };
 
   const handleEdit = (quote) => {
@@ -1613,7 +1619,7 @@ function DevisView({ setCurrentView }) {
                       className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-white px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
                       data-testid="delivery-zone-select"
                     >
-                      <option value="">Aucun forfait livraison</option>
+                      <option value="">Retrait et retour en agence</option>
                       {DELIVERY_ZONES.map((zone) => (
                         <option key={zone.id} value={zone.id}>
                           {zone.name} - {zone.description} {zone.price !== null ? `(${zone.price}€${zone.price === 0 ? ' - Gratuit' : ''})` : `(${zone.pricePerKm}€/km)`}
