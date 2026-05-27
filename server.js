@@ -502,8 +502,8 @@ async function syncReservationToCalendar(reservation) {
   }
 
   const bType = (reservation.booking_type || '').toLowerCase();
-  if (bType !== 'client' && bType !== 'livraison') {
-    throw new Error(`Booking type "${reservation.booking_type}" cannot be synced. Only "Client" or "Livraison" types are allowed.`);
+  if (bType !== 'client' && bType !== 'livraison' && bType !== 'dj') {
+    throw new Error(`Booking type "${reservation.booking_type}" cannot be synced. Only "Client", "Livraison", or "DJ" types are allowed.`);
   }
 
   try {
@@ -3683,8 +3683,8 @@ api.post('/location/reservations/:id/sync-google', authMiddleware, async (req, r
     // Always call sync function, which will handle updates for existing ones or create new ones
     // We update the bType condition so manual syncs work for the approved types
     const bType = (reservation.booking_type || '').toLowerCase();
-    if (bType !== 'client' && bType !== 'livraison') {
-      return res.status(400).json({ error: 'Only Client and Livraison reservations can be synced' });
+    if (bType !== 'client' && bType !== 'livraison' && bType !== 'dj') {
+      return res.status(400).json({ error: 'Only Client, Livraison, and DJ reservations can be synced' });
     }
 
     const googleEventId = await syncReservationToCalendar(reservation);

@@ -270,111 +270,38 @@ function urlBase64ToUint8Array(base64String) {
     setLastNotificationCount(currentUnreadCount);
   }, [events, currentRoute.role]);
 
-  const [dismissedStandalonePush, setDismissedStandalonePush] = useState(() => {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        return window.localStorage.getItem('mydj_dismiss_push') === 'true';
-      }
-    } catch (e) {
-      console.warn("localStorage read blocked in this context:", e);
-    }
-    return false;
-  });
-
   const renderStandalonePushBanner = () => {
-    if (!isStandalone || notificationPermission === 'granted' || dismissedStandalonePush) return null;
-    if (currentRoute.role !== 'dj' && currentRoute.role !== 'client') return null;
-
-    return (
-      <div className="md:hidden mb-6 bg-gradient-to-br from-rose-600 via-orange-500 to-amber-500 text-white rounded-2xl p-5 shadow-2xl relative overflow-hidden animate-in slide-in-from-top duration-300">
-        <div className="absolute top-0 right-0 p-1">
-          <button 
-            onClick={() => {
-              setDismissedStandalonePush(true);
-              try { window.localStorage.setItem('mydj_dismiss_push', 'true'); } catch(e){}
-            }}
-            className="p-1 px-2.5 text-white/60 hover:text-white rounded-lg hover:bg-white/10 transition"
-            title="Ignorer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        
-        <div className="flex gap-4 items-start pr-8">
-          <div className="p-3 bg-white/20 text-white rounded-xl shrink-0 backdrop-blur-md border border-white/30 shadow-inner">
-            <Bell className="w-6 h-6 animate-bounce" />
-          </div>
-          <div className="space-y-1.5">
-            <h4 className="text-base font-black text-white tracking-wide flex items-center gap-2 drop-shadow-sm">
-              🔔 Alertes en temps réel
-            </h4>
-            <p className="text-sm text-yellow-50 drop-shadow-sm leading-relaxed">
-              Activez les notifications pour ne louper aucune mise à jour de planning, nouveau message ou changement important sur votre événement !
-            </p>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-4 pt-4 border-t border-white/20">
-          <button
-            onClick={requestNotificationPermission}
-            className="flex-1 bg-white hover:bg-stone-50 text-orange-700 font-extrabold py-2.5 px-3 rounded-xl transition text-sm flex items-center justify-center gap-2 shadow-lg"
-          >
-            <Bell className="w-4 h-4" />
-            Activer maintenant
-          </button>
-          <button
-            onClick={() => {
-              setDismissedStandalonePush(true);
-              try { window.localStorage.setItem('mydj_dismiss_push', 'true'); } catch(e){}
-            }}
-            className="bg-transparent hover:bg-white/10 text-white font-semibold py-2.5 px-4 rounded-xl transition text-sm border border-white/30"
-          >
-            Plus tard
-          </button>
-        </div>
-      </div>
-    );
+    // Push notifications deactivated and invitation canceled by user request
+    return null;
   };
 
   const renderPWABanner = () => {
-    if (dismissedPwa || isStandalone) return null;
+    if (isStandalone) return null;
     if (currentRoute.role !== 'dj' && currentRoute.role !== 'client') return null;
 
     return (
-      <div className="md:hidden mb-6 bg-gradient-to-br from-orange-600 via-amber-600 to-orange-500 text-white rounded-2xl p-5 shadow-2xl relative overflow-hidden animate-in slide-in-from-top duration-300">
-        <div className="absolute top-0 right-0 p-1">
-          <button 
-            onClick={dismissPwaBanner}
-            className="p-1 px-2.5 text-white/60 hover:text-white rounded-lg hover:bg-white/10 transition"
-            title="Ignorer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        
-        <div className="flex gap-4 items-start pr-8">
-          <div className="p-3 bg-white/20 text-white rounded-xl shrink-0 backdrop-blur-md border border-white/30 shadow-inner">
-            <Smartphone className="w-6 h-6 animate-pulse" />
+      <div className="mb-6 bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 text-white rounded-xl p-4 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-orange-400/20">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-white/10 text-white rounded-lg shrink-0">
+            <Smartphone className="w-5 h-5 animate-pulse" />
           </div>
-          <div className="space-y-1">
-            <h4 className="text-sm font-black tracking-wide text-white uppercase drop-shadow-sm">
-              Installer l'application My DJ
+          <div>
+            <h4 className="text-sm font-bold text-white leading-snug">
+              Application mobile R'Key Prod
             </h4>
-            <p className="text-sm text-yellow-50 drop-shadow-sm leading-relaxed mt-1">
-              Installez l'application pour ne rien louper de votre événement et pour garder le contact avec votre DJ !
+            <p className="text-xs text-orange-200 mt-0.5">
+              Ajoutez l'application sur l'écran d'accueil de votre téléphone pour y accéder plus rapidement.
             </p>
           </div>
         </div>
 
-        <div className="mt-4 pt-4 border-t border-white/20">
-          <button
-            onClick={installPWA}
-            className="w-full bg-white hover:bg-stone-50 text-orange-700 font-extrabold py-3 px-4 rounded-xl transition text-sm flex items-center justify-center gap-2 shadow-lg"
-          >
-            <DownloadCloud className="w-5 h-5" />
-            Installer l'application
-          </button>
-        </div>
+        <button
+          onClick={installPWA}
+          className="bg-white hover:bg-stone-50 text-orange-700 font-extrabold py-2 px-4 rounded-xl transition text-xs flex items-center justify-center gap-1.5 shadow-md whitespace-nowrap self-stretch sm:self-auto select-none"
+        >
+          <DownloadCloud className="w-4 h-4" />
+          Installer
+        </button>
       </div>
     );
   };
@@ -392,7 +319,7 @@ function urlBase64ToUint8Array(base64String) {
           onClick={(e) => e.stopPropagation()}
         >
           <div className="text-center space-y-4">
-            <div className="mx-auto w-12 h-12 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600">
+            <div className="mx-auto w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center text-orange-600">
               <Smartphone className="w-6 h-6 animate-pulse" />
             </div>
             
@@ -405,21 +332,21 @@ function urlBase64ToUint8Array(base64String) {
 
             <div className="bg-slate-50 p-4 rounded-2xl text-left space-y-3 border border-slate-100">
               <div className="flex gap-3 items-start">
-                <span className="flex items-center justify-center w-5 h-5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full shrink-0">1</span>
+                <span className="flex items-center justify-center w-5 h-5 bg-orange-100 text-orange-700 font-bold text-xs rounded-full shrink-0">1</span>
                 <p className="text-xs text-slate-700 leading-relaxed">
-                  Appuyez sur le bouton de partage en bas de Safari <span className="inline-block bg-white border border-slate-200 p-1 rounded-md text-[10px] uppercase font-bold text-slate-600">Partager <Share2 className="w-3 h-3 inline-block text-indigo-500" /></span>
+                  Appuyez sur le bouton de partage en bas de Safari <span className="inline-block bg-white border border-slate-200 p-1 rounded-md text-[10px] uppercase font-bold text-slate-600">Partager <Share2 className="w-3 h-3 inline-block text-orange-500" /></span>
                 </p>
               </div>
               <div className="flex gap-3 items-start">
-                <span className="flex items-center justify-center w-5 h-5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full shrink-0">2</span>
+                <span className="flex items-center justify-center w-5 h-5 bg-orange-100 text-orange-700 font-bold text-xs rounded-full shrink-0">2</span>
                 <p className="text-xs text-slate-700 leading-relaxed">
                   Faites défiler le menu vers le bas et appuyez sur <span className="font-bold text-slate-800">"Sur l'écran d'accueil"</span>
                 </p>
               </div>
               <div className="flex gap-3 items-start">
-                <span className="flex items-center justify-center w-5 h-5 bg-indigo-100 text-indigo-700 font-bold text-xs rounded-full shrink-0">3</span>
+                <span className="flex items-center justify-center w-5 h-5 bg-orange-100 text-orange-700 font-bold text-xs rounded-full shrink-0">3</span>
                 <p className="text-xs text-slate-700 leading-relaxed">
-                  Cliquez sur <span className="font-extrabold text-indigo-600">"Ajouter"</span> en haut à droite. 🎉
+                  Cliquez sur <span className="font-extrabold text-orange-600">"Ajouter"</span> en haut à droite. 🎉
                 </p>
               </div>
             </div>

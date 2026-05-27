@@ -82,8 +82,8 @@ async function syncReservationToCalendar(reservation) {
   }
 
   const bType = (reservation.booking_type || '').toLowerCase();
-  if (bType !== 'client' && bType !== 'livraison') {
-    throw new Error(`Booking type "${reservation.booking_type}" cannot be synced. Only "Client" or "Livraison" types are allowed.`);
+  if (bType !== 'client' && bType !== 'livraison' && bType !== 'dj') {
+    throw new Error(`Booking type "${reservation.booking_type}" cannot be synced. Only "Client", "Livraison", or "DJ" types are allowed.`);
   }
 
   try {
