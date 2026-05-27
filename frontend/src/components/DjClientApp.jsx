@@ -555,6 +555,7 @@ function urlBase64ToUint8Array(base64String) {
             showFondSonoreToClient: c.show_fond_sonore_to_client !== undefined ? c.show_fond_sonore_to_client : false,
             showMandatToClient: c.show_mandat_to_client !== undefined ? c.show_mandat_to_client : false,
             showArtisteToClient: c.show_artiste_to_client !== undefined ? c.show_artiste_to_client : false,
+            showEntrepriseToClient: c.show_entreprise_to_client !== undefined ? c.show_entreprise_to_client : false,
             client_photo: c.client_photo || null,
             venue_photos: c.venue_photos || [],
             venue_notes: c.venue_notes || "",
@@ -3245,6 +3246,9 @@ function urlBase64ToUint8Array(base64String) {
                   }
 
                   // Non-mandat: Entreprise
+                  const renderEntreprise = isAdminOrDj || ev.showEntrepriseToClient;
+                  if (!renderEntreprise) return null;
+
                   return (
                     <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
                       <div className="flex items-center gap-3 min-w-0">
@@ -3252,17 +3256,28 @@ function urlBase64ToUint8Array(base64String) {
                           <FileText className="w-5 h-5 text-indigo-500" />
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={`Contrat Prestation - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`}>
                               Contrat Prestation R'Key Prod
                             </p>
                             <span className="bg-indigo-50 text-indigo-700 border-indigo-100 text-[10px] font-bold px-2 py-0.5 rounded-full border">Généré</span>
+                            {isAdminOrDj && (
+                              !ev.showEntrepriseToClient ? (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full">
+                                  <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                                  <Eye className="w-2.5 h-2.5" /> Client : Visible
+                                </span>
+                              )
+                            )}
                           </div>
                           <p className="text-xs text-slate-500 mt-1">Contrat original sans signature</p>
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-1 flex-shrink-0">
                         <button 
                           onClick={(e) => { 
                             e.stopPropagation(); 
@@ -3285,6 +3300,27 @@ function urlBase64ToUint8Array(base64String) {
                         >
                           <Download className="w-4 h-4" />
                         </button>
+                        {isAdminOrDj && (
+                          <button
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              const val = !ev.showEntrepriseToClient;
+                              updateContractDb(currentRoute.eventId, { show_entreprise_to_client: val });
+                              const newEvents = [...events];
+                              const idx = newEvents.findIndex(x => x.id === currentRoute.eventId);
+                              newEvents[idx].showEntrepriseToClient = val;
+                              setEvents(newEvents);
+                            }}
+                            className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                            title={!ev.showEntrepriseToClient ? "Rendre visible au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
+                          >
+                            {!ev.showEntrepriseToClient ? (
+                              <EyeOff className="w-4 h-4 text-rose-500" />
+                            ) : (
+                              <Eye className="w-4 h-4 text-emerald-600" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -3926,11 +3962,15 @@ function urlBase64ToUint8Array(base64String) {
                   {isMandatMode ? "Cachet Artiste restants" : "Solde restant dû"}
                 </span>
                 <span className="text-xl font-bold text-indigo-600">
-                  {additions.length > 0 ? `${originalRemainingBalance.toFixed(2)} €` : `${remainingBalance.toFixed(2)} €`}
+                  {remainingBalance.toFixed(2)} €
                 </span>
                 
                 {additions.length > 0 && (
                   <div className="mt-2 space-y-1 border-t border-dashed border-slate-150 pt-1.5">
+                    <div className="flex justify-between items-center text-[11px] text-slate-500">
+                      <span>Solde initial :</span>
+                      <span>{originalRemainingBalance.toFixed(2)} €</span>
+                    </div>
                     {additions.map((opt, index) => (
                       <div key={index} className="flex justify-between items-center text-[11px] text-slate-600 font-medium">
                         <span className="truncate max-w-[140px] text-amber-600" title={opt.name}>+ {opt.name}</span>
@@ -3949,10 +3989,6 @@ function urlBase64ToUint8Array(base64String) {
                     ))}
                   </div>
                 )}
-              </div>
-              <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 flex items-center justify-between">
-                <span>{isMandatMode ? "Dû le jour J (au DJ) :" : "Dû le jour J :"}</span>
-                <span className="font-semibold text-slate-800">{remainingBalance.toFixed(2)} €</span>
               </div>
             </div>
           </div>
