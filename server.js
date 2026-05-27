@@ -697,6 +697,16 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const app = express();
 const PORT = 3000;
 
+// Global MIME Type Middleware
+app.use((req, res, next) => {
+  if (req.url.endsWith('.css')) {
+    res.header('Content-Type', 'text/css');
+  } else if (req.url.endsWith('.js')) {
+    res.header('Content-Type', 'application/javascript');
+  }
+  next();
+});
+
 // ─── Middleware ───
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
