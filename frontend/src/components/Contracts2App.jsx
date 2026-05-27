@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Separator } from "./ui/separator";
-import { X, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft } from "lucide-react";
+import { X, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus } from "lucide-react";
 import { toast } from "sonner";
 import apiService from "../services/api";
 import FormSubmissionsSelector from "./FormSubmissionsSelector";
@@ -1341,53 +1341,98 @@ function Contracts2App() {
                       </div>
                     </div>
 
-                    {/* Catering - Moved here */}
-                    <div className="pt-4 border-t space-y-3">
-                      <Label className="text-slate-700 font-medium">Catering (Restauration Artiste)</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                        <div className="md:col-span-5 space-y-2">
-                          <Label className="text-xs text-slate-500">Conditions de repas</Label>
-                          <Input value={cateringNotes} onChange={(e) => setCateringNotes(e.target.value)} placeholder="Ex: Plat chaud, dessert, etc." className="border-slate-300 w-full" />
-                        </div>
-                        
-                        <div className="md:col-span-3 flex items-center space-x-2 pb-2">
-                          <Checkbox id="cateringDrinks" checked={cateringDrinks} onCheckedChange={setCateringDrinks} />
-                          <label htmlFor="cateringDrinks" className="text-sm font-medium leading-none cursor-pointer select-none">Boissons comprises</label>
-                        </div>
+                    {/* Catering - Stacked Minimalist Design */}
+                    <div className="pt-5 border-t border-slate-200/80 space-y-4">
+                      <Label className="text-slate-700 font-semibold block text-base">Catering (Restauration Artiste)</Label>
 
-                        <div className="md:col-span-4 flex items-center space-x-3 pb-1 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                          <div className="flex items-center space-x-1.5 flex-shrink-0">
-                            <Label htmlFor="cateringHotMealNoTableQty" className="text-[10px] uppercase font-bold text-slate-500">Qté:</Label>
-                            <Input 
-                              id="cateringHotMealNoTableQty"
-                              type="number"
-                              min="0"
-                              placeholder="0"
-                              value={cateringHotMealNoTableQty === 0 && !cateringHotMealNoTable ? "" : cateringHotMealNoTableQty}
-                              onChange={e => {
-                                const valStr = e.target.value;
-                                const valNum = valStr === '' ? 0 : (parseInt(valStr, 10) || 0);
-                                setCateringHotMealNoTableQty(valNum);
-                                if (valNum > 0 && !cateringHotMealNoTable) {
-                                  setCateringHotMealNoTable(true);
-                                }
-                              }}
-                              className="w-12 h-8 px-1 text-center font-bold border-slate-300 focus:border-blue-500"
-                            />
-                          </div>
-                          <div className="flex items-center space-x-2">
+                      <div className="space-y-4">
+                        {/* Line 1: Plat chaud hors table with Stepper */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between py-2 border-b border-slate-100 gap-3">
+                          <label htmlFor="cateringHotMealNoTableInput" className="text-sm font-medium text-slate-700 cursor-pointer select-none flex items-center gap-3">
                             <Checkbox 
-                              id="cateringHotMealNoTable" 
+                              id="cateringHotMealNoTableInput" 
                               checked={cateringHotMealNoTable} 
                               onCheckedChange={(checked) => {
                                 setCateringHotMealNoTable(checked);
                                 if (checked && (!cateringHotMealNoTableQty || Number(cateringHotMealNoTableQty) === 0)) {
                                   setCateringHotMealNoTableQty(1);
+                                } else if (!checked) {
+                                  setCateringHotMealNoTableQty(0);
                                 }
                               }} 
                             />
-                            <label htmlFor="cateringHotMealNoTable" className="text-xs font-medium leading-none cursor-pointer select-none">Plat chaud (pas de place à table)</label>
-                          </div>
+                            <span className="text-slate-800">Plat chaud (pas de place à table)</span>
+                          </label>
+
+                          {cateringHotMealNoTable && (
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs text-slate-500 font-medium">Quantité :</span>
+                              <div className="flex items-center border border-slate-300 rounded-lg bg-white overflow-hidden shadow-sm">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextQty = Math.max(0, Number(cateringHotMealNoTableQty) - 1);
+                                    setCateringHotMealNoTableQty(nextQty);
+                                    if (nextQty === 0) {
+                                      setCateringHotMealNoTable(false);
+                                    }
+                                  }}
+                                  className="h-8 w-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-95 transition-all text-lg font-semibold border-r border-slate-200"
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </button>
+                                <input 
+                                  type="number"
+                                  min="0"
+                                  value={cateringHotMealNoTableQty}
+                                  onChange={e => {
+                                    const valStr = e.target.value;
+                                    const valNum = valStr === '' ? 0 : (parseInt(valStr, 10) || 0);
+                                    setCateringHotMealNoTableQty(valNum);
+                                    if (valNum > 0) {
+                                      setCateringHotMealNoTable(true);
+                                    } else {
+                                      setCateringHotMealNoTable(false);
+                                    }
+                                  }}
+                                  className="w-10 h-8 text-center text-sm font-bold border-0 focus:outline-none focus:ring-0 text-slate-800 bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCateringHotMealNoTableQty(Number(cateringHotMealNoTableQty) + 1);
+                                  }}
+                                  className="h-8 w-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 active:scale-95 transition-all text-lg font-semibold border-l border-slate-200"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Line 2: Boissons comprises */}
+                        <div className="flex items-center py-2 border-b border-slate-100">
+                          <label htmlFor="cateringDrinksInput" className="text-sm font-medium text-slate-700 cursor-pointer select-none flex items-center gap-3">
+                            <Checkbox 
+                              id="cateringDrinksInput" 
+                              checked={cateringDrinks} 
+                              onCheckedChange={setCateringDrinks} 
+                            />
+                            <span className="text-slate-800">Boissons comprises (softs et boissons chaudes)</span>
+                          </label>
+                        </div>
+
+                        {/* Line 3: Conditions de repas / Notes - Champ libre */}
+                        <div className="space-y-1.5 pt-1">
+                          <Label htmlFor="cateringNotesInput" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Conditions de repas / Remarques</Label>
+                          <Input 
+                            id="cateringNotesInput"
+                            value={cateringNotes} 
+                            onChange={(e) => setCateringNotes(e.target.value)} 
+                            placeholder="Ex: Plat chaud, dessert, sans porc, etc." 
+                            className="border-slate-300 hover:border-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-lg w-full text-slate-800 h-10 font-normal text-sm" 
+                          />
                         </div>
                       </div>
                     </div>

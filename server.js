@@ -695,7 +695,7 @@ async function addPriceToTarifImage(imageBuffer, priceAmount, priceType, endTime
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 // Static build path
 const buildPath = path.join(__dirname, 'frontend', 'build_production');

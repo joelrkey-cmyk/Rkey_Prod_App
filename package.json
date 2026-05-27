@@ -1,42 +1,20 @@
 {
-  "name": "rkey-prod",
-  "version": "1.0.0",
+  "name": "r'key-prod",
   "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "dev": "node server.js",
-    "start": "node server.js",
-    "build": "cd frontend && ([ -d node_modules ] || npm install) && NODE_ENV=production FAST_REFRESH=false GENERATE_SOURCEMAP=false NODE_OPTIONS='--max-old-space-size=2560' npm run build",
-    "lint": "echo 'Linting skipped'"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "@google-cloud/storage": "^7.19.0",
-    "@google/genai": "^2.5.0",
-    "@octokit/rest": "^22.0.1",
-    "bcryptjs": "^3.0.3",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.1",
-    "express": "^5.2.1",
-    "googleapis": "^171.4.0",
-    "heic-convert": "^2.1.0",
-    "jsonwebtoken": "^9.0.3",
-    "jspdf-autotable": "^5.0.8",
-    "mongodb": "^7.1.1",
-    "multer": "^2.1.1",
-    "nodemailer": "^8.0.4",
-    "pdf-lib": "^1.17.1",
-    "react": "^18.3.1",
-    "react-big-calendar": "^1.19.4",
-    "react-dom": "^18.3.1",
-    "sharp": "^0.34.5",
-    "uuid": "^13.0.0",
-    "web-push": "^3.6.7"
+
   },
   "devDependencies": {
-    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
-    "eslint": "^9.39.4",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.6.0",
-    "puppeteer": "^25.0.4"
+    "@types/node": "^22.14.0",
+    
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
   }
 }
