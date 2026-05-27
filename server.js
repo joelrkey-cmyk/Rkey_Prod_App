@@ -697,18 +697,20 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const app = express();
 const PORT = 3000;
 
-// Static build path
-const buildPath = path.join(__dirname, 'frontend', 'build');
-console.log(`Serving frontend from: ${buildPath}`);
-
 // ─── Middleware ───
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve frontend build (MUST BE BEFORE API ROUTES for Hostinger)
-const frontendPath = path.join(__dirname, 'frontend', 'build');
-console.log(`Serving frontend from: ${frontendPath}`);
+const frontendPath = path.resolve(__dirname, 'frontend', 'build');
+console.log(`[DEBUG] __dirname is: ${__dirname}`);
+console.log(`[DEBUG] Resolving frontend build path to: ${frontendPath}`);
+if (fs.existsSync(path.join(frontendPath, 'index.html'))) {
+  console.log('[DEBUG] SUCCESS: frontend/build/index.html was found.');
+} else {
+  console.log('[DEBUG] ERROR: frontend/build/index.html was NOT found!');
+}
 app.use(express.static(frontendPath));
 
 app.post('/api/log-client-error', (req, res) => {
@@ -5152,11 +5154,9 @@ api.use((err, req, res, next) => {
 
 app.use('/api', api);
 
-// SPA fallback - all non-API and non-file routes serve index.html
-app.use((req, res, next) => {
-  // ONLY handle GET requests for SPA fallback
-  // API calls and static assets should never return index.html
-  if (req.method !== 'GET' || req.originalUrl.startsWith('/api') || req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|json|woff|woff2|ttf|otf)$/i)) {
+// SPA fallback - all non-API routes serve index.html
+app.get('*', (req, res, next) => {
+  if (req.originalUrl.startsWith('/api') || req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|json|woff|woff2|ttf|otf)$/i)) {
     return next();
   }
   
