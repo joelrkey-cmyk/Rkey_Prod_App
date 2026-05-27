@@ -1962,11 +1962,26 @@ api.get('/public/dj-client/:slug', async (req, res) => {
            normalizeString(p.id) === normalizedRequestedSlug;
   });
 
+  const dbSettings = await db.collection('global_settings').findOne({ type: 'company' }, { projection: { _id: 0, email_signature_image: 0, smtp_password: 0 } });
+  const companySettings = dbSettings ? {
+    company_name: dbSettings.company_name || "R'KEY PROD",
+    bank_name: dbSettings.bank_name || "Tiime",
+    bank_iban: dbSettings.bank_iban || "",
+    bank_bic: dbSettings.bank_bic || "",
+    bank_titulaire: dbSettings.bank_titulaire || "R'KEY PROD",
+  } : {
+    company_name: "R'KEY PROD",
+    bank_name: "Tiime",
+    bank_iban: "FR76 1679 8000 0100 0192 2357 858",
+    bank_bic: "TRZOFR21XXX",
+    bank_titulaire: "R'KEY PROD",
+  };
+
   if (djEvents.length > 0 || matchedDjProfile) {
     const djName = matchedDjProfile 
       ? (matchedDjProfile.nom_artistique || matchedDjProfile.nom_complet) 
       : (djEvents[0]?.dj_profile_data?.nom_artistique || djEvents[0]?.dj_profile || "DJ");
-    return res.json({ role: 'dj', events: djEvents, slug, djName, availableOptions: options });
+    return res.json({ role: 'dj', events: djEvents, slug, djName, availableOptions: options, companySettings });
   }
   
   // Check if it's a Client slug
@@ -1982,7 +1997,7 @@ api.get('/public/dj-client/:slug', async (req, res) => {
       }
       return cloned;
     });
-    return res.json({ role: 'client', events: cleanedClientEvents, slug, availableOptions: options });
+    return res.json({ role: 'client', events: cleanedClientEvents, slug, availableOptions: options, companySettings });
   }
   
   return res.status(404).json({ error: 'Not found' });

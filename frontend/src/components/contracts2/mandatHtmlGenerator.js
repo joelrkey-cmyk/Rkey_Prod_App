@@ -312,6 +312,7 @@ export const generateArtisteHTML = (contract, resolveProfile) => {
       <div class="section">
         <div class="section-title">CONDITIONS GENERALES</div>
         <div class="notes-section">
+          ${contract.artiste_cgv_text ? contract.artiste_cgv_text.replace(/\n/g, '<br>') : `
           <p><strong>Article 1 - Objet</strong><br>
           Le present contrat definit les conditions d'engagement de l'Artiste DJ pour la prestation artistique musicale decrite ci-dessus.</p>
           <p><strong>Article 2 - Obligations de l'Artiste</strong><br>
@@ -322,6 +323,7 @@ export const generateArtisteHTML = (contract, resolveProfile) => {
           En cas d'annulation par le client moins de 30 jours avant l'evenement, le montant total reste du a l'Artiste.</p>
           <p><strong>Article 5 - Clause de sous-traitance</strong><br>
           Le present contrat lie le Client directement a l'Artiste DJ pour la prestation musicale. R'KEY PROD n'intervient qu'en tant que mandataire pour la recherche de l'artiste et ne saurait etre tenu responsable de l'execution de la prestation artistique.</p>
+          `}
         </div>
       </div>
 

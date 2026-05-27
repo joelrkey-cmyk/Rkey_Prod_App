@@ -102,10 +102,21 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
-              <td><strong>${(contract.base_price || 0).toFixed(2)} €</strong></td>
-            </tr>
+            ${contract.contract_mode === 'mandataire' ? `
+              <tr>
+                <td><strong>Frais de Mandat & Gestion (R'KEY PROD)</strong></td>
+                <td><strong>${(contract.frais_mandat || 0).toFixed(2)} €</strong></td>
+              </tr>
+              <tr>
+                <td><strong>Cachet Artiste (Part DJ)</strong></td>
+                <td><strong>${(contract.cachet_artiste || 0).toFixed(2)} €</strong></td>
+              </tr>
+            ` : `
+              <tr>
+                <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                <td><strong>${(contract.base_price || 0).toFixed(2)} €</strong></td>
+              </tr>
+            `}
             ${contract.selected_options.filter(opt => opt.selected).map(option => `
               <tr>
                 <td>+ ${option.name}</td>
@@ -145,10 +156,21 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
-              <td><strong>${(contract.base_price || 0).toFixed(2)} €</strong></td>
-            </tr>
+            ${contract.contract_mode === 'mandataire' ? `
+              <tr>
+                <td><strong>Frais de Mandat & Gestion (R'KEY PROD)</strong></td>
+                <td><strong>${(contract.frais_mandat || 0).toFixed(2)} €</strong></td>
+              </tr>
+              <tr>
+                <td><strong>Cachet Artiste (Part DJ)</strong></td>
+                <td><strong>${(contract.cachet_artiste || 0).toFixed(2)} €</strong></td>
+              </tr>
+            ` : `
+              <tr>
+                <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                <td><strong>${(contract.base_price || 0).toFixed(2)} €</strong></td>
+              </tr>
+            `}
             ${contract.discount_amount > 0 ? `
             <tr>
               <td><strong>Remise accordée sur acompte</strong></td>

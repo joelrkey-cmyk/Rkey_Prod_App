@@ -31,6 +31,21 @@ import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
 const API = `${BACKEND_URL}/api`;
 
+const defaultArtistCgv = `Article 1 - Objet
+Le présent contrat définit les conditions d'engagement de l'Artiste DJ pour la prestation artistique musicale décrite ci-dessus.
+
+Article 2 - Obligations de l'Artiste
+L'Artiste s'engage à assurer la prestation d'animation musicale incluant l'infrastructure technique (son et lumière festif) et la performance musicale, pour la durée et aux conditions décrites dans le présent contrat.
+
+Article 3 - Obligations du Client
+Le Client s'engage à mettre à disposition les installations électriques nécessaires, à faciliter l'accès au lieu de prestation et à régler le montant convenu selon les modalités définies.
+
+Article 4 - Annulation
+En cas d'annulation par le client moins de 30 jours avant l'événement, le montant total reste dû à l'Artiste.
+
+Article 5 - Clause de sous-traitance
+Le présent contrat lie le Client directement à l'Artiste DJ pour la prestation musicale. R'KEY PROD n'intervient qu'en tant que mandataire pour la recherche de l'artiste et ne saurait être tenu responsable de l'exécution de la prestation artistique.`;
+
 function Contracts2App() {
   const navigate = useNavigate();
   
@@ -84,6 +99,7 @@ function Contracts2App() {
   const [cgvTemplates, setCgvTemplates] = useState({});
   const [selectedCgvTemplate, setSelectedCgvTemplate] = useState("");
   const [cgvText, setCgvText] = useState("");
+  const [artisteCgvText, setArtisteCgvText] = useState(defaultArtistCgv);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [discountAmount, setDiscountAmount] = useState(0);
   const [djProfiles, setDjProfiles] = useState({});
@@ -341,7 +357,11 @@ function Contracts2App() {
           bank_iban: data.bank_iban || "",
           bank_bic: data.bank_bic || "",
           bank_titulaire: data.bank_titulaire || "R'KEY PROD",
+          artiste_cgv_text: data.artiste_cgv_text || "",
         });
+        if (data.artiste_cgv_text) {
+          setArtisteCgvText(data.artiste_cgv_text);
+        }
       }
     } catch (error) { console.error("Error loading company settings:", error); }
   };
@@ -406,6 +426,7 @@ function Contracts2App() {
         setTechnicianContact(parsed.technicianContact || { name: "", email: "", phone: "" });
         setSelectedPdfNotes(parsed.selectedPdfNotes || []);
         setCgvText(parsed.cgvText || "");
+        setArtisteCgvText(parsed.artisteCgvText || defaultArtistCgv);
       } catch (e) {
         console.error('Failed to restore state:', e);
       }
@@ -423,10 +444,10 @@ function Contracts2App() {
       hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, 
       depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, 
       hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact,
-      selectedPdfNotes, cgvText
+      selectedPdfNotes, cgvText, artisteCgvText
     };
     sessionStorage.setItem('contracts2_form_state', JSON.stringify(state));
-  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText]);
+  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText, artisteCgvText]);
 
   const loadContracts = async () => {
     try {
@@ -636,7 +657,9 @@ function Contracts2App() {
     setHasLimiteurSon(false); setHasDetecteurFumee(false); setHasNoLimiteurNiDetecteur(false);
     setHypnosisProgram(defaultHypnosisProgram);
     setTechnicianContact({ name: "", email: "", phone: "" });
-    setCgvText(""); setEditingContract(null); setGeneratedContract(null);
+    setCgvText("");
+    setArtisteCgvText(companySettings.artiste_cgv_text || defaultArtistCgv);
+    setEditingContract(null); setGeneratedContract(null);
     toast.success("Formulaire réinitialisé !");
   };
 
@@ -707,6 +730,7 @@ function Contracts2App() {
       hypnosis_program: hypnosisProgram,
       technician_contact: technicianContact,
       cgv_text: cgvText,
+      artiste_cgv_text: artisteCgvText,
       status: "draft",
       draft_saved_at: new Date().toISOString()
     };
@@ -787,6 +811,7 @@ function Contracts2App() {
     setHypnosisProgram(contract.hypnosis_program || defaultHypnosisProgram);
     setTechnicianContact(contract.technician_contact || { name: "", email: "", phone: "" });
     setCgvText(contract.cgv_text || "");
+    setArtisteCgvText(contract.artiste_cgv_text || defaultArtistCgv);
     setEditingContract(contract);
     setActiveTab("create");
     toast.success("Contrat chargé pour modification");
@@ -985,7 +1010,8 @@ function Contracts2App() {
     has_wifi: hasWifi,
     has_4g_5g: has4g5g,
     selected_pdf_notes: selectedPdfNotes,
-    invoice_number: invoiceNumber
+    invoice_number: invoiceNumber,
+    artiste_cgv_text: artisteCgvText
   });
 
   // ═══════════════════════════════════════════════════
@@ -1932,6 +1958,73 @@ function Contracts2App() {
                       }} data-testid="save-cgv-template-btn">
                         <Save className="w-4 h-4 mr-1" />Sauvegarder ce modèle
                       </Button>
+                    )}
+                    
+                    {/* CGV Artiste pour le Mode Mandat */}
+                    {contractMode === 'mandataire' && (
+                      <>
+                        <Separator className="my-6" />
+                        <div className="space-y-3">
+                          <Label className="text-slate-800 font-semibold text-sm flex items-center gap-1.5 md:text-base">
+                            Conditions Générales de l'Artiste (Document 2 - Contrat DJ)
+                          </Label>
+                          <CardDescription className="text-xs text-slate-500">
+                            Ces conditions s'appliquent séparément sur le Document 2 du mode mandat. Éditez ce texte pour ce contrat ou cliquez sur "Sauvegarder par défaut" pour l'enregistrer globalement.
+                          </CardDescription>
+                          <Textarea 
+                            value={artisteCgvText} 
+                            onChange={(e) => setArtisteCgvText(e.target.value)} 
+                            rows={8} 
+                            className="border-slate-300 focus:border-blue-500 font-mono text-[11px] leading-relaxed bg-slate-50/50" 
+                            placeholder="Saisissez les CGV de l'artiste..."
+                          />
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="text-blue-600 border-blue-300 hover:bg-blue-50 transition" 
+                              onClick={async () => {
+                                try {
+                                  const token = localStorage.getItem('access_token');
+                                  const response = await fetch(`${API}/global-settings`, {
+                                    headers: { Authorization: `Bearer ${token}` }
+                                  });
+                                  let existingData = {};
+                                  if (response.ok) {
+                                    existingData = await response.json();
+                                  }
+                                  const updated = { 
+                                    ...existingData, 
+                                    artiste_cgv_text: artisteCgvText,
+                                    type: 'company',
+                                    updated_at: new Date().toISOString()
+                                  };
+                                  await axios.put(`${API}/global-settings`, updated);
+                                  toast.success('Sauvegardé avec succès dans la configuration globale !');
+                                } catch (err) {
+                                  console.error("Save failure:", err);
+                                  toast.error('Erreur de sauvegarde globale');
+                                }
+                              }}
+                            >
+                              <Save className="w-4 h-4 mr-1" />Sauvegarder par défaut
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="text-slate-600 border-slate-250 hover:bg-slate-50 transition" 
+                              onClick={() => {
+                                if (window.confirm("Voulez-vous réinitialiser le texte par défaut de l'Artiste ?")) {
+                                  setArtisteCgvText(defaultArtistCgv);
+                                  toast.success('Texte réinitialisé !');
+                                }
+                              }}
+                            >
+                              <RotateCcw className="w-4 h-4 mr-1" />Réinitialiser d'origine
+                            </Button>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </CardContent>
                 </Card>

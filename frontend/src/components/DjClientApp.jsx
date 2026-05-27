@@ -63,6 +63,7 @@ const DjClientApp = ({ isPublic = false }) => {
   const [availableOptions, setAvailableOptions] = useState([]);
   const [pdfNotes, setPdfNotes] = useState([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+  const [companySettings, setCompanySettings] = useState(defaultCompanySettings);
 
   // PWA Support States
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -394,7 +395,31 @@ function urlBase64ToUint8Array(base64String) {
     fetchDjProfiles();
     fetchContractsAsEvents();
     fetchPdfNotes();
+    fetchGlobalSettingsAdmin();
   }, []);
+
+  const fetchGlobalSettingsAdmin = async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        const response = await fetch(`${BACKEND_URL}/api/global-settings`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setCompanySettings({
+            company_name: data.company_name || "R'KEY PROD",
+            bank_name: data.bank_name || "Tiime",
+            bank_iban: data.bank_iban || "",
+            bank_bic: data.bank_bic || "",
+            bank_titulaire: data.bank_titulaire || "R'KEY PROD",
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching admin global settings", e);
+    }
+  };
 
   const fetchPdfNotes = async () => {
     try {
@@ -446,6 +471,9 @@ function urlBase64ToUint8Array(base64String) {
          if (publicRes.ok) {
              const data = await publicRes.json();
              allContracts = data.events || [];
+             if (data.companySettings) {
+                 setCompanySettings(data.companySettings);
+             }
              if (!silent) setAvailableOptions(data.availableOptions || []);
              if (!silent && currentRoute.view === 'list') {
                  if (data.role === 'client') {
@@ -2796,7 +2824,7 @@ function urlBase64ToUint8Array(base64String) {
           return;
         }
         const data = ev.rawContractData;
-        const html = generateMandatHTML(data, defaultCompanySettings);
+        const html = generateMandatHTML(data, companySettings);
         let cName = (data.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
         await exportHTMLToPDF(html, `Contrat_Mandat_RKeyProd_${cName}.pdf`);
       };
@@ -2820,7 +2848,7 @@ function urlBase64ToUint8Array(base64String) {
           return;
         }
         const data = ev.rawContractData;
-        const html = generateEntrepriseHTML(data, defaultCompanySettings);
+        const html = generateEntrepriseHTML(data, companySettings);
         let cName = (data.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
         await exportHTMLToPDF(html, `Contrat_Prestation_RKeyProd_${cName}.pdf`);
       };
@@ -2836,10 +2864,10 @@ function urlBase64ToUint8Array(base64String) {
         let cName = (data.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
         let filename;
         if (data.contract_mode === 'entreprise') {
-            html = generateEntrepriseHTML(data, defaultCompanySettings);
+            html = generateEntrepriseHTML(data, companySettings);
             filename = `Contrat_RKeyProd_${cName}.pdf`;
         } else {
-            html = generateMandatHTML(data, defaultCompanySettings);
+            html = generateMandatHTML(data, companySettings);
             filename = `Contrat_RKeyProd_${cName}.pdf`;
         }
         await exportHTMLToPDF(html, filename);
@@ -3121,7 +3149,7 @@ function urlBase64ToUint8Array(base64String) {
                               <button 
                                 onClick={(e) => { 
                                   e.stopPropagation(); 
-                                  const html = generateMandatHTML(ev.rawContractData, defaultCompanySettings);
+                                  const html = generateMandatHTML(ev.rawContractData, companySettings);
                                   setPreviewDoc({ 
                                     title: `Mandat R'Key Prod - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`, 
                                     type: 'html', 
@@ -3281,7 +3309,7 @@ function urlBase64ToUint8Array(base64String) {
                         <button 
                           onClick={(e) => { 
                             e.stopPropagation(); 
-                            const html = generateEntrepriseHTML(ev.rawContractData, defaultCompanySettings);
+                            const html = generateEntrepriseHTML(ev.rawContractData, companySettings);
                             setPreviewDoc({ 
                               title: `Contrat - ${ev.rawContractData.client_info?.company || ev.rawContractData.client_info?.name || 'Client'}`, 
                               type: 'html', 
