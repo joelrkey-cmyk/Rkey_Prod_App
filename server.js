@@ -697,9 +697,6 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const app = express();
 const PORT = 3000;
 
-// Hostinger specific static path mapping
-app.use('/static', express.static(path.join(__dirname, 'frontend', 'build', 'static')));
-
 // Force CSS MIME type
 app.use((req, res, next) => {
   if (req.url.endsWith('.css')) res.setHeader('Content-Type', 'text/css');
@@ -712,7 +709,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve frontend build (MUST BE BEFORE API ROUTES for Hostinger)
-const frontendPath = path.resolve(__dirname, 'frontend', 'build');
+const frontendPath = path.join(__dirname, 'frontend', 'build');
 console.log(`[DEBUG] __dirname is: ${__dirname}`);
 console.log(`[DEBUG] Resolving frontend build path to: ${frontendPath}`);
 if (fs.existsSync(path.join(frontendPath, 'index.html'))) {
