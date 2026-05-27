@@ -4,7 +4,7 @@
   "description": "R'KEY PROD CRM and Booking Management applet",
   "main": "server.js",
   "scripts": {
-    "build": "npm --prefix frontend install --legacy-peer-deps && DISABLE_ESLINT_PLUGIN=true ESLINT_NO_DEV_ERRORS=true npm --prefix frontend run build",
+    "build": "npm install --prefix frontend && npm run build --prefix frontend",
     "start": "node server.js"
   },
   "dependencies": {

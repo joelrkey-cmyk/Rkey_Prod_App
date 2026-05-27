@@ -698,7 +698,7 @@ const app = express();
 const PORT = 3000;
 
 // Static build path
-const buildPath = path.join(__dirname, 'frontend', 'build_production');
+const buildPath = path.join(__dirname, 'frontend', 'build');
 console.log(`Serving frontend from: ${buildPath}`);
 
 // ─── Middleware ───
@@ -5148,11 +5148,7 @@ api.use((err, req, res, next) => {
 app.use('/api', api);
 
 // Serve frontend build
-// Check for build folder first, then build_production
-let frontendPath = path.join(__dirname, 'frontend', 'build');
-if (!fs.existsSync(path.join(frontendPath, 'index.html'))) {
-  frontendPath = path.join(__dirname, 'frontend', 'build_production');
-}
+const frontendPath = path.join(__dirname, 'frontend', 'build');
 
 console.log(`Serving frontend from: ${frontendPath}`);
 app.use(express.static(frontendPath));
