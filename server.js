@@ -14,6 +14,8 @@ const { Storage } = require('@google-cloud/storage');
 const fs = require('fs');
 const webpush = require('web-push');
 
+const frontendPath = path.resolve(__dirname, 'frontend', 'build');
+
 const VAPID_PUB = process.env.VAPID_PUBLIC_KEY || "BHu7ALPSDk_qShRlTY1jiy0iaeE6FE0b03No89GNGjOmkZGWzRenNoN3DvRE1IwuCU0cYlk2Zdk_WE-EqR0tYYM";
 const VAPID_PRIV = process.env.VAPID_PRIVATE_KEY || "e2E1vKj58H2CluRXZr8N-aw8ro58tDQRSg06vPax0RU";
 
@@ -713,7 +715,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve frontend build
-app.use(express.static(path.join(__dirname, 'frontend', 'build')));
+app.use(express.static(frontendPath));
 
 app.post('/api/log-client-error', (req, res) => {
   console.log("=== CLIENT REACT ERROR ===", req.body);
