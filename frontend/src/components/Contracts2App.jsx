@@ -123,6 +123,8 @@ function Contracts2App() {
   const [blacklist, setBlacklist] = useState("");
   const [cateringNotes, setCateringNotes] = useState("");
   const [cateringDrinks, setCateringDrinks] = useState(false);
+  const [cateringHotMealNoTable, setCateringHotMealNoTable] = useState(false);
+  const [cateringHotMealNoTableQty, setCateringHotMealNoTableQty] = useState(0);
   const [selectedEvents, setSelectedEvents] = useState([]);
   const [customRepasEvents, setCustomRepasEvents] = useState([]);
   const [customMusiqueEvents, setCustomMusiqueEvents] = useState([]);
@@ -407,6 +409,8 @@ function Contracts2App() {
         setBlacklist(parsed.blacklist || "");
         setCateringNotes(parsed.cateringNotes || "");
         setCateringDrinks(parsed.cateringDrinks || false);
+        setCateringHotMealNoTable(parsed.cateringHotMealNoTable || false);
+        setCateringHotMealNoTableQty(parsed.cateringHotMealNoTableQty || 0);
         setSelectedEvents(parsed.selectedEvents || []);
         setCustomRepasEvents(parsed.customRepasEvents || []);
         setCustomMusiqueEvents(parsed.customMusiqueEvents || []);
@@ -439,7 +443,7 @@ function Contracts2App() {
       signatureImages, invoiceNumber, noDepositRequired, customDepositAmount,
       contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, 
       optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, 
-      cateringNotes, cateringDrinks, selectedEvents, 
+      cateringNotes, cateringDrinks, cateringHotMealNoTable, cateringHotMealNoTableQty, selectedEvents, 
       customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, 
       hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, 
       depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, 
@@ -447,7 +451,7 @@ function Contracts2App() {
       selectedPdfNotes, cgvText, artisteCgvText
     };
     sessionStorage.setItem('contracts2_form_state', JSON.stringify(state));
-  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText, artisteCgvText]);
+  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, cateringHotMealNoTable, cateringHotMealNoTableQty, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText, artisteCgvText]);
 
   const loadContracts = async () => {
     try {
@@ -650,7 +654,7 @@ function Contracts2App() {
     setClientInfo({ name: "", company: "", address: "", phone: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, phone2: "", guest_count: "" });
     setSelectedOptions(availableOptions.map(opt => ({ ...opt, selected: false })));
     setSelectedNotes([]); setSelectedMusicStyles([]); setDjNotes(""); setBlacklist("");
-    setCateringNotes(""); setCateringDrinks(false);
+    setCateringNotes(""); setCateringDrinks(false); setCateringHotMealNoTable(false); setCateringHotMealNoTableQty(0);
     setSelectedEvents([]); setCustomRepasEvents([]); setCustomMusiqueEvents([]); setEventNotes(""); setEventOrder([]);
     setBasePrice(0); setFraisMandat(0); setCachetArtiste(0); setPackSonorisation(false); setPackLumiere(false); setInvoiceNumber(""); setDiscountAmount(0); setCustomDepositAmount(0); setNoDepositRequired(false);
     setOptionsTarifNotes(""); setSelectedRIB(""); setDepositPaid(false); setDepositPaymentMethod(""); setBackgroundMusicAperitif("");
@@ -721,6 +725,8 @@ function Contracts2App() {
       blacklist: blacklist,
       catering_notes: cateringNotes,
       catering_drinks: cateringDrinks,
+      catering_hot_meal_no_table: cateringHotMealNoTable,
+      catering_hot_meal_no_table_qty: cateringHotMealNoTableQty,
       background_music_aperitif: backgroundMusicAperitif,
       selected_events: selectedEvents,
       custom_repas_events: customRepasEvents,
@@ -802,6 +808,8 @@ function Contracts2App() {
     setBlacklist(contract.blacklist || "");
     setCateringNotes(contract.catering_notes || "");
     setCateringDrinks(contract.catering_drinks || false);
+    setCateringHotMealNoTable(contract.catering_hot_meal_no_table || false);
+    setCateringHotMealNoTableQty(contract.catering_hot_meal_no_table_qty || 0);
     setBackgroundMusicAperitif(contract.background_music_aperitif || "");
     setSelectedEvents(contract.selected_events || []);
     setCustomRepasEvents(contract.custom_repas_events || []);
@@ -982,6 +990,10 @@ function Contracts2App() {
     selected_music_styles: selectedMusicStyles,
     dj_notes: djNotes,
     blacklist: blacklist,
+    catering_notes: cateringNotes,
+    catering_drinks: cateringDrinks,
+    catering_hot_meal_no_table: cateringHotMealNoTable,
+    catering_hot_meal_no_table_qty: cateringHotMealNoTableQty,
     selected_events: selectedEvents,
     custom_repas_events: customRepasEvents,
     custom_musique_events: customMusiqueEvents,
@@ -1332,14 +1344,50 @@ function Contracts2App() {
                     {/* Catering - Moved here */}
                     <div className="pt-4 border-t space-y-3">
                       <Label className="text-slate-700 font-medium">Catering (Restauration Artiste)</Label>
-                      <div className="flex flex-col md:flex-row gap-4">
-                        <div className="flex-1 space-y-2">
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                        <div className="md:col-span-5 space-y-2">
                           <Label className="text-xs text-slate-500">Conditions de repas</Label>
-                          <Input value={cateringNotes} onChange={(e) => setCateringNotes(e.target.value)} placeholder="Ex: Plat chaud, dessert, etc." className="border-slate-300" />
+                          <Input value={cateringNotes} onChange={(e) => setCateringNotes(e.target.value)} placeholder="Ex: Plat chaud, dessert, etc." className="border-slate-300 w-full" />
                         </div>
-                        <div className="flex items-center space-x-2 pt-6">
+                        
+                        <div className="md:col-span-3 flex items-center space-x-2 pb-2">
                           <Checkbox id="cateringDrinks" checked={cateringDrinks} onCheckedChange={setCateringDrinks} />
-                          <label htmlFor="cateringDrinks" className="text-sm font-medium leading-none cursor-pointer">Boissons comprises</label>
+                          <label htmlFor="cateringDrinks" className="text-sm font-medium leading-none cursor-pointer select-none">Boissons comprises</label>
+                        </div>
+
+                        <div className="md:col-span-4 flex items-center space-x-3 pb-1 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                          <div className="flex items-center space-x-1.5 flex-shrink-0">
+                            <Label htmlFor="cateringHotMealNoTableQty" className="text-[10px] uppercase font-bold text-slate-500">Qté:</Label>
+                            <Input 
+                              id="cateringHotMealNoTableQty"
+                              type="number"
+                              min="0"
+                              placeholder="0"
+                              value={cateringHotMealNoTableQty === 0 && !cateringHotMealNoTable ? "" : cateringHotMealNoTableQty}
+                              onChange={e => {
+                                const valStr = e.target.value;
+                                const valNum = valStr === '' ? 0 : (parseInt(valStr, 10) || 0);
+                                setCateringHotMealNoTableQty(valNum);
+                                if (valNum > 0 && !cateringHotMealNoTable) {
+                                  setCateringHotMealNoTable(true);
+                                }
+                              }}
+                              className="w-12 h-8 px-1 text-center font-bold border-slate-300 focus:border-blue-500"
+                            />
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox 
+                              id="cateringHotMealNoTable" 
+                              checked={cateringHotMealNoTable} 
+                              onCheckedChange={(checked) => {
+                                setCateringHotMealNoTable(checked);
+                                if (checked && (!cateringHotMealNoTableQty || Number(cateringHotMealNoTableQty) === 0)) {
+                                  setCateringHotMealNoTableQty(1);
+                                }
+                              }} 
+                            />
+                            <label htmlFor="cateringHotMealNoTable" className="text-xs font-medium leading-none cursor-pointer select-none">Plat chaud (pas de place à table)</label>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1498,7 +1546,7 @@ function Contracts2App() {
                             onChange={(e) => {
                               const newFrais = Number(e.target.value) || 0;
                               setFraisMandat(newFrais);
-                              setCachetArtiste(Math.max(0, basePrice - newFrais));
+                              setBasePrice(newFrais + cachetArtiste);
                             }} 
                             className="border-orange-300 focus:border-orange-500 w-full font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
                             min="0" 
@@ -1518,7 +1566,7 @@ function Contracts2App() {
                             onChange={(e) => {
                               const newCachet = Number(e.target.value) || 0;
                               setCachetArtiste(newCachet);
-                              setFraisMandat(Math.max(0, basePrice - newCachet));
+                              setBasePrice(fraisMandat + newCachet);
                             }} 
                             className="border-purple-300 focus:border-purple-500 w-full font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
                             min="0" 

@@ -264,12 +264,13 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
         </div>
       </div>
 
-      ${(contract.catering_notes || contract.catering_drinks) ? `
+      ${(contract.catering_notes || contract.catering_drinks || contract.catering_hot_meal_no_table) ? `
       <div style="margin-top: 10px; padding: 8px; border: 1px solid #ddd; background-color: #f9f9f9; border-radius: 4px; font-size: 11px;">
         <span style="font-weight: bold; color: #555; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px;">🍽️ Catering :</span>
         <span style="color: #333;">
           ${contract.catering_notes ? `${contract.catering_notes}. ` : ''}
-          ${contract.catering_drinks ? 'Boissons comprises.' : ''}
+          ${contract.catering_drinks ? 'Boissons comprises. ' : ''}
+          ${contract.catering_hot_meal_no_table ? `Repas chaud sans place à table prévu (${contract.catering_hot_meal_no_table_qty || 1} repas).` : ''}
         </span>
       </div>
       ` : ''}

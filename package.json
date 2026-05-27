@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "build": "cd frontend && npm install && NODE_ENV=production FAST_REFRESH=false GENERATE_SOURCEMAP=false NODE_OPTIONS='--max-old-space-size=2560' npm run build",
+    "build": "cd frontend && ([ -d node_modules ] || npm install) && NODE_ENV=production FAST_REFRESH=false GENERATE_SOURCEMAP=false NODE_OPTIONS='--max-old-space-size=2560' npm run build",
     "lint": "echo 'Linting skipped'"
   },
   "dependencies": {
