@@ -697,9 +697,13 @@ const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const app = express();
 const PORT = 3000;
 
-// Force CSS MIME type
+// Global MIME Type Middleware
 app.use((req, res, next) => {
-  if (req.url.endsWith('.css')) res.setHeader('Content-Type', 'text/css');
+  if (req.url.endsWith('.css')) {
+    res.header('Content-Type', 'text/css');
+  } else if (req.url.endsWith('.js')) {
+    res.header('Content-Type', 'application/javascript');
+  }
   next();
 });
 
@@ -708,16 +712,8 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve frontend build (MUST BE BEFORE API ROUTES for Hostinger)
-const frontendPath = path.join(__dirname, 'frontend', 'build');
-console.log(`[DEBUG] __dirname is: ${__dirname}`);
-console.log(`[DEBUG] Resolving frontend build path to: ${frontendPath}`);
-if (fs.existsSync(path.join(frontendPath, 'index.html'))) {
-  console.log('[DEBUG] SUCCESS: frontend/build/index.html was found.');
-} else {
-  console.log('[DEBUG] ERROR: frontend/build/index.html was NOT found!');
-}
-app.use(express.static(frontendPath));
+// Serve frontend build
+app.use(express.static(path.join(__dirname, 'frontend', 'build')));
 
 app.post('/api/log-client-error', (req, res) => {
   console.log("=== CLIENT REACT ERROR ===", req.body);
