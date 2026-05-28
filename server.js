@@ -3379,9 +3379,16 @@ api.post('/location/generate-description', authMiddleware, async (req, res) => {
     const { name, reference, category, observations } = req.body;
     const prompt = `Génère une description commerciale courte et professionnelle en français pour ce matériel de location événementielle :\n- Nom : ${name || 'Non précisé'}\n- Référence : ${reference || 'Non précisée'}\n- Catégorie : ${category || 'Non précisée'}\n- Observations : ${observations || 'Aucune'}\n\nLa description doit être vendeuse, concise (2-3 phrases max) et mettre en avant les avantages pour un événement. Réponds uniquement avec la description, sans guillemets.`;
     const { GoogleGenAI } = require('@google/genai');
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.5-flash',
         contents: prompt
     });
     const description = response.text.trim() || '';
@@ -3399,9 +3406,16 @@ api.post('/location/generate-catalogue-description', authMiddleware, async (req,
     const { name, reference, category, observations } = req.body;
     const prompt = `Génère une description catalogue commerciale en français pour ce matériel de location événementielle :\n- Nom : ${name || 'Non précisé'}\n- Référence : ${reference || 'Non précisée'}\n- Catégorie : ${category || 'Non précisée'}\n- Observations : ${observations || 'Aucune'}\n\nLa description doit être vendeuse, professionnelle, concise (3-4 phrases) et adaptée à un catalogue public destiné aux organisateurs d'événements. Mets en avant les caractéristiques et avantages. Réponds uniquement avec la description, sans guillemets.`;
     const { GoogleGenAI } = require('@google/genai');
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
     const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.5-flash',
         contents: prompt
     });
     const description = response.text.trim() || '';
@@ -3410,6 +3424,179 @@ api.post('/location/generate-catalogue-description', authMiddleware, async (req,
     console.error('AI catalogue description error:', e);
     res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Vérifiez votre clé API Gemini." });
   }
+});
+
+api.post('/location/suggest-price', authMiddleware, async (req, res) => {
+  const { name, reference, category, observations, catalogue_description } = req.body;
+
+  // Pre-calculate smart catalog fallback in case Gemini fails or is not configured
+  let fallbackPrice = 25.0;
+  let fallbackExplanation = "";
+  
+  try {
+    const query = category ? { category: category } : {};
+    const matchingItems = await db.collection('location_equipment').find(query, { projection: { daily_price: 1 } }).toArray();
+    
+    if (matchingItems && matchingItems.length > 0) {
+      let sum = 0;
+      let count = 0;
+      matchingItems.forEach(item => {
+        if (item.daily_price && typeof item.daily_price === 'number') {
+          sum += item.daily_price;
+          count++;
+        }
+      });
+      
+      if (count > 0) {
+        fallbackPrice = Math.round((sum / count) * 100) / 100;
+        fallbackExplanation = `Calculé d'après la moyenne de vos matériels existants dans la catégorie "${category}" (${fallbackPrice}€/jour).`;
+      }
+    }
+    
+    if (fallbackPrice <= 0 || !fallbackExplanation) {
+      const allItems = await db.collection('location_equipment').find({}, { projection: { daily_price: 1 } }).toArray();
+      if (allItems && allItems.length > 0) {
+        let sum = 0;
+        let count = 0;
+        allItems.forEach(item => {
+          if (item.daily_price && typeof item.daily_price === 'number') {
+            sum += item.daily_price;
+            count++;
+          }
+        });
+        if (count > 0) {
+          fallbackPrice = Math.round((sum / count) * 100) / 100;
+          fallbackExplanation = `Basé sur la moyenne de l'ensemble de votre catalogue existant (${fallbackPrice}€/jour).`;
+        }
+      }
+    }
+  } catch (dbErr) {
+    console.error("Failed to query catalog for fallback:", dbErr);
+  }
+  
+  if (fallbackPrice <= 0 || !fallbackExplanation) {
+    const lowerCat = (category || "").toLowerCase();
+    const lowerName = (name || "").toLowerCase();
+    
+    if (lowerCat.includes("pack") || lowerName.includes("pack")) {
+      fallbackPrice = 120.0;
+      fallbackExplanation = "Tarif indicatif par défaut pour un pack de sonorisation ou d'éclairage.";
+    } else if (lowerCat.includes("son") || lowerCat.includes("audio") || lowerName.includes("enceinte") || lowerName.includes("micro")) {
+      fallbackPrice = 35.0;
+      fallbackExplanation = "Tarif d'estimation standard pour du matériel audio ou de sonorisation.";
+    } else if (lowerCat.includes("lumi") || lowerCat.includes("éclair") || lowerName.includes("spot") || lowerName.includes("led") || lowerName.includes("lyre")) {
+      fallbackPrice = 20.0;
+      fallbackExplanation = "Tarif d'estimation standard pour du matériel d'éclairage.";
+    } else if (lowerCat.includes("mariage") || lowerName.includes("decor") || lowerName.includes("arche")) {
+      fallbackPrice = 50.0;
+      fallbackExplanation = "Tarif d'estimation standard pour décoration / accessoires événementiels.";
+    } else {
+      fallbackPrice = 25.0;
+      fallbackExplanation = "Tarif d'estimation standard de départ pour du matériel événementiel général.";
+    }
+  }
+
+  // Attempt to use Gemini API if available and configured
+  if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('MY_GEMINI_API_KEY')) {
+    try {
+      const prompt = `Estime un prix indicatif de location à la journée (en Euros) pour le matériel suivant :
+- Nom : ${name || 'Non précisé'}
+- Référence : ${reference || 'Non précisée'}
+- Catégorie : ${category || 'Non précisée'}
+- Observations : ${observations || 'Aucune'}
+- Description : ${catalogue_description || 'Aucune'}
+
+Recherche sur Internet (marché français de la location d'événementiel, de sonorisation, d'éclairage, ou de matériel d'événementiel/BTP ou autre selon la catégorie) les tarifs pratiqués pour ce produit ou un équivalent proche.
+Propose un prix journalier réaliste (nombre uniquement) et une brève explication (max 3 phrases) détaillant les tarifs constatés chez les concurrents et d'où vient cette estimation.
+
+Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ces deux clés :
+{
+  "suggestedPrice": 25.00,
+  "explanation": "Le prix moyen constaté chez les concurrents pour ce modèle ou équivalent est d'environ 25 à 30€ par jour. Compte tenu des informations fournies, un tarif de 25€ est recommandé pour rester compétitif."
+}`;
+
+      const { GoogleGenAI, Type } = require('@google/genai');
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+      
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: prompt,
+          config: {
+            tools: [{ googleSearch: {} }],
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                suggestedPrice: {
+                  type: Type.NUMBER,
+                  description: "Le prix de location suggéré par jour en Euros (nombre uniquement)."
+                },
+                explanation: {
+                  type: Type.STRING,
+                  description: "Une explication concise des tarifs concurrents constatés."
+                }
+              },
+              required: ["suggestedPrice", "explanation"]
+            }
+          }
+        });
+      } catch (searchError) {
+        console.warn("Pricing Search grounding failed, falling back to base model knowledge:", searchError.message || searchError);
+        response = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: prompt + "\nRemarque : sers-toi uniquement de tes connaissances pré-entraînées sur le marché français de l'événementiel si la recherche internet n'est pas disponible.",
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                suggestedPrice: {
+                  type: Type.NUMBER,
+                  description: "Le prix de location suggéré par jour en Euros (nombre uniquement)."
+                },
+                explanation: {
+                  type: Type.STRING,
+                  description: "Une explication concise des tarifs concurrents constatés d'après vos connaissances pré-entraînées."
+                }
+              },
+              required: ["suggestedPrice", "explanation"]
+            }
+          }
+        });
+      }
+      
+      const text = response.text.trim();
+      const result = JSON.parse(text);
+      if (result && typeof result.suggestedPrice === 'number') {
+        return res.json(result);
+      }
+    } catch (e) {
+      console.error('AI suggest-price error (falling back to smart defaults):', e);
+      const errStr = (e.message || String(e)).toLowerCase();
+      if (errStr.includes('429') || errStr.includes('quota') || errStr.includes('exhausted') || errStr.includes('limit')) {
+        const quotaExplanation = fallbackExplanation + " (Note : Limite de quota IA atteinte temporairement. Nous avons calculé un tarif indicatif intelligent basé sur votre catalogue existant)";
+        return res.json({
+          suggestedPrice: fallbackPrice,
+          explanation: quotaExplanation
+        });
+      }
+    }
+  }
+
+  const finalExplanation = fallbackExplanation + " (Note : Estimation hors ligne basée sur votre historique/catégorie de catalogue car la clé API Gemini a atteint son quota ou n'est pas disponible)";
+  res.json({
+    suggestedPrice: fallbackPrice,
+    explanation: finalExplanation
+  });
 });
 api.get('/location/dashboard', authMiddleware, async (req, res) => {
   const [quotes, reservations, equipment] = await Promise.all([

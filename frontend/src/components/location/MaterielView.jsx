@@ -95,6 +95,8 @@ function MaterielView() {
   const [productReference, setProductReference] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedDescription, setGeneratedDescription] = useState('');
+  const [isEstimatingPrice, setIsEstimatingPrice] = useState(false);
+  const [priceExplanation, setPriceExplanation] = useState('');
 
   useEffect(() => {
     fetchEquipment();
@@ -278,6 +280,7 @@ function MaterielView() {
       unlimited_quantity: false,
       maintenance_status: 'operational'
     });
+    setPriceExplanation('');
     setShowAddForm(false);
     setEditingEquipment(null);
   };
@@ -376,6 +379,7 @@ function MaterielView() {
       unlimited_quantity: item.quantity >= 999999,
       maintenance_status: item.maintenance_status || 'operational'
     });
+    setPriceExplanation('');
     setShowAddForm(true);
     // Scroll vers le haut pour afficher le formulaire
     setTimeout(() => {
@@ -416,6 +420,7 @@ function MaterielView() {
       pack_items: duplicatedItem.pack_items || [],
       unlimited_quantity: duplicatedItem.quantity >= 999999
     });
+    setPriceExplanation('');
     setEditingEquipment(null); // Make sure we're in "add" mode
     setShowAddForm(true);
     toast.info("Équipement dupliqué - Modifiez le nom et les détails");
@@ -490,6 +495,44 @@ function MaterielView() {
       toast.error(error.response?.data?.detail || 'Erreur lors de la génération de la description');
     } finally {
       setIsGeneratingCatalogueDesc(false);
+    }
+  };
+
+  // Fonction pour suggérer un prix de location avec IA
+  const suggestPriceWithAI = async () => {
+    if (!formData.name && !formData.reference) {
+      toast.error('Veuillez d\'abord saisir le nom ou la référence du matériel pour chercher les prix');
+      return;
+    }
+
+    try {
+      setIsEstimatingPrice(true);
+      setPriceExplanation('');
+      const response = await axios.post(`${API}/suggest-price`, {
+        name: formData.name,
+        reference: formData.reference,
+        category: formData.category,
+        observations: formData.observations || '',
+        catalogue_description: formData.catalogue_description || '',
+        photo_url: formData.photo_url || ''
+      });
+      
+      const { suggestedPrice, explanation } = response.data;
+      if (suggestedPrice !== undefined && suggestedPrice !== null) {
+        setFormData(prev => ({
+          ...prev,
+          daily_price: parseFloat(suggestedPrice) || 0
+        }));
+        setPriceExplanation(explanation);
+        toast.success(`Prix suggéré de ${suggestedPrice}€ appliqué !`);
+      } else {
+        toast.error('Impossible d\'obtenir une suggestion de prix valide.');
+      }
+    } catch (error) {
+      console.error('Error suggesting price:', error);
+      toast.error(error.response?.data?.detail || 'Erreur lors de la suggestion de prix par l\'IA');
+    } finally {
+      setIsEstimatingPrice(false);
     }
   };
 
@@ -845,7 +888,21 @@ function MaterielView() {
                   </div>
                 </div>
                 <div>
-                  <Label htmlFor="equipment-price">Prix/jour (€)</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="equipment-price">Prix/jour (€)</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={suggestPriceWithAI}
+                      disabled={isLoading || isEstimatingPrice || (!formData.name && !formData.reference)}
+                      className="h-5 px-1.5 text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-semibold"
+                      title="Estimer un tarif concurrentiel avec l'IA"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      {isEstimatingPrice ? "Calcul..." : "Estimer IA"}
+                    </Button>
+                  </div>
                   <Input
                     id="equipment-price"
                     type="number"
@@ -857,6 +914,11 @@ function MaterielView() {
                     required
                     disabled={isLoading}
                   />
+                  {priceExplanation && (
+                    <p className="mt-1 text-[11px] text-indigo-600 bg-indigo-50/50 p-1.5 rounded border border-indigo-100/50 leading-tight">
+                      💡 {priceExplanation}
+                    </p>
+                  )}
                 </div>
                 
                 <div>
