@@ -9,6 +9,20 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
   
   const _p = resolveProfile(contract);
 
+  const isJoel = _p && (
+    (_p.nom_complet && _p.nom_complet.toLowerCase().includes("joël")) ||
+    (_p.nom_complet && _p.nom_complet.toLowerCase().includes("joel")) ||
+    (_p.name && _p.name.toLowerCase().includes("joël")) ||
+    (_p.name && _p.name.toLowerCase().includes("joel")) ||
+    (contract.dj_profile === 'joel')
+  );
+
+  const isCompany = !!(contract.client_info && contract.client_info.company && contract.client_info.company.trim() !== "");
+
+  const fmtVal = (val) => (val || 0).toFixed(2) + " €";
+  const fmtHTVal = (val) => (Math.round(((val || 0) / 1.20) * 100) / 100).toFixed(2) + " €";
+  const fmtTvaVal = (val) => (Math.round(((val || 0) - (val || 0) / 1.20) * 100) / 100).toFixed(2) + " €";
+
   // Fonctions utilitaires pour vérifier si les sections ont du contenu
   const hasEventScheduleContent = () => {
     const hasEvents = contract.event_order && contract.event_order.length > 0;
@@ -98,45 +112,107 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
           <thead>
             <tr>
               <th>Prestation</th>
-              <th>Prix</th>
+              ${isCompany ? `
+                <th style="text-align: right; width: 22mm;">HT</th>
+                <th style="text-align: right; width: 22mm;">TVA (20%)</th>
+                <th style="text-align: right; width: 22mm;">TTC</th>
+              ` : `
+                <th style="text-align: right; width: 22mm;">Prix</th>
+              `}
             </tr>
           </thead>
           <tbody>
-            ${contract.contract_mode === 'mandataire' ? `
-              <tr>
-                <td><strong>Frais de Mandat & Gestion (R'KEY PROD)</strong></td>
-                <td><strong>${(contract.frais_mandat || 0).toFixed(2)} €</strong></td>
-              </tr>
-              <tr>
-                <td><strong>Cachet Artiste (Part DJ)</strong></td>
-                <td><strong>${(contract.cachet_artiste || 0).toFixed(2)} €</strong></td>
-              </tr>
-            ` : `
-              <tr>
-                <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
-                <td><strong>${(contract.base_price || 0).toFixed(2)} €</strong></td>
-              </tr>
-            `}
+            ${isJoel ? (
+              isCompany ? `
+                <tr>
+                  <td><strong>Animation DJ ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td style="text-align: right;">${fmtHTVal(contract.base_price)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(contract.base_price)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(contract.base_price)}</td>
+                </tr>
+              ` : `
+                <tr>
+                  <td><strong>Animation DJ ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td style="text-align: right;"><strong>${fmtVal(contract.base_price)}</strong></td>
+                </tr>
+              `
+            ) : contract.contract_mode === 'mandataire' ? (
+              isCompany ? `
+                <tr>
+                  <td><strong>Frais de Mandat & Gestion (R'KEY PROD)</strong></td>
+                  <td style="text-align: right;">${fmtHTVal(contract.frais_mandat)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(contract.frais_mandat)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(contract.frais_mandat)}</td>
+                </tr>
+                <tr>
+                  <td><strong>Cachet Artiste (Part DJ)</strong></td>
+                  <td style="text-align: right;">${fmtHTVal(contract.cachet_artiste)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(contract.cachet_artiste)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(contract.cachet_artiste)}</td>
+                </tr>
+              ` : `
+                <tr>
+                  <td><strong>Frais de Mandat & Gestion (R'KEY PROD)</strong></td>
+                  <td style="text-align: right;"><strong>${fmtVal(contract.frais_mandat)}</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Cachet Artiste (Part DJ)</strong></td>
+                  <td style="text-align: right;"><strong>${fmtVal(contract.cachet_artiste)}</strong></td>
+                </tr>
+              `
+            ) : (
+              isCompany ? `
+                <tr>
+                  <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td style="text-align: right;">${fmtHTVal(contract.base_price)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(contract.base_price)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(contract.base_price)}</td>
+                </tr>
+              ` : `
+                <tr>
+                  <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td style="text-align: right;"><strong>${fmtVal(contract.base_price)}</strong></td>
+                </tr>
+              `
+            )}
             ${contract.selected_options.filter(opt => opt.selected).map(option => `
               <tr>
                 <td>+ ${option.name}</td>
-                <td>${(option.price || 0).toFixed(2)} €</td>
+                ${isCompany ? `
+                  <td style="text-align: right;">${fmtHTVal(option.price)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(option.price)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(option.price)}</td>
+                ` : `
+                  <td style="text-align: right;">${fmtVal(option.price)}</td>
+                `}
               </tr>
             `).join('')}
             ${contract.discount_amount > 0 ? `
-            <tr>
-              <td><strong>Remise accordée sur acompte</strong></td>
-              <td style="color: #d32f2f;">-${(contract.discount_amount || 0).toFixed(2)} €</td>
-            </tr>
+              <tr>
+                <td><strong>Remise accordée sur acompte</strong></td>
+                ${isCompany ? `
+                  <td style="text-align: right; color: #d32f2f;">-${fmtHTVal(contract.discount_amount)}</td>
+                  <td style="text-align: right; color: #d32f2f;">-${fmtTvaVal(contract.discount_amount)}</td>
+                  <td style="text-align: right; color: #d32f2f; font-weight: bold;">-${fmtVal(contract.discount_amount)}</td>
+                ` : `
+                  <td style="text-align: right; color: #d32f2f;"><strong>-${fmtVal(contract.discount_amount)}</strong></td>
+                `}
+              </tr>
             ` : ''}
             <tr class="compact-pricing-total">
               <td><strong>TOTAL TTC</strong></td>
-              <td><strong>${calculateContractTotal(contract).toFixed(2)} €</strong></td>
+              ${isCompany ? `
+                <td style="text-align: right;"><strong>${fmtHTVal(calculateContractTotal(contract))}</strong></td>
+                <td style="text-align: right;"><strong>${fmtTvaVal(calculateContractTotal(contract))}</strong></td>
+                <td style="text-align: right;"><strong>${fmtVal(calculateContractTotal(contract))}</strong></td>
+              ` : `
+                <td style="text-align: right;"><strong>${fmtVal(calculateContractTotal(contract))}</strong></td>
+              `}
             </tr>
           </tbody>
         </table>
         <div style="font-size: 9px; color: #666; text-align: right; margin-top: 2px;">
-          TVA non applicable, article 293 B du CGI
+          ${isCompany ? 'Siren/Siret Client renseigné - TVA de 20.00% applicable incluse' : 'TVA non applicable, article 293 B du CGI'}
         </div>
         ${contract.options_tarif_notes ? `
         <div style="margin-top: 8px; padding: 6px; background-color: #f8f9fa; border-left: 3px solid #2196F3; border-radius: 3px;">
@@ -152,39 +228,95 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
           <thead>
             <tr>
               <th>Prestation</th>
-              <th>Prix</th>
+              ${isCompany ? `
+                <th style="text-align: right; width: 22mm;">HT</th>
+                <th style="text-align: right; width: 22mm;">TVA (20%)</th>
+                <th style="text-align: right; width: 22mm;">TTC</th>
+              ` : `
+                <th style="text-align: right; width: 22mm;">Prix</th>
+              `}
             </tr>
           </thead>
           <tbody>
-            ${contract.contract_mode === 'mandataire' ? `
-              <tr>
-                <td><strong>Frais de Mandat & Gestion (R'KEY PROD)</strong></td>
-                <td><strong>${(contract.frais_mandat || 0).toFixed(2)} €</strong></td>
-              </tr>
-              <tr>
-                <td><strong>Cachet Artiste (Part DJ)</strong></td>
-                <td><strong>${(contract.cachet_artiste || 0).toFixed(2)} €</strong></td>
-              </tr>
-            ` : `
-              <tr>
-                <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
-                <td><strong>${(contract.base_price || 0).toFixed(2)} €</strong></td>
-              </tr>
-            `}
+            ${isJoel ? (
+              isCompany ? `
+                <tr>
+                  <td><strong>Animation DJ ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td style="text-align: right;">${fmtHTVal(contract.base_price)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(contract.base_price)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(contract.base_price)}</td>
+                </tr>
+              ` : `
+                <tr>
+                  <td><strong>Animation DJ ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td style="text-align: right;"><strong>${fmtVal(contract.base_price)}</strong></td>
+                </tr>
+              `
+            ) : contract.contract_mode === 'mandataire' ? (
+              isCompany ? `
+                <tr>
+                  <td><strong>Frais de Mandat & Gestion (R'KEY PROD)</strong></td>
+                  <td style="text-align: right;">${fmtHTVal(contract.frais_mandat)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(contract.frais_mandat)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(contract.frais_mandat)}</td>
+                </tr>
+                <tr>
+                  <td><strong>Cachet Artiste (Part DJ)</strong></td>
+                  <td style="text-align: right;">${fmtHTVal(contract.cachet_artiste)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(contract.cachet_artiste)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(contract.cachet_artiste)}</td>
+                </tr>
+              ` : `
+                <tr>
+                  <td><strong>Frais de Mandat & Gestion (R'KEY PROD)</strong></td>
+                  <td style="text-align: right;"><strong>${fmtVal(contract.frais_mandat)}</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Cachet Artiste (Part DJ)</strong></td>
+                  <td style="text-align: right;"><strong>${fmtVal(contract.cachet_artiste)}</strong></td>
+                </tr>
+              `
+            ) : (
+              isCompany ? `
+                <tr>
+                  <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td style="text-align: right;">${fmtHTVal(contract.base_price)}</td>
+                  <td style="text-align: right;">${fmtTvaVal(contract.base_price)}</td>
+                  <td style="text-align: right; font-weight: bold;">${fmtVal(contract.base_price)}</td>
+                </tr>
+              ` : `
+                <tr>
+                  <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td style="text-align: right;"><strong>${fmtVal(contract.base_price)}</strong></td>
+                </tr>
+              `
+            )}
             ${contract.discount_amount > 0 ? `
-            <tr>
-              <td><strong>Remise accordée sur acompte</strong></td>
-              <td style="color: #d32f2f;">-${(contract.discount_amount || 0).toFixed(2)} €</td>
-            </tr>
+              <tr>
+                <td><strong>Remise accordée sur acompte</strong></td>
+                ${isCompany ? `
+                  <td style="text-align: right; color: #d32f2f;">-${fmtHTVal(contract.discount_amount)}</td>
+                  <td style="text-align: right; color: #d32f2f;">-${fmtTvaVal(contract.discount_amount)}</td>
+                  <td style="text-align: right; color: #d32f2f; font-weight: bold;">-${fmtVal(contract.discount_amount)}</td>
+                ` : `
+                  <td style="text-align: right; color: #d32f2f;"><strong>-${fmtVal(contract.discount_amount)}</strong></td>
+                `}
+              </tr>
             ` : ''}
             <tr class="compact-pricing-total">
               <td><strong>TOTAL TTC</strong></td>
-              <td><strong>${calculateContractTotal(contract).toFixed(2)} €</strong></td>
+              ${isCompany ? `
+                <td style="text-align: right;"><strong>${fmtHTVal(calculateContractTotal(contract))}</strong></td>
+                <td style="text-align: right;"><strong>${fmtTvaVal(calculateContractTotal(contract))}</strong></td>
+                <td style="text-align: right;"><strong>${fmtVal(calculateContractTotal(contract))}</strong></td>
+              ` : `
+                <td style="text-align: right;"><strong>${fmtVal(calculateContractTotal(contract))}</strong></td>
+              `}
             </tr>
           </tbody>
         </table>
         <div style="font-size: 9px; color: #666; text-align: right; margin-top: 2px;">
-          TVA non applicable, article 293 B du CGI
+          ${isCompany ? 'Siren/Siret Client renseigné - TVA de 20.00% applicable incluse' : 'TVA non applicable, article 293 B du CGI'}
         </div>
         ${contract.options_tarif_notes ? `
         <div style="margin-top: 8px; padding: 6px; background-color: #f8f9fa; border-left: 3px solid #2196F3; border-radius: 3px;">
