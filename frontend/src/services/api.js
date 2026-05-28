@@ -93,7 +93,7 @@ const apiService = {
     return res.data;
   },
   updateCgvTemplates: async (data) => {
-    const res = await axios.put("/cgv-templates", data);
+    const res = await axios.put("/cgv-templates", { templates: data });
     return res.data;
   },
 
