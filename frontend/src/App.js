@@ -39,25 +39,6 @@ const SmartHomePage = () => {
   return <HomePage />;
 };
 
-const PwaRedirect = ({ children }) => {
-  const savedSlug = localStorage.getItem('client_pwa_slug');
-  const savedUser = localStorage.getItem('user');
-  let isAdmin = false;
-  try {
-    if (savedUser) {
-      const u = JSON.parse(savedUser);
-      if (u && u.role === 'admin') {
-        isAdmin = true;
-      }
-    }
-  } catch (e) {}
-
-  if (savedSlug && !isAdmin) {
-    return <Navigate to={`/${savedSlug}`} replace />;
-  }
-  
-  return children;
-};
 
 function App() {
   return (
@@ -77,11 +58,9 @@ function App() {
               
               {/* Page d'accueil - protégée */}
               <Route path="/" element={
-                <PwaRedirect>
-                  <ProtectedRoute>
-                    <SmartHomePage />
-                  </ProtectedRoute>
-                </PwaRedirect>
+                <ProtectedRoute>
+                  <SmartHomePage />
+                </ProtectedRoute>
               } />
               
               <Route path="/contracts2" element={
@@ -119,17 +98,23 @@ function App() {
               
               <Route path="/rental/*" element={
                 <ProtectedRoute>
-                  <ErrorBoundary>
-                    <RentalApp />
-                  </ErrorBoundary>
+                  <>
+                    <Navigation />
+                    <ErrorBoundary>
+                      <RentalApp />
+                    </ErrorBoundary>
+                  </>
                 </ProtectedRoute>
               } />
               
               <Route path="/delivery/*" element={
                 <ProtectedRoute>
-                  <ErrorBoundary>
-                    <DeliveryApp />
-                  </ErrorBoundary>
+                  <>
+                    <Navigation />
+                    <ErrorBoundary>
+                      <DeliveryApp />
+                    </ErrorBoundary>
+                  </>
                 </ProtectedRoute>
               } />
               

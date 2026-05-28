@@ -76,7 +76,6 @@ const Navigation = () => {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('client_pwa_slug');
     logout();
     navigate('/login');
   };

@@ -462,11 +462,6 @@ function urlBase64ToUint8Array(base64String) {
       let allContracts = [];
       
       if (isPublic && slug) {
-         try {
-           localStorage.setItem('client_pwa_slug', slug);
-         } catch (e) {
-           console.warn('Failed to save client_pwa_slug to localStorage', e);
-         }
          const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${slug}`);
          if (publicRes.ok) {
              const data = await publicRes.json();
