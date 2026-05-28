@@ -11,6 +11,9 @@ const axiosInstance = axios.create({
 // Request interceptor to add Authorization token
 axiosInstance.interceptors.request.use(
   (config) => {
+    if (config.url && (config.url.startsWith('/api') || (API_BASE_URL && config.url.startsWith(`${API_BASE_URL}/api`)))) {
+      config.baseURL = API_BASE_URL;
+    }
     const token = localStorage.getItem("access_token");
     if (token) {
       config.headers["Authorization"] = `Bearer ${token}`;

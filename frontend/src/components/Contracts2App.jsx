@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Separator } from "./ui/separator";
-import { X, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus } from "lucide-react";
+import { X, Search, Users, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus } from "lucide-react";
 import { toast } from "sonner";
 import apiService from "../services/api";
 import FormSubmissionsSelector from "./FormSubmissionsSelector";
@@ -45,6 +45,19 @@ En cas d'annulation par le client moins de 30 jours avant l'événement, le mont
 
 Article 5 - Clause de sous-traitance
 Le présent contrat lie le Client directement à l'Artiste DJ pour la prestation musicale. R'KEY PROD n'intervient qu'en tant que mandataire pour la recherche de l'artiste et ne saurait être tenu responsable de l'exécution de la prestation artistique.`;
+
+const getCompanyProvenance = (company) => {
+  if (company.provenance) return company.provenance;
+  if (company.notes) {
+    if (company.notes.includes("Importé depuis l'application Matériel") || company.notes.toLowerCase().includes("location: ")) {
+      return "location";
+    }
+    if (company.notes.includes("Importé depuis le contrat")) {
+      return "contrat";
+    }
+  }
+  return "";
+};
 
 function Contracts2App() {
   const navigate = useNavigate();
@@ -171,6 +184,10 @@ function Contracts2App() {
 
   const [selectedSubmission, setSelectedSubmission] = useState(null);
 
+  const [crmCompanies, setCrmCompanies] = useState([]);
+  const [searchCrmQuery, setSearchCrmQuery] = useState("");
+  const [showCrmDropdown, setShowCrmDropdown] = useState(false);
+
   // Handle submission import → auto-fill client fields
   const handleSubmissionSelect = (fields) => {
     const updates = {};
@@ -279,7 +296,64 @@ function Contracts2App() {
     loadDeletedContracts();
     loadArchivedContracts();
     loadCompanySettings();
+    loadCrmCompanies();
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('#crm-search-container')) {
+        setShowCrmDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const loadCrmCompanies = async () => {
+    try {
+      const response = await axios.get(`${API}/crm/companies`);
+      setCrmCompanies(response.data || []);
+    } catch (error) {
+      console.error("Error loading CRM companies:", error);
+    }
+  };
+
+  const handleSelectCrmCompany = (company) => {
+    let name = company.nom || "";
+    let compName = "";
+    
+    if (company.type_client !== "Particulier") {
+      compName = company.nom || "";
+      if (company.contacts && company.contacts.length > 0) {
+        name = company.contacts[0].nom || company.nom;
+      }
+    }
+    
+    setClientInfo(prev => ({
+      ...prev,
+      name: name,
+      company: compName,
+      email: company.email || (company.contacts && company.contacts[0]?.email) || "",
+      phone: company.telephone || (company.contacts && company.contacts[0]?.telephone) || "",
+      address: company.adresse || ""
+    }));
+    
+    setSearchCrmQuery("");
+    setShowCrmDropdown(false);
+    toast.success(`Informations de ${company.nom} appliquées !`);
+  };
+
+  const filteredCrmCompanies = useMemo(() => {
+    if (!searchCrmQuery.trim()) return [];
+    const q = searchCrmQuery.toLowerCase();
+    return crmCompanies.filter(c => 
+      (c.nom && c.nom.toLowerCase().includes(q)) || 
+      (c.email && c.email.toLowerCase().includes(q)) ||
+      (c.telephone && c.telephone.includes(q)) ||
+      (c.secteur && c.secteur.toLowerCase().includes(q)) ||
+      (c.contacts && c.contacts.some(contact => contact.nom && contact.nom.toLowerCase().includes(q)))
+    );
+  }, [crmCompanies, searchCrmQuery]);
 
   const loadOptions = async () => {
     try {
@@ -1259,6 +1333,85 @@ function Contracts2App() {
                       </div>
                     </div>
                   )}
+
+                  {/* Rechercher/Importer un Client existant du CRM */}
+                  <div id="crm-search-container" className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 relative">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="crm-search" className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <Users className="h-3.5 w-3.5 text-blue-550" /> Rechercher un client du CRM (Pré-remplissage automatique)
+                      </Label>
+                      {searchCrmQuery && (
+                        <button 
+                          type="button"
+                          onClick={() => { setSearchCrmQuery(""); setShowCrmDropdown(false); }}
+                          className="text-xs text-slate-400 hover:text-slate-600 font-medium"
+                        >
+                          Effacer
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Input
+                        id="crm-search"
+                        value={searchCrmQuery}
+                        onChange={(e) => {
+                          setSearchCrmQuery(e.target.value);
+                          setShowCrmDropdown(true);
+                        }}
+                        onFocus={() => setShowCrmDropdown(true)}
+                        placeholder="Rechercher par nom, email, entreprise, téléphone..."
+                        className="bg-white border-slate-300 focus:border-blue-500 pl-9"
+                      />
+                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
+                      
+                      {showCrmDropdown && searchCrmQuery.trim() !== "" && (
+                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg divide-y divide-slate-100">
+                          {filteredCrmCompanies.length === 0 ? (
+                            <div className="p-3 text-sm text-slate-400 text-center">
+                              Aucun client trouvé dans le CRM pour "{searchCrmQuery}"
+                            </div>
+                          ) : (
+                            filteredCrmCompanies.map(c => {
+                              const isParticulier = c.type_client === "Particulier";
+                              const provenance = getCompanyProvenance(c);
+                              return (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => handleSelectCrmCompany(c)}
+                                  className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center justify-between gap-4 transition-colors"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm select-none shrink-0">
+                                        {isParticulier ? "👤" : c.type_client === "Association" ? "🤝" : "🏢"}
+                                      </span>
+                                      <span className="font-semibold text-slate-800 text-sm truncate">{c.nom}</span>
+                                      <Badge variant="outline" className="text-[10px] py-0 px-1.5 font-normal select-none bg-slate-100 border-slate-200">
+                                        {c.type_client}
+                                      </Badge>
+                                    </div>
+                                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-slate-500 mt-1">
+                                      {c.email && <span className="truncate">{c.email}</span>}
+                                      {c.telephone && <span>• {c.telephone}</span>}
+                                      {c.adresse && <span className="truncate">• {c.adresse}</span>}
+                                    </div>
+                                  </div>
+                                  {provenance && (
+                                    <Badge className={`text-[10px] uppercase font-semibold select-none shrink-0 ${
+                                      provenance === "location" ? "bg-blue-100 text-blue-800 hover:bg-blue-100 border-blue-200" : "bg-purple-100 text-purple-800 hover:bg-purple-100 border-purple-200"
+                                    }`}>
+                                      {provenance === "location" ? "📦 Loc" : "🎵 Prest"}
+                                    </Badge>
+                                  )}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="name" className="text-slate-700">Nom complet *</Label>
