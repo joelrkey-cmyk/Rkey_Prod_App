@@ -2404,7 +2404,7 @@ api.delete('/contract-emails/templates/:id', authMiddleware, async (req, res) =>
 });
 api.post('/contract-emails/send', authMiddleware, async (req, res) => {
   try {
-    const { recipient_email, email_subject, email_body, pdf_base64, pdf_filename } = req.body;
+    const { recipient_email, email_subject, email_body, pdf_base64, pdf_filename, pdfs } = req.body;
     if (!recipient_email || !email_subject) {
       return res.status(400).json({ detail: 'Email destinataire et objet requis' });
     }
@@ -2414,11 +2414,20 @@ api.post('/contract-emails/send', authMiddleware, async (req, res) => {
     }
     const transporter = createTransporter(cfg);
     
-    const pdfAttachments = pdf_base64 ? [{
-      filename: pdf_filename || 'contrat_RkeyProd.pdf',
-      content: pdf_base64, encoding: 'base64',
-      contentType: 'application/pdf', contentDisposition: 'attachment'
-    }] : [];
+    let pdfAttachments = [];
+    if (pdfs && Array.isArray(pdfs)) {
+      pdfAttachments = pdfs.map(p => ({
+        filename: p.filename || 'contrat.pdf',
+        content: p.base64, encoding: 'base64',
+        contentType: 'application/pdf', contentDisposition: 'attachment'
+      }));
+    } else if (pdf_base64) {
+      pdfAttachments.push({
+        filename: pdf_filename || 'contrat_RkeyProd.pdf',
+        content: pdf_base64, encoding: 'base64',
+        contentType: 'application/pdf', contentDisposition: 'attachment'
+      });
+    }
     
     const { html: finalHtml, attachments } = convertDataUriToCid(
       email_body || '<p>Veuillez trouver ci-joint votre contrat.</p>',
@@ -2430,7 +2439,7 @@ api.post('/contract-emails/send', authMiddleware, async (req, res) => {
       to: recipient_email, cc: cfg.smtp_from,
       subject: email_subject, html: finalHtml, attachments
     });
-    res.json({ success: true, message: 'Contrat envoyé avec succès' });
+    res.json({ success: true, message: 'Contrats envoyés avec succès' });
   } catch (e) {
     console.error('Contract SMTP error:', e);
     res.status(500).json({ detail: `Erreur SMTP: ${e.message}` });

@@ -964,9 +964,37 @@ function Contracts2App() {
     }
   };
 
-  const openContractEmailModal = (contractData) => {
-    const contractHTML = generateContractHTMLLocal(contractData, null, signatureImages);
-    navigate('/contracts2/send-email', { state: { contractData, contractHTML } });
+  const openContractEmailModal = (contractDataOrId) => {
+    let contractData = contractDataOrId;
+    if (!contractData.client_info) {
+      contractData = { ...contractData, ...buildCurrentContractData() };
+    }
+    
+    let contractHTML = "";
+    let contractHTMLs = null;
+    const isMandat = contractData.contract_mode === 'mandataire' && !contractData.is_dirigeant;
+    const isEntreprise = contractData.contract_mode === 'entreprise' && !contractData.is_dirigeant;
+
+    if (isMandat) {
+        contractHTMLs = [
+          {
+             html: generateMandatHTML(contractData, companySettings),
+             filename: `Contrat_Mandat_RKeyProd_${(contractData.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+          },
+          {
+             html: generateArtisteHTML(contractData, resolveProfile),
+             filename: `Contrat_Artiste_${(contractData.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+          }
+        ];
+        // Keep a fallback combined html just in case
+        contractHTML = contractHTMLs[0].html + "\n<div class='page-break' style='page-break-after: always; height: 0; min-height: 0; margin: 0; padding: 0;'></div>\n" + contractHTMLs[1].html;
+    } else if (isEntreprise) {
+        contractHTML = generateEntrepriseHTML(contractData, companySettings);
+    } else {
+        contractHTML = generateContractHTMLLocal(contractData, null, signatureImages);
+    }
+
+    navigate('/contracts2/send-email', { state: { contractData, contractHTML, contractHTMLs } });
   };
 
   const handleSignatureValidated = (signatureData) => {
@@ -2031,8 +2059,8 @@ function Contracts2App() {
                     <div className="space-y-2">
                       <Label className="text-slate-700">Modèle de CGV *</Label>
                       <Select value={selectedCgvTemplate} onValueChange={handleCgvTemplateChange} required>
-                        <SelectTrigger className={`border-slate-300 focus:border-blue-500 ${!selectedCgvTemplate ? 'border-red-300' : ''}`}><SelectValue placeholder="Sélectionner un modèle *" /></SelectTrigger>
-                        <SelectContent>
+                        <SelectTrigger className={`bg-white border-slate-300 focus:border-blue-500 ${!selectedCgvTemplate ? 'border-red-300' : ''}`}><SelectValue placeholder="Sélectionner un modèle *" /></SelectTrigger>
+                        <SelectContent className="bg-white">
                           <SelectItem key="custom" value="custom">Personnalisé</SelectItem>
                           {Object.entries(cgvTemplates).map(([key, template]) => (<SelectItem key={key} value={key}>{template.name}</SelectItem>))}
                         </SelectContent>

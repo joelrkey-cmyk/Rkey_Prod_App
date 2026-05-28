@@ -93,17 +93,11 @@ export const ContractPreview = ({
         <CardContent>
           <div className="space-y-4">
             <Tabs value={standardTab} onValueChange={setStandardTab} className="w-full">
-              <TabsList className={`grid w-full mb-4 ${hasGuide ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <TabsList className="grid w-full mb-4 grid-cols-1">
                 <TabsTrigger value="contract" className="flex items-center gap-2">
                   <FileText className="h-4 w-4" />
                   <span>Contrat Administratif</span>
                 </TabsTrigger>
-                {hasGuide && (
-                  <TabsTrigger value="guide" className="flex items-center gap-2 text-amber-600">
-                    <Building className="h-4 w-4" />
-                    <span>Guide Organisation</span>
-                  </TabsTrigger>
-                )}
               </TabsList>
 
               <TabsContent value="contract">
@@ -114,98 +108,6 @@ export const ContractPreview = ({
                   dangerouslySetInnerHTML={{ __html: generateContractHTMLForPreview('contract-only') }}
                 />
               </TabsContent>
-
-              {hasGuide && (
-                <TabsContent value="guide">
-                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-sm flex justify-between items-center transition-all duration-300">
-                    <span className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></div>
-                      <span className="font-medium">Aperçu du Guide Complet:</span> Compilation en temps réel.
-                    </span>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={generateGuidePreview} 
-                      disabled={isGeneratingGuide}
-                      className="text-xs h-8 border-amber-300 hover:bg-amber-100"
-                    >
-                      {isGeneratingGuide ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                      Actualiser PDF
-                    </Button>
-                  </div>
-                  
-                  {isGeneratingGuide ? (
-                     <div className="flex flex-col items-center justify-center min-h-[400px] border-2 border-dashed border-amber-300 rounded-lg bg-amber-50/30 animate-pulse">
-                        <Loader2 className="h-10 w-10 animate-spin text-amber-500 mb-4" />
-                        <div className="text-amber-800 font-medium">Compilation en cours...</div>
-                        <p className="text-amber-600 text-xs mt-1">Nous fusionnons le déroulement avec vos PDFs sélectionnés.</p>
-                     </div>
-                  ) : guidePdfUrl ? (
-                    <div className="space-y-4">
-                      <div className="border border-amber-300 rounded-lg overflow-hidden bg-slate-100 shadow-inner relative group min-h-[600px]">
-                        <div className="flex flex-col items-center py-4 overflow-auto max-h-[700px] bg-slate-200 shadow-inner custom-scrollbar">
-                          <Document
-                            file={guidePdfUrl}
-                            onLoadSuccess={({ numPages: n }) => setNumPages(n)}
-                            loading={
-                              <div className="flex flex-col items-center justify-center h-[400px]">
-                                <Loader2 className="h-8 w-8 animate-spin text-amber-500 mb-2" />
-                                <span className="text-amber-700 text-sm">Chargement du PDF...</span>
-                              </div>
-                            }
-                            error={
-                              <div className="flex flex-col items-center justify-center h-[400px] text-red-500 bg-white m-4 rounded p-4 border border-red-200">
-                                <p className="font-medium">Erreur lors de l'affichage du guide</p>
-                                <p className="text-xs text-gray-500 mt-2">Votre navigateur bloque peut-être l'affichage direct.</p>
-                                <Button onClick={() => window.open(guidePdfUrl, '_blank')} variant="outline" size="sm" className="mt-4 border-red-200 text-red-600 hover:bg-red-50">
-                                  Ouvrir dans un nouvel onglet
-                                </Button>
-                              </div>
-                            }
-                          >
-                            <div className="flex flex-col items-center gap-6 pb-8">
-                              {numPages && Array.from({ length: numPages }, (_, i) => (
-                                <div key={i} className="shadow-2xl bg-white border border-gray-200" style={{ maxWidth: '100%' }}>
-                                   <Page 
-                                     pageNumber={i + 1} 
-                                     renderTextLayer={false} 
-                                     renderAnnotationLayer={false} 
-                                     width={Math.min(window.innerWidth - 80, 750)} 
-                                     loading={<div className="bg-white" style={{ width: '750px', height: '1000px' }}></div>}
-                                   />
-                                   <div className="bg-slate-50 border-t border-gray-100 py-1 px-3 text-[10px] text-gray-400 text-right italic">
-                                     Page {i + 1} / {numPages}
-                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          </Document>
-                        </div>
-
-                        <div className="absolute top-4 right-4 flex gap-2">
-                          <Button 
-                            size="sm" 
-                            variant="secondary" 
-                            onClick={() => window.open(guidePdfUrl, '_blank')}
-                            className="shadow-md bg-white/90 backdrop-blur hover:bg-white flex items-center gap-2"
-                          >
-                            <Eye className="h-4 w-4" />
-                            <span>Plein écran</span>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center min-h-[400px] border-2 border-dashed border-amber-300 rounded-lg bg-slate-50">
-                       <p className="text-slate-500 mb-4 text-sm">Le guide est composé de plusieurs PDF.</p>
-                       <Button onClick={generateGuidePreview} className="bg-amber-600 hover:bg-amber-700">
-                        <FileText className="h-4 w-4 mr-2" />
-                        Générer l'aperçu complet
-                       </Button>
-                    </div>
-                  )}
-                </TabsContent>
-              )}
             </Tabs>
 
             <div className="text-center space-y-4">
@@ -262,17 +164,11 @@ export const ContractPreview = ({
             </div>
 
             <Tabs defaultValue="contract" className="w-full">
-              <TabsList className={`grid w-full mb-4 ${hasGuide ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <TabsList className="grid w-full mb-4 grid-cols-1">
                 <TabsTrigger value="contract" className="flex items-center gap-2">
                   <FileText className="h-4 w-4" />
                   <span>Contrat Administratif</span>
                 </TabsTrigger>
-                {hasGuide && (
-                  <TabsTrigger value="guide" className="flex items-center gap-2 text-amber-600">
-                    <Building className="h-4 w-4" />
-                    <span>Guide Organisation</span>
-                  </TabsTrigger>
-                )}
               </TabsList>
 
               <TabsContent value="contract">
@@ -283,98 +179,6 @@ export const ContractPreview = ({
                   dangerouslySetInnerHTML={{ __html: generateEntrepriseHTMLForPreview() }}
                 />
               </TabsContent>
-
-              {hasGuide && (
-                <TabsContent value="guide">
-                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-sm flex justify-between items-center transition-all duration-300">
-                    <span className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></div>
-                      <span className="font-medium">Aperçu du Guide Complet:</span> Compilation en temps réel.
-                    </span>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={generateGuidePreview} 
-                      disabled={isGeneratingGuide}
-                      className="text-xs h-8 border-amber-300 hover:bg-amber-100"
-                    >
-                      {isGeneratingGuide ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                      Actualiser PDF
-                    </Button>
-                  </div>
-                  
-                  {isGeneratingGuide ? (
-                     <div className="flex flex-col items-center justify-center min-h-[400px] border-2 border-dashed border-amber-300 rounded-lg bg-amber-50/30 animate-pulse">
-                        <Loader2 className="h-10 w-10 animate-spin text-amber-500 mb-4" />
-                        <div className="text-amber-800 font-medium">Compilation en cours...</div>
-                        <p className="text-amber-600 text-xs mt-1">Nous fusionnons le déroulement avec vos PDFs sélectionnés.</p>
-                     </div>
-                  ) : guidePdfUrl ? (
-                    <div className="space-y-4">
-                      <div className="border border-amber-300 rounded-lg overflow-hidden bg-slate-100 shadow-inner relative group min-h-[600px]">
-                        <div className="flex flex-col items-center py-4 overflow-auto max-h-[700px] bg-slate-200 shadow-inner custom-scrollbar">
-                          <Document
-                            file={guidePdfUrl}
-                            onLoadSuccess={({ numPages: n }) => setNumPages(n)}
-                            loading={
-                              <div className="flex flex-col items-center justify-center h-[400px]">
-                                <Loader2 className="h-8 w-8 animate-spin text-amber-500 mb-2" />
-                                <span className="text-amber-700 text-sm">Chargement du PDF...</span>
-                              </div>
-                            }
-                            error={
-                              <div className="flex flex-col items-center justify-center h-[400px] text-red-500 bg-white m-4 rounded p-4 border border-red-200">
-                                <p className="font-medium">Erreur lors de l'affichage du guide</p>
-                                <p className="text-xs text-gray-500 mt-2">Votre navigateur bloque peut-être l'affichage direct.</p>
-                                <Button onClick={() => window.open(guidePdfUrl, '_blank')} variant="outline" size="sm" className="mt-4 border-red-200 text-red-600 hover:bg-red-50">
-                                  Ouvrir dans un nouvel onglet
-                                </Button>
-                              </div>
-                            }
-                          >
-                            <div className="flex flex-col items-center gap-6 pb-8">
-                              {numPages && Array.from({ length: numPages }, (_, i) => (
-                                <div key={i} className="shadow-2xl bg-white border border-gray-200" style={{ maxWidth: '100%' }}>
-                                   <Page 
-                                     pageNumber={i + 1} 
-                                     renderTextLayer={false} 
-                                     renderAnnotationLayer={false} 
-                                     width={Math.min(window.innerWidth - 80, 750)} 
-                                     loading={<div className="bg-white" style={{ width: '750px', height: '1000px' }}></div>}
-                                   />
-                                   <div className="bg-slate-50 border-t border-gray-100 py-1 px-3 text-[10px] text-gray-400 text-right italic">
-                                     Page {i + 1} / {numPages}
-                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          </Document>
-                        </div>
-
-                        <div className="absolute top-4 right-4 flex gap-2">
-                          <Button 
-                            size="sm" 
-                            variant="secondary" 
-                            onClick={() => window.open(guidePdfUrl, '_blank')}
-                            className="shadow-md bg-white/90 backdrop-blur hover:bg-white flex items-center gap-2"
-                          >
-                            <Eye className="h-4 w-4" />
-                            <span>Plein écran</span>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center min-h-[400px] border-2 border-dashed border-amber-300 rounded-lg bg-slate-50">
-                       <p className="text-slate-500 mb-4 text-sm">Le guide est composé de plusieurs PDF.</p>
-                       <Button onClick={generateGuidePreview} className="bg-amber-600 hover:bg-amber-700">
-                        <FileText className="h-4 w-4 mr-2" />
-                        Générer l'aperçu complet
-                       </Button>
-                    </div>
-                  )}
-                </TabsContent>
-              )}
             </Tabs>
 
             <div className="flex justify-center gap-4 mt-4">
@@ -420,7 +224,7 @@ export const ContractPreview = ({
 
           {/* Tabs pour basculer entre les deux documents */}
           <Tabs value={mandatTab} onValueChange={setMandatTab} className="w-full">
-            <TabsList className={`grid w-full mb-4 ${hasGuide ? 'grid-cols-3' : 'grid-cols-2'}`}>
+            <TabsList className="grid w-full mb-4 grid-cols-2">
               <TabsTrigger value="mandat" className="flex items-center gap-2" data-testid="tab-mandat">
                 <Building className="h-4 w-4" />
                 <span className="text-xs sm:text-sm">Doc 1 — Mandat R'KEY</span>
@@ -429,12 +233,6 @@ export const ContractPreview = ({
                 <User className="h-4 w-4" />
                 <span className="text-xs sm:text-sm">Doc 2 — Artiste {artisteName || 'DJ'}</span>
               </TabsTrigger>
-              {hasGuide && (
-                <TabsTrigger value="guide" className="flex items-center gap-2 text-amber-600" data-testid="tab-guide">
-                  <FileText className="h-4 w-4" />
-                  <span className="text-xs sm:text-sm">Doc 3 — Guide</span>
-                </TabsTrigger>
-              )}
             </TabsList>
 
             <TabsContent value="mandat">
@@ -464,103 +262,6 @@ export const ContractPreview = ({
                 </Button>
               </div>
             </TabsContent>
-
-            {hasGuide && (
-              <TabsContent value="guide">
-                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-sm flex justify-between items-center transition-all duration-300">
-                  <span className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></div>
-                    <span className="font-medium">Aperçu du Guide Complet:</span> Compilation en temps réel.
-                  </span>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={generateGuidePreview} 
-                    disabled={isGeneratingGuide}
-                    className="text-xs h-8 border-amber-300 hover:bg-amber-100"
-                  >
-                    {isGeneratingGuide ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
-                    Actualiser PDF
-                  </Button>
-                </div>
-                
-                {isGeneratingGuide ? (
-                   <div className="flex flex-col items-center justify-center min-h-[400px] border-2 border-dashed border-amber-300 rounded-lg bg-amber-50/30 animate-pulse">
-                      <Loader2 className="h-10 w-10 animate-spin text-amber-500 mb-4" />
-                      <div className="text-amber-800 font-medium">Compilation en cours...</div>
-                      <p className="text-amber-600 text-xs mt-1">Nous fusionnons le déroulement avec vos PDFs sélectionnés.</p>
-                   </div>
-                ) : guidePdfUrl ? (
-                  <div className="space-y-4">
-                    <div className="border border-amber-300 rounded-lg overflow-hidden bg-slate-100 shadow-inner relative group min-h-[600px]">
-                      <div className="flex flex-col items-center py-4 overflow-auto max-h-[700px] bg-slate-200 shadow-inner custom-scrollbar">
-                        <Document
-                          file={guidePdfUrl}
-                          onLoadSuccess={({ numPages: n }) => setNumPages(n)}
-                          loading={
-                            <div className="flex flex-col items-center justify-center h-[400px]">
-                              <Loader2 className="h-8 w-8 animate-spin text-amber-500 mb-2" />
-                              <span className="text-amber-700 text-sm">Chargement du PDF...</span>
-                            </div>
-                          }
-                          error={
-                            <div className="flex flex-col items-center justify-center h-[400px] text-red-500 bg-white m-4 rounded p-4 border border-red-200">
-                              <p className="font-medium">Erreur lors de l'affichage du guide</p>
-                              <p className="text-xs text-gray-500 mt-2">Votre navigateur bloque peut-être l'affichage direct.</p>
-                              <Button onClick={() => window.open(guidePdfUrl, '_blank')} variant="outline" size="sm" className="mt-4 border-red-200 text-red-600 hover:bg-red-50">
-                                Ouvrir dans un nouvel onglet
-                              </Button>
-                            </div>
-                          }
-                        >
-                          <div className="flex flex-col items-center gap-6 pb-8">
-                            {numPages && Array.from({ length: numPages }, (_, i) => (
-                              <div key={i} className="shadow-2xl bg-white border border-gray-200" style={{ maxWidth: '100%' }}>
-                                 <Page 
-                                   pageNumber={i + 1} 
-                                   renderTextLayer={false} 
-                                   renderAnnotationLayer={false} 
-                                   width={Math.min(window.innerWidth - 80, 750)} 
-                                   loading={<div className="bg-white" style={{ width: '750px', height: '1000px' }}></div>}
-                                 />
-                                 <div className="bg-slate-50 border-t border-gray-100 py-1 px-3 text-[10px] text-gray-400 text-right italic">
-                                   Page {i + 1} / {numPages}
-                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        </Document>
-                      </div>
-
-                      <div className="absolute top-4 right-4 flex gap-2">
-                        <Button 
-                          size="sm" 
-                          variant="secondary" 
-                          onClick={() => window.open(guidePdfUrl, '_blank')}
-                          className="shadow-md bg-white/90 backdrop-blur hover:bg-white flex items-center gap-2"
-                        >
-                          <Eye className="h-4 w-4" />
-                          <span>Plein écran</span>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center min-h-[400px] border-2 border-dashed border-amber-300 rounded-lg bg-slate-50">
-                     <p className="text-slate-500 mb-4 text-sm">Le guide est composé de plusieurs PDF.</p>
-                     <Button onClick={generateGuidePreview} className="bg-amber-600 hover:bg-amber-700">
-                      <FileText className="h-4 w-4 mr-2" />
-                      Générer l'aperçu complet
-                     </Button>
-                  </div>
-                )}
-                <div className="flex justify-center gap-4 mt-4">
-                  <Button onClick={onExportPDF} className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-3">
-                    <Download className="h-5 w-5 mr-2" />3. Télécharger Guide Organisation
-                  </Button>
-                </div>
-              </TabsContent>
-            )}
           </Tabs>
 
           {/* Send email button */}

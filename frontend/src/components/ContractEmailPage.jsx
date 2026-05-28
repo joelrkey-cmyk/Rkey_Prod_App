@@ -57,6 +57,7 @@ const ContractEmailPage = () => {
   const navigate = useNavigate();
   const contractData = location.state?.contractData;
   const contractHTML = location.state?.contractHTML;
+  const contractHTMLs = location.state?.contractHTMLs;
 
   // Email states
   const [recipientEmail, setRecipientEmail] = useState("");
@@ -316,88 +317,103 @@ const ContractEmailPage = () => {
       const finalSubject = replaceVariables(emailSubject, selectedSubmission);
       const finalBody = replaceVariables(emailBody, selectedSubmission);
 
-      // Generate PDF from contract HTML using html2canvas + jsPDF (same as export)
-      toast.info("Génération du PDF en cours...", { duration: 5000 });
+      toast.info("Génération du(des) PDF en cours...", { duration: 5000 });
       let pdfBase64 = '';
       let pdfFilename = `contrat_RkeyProd_${eventDateFormatted}.pdf`;
-      let tempContainer = null;
-      try {
-        if (!window.jspdf || !window.jspdf.jsPDF) {
-          throw new Error('jsPDF non disponible');
-        }
-        
-        const pdf = new window.jspdf.jsPDF({
-          orientation: 'portrait', unit: 'mm', format: 'a4', compress: true
-        });
-        const pageWidth = 210;
-        const margin = 10;
-        const availableWidth = pageWidth - (2 * margin);
-        const availableHeight = 297 - (2 * margin);
-        
-        tempContainer = document.createElement('div');
-        tempContainer.style.position = 'fixed';
-        tempContainer.style.top = '-9999px';
-        tempContainer.style.left = '-9999px';
-        tempContainer.style.width = '794px';
-        tempContainer.style.background = 'white';
-        tempContainer.style.padding = '20px';
-        tempContainer.innerHTML = contractHTML;
-        document.body.appendChild(tempContainer);
-        
-        await new Promise(r => setTimeout(r, 1500));
-        
-        // Detect pages
-        const allPages = tempContainer.querySelectorAll('[id^="pdf-page-"]');
-        let pdfPageAdded = false;
-        
-        if (allPages.length > 0) {
-          // Multi-page contract
-          for (let i = 0; i < allPages.length; i++) {
-            const pageEl = allPages[i];
-            if (pageEl && pageEl.innerHTML.trim()) {
-              if (pdfPageAdded) pdf.addPage();
-              try {
-                const canvas = await window.html2canvas(pageEl, {
-                  scale: 1.4, useCORS: true, allowTaint: true,
-                  backgroundColor: '#ffffff', width: 794,
-                  height: Math.min(1123, pageEl.scrollHeight),
-                  logging: false, removeContainer: false
-                });
-                const imgData = canvas.toDataURL('image/jpeg', 0.88);
-                const imgWidth = availableWidth;
-                const imgHeight = (canvas.height * imgWidth) / canvas.width;
-                if (imgHeight <= availableHeight) {
-                  pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight, undefined, 'FAST');
-                } else {
-                  const scaledHeight = availableHeight;
-                  const scaledWidth = (canvas.width * scaledHeight) / canvas.height;
-                  pdf.addImage(imgData, 'JPEG', margin, margin, scaledWidth, scaledHeight, undefined, 'FAST');
+      let pdfs = [];
+
+      const generateSinglePdfBase64 = async (htmlToRender) => {
+        let tempContainer = null;
+        try {
+          if (!window.jspdf || !window.jspdf.jsPDF) {
+            throw new Error('jsPDF non disponible');
+          }
+          
+          const pdf = new window.jspdf.jsPDF({
+            orientation: 'portrait', unit: 'mm', format: 'a4', compress: true
+          });
+          const pageWidth = 210;
+          const margin = 10;
+          const availableWidth = pageWidth - (2 * margin);
+          const availableHeight = 297 - (2 * margin);
+          
+          tempContainer = document.createElement('div');
+          tempContainer.style.position = 'fixed';
+          tempContainer.style.top = '-9999px';
+          tempContainer.style.left = '-9999px';
+          tempContainer.style.width = '794px';
+          tempContainer.style.background = 'white';
+          tempContainer.style.padding = '20px';
+          tempContainer.innerHTML = htmlToRender;
+          document.body.appendChild(tempContainer);
+          
+          await new Promise(r => setTimeout(r, 1500));
+          
+          const allPages = tempContainer.querySelectorAll('[id^="pdf-page-"]');
+          let pdfPageAdded = false;
+          
+          if (allPages.length > 0) {
+            for (let i = 0; i < allPages.length; i++) {
+              const pageEl = allPages[i];
+              if (pageEl && pageEl.innerHTML.trim()) {
+                if (pdfPageAdded) pdf.addPage();
+                try {
+                  const canvas = await window.html2canvas(pageEl, {
+                    scale: 1.4, useCORS: true, allowTaint: true,
+                    backgroundColor: '#ffffff', width: 794,
+                    height: Math.min(1123, pageEl.scrollHeight),
+                    logging: false, removeContainer: false
+                  });
+                  const imgData = canvas.toDataURL('image/jpeg', 0.88);
+                  const imgWidth = availableWidth;
+                  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                  if (imgHeight <= availableHeight) {
+                    pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight, undefined, 'FAST');
+                  } else {
+                    const scaledHeight = availableHeight;
+                    const scaledWidth = (canvas.width * scaledHeight) / canvas.height;
+                    pdf.addImage(imgData, 'JPEG', margin, margin, scaledWidth, scaledHeight, undefined, 'FAST');
+                  }
+                  pdfPageAdded = true;
+                } catch (pageErr) {
+                  console.warn('Capture page error:', pageErr);
                 }
-                pdfPageAdded = true;
-              } catch (pageErr) {
-                console.warn('Capture page error:', pageErr);
               }
+            }
+          } else {
+            const canvas = await window.html2canvas(tempContainer, {
+              scale: 1.4, useCORS: true, allowTaint: true,
+              backgroundColor: '#ffffff', width: 794, logging: false
+            });
+            const imgData = canvas.toDataURL('image/jpeg', 0.88);
+            const imgWidth = availableWidth;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, Math.min(imgHeight, availableHeight), undefined, 'FAST');
+          }
+          
+          return pdf.output('datauristring').split(',')[1] || '';
+        } finally {
+          try { if (tempContainer && tempContainer.parentNode) tempContainer.parentNode.removeChild(tempContainer); } catch(e) {}
+        }
+      };
+
+      try {
+        if (contractHTMLs && Array.isArray(contractHTMLs)) {
+          for (let doc of contractHTMLs) {
+            const b64 = await generateSinglePdfBase64(doc.html);
+            if (b64) {
+              pdfs.push({
+                base64: b64,
+                filename: doc.filename
+              });
             }
           }
         } else {
-          // Single block contract
-          const canvas = await window.html2canvas(tempContainer, {
-            scale: 1.4, useCORS: true, allowTaint: true,
-            backgroundColor: '#ffffff', width: 794, logging: false
-          });
-          const imgData = canvas.toDataURL('image/jpeg', 0.88);
-          const imgWidth = availableWidth;
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, Math.min(imgHeight, availableHeight), undefined, 'FAST');
+          pdfBase64 = await generateSinglePdfBase64(contractHTML);
         }
-        
-        pdfBase64 = pdf.output('datauristring').split(',')[1] || '';
-        console.log('PDF generated, base64 length:', pdfBase64.length);
       } catch (pdfError) {
         console.error('PDF generation error:', pdfError);
         toast.error("Erreur de génération PDF, envoi sans pièce jointe");
-      } finally {
-        try { if (tempContainer && tempContainer.parentNode) tempContainer.parentNode.removeChild(tempContainer); } catch(e) {}
       }
 
       const requestData = {
@@ -408,7 +424,8 @@ const ContractEmailPage = () => {
         email_subject: finalSubject,
         email_body: finalBody,
         pdf_base64: pdfBase64,
-        pdf_filename: pdfFilename
+        pdf_filename: pdfFilename,
+        pdfs: pdfs.length > 0 ? pdfs : null
       };
 
       const response = await apiService.post('/contract-emails/send', requestData);
