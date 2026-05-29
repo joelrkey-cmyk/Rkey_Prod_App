@@ -1,33 +1,13 @@
-const CACHE_NAME = 'rkey-prod-v1';
-const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/favicon.svg',
-  '/manifest.json'
-];
+const CACHE_NAME = 'rkey-prod-v2';
 
-// Perform install steps
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        return cache.addAll(ASSETS_TO_CACHE).catch(() => {
-          // Ignore failures to cache specific files during install
-        });
-      })
-  );
-  self.skipWaiting();
-});
-
-// Active service worker and clear old caches
+// Active service worker and clear old caches (including old rkey-prod-v1 cache)
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
+          // Clear all caches to purge stale index.html from old service workers
+          return caches.delete(cacheName);
         })
       );
     })
@@ -35,27 +15,8 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Cache-first or network fallback
-self.addEventListener('fetch', (event) => {
-  // Only handle standard http/https schemes
-  if (!event.request.url.startsWith('http')) return;
-
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        if (response) {
-          // Serve from cache, but fetch fresh in background to update cache for next time
-          fetch(event.request).then((freshResponse) => {
-            if (freshResponse && freshResponse.status === 200 && event.request.method === 'GET') {
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, freshResponse));
-            }
-          }).catch(() => {});
-          return response;
-        }
-        return fetch(event.request);
-      })
-  );
-});
+// We DO NOT intercept fetch requests to avoid caching stale index.html.
+// Standard HTTP Cache-Control headers of the web server handle asset caching reliably.
 
 // Handle push notification events
 self.addEventListener('push', (event) => {

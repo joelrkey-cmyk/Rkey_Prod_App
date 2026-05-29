@@ -7,7 +7,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Checkbox } from "./ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { ArrowLeft, Plus, Edit, Trash2, Code, User, Music, Award, Instagram, Facebook, Youtube, Globe, Mail, Phone, X, Eye, Upload, Image } from "lucide-react";
+import { ArrowLeft, Plus, Edit, Trash2, Code, User, Music, Award, Instagram, Facebook, Youtube, Globe, Mail, Phone, X, Eye, Upload, Image, Paperclip, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -70,6 +70,9 @@ const DjProfilesApp = () => {
   const [selectedProfileForWidget, setSelectedProfileForWidget] = useState(null);
   const [selectedProfileForPreview, setSelectedProfileForPreview] = useState(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [showAttachmentsDialog, setShowAttachmentsDialog] = useState(false);
+  const [selectedProfileForAttachments, setSelectedProfileForAttachments] = useState(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
   
   const [profileForm, setProfileForm] = useState({
     nom_artistique: "",
@@ -443,6 +446,109 @@ const DjProfilesApp = () => {
     }
   };
 
+  const handleAttachmentUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    
+    const allowedTypes = [
+      "application/pdf", 
+      "image/png", 
+      "image/jpeg", 
+      "image/jpg", 
+      "image/heic", 
+      "image/heif"
+    ];
+
+    setUploadingAttachment(true);
+    const token = localStorage.getItem('access_token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      const isHeic = fileExt === 'heic' || fileExt === 'heif';
+      if (!allowedTypes.includes(file.type) && !isHeic) {
+        toast.error(`Format non supporté pour "${file.name}". PDF, PNG, JPG ou HEIC uniquement.`);
+        continue;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/dj-fiches/${selectedProfileForAttachments.id}/attachments`, {
+          method: "POST",
+          headers,
+          body: formData
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            toast.success(`"${file.name}" a été ajouté avec succès !`);
+            setSelectedProfileForAttachments(prev => {
+              const updatedAttachments = [...(prev.attachments || []), result.document];
+              return { ...prev, attachments: updatedAttachments };
+            });
+          } else {
+            toast.error(`Erreur d'envoi pour "${file.name}"`);
+          }
+        } else {
+          const errRes = await response.json().catch(() => ({}));
+          toast.error(`Erreur pour "${file.name}" : ${errRes.error || 'Statut ' + response.status}`);
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error(`Erreur réseau pour "${file.name}"`);
+      }
+    }
+    
+    setUploadingAttachment(false);
+    e.target.value = null; // reset input
+    fetchProfiles(); // reload lists
+  };
+
+  const handlePreviewAttachment = async (doc) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${BACKEND_URL}/api/dj-fiches/${selectedProfileForAttachments.id}/attachments/${doc.id}?preview=true`, { headers });
+      if (!response.ok) throw new Error("Impossible de récupérer le document");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'ouverture du document");
+    }
+  };
+
+  const handleDeleteAttachment = async (docId) => {
+    if (!window.confirm("Voulez-vous vraiment supprimer cette pièce jointe ?")) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${BACKEND_URL}/api/dj-fiches/${selectedProfileForAttachments.id}/attachments/${docId}`, {
+        method: "DELETE",
+        headers
+      });
+      
+      if (response.ok) {
+        toast.success("Pièce jointe supprimée !");
+        setSelectedProfileForAttachments(prev => ({
+          ...prev,
+          attachments: (prev.attachments || []).filter(a => a.id !== docId)
+        }));
+        fetchProfiles();
+      } else {
+        toast.error("Erreur lors de la suppression de la pièce jointe");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau lors de la suppression");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-amber-50">
       <div className="container mx-auto py-8 px-4">
@@ -636,6 +742,18 @@ const DjProfilesApp = () => {
                     >
                       <Code className="w-4 h-4 mr-1" />
                       Widget
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedProfileForAttachments(profile);
+                        setShowAttachmentsDialog(true);
+                      }}
+                      className="flex-1 border-purple-300 text-purple-600 hover:bg-purple-50"
+                    >
+                      <Paperclip className="w-4 h-4 mr-1" />
+                      PJ ({profile.attachments?.length || 0})
                     </Button>
                     <Button
                       variant="outline"
@@ -1090,6 +1208,117 @@ const DjProfilesApp = () => {
               >
                 <Code className="mr-2 h-4 w-4" />
                 Obtenir le code widget
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog Pièces Jointes */}
+        <Dialog open={showAttachmentsDialog} onOpenChange={setShowAttachmentsDialog}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-purple-700">
+                <Paperclip className="w-5 h-5 text-purple-600" />
+                Pièces Jointes & Contrats - {selectedProfileForAttachments?.nom_artistique}
+              </DialogTitle>
+              <DialogDescription>
+                Gérez les documents de ce DJ (justificatifs, contrats signés). Les formats acceptés sont PDF, PNG, JPG et HEIC.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-4">
+              {/* File upload zone */}
+              <div className="border-2 border-dashed border-purple-200 hover:border-purple-400 bg-purple-50/50 rounded-xl p-6 transition-all">
+                <div className="flex flex-col items-center text-center">
+                  <div className="p-3 bg-white rounded-full shadow-sm text-purple-600 mb-3">
+                    <Upload className="w-6 h-6 animate-pulse" />
+                  </div>
+                  <h3 className="font-semibold text-gray-700 mb-1 text-sm">Téléverser de nouveaux documents</h3>
+                  <p className="text-xs text-gray-500 mb-4 max-w-xs">PDF, PNG, JPG, JPEG, HEIC (les images seront automatiquement converties en documents PDF)</p>
+                  
+                  <label className="cursor-pointer">
+                    <div className="bg-purple-600 hover:bg-purple-700 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5">
+                      {uploadingAttachment ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Traitement en cours...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-4 h-4" />
+                          Sélectionner des fichiers
+                        </>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      accept="application/pdf, image/png, image/jpeg, image/jpg, .heic, .heif"
+                      className="hidden"
+                      onChange={handleAttachmentUpload}
+                      disabled={uploadingAttachment}
+                      multiple
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* List of attachments */}
+              <div className="space-y-3">
+                <h4 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-purple-600" />
+                  Documents associés ({selectedProfileForAttachments?.attachments?.length || 0})
+                </h4>
+                
+                {(!selectedProfileForAttachments?.attachments || selectedProfileForAttachments.attachments.length === 0) ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                    <FileText className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">Aucun document n'a encore été associé à ce profil.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2.5 max-h-[40vh] overflow-y-auto pr-1">
+                    {selectedProfileForAttachments.attachments.map((doc) => (
+                      <div key={doc.id} className="flex items-center justify-between p-3.5 bg-white border border-gray-100 rounded-lg shadow-sm hover:border-purple-200 hover:shadow-md transition-all">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="p-2 bg-red-50 text-red-600 rounded">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-gray-700 truncate" title={doc.filename}>{doc.filename}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              Enregistré le {new Date(doc.uploaded_at).toLocaleDateString("fr-FR", { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handlePreviewAttachment(doc)}
+                            className="h-8 px-2 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                            title="Ouvrir / Télécharger"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteAttachment(doc.id)}
+                            className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAttachmentsDialog(false)}>
+                Fermer
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -146,7 +146,7 @@ const Navigation = () => {
                 >
                   <Icon className="w-[18px] h-[18px]" />
                   {item.key === 'dj-client' && djClientNotifications > 0 && (
-                    <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center shadow-sm animate-bounce z-15 border border-white">
+                    <span className="absolute top-0 right-0 h-4 min-w-[16px] px-1 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center shadow-sm animate-bounce z-15 border border-white">
                       {djClientNotifications}
                     </span>
                   )}

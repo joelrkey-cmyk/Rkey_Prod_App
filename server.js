@@ -1595,6 +1595,93 @@ api.delete('/dj-fiches/:id', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 
+// DJ Profile Attachments
+api.post('/dj-fiches/:id/attachments', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const docId = uuidv4();
+  const decodedOriginalname = decodeMulterFilename(req.file.originalname);
+  
+  try {
+    const { buffer: pdfBuffer, filename: convertedFilename } = await convertToPdfBuffer(req.file.buffer, decodedOriginalname, req.file.mimetype);
+    
+    const newDoc = {
+      id: docId,
+      filename: convertedFilename,
+      uploaded_at: new Date().toISOString()
+    };
+    
+    if (bucket) {
+      const gcsPath = `dj-profiles-attachments/${req.params.id}/${docId}.pdf`;
+      const file = bucket.file(gcsPath);
+      await file.save(pdfBuffer, { metadata: { contentType: 'application/pdf' } });
+      newDoc.gcs_path = gcsPath;
+    } else {
+      newDoc.pdf_data = pdfBuffer.toString('base64');
+    }
+    
+    await db.collection('dj_profiles').updateOne(
+      { id: req.params.id }, 
+      { $push: { attachments: newDoc } }
+    );
+    
+    res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, uploaded_at: newDoc.uploaded_at } });
+  } catch (err) {
+    console.error("[DjProfileAttachment] Error:", err);
+    res.status(500).json({ error: "Erreur lors de la conversion ou de l'upload: " + err.message });
+  }
+});
+
+api.get('/dj-fiches/:id/attachments/:docId', authMiddleware, async (req, res) => {
+  const profile = await db.collection('dj_profiles').findOne({ id: req.params.id });
+  if (!profile || !profile.attachments) return res.status(404).json({ error: 'Not found' });
+  const doc = profile.attachments.find(d => d.id === req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  
+  const isInline = req.query.preview === 'true' || req.query.inline === 'true';
+  const disposition = isInline ? 'inline' : 'attachment';
+
+  if (doc.gcs_path && bucket) {
+    const file = bucket.file(doc.gcs_path);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
+    file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
+  } else if (doc.pdf_data) {
+    const buffer = Buffer.from(doc.pdf_data, 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
+    res.send(buffer);
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
+api.delete('/dj-fiches/:id/attachments/:docId', authMiddleware, async (req, res) => {
+  try {
+    const profile = await db.collection('dj_profiles').findOne({ id: req.params.id });
+    if (!profile || !profile.attachments) return res.status(404).json({ error: 'Not found' });
+    const doc = profile.attachments.find(d => d.id === req.params.docId);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+    if (doc.gcs_path && bucket) {
+      try {
+        await bucket.file(doc.gcs_path).delete();
+      } catch (err) {
+        console.error("Error deleting GCS file:", err);
+      }
+    }
+
+    await db.collection('dj_profiles').updateOne(
+      { id: req.params.id },
+      { $pull: { attachments: { id: req.params.docId } } }
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error deleting attachment:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 api.post('/dj-fiches/migrate-to-gcs', authMiddleware, async (req, res) => {
   if (!getGcsBucket()) return res.status(500).json({ detail: 'GCS not configured' });
   try {
