@@ -6,7 +6,7 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { 
   FileText, Calendar, MapPin, Music, Printer, Edit, Send, 
-  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye 
+  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye, Paperclip
 } from 'lucide-react';
 
 export const ContractHistory = ({
@@ -28,7 +28,8 @@ export const ContractHistory = ({
   onRestore,
   onPermanentDelete,
   onMarkArchivedAsUnsigned,
-  onDeleteArchived
+  onDeleteArchived,
+  onManageAttachments
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterYear, setFilterYear] = useState('All');
@@ -217,7 +218,18 @@ export const ContractHistory = ({
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center space-x-3">
-                          <h3 className="font-semibold text-lg text-gray-900">{contract.client_info.name}</h3>
+                          {!showTrash && !showArchive ? (
+                            <h3 
+                              onClick={() => onLoadContract(contract)} 
+                              className="font-semibold text-lg text-gray-900 hover:text-blue-600 hover:underline cursor-pointer flex items-center gap-1.5 group transition-colors"
+                              title="Cliquer pour modifier le contrat"
+                            >
+                              {contract.client_info.name}
+                              <Edit className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500" />
+                            </h3>
+                          ) : (
+                            <h3 className="font-semibold text-lg text-gray-900">{contract.client_info.name}</h3>
+                          )}
                           {contract.dj_profile_data?.nom_artistique && (
                             <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 text-xs" data-testid={`artist-badge-${contract.id}`}>
                               {contract.dj_profile_data.nom_artistique}
@@ -268,12 +280,6 @@ export const ContractHistory = ({
                       <div className="flex space-x-2">
                         {!showTrash && !showArchive && (
                           <>
-                            <Button onClick={() => onPrintContract(contract)} variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50" data-testid={`pdf-btn-${contract.id}`}>
-                              <Printer className="h-4 w-4 mr-1" />PDF
-                            </Button>
-                            <Button onClick={() => onLoadContract(contract)} variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50" data-testid={`edit-btn-${contract.id}`}>
-                              <Edit className="h-4 w-4 mr-1" />Modifier
-                            </Button>
                             <Button onClick={() => onMarkAsSent(contract.id)} variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50" data-testid={`sent-btn-${contract.id}`}>
                               <Send className="h-4 w-4 mr-1" />Envoyé
                             </Button>
@@ -288,8 +294,8 @@ export const ContractHistory = ({
 
                         {showArchive && (
                           <>
-                            <Button onClick={() => onPrintContract(contract)} variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50">
-                              <Printer className="h-4 w-4 mr-1" />PDF
+                            <Button onClick={() => onManageAttachments(contract)} variant="outline" size="sm" className="text-emerald-800 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-900 font-medium">
+                              <Paperclip className="h-4 w-4 mr-1 text-emerald-700" />Pièces Jointes ({contract.event_documents?.length || 0})
                             </Button>
                             <Button onClick={() => onPreviewContract(contract)} variant="outline" size="sm" className="text-gray-600 border-gray-200 hover:bg-gray-50">
                               <Eye className="h-4 w-4 mr-1" />Aperçu

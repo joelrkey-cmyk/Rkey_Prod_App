@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Separator } from "./ui/separator";
-import { X, Search, Users, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus } from "lucide-react";
+import { X, Search, Users, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus, Paperclip, Upload, Loader2, Eye } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { toast } from "sonner";
 import apiService from "../services/api";
 import FormSubmissionsSelector from "./FormSubmissionsSelector";
@@ -183,6 +184,12 @@ function Contracts2App() {
   const [selectedPdfNotes, setSelectedPdfNotes] = useState([]);
 
   const [selectedSubmission, setSelectedSubmission] = useState(null);
+
+  const [showAttachmentsDialog, setShowAttachmentsDialog] = useState(false);
+  const [selectedContractForAttachments, setSelectedContractForAttachments] = useState(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+  const [previewPdfFilename, setPreviewPdfFilename] = useState("");
 
   const [crmCompanies, setCrmCompanies] = useState([]);
   const [searchCrmQuery, setSearchCrmQuery] = useState("");
@@ -543,6 +550,122 @@ function Contracts2App() {
   const loadArchivedContracts = async () => {
     try { setArchivedContracts((await axios.get(`${API}/contracts2/archived`)).data); }
     catch (error) { toast.error("Erreur lors du chargement des archives"); console.error(error); }
+  };
+
+  const handleManageAttachments = (contract) => {
+    setSelectedContractForAttachments(contract);
+    setShowAttachmentsDialog(true);
+  };
+
+  const handleAttachmentUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    
+    const allowedTypes = [
+      "application/pdf", 
+      "image/png", 
+      "image/jpeg", 
+      "image/jpg", 
+      "image/heic", 
+      "image/heif"
+    ];
+
+    setUploadingAttachment(true);
+    const token = localStorage.getItem('access_token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      const isHeic = fileExt === 'heic' || fileExt === 'heif';
+      if (!allowedTypes.includes(file.type) && !isHeic) {
+        toast.error(`Format non supporté pour "${file.name}". PDF, PNG, JPG ou HEIC uniquement.`);
+        continue;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", "Administrative");
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/contracts2/${selectedContractForAttachments.id}/documents`, {
+          method: "POST",
+          headers,
+          body: formData
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            toast.success(`"${file.name}" a été ajouté avec succès !`);
+            
+            // local update in state
+            setSelectedContractForAttachments(prev => {
+              const updatedDocs = [...(prev.event_documents || []), result.document];
+              return { ...prev, event_documents: updatedDocs };
+            });
+          } else {
+            toast.error(`Erreur d'envoi pour "${file.name}"`);
+          }
+        } else {
+          const errRes = await response.json().catch(() => ({}));
+          toast.error(`Erreur pour "${file.name}" : ${errRes.error || 'Statut ' + response.status}`);
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error(`Erreur réseau pour "${file.name}"`);
+      }
+    }
+    
+    setUploadingAttachment(false);
+    e.target.value = null; // reset input
+    
+    loadContracts();
+    loadArchivedContracts();
+  };
+
+  const handlePreviewAttachment = async (doc) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${BACKEND_URL}/api/contracts2/${selectedContractForAttachments.id}/documents/${doc.id}?preview=true`, { headers });
+      if (!response.ok) throw new Error("Impossible de récupérer le document");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setPreviewPdfUrl(url);
+      setPreviewPdfFilename(doc.filename);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'ouverture du document");
+    }
+  };
+
+  const handleDeleteAttachment = async (docId) => {
+    if (!window.confirm("Voulez-vous vraiment supprimer cette pièce jointe ?")) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${BACKEND_URL}/api/contracts2/${selectedContractForAttachments.id}/documents/${docId}`, {
+        method: "DELETE",
+        headers
+      });
+      
+      if (response.ok) {
+        toast.success("Pièce jointe supprimée !");
+        setSelectedContractForAttachments(prev => ({
+          ...prev,
+          event_documents: (prev.event_documents || []).filter(a => a.id !== docId)
+        }));
+        
+        loadContracts();
+        loadArchivedContracts();
+      } else {
+        toast.error("Erreur lors de la suppression de la pièce jointe");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau lors de la suppression");
+    }
   };
 
   const markContractAsSent = async (contractId) => {
@@ -2364,6 +2487,7 @@ function Contracts2App() {
               onPermanentDelete={permanentlyDeleteContract}
               onMarkArchivedAsUnsigned={markArchivedAsUnsigned}
               onDeleteArchived={deleteArchivedContract}
+              onManageAttachments={handleManageAttachments}
             />
           </TabsContent>
         </Tabs>
@@ -2432,6 +2556,154 @@ function Contracts2App() {
           </div>
         </div>
       )}
+
+      {/* Dialogue Pièces Jointes */}
+      <Dialog open={showAttachmentsDialog} onOpenChange={setShowAttachmentsDialog}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto text-slate-800">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-800">
+              <Paperclip className="w-5 h-5 text-emerald-700" />
+              Pièces Jointes & Documents Administratifs - {selectedContractForAttachments?.client_name || selectedContractForAttachments?.client_info?.name || "Client"}
+            </DialogTitle>
+            <DialogDescription>
+              Gérez les pièces jointes et les documents du contrat et du DJ-client (images JPG/PNG/HEIC converties automatiquement en PDF, ou directement des fichiers PDF).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Zone d'importation de fichiers */}
+            <div className="border-2 border-dashed border-emerald-200 hover:border-emerald-400 bg-emerald-50/5 rounded-xl p-6 transition-all">
+              <div className="flex flex-col items-center text-center">
+                <div className="p-3 bg-white rounded-full shadow-sm text-emerald-700 mb-3">
+                  <Upload className="w-6 h-6 animate-pulse" />
+                </div>
+                <h3 className="font-semibold text-gray-700 mb-1 text-sm">Téléverser de nouveaux documents</h3>
+                <p className="text-xs text-gray-500 mb-4 max-w-xs">PDF, PNG, JPG, JPEG, HEIC (les images seront automatiquement converties en documents PDF)</p>
+                
+                <label className="cursor-pointer">
+                  <div className="bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5">
+                    {uploadingAttachment ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Traitement en cours...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        Sélectionner des fichiers
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="application/pdf, image/png, image/jpeg, image/jpg, .heic, .heif"
+                    className="hidden"
+                    onChange={handleAttachmentUpload}
+                    disabled={uploadingAttachment}
+                    multiple
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Liste des documents */}
+            <div className="space-y-3">
+              <h4 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                <FileText className="w-4 h-4 text-emerald-700" />
+                Documents associés ({selectedContractForAttachments?.event_documents?.length || 0})
+              </h4>
+              
+              {(!selectedContractForAttachments?.event_documents || selectedContractForAttachments.event_documents.length === 0) ? (
+                <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                  <FileText className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">Aucun document n'a encore été associé à ce contrat.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2.5 max-h-[40vh] overflow-y-auto pr-1">
+                  {selectedContractForAttachments.event_documents.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between p-3.5 bg-white border border-gray-100 rounded-lg shadow-sm hover:border-emerald-200 hover:shadow-md transition-all">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="p-2 bg-emerald-50 text-emerald-700 rounded">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-gray-700 truncate" title={doc.filename}>{doc.filename}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Catégorie : <span className="font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">{doc.category || 'Administrative'}</span>
+                            {doc.uploaded_at && ` • Envoyé le ${new Date(doc.uploaded_at).toLocaleDateString("fr-FR", { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handlePreviewAttachment(doc)}
+                          className="h-8 px-2 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
+                          title="Visionner en direct"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteAttachment(doc.id)}
+                          className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAttachmentsDialog(false)}>
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Visionnage Direct du PDF */}
+      <Dialog open={!!previewPdfUrl} onOpenChange={(open) => { if (!open) setPreviewPdfUrl(null); }}>
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-4 text-slate-800">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="flex items-center gap-2 text-emerald-800">
+              <Eye className="w-5 h-5 text-emerald-700" />
+              Aperçu en Direct - {previewPdfFilename}
+            </DialogTitle>
+            <DialogDescription>
+              Prévisualisation en direct de la pièce jointe
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 w-full overflow-hidden rounded-lg border bg-gray-100">
+            {previewPdfUrl ? (
+              <iframe
+                src={previewPdfUrl}
+                className="w-full h-full rounded"
+                title="Aperçu Document PDF"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin mr-2" />
+                Chargement en cours...
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setPreviewPdfUrl(null)}>
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

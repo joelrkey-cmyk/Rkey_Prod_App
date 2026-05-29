@@ -434,7 +434,7 @@ const ContractEmailPage = () => {
         // Mettre à jour le statut du contrat à "sent" (envoyé)
         if (contractData?.id) {
           try {
-            await apiService.put(`/contracts/${contractData.id}/status`, { status: 'sent' });
+            await apiService.put(`/contracts2/${contractData.id}/status`, { status: 'sent' });
             console.log('Contract status updated to sent');
           } catch (statusError) {
             console.error('Error updating contract status:', statusError);
