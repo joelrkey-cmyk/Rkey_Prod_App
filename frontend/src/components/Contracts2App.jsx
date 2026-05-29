@@ -20,7 +20,7 @@ import FormSubmissionsSelector from "./FormSubmissionsSelector";
 // Modules extraits pour la maintenabilité
 import { fallbackPredefinedNotes, musicStyles, eventCategories, defaultHypnosisProgram, defaultCompanySettings } from "./contracts2/constants";
 import { generateContractHTML } from "./contracts2/htmlGenerator";
-import { generatePDFFromHTML as generatePDFFromHTMLImported, printContractWithSignature, generateContractAndGuide, getCompiledGuideBlob, previewContractPdf } from "./contracts2/pdfGenerator";
+import { generatePDFFromHTML as generatePDFFromHTMLImported, printContractWithSignature, generateContractAndGuide, getCompiledGuideBlob, previewContractPdf, getFormattedEventDate } from "./contracts2/pdfGenerator";
 import { ConfigurationPage } from "./contracts2/ConfigurationPage";
 import { ContractPreview } from "./contracts2/ContractPreview";
 import { ContractHistory } from "./contracts2/ContractHistory";
@@ -1075,7 +1075,7 @@ function Contracts2App() {
       let html;
       let filename;
       const cName = (contract.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
-      const dateStr = new Date().toISOString().split('T')[0];
+      const dateStr = getFormattedEventDate(contract);
       
       if (isMandatDoc) {
         html = generateMandatHTML(contract, companySettings);
@@ -1104,7 +1104,7 @@ function Contracts2App() {
   const handleExportMandatPDF = async () => {
     const data = buildCurrentContractData();
     const html = generateMandatHTML(data, companySettings);
-    await exportHTMLToPDF(html, `Contrat_Mandat_RKeyProd_${(data.client_info.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+    await exportHTMLToPDF(html, `Contrat_Mandat_RKeyProd_${(data.client_info.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${getFormattedEventDate(data)}.pdf`);
   };
 
   // Export PDF pour Document 2 (Engagement Artiste DJ)
@@ -1113,14 +1113,14 @@ function Contracts2App() {
     const html = generateArtisteHTML(data, resolveProfile);
     const artisteP = resolveProfile(data);
     const artistName = (artisteP.nom_artistique || artisteP.nom_complet || 'Artiste').replace(/[^a-zA-Z0-9]/g, '_');
-    await exportHTMLToPDF(html, `Contrat_Artiste_${artistName}_${(data.client_info.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+    await exportHTMLToPDF(html, `Contrat_Artiste_${artistName}_${(data.client_info.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${getFormattedEventDate(data)}.pdf`);
   };
 
   // Export PDF pour Mode Entreprise (1 seul contrat global)
   const handleExportEntreprisePDF = async () => {
     const data = buildCurrentContractData();
     const html = generateEntrepriseHTML(data, companySettings);
-    await exportHTMLToPDF(html, `Contrat_Prestation_RKeyProd_${(data.client_info.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+    await exportHTMLToPDF(html, `Contrat_Prestation_RKeyProd_${(data.client_info.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${getFormattedEventDate(data)}.pdf`);
   };
 
 

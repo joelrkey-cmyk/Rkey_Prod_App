@@ -2,6 +2,39 @@
 import html2canvas from 'html2canvas';
 import { toast } from 'sonner';
 
+export const getFormattedEventDate = (contract) => {
+  const rawDate = contract?.client_info?.event_date;
+  if (!rawDate) {
+    const d = new Date();
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  
+  // Format standard YYYY-MM-DD
+  if (rawDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const [y, m, d] = rawDate.split('-');
+    return `${d}-${m}-${y}`;
+  }
+  
+  // Format ISO, e.g. YYYY-MM-DDTHH:MM:SS
+  if (rawDate.includes('T')) {
+    const datePart = rawDate.split('T')[0];
+    if (datePart.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [y, m, d] = datePart.split('-');
+      return `${d}-${m}-${y}`;
+    }
+  }
+
+  // Format DD/MM/YYYY
+  if (rawDate.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+    return rawDate.replace(/\//g, '-');
+  }
+
+  return rawDate.replace(/[^a-zA-Z0-9-]/g, '_');
+};
+
 // Génération PDF à partir du HTML (capture page par page)
 export const generatePDFFromHTML = async (contract, generateContractHTMLFn, loadSignatureImagesFn, options = {}) => {
   const { 
@@ -168,7 +201,7 @@ export const generatePDFFromHTML = async (contract, generateContractHTMLFn, load
       .replace(/\s+/g, '_')
       .substring(0, 50);
 
-    const defaultFileName = `Contrat_DJ_${cleanName}_${new Date().toISOString().split('T')[0]}.pdf`;
+    const defaultFileName = `Contrat_DJ_${cleanName}_${getFormattedEventDate(contract)}.pdf`;
     const finalFileName = filename || defaultFileName;
     
     pdf.save(finalFileName);
@@ -244,7 +277,7 @@ export const generateContractAndGuide = async (contract, generateContractHTMLFn,
       .replace(/\s+/g, '_')
       .substring(0, 50);
     
-    const contractFileName = `CONTRAT_ADMIN_${cleanName}_${new Date().toISOString().split('T')[0]}.pdf`;
+    const contractFileName = `CONTRAT_ADMIN_${cleanName}_${getFormattedEventDate(contract)}.pdf`;
     await generatePDFFromHTML(contract, generateContractHTMLFn, loadSignatureImagesFn, { 
       mode: 'contract-only', 
       filename: contractFileName,
@@ -280,7 +313,7 @@ export const generateContractAndGuide = async (contract, generateContractHTMLFn,
         const blob = new Blob([bytes], { type: 'application/pdf' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `GUIDE_ORGANISATION_${cleanName}_${new Date().toISOString().split('T')[0]}.pdf`;
+        link.download = `GUIDE_ORGANISATION_${cleanName}_${getFormattedEventDate(contract)}.pdf`;
         link.click();
         toast.success("PDF 2/2 Généré (Guide Organisation)");
       }
@@ -366,7 +399,7 @@ export const printContractWithSignature = async (contract, generateContractHTMLF
 
   const options = {
     margin: 0,
-    filename: `Contrat_DJ_${contract.client_info.name.replace(/\s+/g, '_')}_SIGNE_${new Date().toISOString().split('T')[0]}.pdf`,
+    filename: `Contrat_DJ_${contract.client_info.name.replace(/\s+/g, '_')}_SIGNE_${getFormattedEventDate(contract)}.pdf`,
     image: { type: 'jpeg', quality: 0.92 },
     html2canvas: { scale: 1.4, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
