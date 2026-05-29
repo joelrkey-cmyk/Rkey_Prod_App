@@ -6,7 +6,7 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { 
   FileText, Calendar, MapPin, Music, Printer, Edit, Send, 
-  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye, Paperclip
+  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye, Paperclip, Copy
 } from 'lucide-react';
 
 export const ContractHistory = ({
@@ -22,6 +22,7 @@ export const ContractHistory = ({
   onPrintContract,
   onPreviewContract,
   onLoadContract,
+  onDuplicateContract,
   onMarkAsSent,
   onMarkAsSigned,
   onMoveToTrash,
@@ -294,6 +295,15 @@ export const ContractHistory = ({
                         {!showTrash && !showArchive && (
                           <>
                             <Button 
+                              onClick={() => onDuplicateContract?.(contract)}
+                              variant="outline"
+                              size="sm"
+                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                              title="Dupliquer ce contrat"
+                            >
+                              <Copy className="h-4 w-4 mr-1" />Dupliquer
+                            </Button>
+                            <Button 
                               onClick={() => handleRunAction(contract.id, onMarkAsSent)} 
                               disabled={actionLoading[contract.id] || contract.status === 'sent'}
                               variant="outline" 
@@ -328,6 +338,15 @@ export const ContractHistory = ({
 
                         {showArchive && (
                           <>
+                            <Button 
+                              onClick={() => onDuplicateContract?.(contract)}
+                              variant="outline"
+                              size="sm"
+                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                              title="Dupliquer ce contrat"
+                            >
+                              <Copy className="h-4 w-4 mr-1" />Dupliquer
+                            </Button>
                             <Button onClick={() => onManageAttachments(contract)} variant="outline" size="sm" className="text-emerald-800 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-900 font-medium">
                               <Paperclip className="h-4 w-4 mr-1 text-emerald-700" />Pièces Jointes ({contract.event_documents?.length || 0})
                             </Button>

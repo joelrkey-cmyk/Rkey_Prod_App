@@ -1024,6 +1024,68 @@ function Contracts2App() {
     toast.success("Contrat chargé pour modification");
   };
 
+  const duplicateContract = (contract) => {
+    setSelectedDjProfile(contract.dj_profile || "");
+    setClientInfo({
+      name: contract.client_info?.name || "", company: contract.client_info?.company || "",
+      address: contract.client_info?.address || "", phone: contract.client_info?.phone || "",
+      email: contract.client_info?.email || "", event_date: contract.client_info?.event_date || "",
+      event_location: contract.client_info?.event_location || "", event_type: contract.client_info?.event_type || "",
+      custom_event_type: contract.client_info?.custom_event_type || "", event_note: contract.client_info?.event_note || "",
+      setup_date: contract.client_info?.setup_date || "", setup_time: contract.client_info?.setup_time || "À définir",
+      start_time: contract.client_info?.start_time || "", end_time: contract.client_info?.end_time || "",
+      unlimited_time: contract.client_info?.unlimited_time || false, phone2: contract.client_info?.phone2 || "",
+      guest_count: contract.client_info?.guest_count || ""
+    });
+    
+    const contractSelectedOptionsIds = (contract.selected_options || []).filter(opt => opt.selected).map(opt => opt.id);
+    setSelectedOptions(availableOptions.map(option => ({ ...option, selected: contractSelectedOptionsIds.includes(option.id) })));
+    
+    setDiscountAmount(contract.discount_amount || 0);
+    setInvoiceNumber(""); 
+    setCustomDepositAmount(contract.custom_deposit_amount || 0);
+    setNoDepositRequired(contract.no_deposit_required || false);
+    setSelectedRIB(contract.selected_rib || "");
+    setDepositPaid(false); 
+    setDepositPaymentMethod("");
+    setDepositPaidDate("");
+    setBasePrice(contract.base_price || 0);
+    setContractMode(contract.contract_mode || 'mandataire');
+    setFraisMandat(contract.frais_mandat || 0);
+    setCachetArtiste(contract.cachet_artiste || 0);
+    setPackSonorisation(contract.pack_sonorisation || false);
+    setPackLumiere(contract.pack_lumiere || false);
+    setOptionsTarifNotes(contract.options_tarif_notes || "");
+    setHasLimiteurSon(contract.has_limiteur_son || false);
+    setHasDetecteurFumee(contract.has_detecteur_fumee || false);
+    setHasNoLimiteurNiDetecteur(contract.has_no_limiteur_ni_detecteur || false);
+    setHasWifi(contract.has_wifi || false);
+    setHas4g5g(contract.has_4g_5g || false);
+    setSelectedPdfNotes(contract.selected_pdf_notes || []);
+    setSelectedNotes(contract.selected_notes || []);
+    setSelectedMusicStyles(contract.selected_music_styles || []);
+    setDjNotes(contract.dj_notes || "");
+    setBlacklist(contract.blacklist || "");
+    setCateringNotes(contract.catering_notes || "");
+    setCateringDrinks(contract.catering_drinks || false);
+    setCateringHotMealNoTable(contract.catering_hot_meal_no_table || false);
+    setCateringHotMealNoTableQty(contract.catering_hot_meal_no_table_qty || 0);
+    setBackgroundMusicAperitif(contract.background_music_aperitif || "");
+    setSelectedEvents(contract.selected_events || []);
+    setCustomRepasEvents(contract.custom_repas_events || []);
+    setCustomMusiqueEvents(contract.custom_musique_events || []);
+    setEventNotes(contract.event_notes || "");
+    setEventOrder(contract.event_order || []);
+    setHypnosisProgram(contract.hypnosis_program || defaultHypnosisProgram);
+    setTechnicianContact(contract.technician_contact || { name: "", email: "", phone: "" });
+    setCgvText(contract.cgv_text || "");
+    setArtisteCgvText(contract.artiste_cgv_text || defaultArtistCgv);
+    setEditingContract(null); 
+    setGeneratedContract(null); 
+    setActiveTab("create");
+    toast.success("Contrat dupliqué ! Modifiez-le puis enregistrez-le dans l'onglet de création.");
+  };
+
   // ═══════════════════════════════════════════════════
   // PDF / EMAIL ACTIONS
   // ═══════════════════════════════════════════════════
@@ -2340,7 +2402,11 @@ function Contracts2App() {
                         <SelectTrigger className={`bg-white border-slate-300 focus:border-blue-500 ${!selectedCgvTemplate ? 'border-red-300' : ''}`}><SelectValue placeholder="Sélectionner un modèle *" /></SelectTrigger>
                         <SelectContent className="bg-white">
                           <SelectItem key="custom" value="custom">Personnalisé</SelectItem>
-                          {Object.entries(cgvTemplates).map(([key, template]) => (<SelectItem key={key} value={key}>{template.name}</SelectItem>))}
+                          {Object.entries(cgvTemplates).map(([key, template]) => (
+                            <SelectItem key={key} value={key}>
+                              {template.name || key.replace(/_[0-9]+$/, '').replace(/_/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase())}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -2482,6 +2548,7 @@ function Contracts2App() {
               onPrintContract={handlePrintContract}
               onPreviewContract={handlePreviewContract}
               onLoadContract={loadContract}
+              onDuplicateContract={duplicateContract}
               onMarkAsSent={markContractAsSent}
               onMarkAsSigned={markContractAsSigned}
               onMoveToTrash={moveContractToTrash}

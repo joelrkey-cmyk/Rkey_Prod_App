@@ -449,7 +449,7 @@ export const ConfigurationPage = ({
         setIsSaving(true);
         const name = newCgv.name.trim();
         const key = generateKeyFromTitle(name);
-        const updatedTemplates = { ...cgvTemplates, [key]: { content: newCgv.content } };
+        const updatedTemplates = { ...cgvTemplates, [key]: { name: name, content: newCgv.content } };
         await apiService.updateCgvTemplates(updatedTemplates);
         setCgvTemplates(updatedTemplates);
         setNewCgv({ name: "", content: "" });
@@ -489,7 +489,15 @@ export const ConfigurationPage = ({
   const saveEditedCgv = async () => {
     try {
       setIsSaving(true);
-      const updatedTemplates = { ...cgvTemplates, [editingCgvKey]: { content: editingCgvData.content } };
+      const existing = cgvTemplates[editingCgvKey] || {};
+      const updatedTemplates = { 
+        ...cgvTemplates, 
+        [editingCgvKey]: { 
+          ...existing, 
+          name: existing.name || editingCgvKey.replace(/_[0-9]+$/, '').replace(/_/g, ' ').trim(),
+          content: editingCgvData.content 
+        } 
+      };
       await apiService.updateCgvTemplates(updatedTemplates);
       setCgvTemplates(updatedTemplates);
       setIsCgvModalOpen(false);
