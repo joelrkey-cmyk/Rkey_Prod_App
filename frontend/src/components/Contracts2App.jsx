@@ -822,9 +822,11 @@ function Contracts2App() {
   const calculateDepositAmount = () => {
     if (noDepositRequired) return 0;
     if (customDepositAmount > 0) return customDepositAmount;
-    // Contrats 2: 50% du total client
-    const deposit = calculateTotal() * 0.5;
-    return Math.max(0, Math.round(deposit * 100) / 100);
+    // Contrats 2: 50% du total client, ou 30% si entreprise
+    const isCompany = !!(clientInfo?.company && clientInfo.company.trim().length > 0);
+    const ratio = isCompany ? 0.3 : 0.5;
+    const deposit = calculateTotal() * ratio;
+    return Math.max(0, Math.round(deposit / 50) * 50);
   };
 
   const calculateRemainingBalance = () => {
@@ -1828,7 +1830,7 @@ function Contracts2App() {
                     <div className="space-y-2"><Label className="text-slate-700">Prix de base</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={basePrice} onChange={(e) => setBasePrice(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="10" /></div></div>
                     <div className="space-y-2"><Label className="text-slate-700">Remise (optionnel)</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="5" /></div></div>
                     <Separator />
-                    <div className="space-y-2"><Label className="text-slate-700">Acompte personnalisé (optionnel)</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={customDepositAmount} onChange={(e) => setCustomDepositAmount(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="10" /></div><p className="text-xs text-slate-500">Par défaut: 50% du tarif de base</p></div>
+                    <div className="space-y-2"><Label className="text-slate-700">Acompte personnalisé (optionnel)</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={customDepositAmount} onChange={(e) => setCustomDepositAmount(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="10" /></div><p className="text-xs text-slate-500">Par défaut: {clientInfo?.company?.trim() ? "30%" : "50%"} du tarif de base</p></div>
                     <div className="flex items-center space-x-2"><Checkbox id="no_deposit_hypnosis" checked={noDepositRequired} onCheckedChange={(checked) => setNoDepositRequired(checked)} /><Label htmlFor="no_deposit_hypnosis" className="text-sm font-normal cursor-pointer">Client de confiance - Aucun acompte requis</Label></div>
                     <Separator />
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
@@ -2218,7 +2220,7 @@ function Contracts2App() {
 
                     <div className="bg-blue-50 p-4 rounded-lg space-y-2">
                       <div className="flex justify-between"><span className="font-medium">Montant total:</span><span className="font-bold text-blue-600">{calculateTotal()}€</span></div>
-                      <div className="flex justify-between"><span>Acompte (50% tarif + options complètes):</span><span className="font-semibold text-green-600">{calculateDepositAmount()}€</span></div>
+                      <div className="flex justify-between"><span>Acompte ({clientInfo?.company?.trim() ? "30%" : "50%"} tarif + options complètes):</span><span className="font-semibold text-green-600">{calculateDepositAmount()}€</span></div>
                       <div className="flex justify-between"><span>Solde restant:</span><span className="font-semibold">{calculateRemainingBalance()}€</span></div>
                     </div>
 

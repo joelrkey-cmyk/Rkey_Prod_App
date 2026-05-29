@@ -222,6 +222,7 @@ export const generateMandatHTML = (contract, companySettings) => {
 export const generateArtisteHTML = (contract, resolveProfile) => {
   const _p = resolveProfile(contract);
   const cachetArtiste = contract.cachet_artiste || 0;
+  const isCompany = !!(contract.client_info && contract.client_info.company && contract.client_info.company.trim() !== "");
 
   return `
   <div style="font-family: Arial, 'Noto Color Emoji', sans-serif; font-size: 12px; line-height: 1.3; color: #000; max-width: 200mm; margin: 0 auto; background: white; padding: 8px;">
@@ -289,9 +290,9 @@ export const generateArtisteHTML = (contract, resolveProfile) => {
         <div class="section-title">CONDITIONS DE PAIEMENT</div>
         <div class="compact-payment-box" style="background-color: #fafafa;">
           <div style="text-align: center; margin-bottom: 8pt;">
-            <strong>Montant total a regler le jour de l'evenement :</strong><br>
+            <strong>Montant total a regler :</strong><br>
             <span class="amount-big" style="font-size: 18px; color: #333;">${cachetArtiste === 0 ? "OFFERT" : cachetArtiste.toFixed(2) + " EUR"}</span><br>
-            <small>A regler lors de l'installation, directement a l'Artiste</small>
+            ${isCompany ? '' : `<small>A regler lors de l'installation, directement a l'Artiste</small>`}
           </div>
           <div style="margin-top: 8pt; padding-top: 6pt; border-top: 1px solid #ddd;">
             <strong style="font-size: 10px;">Destinataire du paiement : ${_p.nom_complet || _p.nom_artistique || 'Artiste'}</strong><br>

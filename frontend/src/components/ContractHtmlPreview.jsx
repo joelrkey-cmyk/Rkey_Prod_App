@@ -84,8 +84,10 @@ const ContractHtmlPreview = () => {
       .filter(option => option.selected)
       .reduce((sum, option) => sum + option.price, 0);
     
-    const deposit = (contract.base_price * 0.5) + optionsTotal - (contract.discount_amount || 0);
-    return Math.max(0, Math.round(deposit * 100) / 100);
+    const isCompany = !!(contract.client_info?.company && contract.client_info.company.trim().length > 0);
+    const ratio = isCompany ? 0.3 : 0.5;
+    const deposit = (contract.base_price * ratio) + optionsTotal - (contract.discount_amount || 0);
+    return Math.max(0, Math.round(deposit / 50) * 50);
   };
 
   return (
@@ -191,16 +193,23 @@ const ContractHtmlPreview = () => {
                 <small>Montant total à régler le jour de l'événement</small>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center">
-                  <strong>Acompte à la signature</strong><br />
-                  <span className="text-2xl font-bold text-blue-600">{calculateContractDepositAmount()}€</span>
-                </div>
-                <div className="text-center">
-                  <strong>Solde le jour J</strong><br />
-                  <span className="text-2xl font-bold text-green-600">{calculateContractTotal() - calculateContractDepositAmount()}€</span>
-                </div>
-              </div>
+              (() => {
+                const isCompany = !!(contract.client_info?.company && contract.client_info.company.trim().length > 0);
+                return (
+                  <div className={isCompany ? "flex justify-center" : "grid grid-cols-2 gap-4"}>
+                    <div className="text-center">
+                      <strong>Acompte à la signature</strong><br />
+                      <span className="text-2xl font-bold text-blue-600">{calculateContractDepositAmount()}€</span>
+                    </div>
+                    {!isCompany && (
+                      <div className="text-center">
+                        <strong>Solde le jour J</strong><br />
+                        <span className="text-2xl font-bold text-green-600">{calculateContractTotal() - calculateContractDepositAmount()}€</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
             )}
           </div>
         </div>

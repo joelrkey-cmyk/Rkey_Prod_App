@@ -365,6 +365,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
                   </div>
                 ` : ''}
               </div>
+              ${isCompany ? '' : `
               <div class="payment-right" style="${_p.statut_artiste === 'freelance' ? 'border: 1.5px solid #2e7d32; border-radius: 6px; padding: 8px; background: #f5fdf5;' : ''}">
                 <strong>Solde :</strong><br>
                 <span class="amount-big">${calculateContractRemainingBalance(contract).toFixed(2)} €</span><br>
@@ -376,6 +377,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
                   </div>
                 ` : ''}
               </div>
+              `}
             </div>
           `}
           
