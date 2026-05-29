@@ -34,6 +34,19 @@ export const ContractHistory = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterYear, setFilterYear] = useState('All');
   const [filterTime, setFilterTime] = useState('All');
+  const [actionLoading, setActionLoading] = useState({});
+
+  const handleRunAction = async (id, actionFn) => {
+    if (!actionFn) return;
+    setActionLoading(prev => ({ ...prev, [id]: true }));
+    try {
+      await actionFn(id);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [id]: false }));
+    }
+  };
 
   const getContractTotal = (contract) => {
     const optionsTotal = contract.selected_options?.filter(option => option.selected).reduce((sum, option) => sum + option.price, 0) || 0;
@@ -280,13 +293,34 @@ export const ContractHistory = ({
                       <div className="flex space-x-2">
                         {!showTrash && !showArchive && (
                           <>
-                            <Button onClick={() => onMarkAsSent(contract.id)} variant="outline" size="sm" className="text-green-600 border-green-200 hover:bg-green-50" data-testid={`sent-btn-${contract.id}`}>
+                            <Button 
+                              onClick={() => handleRunAction(contract.id, onMarkAsSent)} 
+                              disabled={actionLoading[contract.id] || contract.status === 'sent'}
+                              variant="outline" 
+                              size="sm" 
+                              className="text-green-600 border-green-200 hover:bg-green-50" 
+                              data-testid={`sent-btn-${contract.id}`}
+                            >
                               <Send className="h-4 w-4 mr-1" />Envoyé
                             </Button>
-                            <Button onClick={() => onMarkAsSigned(contract.id)} variant="outline" size="sm" className="text-purple-600 border-purple-200 hover:bg-purple-50" data-testid={`signed-btn-${contract.id}`}>
+                            <Button 
+                              onClick={() => handleRunAction(contract.id, onMarkAsSigned)} 
+                              disabled={actionLoading[contract.id]}
+                              variant="outline" 
+                              size="sm" 
+                              className="text-purple-600 border-purple-200 hover:bg-purple-50" 
+                              data-testid={`signed-btn-${contract.id}`}
+                            >
                               <FileCheck className="h-4 w-4 mr-1" />Signé
                             </Button>
-                            <Button onClick={() => onMoveToTrash(contract.id)} variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50" data-testid={`delete-btn-${contract.id}`}>
+                            <Button 
+                              onClick={() => handleRunAction(contract.id, onMoveToTrash)} 
+                              disabled={actionLoading[contract.id]}
+                              variant="outline" 
+                              size="sm" 
+                              className="text-red-600 border-red-200 hover:bg-red-50" 
+                              data-testid={`delete-btn-${contract.id}`}
+                            >
                               <Trash2 className="h-4 w-4 mr-1" />Supprimer
                             </Button>
                           </>
@@ -300,10 +334,22 @@ export const ContractHistory = ({
                             <Button onClick={() => onPreviewContract(contract)} variant="outline" size="sm" className="text-gray-600 border-gray-200 hover:bg-gray-50">
                               <Eye className="h-4 w-4 mr-1" />Aperçu
                             </Button>
-                            <Button onClick={() => onMarkArchivedAsUnsigned(contract.id)} variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50">
+                            <Button 
+                              onClick={() => handleRunAction(contract.id, onMarkArchivedAsUnsigned)} 
+                              disabled={actionLoading[contract.id]}
+                              variant="outline" 
+                              size="sm" 
+                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                            >
                               <RotateCcw className="h-4 w-4 mr-1" />Non signé
                             </Button>
-                            <Button onClick={() => onDeleteArchived(contract.id)} variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50">
+                            <Button 
+                              onClick={() => handleRunAction(contract.id, onDeleteArchived)} 
+                              disabled={actionLoading[contract.id]}
+                              variant="outline" 
+                              size="sm" 
+                              className="text-red-600 border-red-200 hover:bg-red-50"
+                            >
                               <Trash2 className="h-4 w-4 mr-1" />Supprimer
                             </Button>
                           </>
@@ -311,10 +357,22 @@ export const ContractHistory = ({
 
                         {showTrash && (
                           <>
-                            <Button onClick={() => onRestore(contract.id)} variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50">
+                            <Button 
+                              onClick={() => handleRunAction(contract.id, onRestore)} 
+                              disabled={actionLoading[contract.id]}
+                              variant="outline" 
+                              size="sm" 
+                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                            >
                               <Plus className="h-4 w-4 mr-1" />Restaurer
                             </Button>
-                            <Button onClick={() => onPermanentDelete(contract.id)} variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50">
+                            <Button 
+                              onClick={() => handleRunAction(contract.id, onPermanentDelete)} 
+                              disabled={actionLoading[contract.id]}
+                              variant="outline" 
+                              size="sm" 
+                              className="text-red-600 border-red-200 hover:bg-red-50"
+                            >
                               <Trash2 className="h-4 w-4 mr-1" />Supprimer définitivement
                             </Button>
                           </>
