@@ -1139,7 +1139,9 @@ api.post('/push/subscribe', async (req, res) => {
     if (!subscription || !subscription.endpoint) {
       return res.status(400).json({ error: 'Subscription or endpoint missing' });
     }
-    const db = getDb();
+    if (!db) {
+      return res.status(500).json({ error: 'DB not connected' });
+    }
     await db.collection('push_subscriptions').updateOne(
       { endpoint: subscription.endpoint },
       { $set: { subscription, role, eventId, createdAt: new Date() } },
@@ -1155,7 +1157,9 @@ api.post('/push/subscribe', async (req, res) => {
 api.post('/push/notify', async (req, res) => {
   try {
     const { eventId, targetRoles, title, body, url } = req.body;
-    const db = getDb();
+    if (!db) {
+      return res.status(500).json({ error: 'DB not connected' });
+    }
 
     // targetRoles e.g. ['admin', 'dj', 'client']
     const query = {};

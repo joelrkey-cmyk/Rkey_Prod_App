@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { generateMandatHTML, generateEntrepriseHTML, generateArtisteHTML } from './contracts2/mandatHtmlGenerator';
 import { defaultCompanySettings, musicStyles as availableMusicStyles } from './contracts2/constants';
 import MyDjLogo from './MyDjLogo';
@@ -277,91 +278,11 @@ function urlBase64ToUint8Array(base64String) {
   };
 
   const renderPWABanner = () => {
-    if (isStandalone) return null;
-    if (currentRoute.role !== 'dj' && currentRoute.role !== 'client') return null;
-
-    return (
-      <div className="mb-6 bg-gradient-to-r from-orange-500 via-orange-600 to-amber-600 text-white rounded-xl p-4 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-orange-400/20">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-white/10 text-white rounded-lg shrink-0">
-            <Smartphone className="w-5 h-5 animate-pulse" />
-          </div>
-          <div>
-            <h4 className="text-sm font-bold text-white leading-snug">
-              Application mobile R'Key Prod
-            </h4>
-            <p className="text-xs text-orange-200 mt-0.5">
-              Ajoutez l'application sur l'écran d'accueil de votre téléphone pour y accéder plus rapidement.
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={installPWA}
-          className="bg-white hover:bg-stone-50 text-orange-700 font-extrabold py-2 px-4 rounded-xl transition text-xs flex items-center justify-center gap-1.5 shadow-md whitespace-nowrap self-stretch sm:self-auto select-none"
-        >
-          <DownloadCloud className="w-4 h-4" />
-          Installer
-        </button>
-      </div>
-    );
+    return null;
   };
 
   const renderIOSInstallModal = () => {
-    if (!showIOSInstallTip) return null;
-
-    return (
-      <div 
-        className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs animate-in fade-in duration-200"
-        onClick={() => setShowIOSInstallTip(false)}
-      >
-        <div 
-          className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-sm p-6 text-slate-900 border border-slate-100 shadow-2xl relative animate-in slide-in-from-bottom duration-300"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="text-center space-y-4">
-            <div className="mx-auto w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center text-orange-600">
-              <Smartphone className="w-6 h-6 animate-pulse" />
-            </div>
-            
-            <div className="space-y-2">
-              <h3 className="text-base font-extrabold text-slate-900">Ajouter à l'écran d'accueil</h3>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Suivez ces instructions simples pour installer l'application sur votre iPhone ou iPad :
-              </p>
-            </div>
-
-            <div className="bg-slate-50 p-4 rounded-2xl text-left space-y-3 border border-slate-100">
-              <div className="flex gap-3 items-start">
-                <span className="flex items-center justify-center w-5 h-5 bg-orange-100 text-orange-700 font-bold text-xs rounded-full shrink-0">1</span>
-                <p className="text-xs text-slate-700 leading-relaxed">
-                  Appuyez sur le bouton de partage en bas de Safari <span className="inline-block bg-white border border-slate-200 p-1 rounded-md text-[10px] uppercase font-bold text-slate-600">Partager <Share2 className="w-3 h-3 inline-block text-orange-500" /></span>
-                </p>
-              </div>
-              <div className="flex gap-3 items-start">
-                <span className="flex items-center justify-center w-5 h-5 bg-orange-100 text-orange-700 font-bold text-xs rounded-full shrink-0">2</span>
-                <p className="text-xs text-slate-700 leading-relaxed">
-                  Faites défiler le menu vers le bas et appuyez sur <span className="font-bold text-slate-800">"Sur l'écran d'accueil"</span>
-                </p>
-              </div>
-              <div className="flex gap-3 items-start">
-                <span className="flex items-center justify-center w-5 h-5 bg-orange-100 text-orange-700 font-bold text-xs rounded-full shrink-0">3</span>
-                <p className="text-xs text-slate-700 leading-relaxed">
-                  Cliquez sur <span className="font-extrabold text-orange-600">"Ajouter"</span> en haut à droite. 🎉
-                </p>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowIOSInstallTip(false)}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl transition text-xs select-none"
-            >
-              C'est noté !
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   };
 
   useEffect(() => {
@@ -606,8 +527,8 @@ function urlBase64ToUint8Array(base64String) {
         setEvents(mappedEvents);
       }
     } catch (error) {
-      console.error("Error fetching contracts as events:", error);
-      if (!silent) toast.error("Erreur lors du chargement des événements");
+      console.error("Error fetching contracts as events:", error, "URL used:", BACKEND_URL);
+      if (!silent) toast.error("Erreur lors du chargement des événements. Veuillez réessayer ou vérifier la connexion réseau.");
     } finally {
       if (!silent) setIsLoadingEvents(false);
     }
@@ -640,6 +561,9 @@ function urlBase64ToUint8Array(base64String) {
   const [dedicaces, setDedicaces] = useState("");
   const [customWeddingEvents, setCustomWeddingEvents] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
+  const [appointmentDate, setAppointmentDate] = useState("");
+  const [appointmentTime, setAppointmentTime] = useState("");
+  const [isEditingAppointment, setIsEditingAppointment] = useState(false);
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -669,6 +593,9 @@ function urlBase64ToUint8Array(base64String) {
           setDedicaces(ev.dedicaces || "");
           setCustomWeddingEvents(ev.customWeddingEvents || []);
           setChatMessages(ev.chatMessages || []);
+          setAppointmentDate(ev.next_appointment_date || "");
+          setAppointmentTime(ev.next_appointment_time || "");
+          setIsEditingAppointment(false);
           
           // Initialize Planning info to stay synced with contracts
           setPlanningLocalInfo({
@@ -692,6 +619,10 @@ function urlBase64ToUint8Array(base64String) {
         } else {
           // Keep chat messages alive and synced with background refetches
           setChatMessages(ev.chatMessages || []);
+          if (!isEditingAppointment) {
+            setAppointmentDate(ev.next_appointment_date || "");
+            setAppointmentTime(ev.next_appointment_time || "");
+          }
         }
       }
     } else {
@@ -713,7 +644,7 @@ function urlBase64ToUint8Array(base64String) {
           if ('requested_options' in payload || 'options_tarif_notes' in payload || 'show_options_tarif_notes_to_client' in payload) section = 'options';
           if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload || 'playlist_audio_files' in payload || 'dedicaces' in payload) section = 'playlist';
           if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload || 'entree_maries' in payload || 'entree_maries_notes' in payload || 'ouverture_bal' in payload || 'ouverture_bal_notes' in payload || 'dessert' in payload || 'dessert_notes' in payload || 'custom_wedding_events' in payload) section = 'planning';
-          if ('client_photo' in payload) section = 'client_info';
+          if ('client_photo' in payload || 'next_appointment_date' in payload || 'next_appointment_time' in payload) section = 'client_info';
           if ('selected_pdf_notes' in payload) section = 'documents';
           if ('venue_photos' in payload || 'venue_notes' in payload || 'has_limiteur_son' in payload || 'has_detecteur_fumee' in payload || 'has_no_limiteur_ni_detecteur' in payload || 'has_wifi' in payload || 'has_4g_5g' in payload) section = 'venue';
           if ('catering_notes' in payload || 'catering_drinks' in payload || 'catering_hot_meal_no_table' in payload || 'catering_hot_meal_no_table_qty' in payload) section = 'catering';
@@ -1267,10 +1198,27 @@ function urlBase64ToUint8Array(base64String) {
         </div>
 
         {canEdit && (
-          <div className="space-y-6 mb-8 border-b pb-8">
+          <div className="mb-6">
+            <h4 className="font-semibold text-gray-800 mb-2 text-sm flex items-center gap-1.5">
+              Note DJ (visible uniquement par le DJ et R'Key Prod)
+            </h4>
+            <textarea 
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { dj_notes: e.target.value })}}
+              className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50/50"
+              placeholder="Ajoutez ici des indications spécifiques..."
+            />
+          </div>
+        )}
+
+        {canEdit && <hr className="my-6 border-gray-200" />}
+
+        {canEdit && (
+          <div className="space-y-6 mb-8">
             {SCHEDULE_CATEGORIES.map(category => (
               <div key={category.type}>
-                <h4 className="font-semibold text-gray-800 mb-3">{category.title}</h4>
+                <h4 className="font-semibold text-gray-800 mb-3 text-sm">{category.title}</h4>
                 <div className="flex flex-wrap gap-2">
                   {category.options.map(opt => (
                     <button
@@ -1292,7 +1240,7 @@ function urlBase64ToUint8Array(base64String) {
                   value={scheduleCustomItem}
                   onChange={(e) => setScheduleCustomItem(e.target.value)}
                   placeholder="Autre événement..." 
-                  className="flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="flex-1 border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                   onKeyDown={e => { if(e.key === 'Enter' && scheduleCustomItem) { addScheduleItem(scheduleCustomItem); setScheduleCustomItem(''); } }}
                 />
                 <button 
@@ -1303,19 +1251,10 @@ function urlBase64ToUint8Array(base64String) {
                 </button>
               </div>
             </div>
-
-            <div>
-               <h4 className="font-semibold text-gray-800 mb-3 text-sm">Note DJ (visible uniquement par le DJ et R'Key Prod)</h4>
-               <textarea 
-                 value={notes}
-                 onChange={(e) => setNotes(e.target.value)}
-                 onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { dj_notes: e.target.value })}}
-                 className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                 placeholder="Ajoutez ici des indications spécifiques..."
-               />
-            </div>
           </div>
         )}
+
+        {canEdit && <hr className="my-6 border-gray-200" />}
 
         <div>
           <h4 className="font-semibold text-gray-800 mb-4">{canEdit ? 'Votre Programme' : 'Le Programme Prévu'}</h4>
@@ -2034,41 +1973,65 @@ function urlBase64ToUint8Array(base64String) {
       }
     };
 
-    const generateClientPDF = (shouldPreview = false) => {
+    const generateClientPDF = (shouldPreviewParam = false) => {
+      const shouldPreview = typeof shouldPreviewParam === 'boolean' ? shouldPreviewParam : false;
       const doc = new jsPDF();
-      let y = 15;
+      
+      let y = 20;
+      
+      const rawInfo = ev.rawClientInfo || {};
+      const formatDate = (dateStr) => {
+        if (!dateStr) return "Non définie";
+        const parts = dateStr.split('-');
+        if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        return dateStr;
+      };
 
-      // Header Orange
-      doc.setFillColor(234, 88, 12); // Tailwind orange-600
-      doc.rect(0, 0, 210, 25, 'F');
-      
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
-      doc.text(ev.name ? ev.name.split(' ')[0].toUpperCase() : "ÉVÉNEMENT", 105, 12, { align: 'center' });
-      doc.setFontSize(12);
-      doc.text(`Espace Client - ${ev.contractInfo?.name || ev.name || 'Client'}`, 105, 20, { align: 'center' });
-      
-      y = 40;
-      doc.setTextColor(0, 0, 0);
-      
+      if (rawInfo.setup_date || rawInfo.setup_time || rawInfo.start_time || rawInfo.end_time || rawInfo.unlimited_time) {
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(16);
+        doc.text("Planning de la prestation", 15, y);
+        y += 8;
+        doc.setFontSize(11);
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Date d'installation : ${formatDate(rawInfo.setup_date)}`, 15, y); y += 6;
+        doc.text(`Heure d'installation : ${rawInfo.setup_time || "À définir"}`, 15, y); y += 6;
+        doc.text(`Début de prestation : ${rawInfo.start_time || "--:--"}`, 15, y); y += 6;
+        doc.text(`Fin de prestation : ${rawInfo.unlimited_time ? "Illimité" : (rawInfo.end_time || "--:--")}`, 15, y); y += 10;
+      }
+
       const clientScheduleItems = scheduleItems || [];
       if (clientScheduleItems.length > 0) {
         doc.setFontSize(16);
         doc.text("Déroulement de Soirée", 15, y);
-        y += 8;
-        doc.setFontSize(11);
-        doc.setTextColor(75, 85, 99);
-        clientScheduleItems.forEach(item => {
-          const itemLabel = item.isSurprise ? "Surprise" : (item.label || item.description);
-          if (item.time) {
-            doc.text(`${item.time} - ${itemLabel}`, 15, y);
-          } else {
-            doc.text(itemLabel, 15, y);
-          }
-          y += 6;
-          if (y > 280) { doc.addPage(); y = 20; }
+        y += 4;
+        
+        const tableBody = clientScheduleItems.map(item => {
+          const itemLabel = item.isSurprise ? "Surprise" : (item.label || item.description || "");
+          return [
+            item.isSurprise ? "Surprise" : "",
+            item.time || "",
+            itemLabel
+          ];
         });
-        y += 5;
+        
+        autoTable(doc, {
+          startY: y,
+          head: [["Type", "Horaire", "Descriptif"]],
+          body: tableBody,
+          theme: 'grid',
+          headStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], lineWidth: 0.1, lineColor: [200, 200, 200], fontStyle: 'bold' },
+          bodyStyles: { textColor: [75, 85, 99], lineWidth: 0.1, lineColor: [229, 231, 235] },
+          columnStyles: {
+            0: { cellWidth: 22 },
+            1: { cellWidth: 22 }
+          },
+          margin: { left: 15, right: 15 },
+          tableLineWidth: 0.1,
+          tableLineColor: [229, 231, 235],
+        });
+        
+        y = (doc.lastAutoTable?.finalY || doc.autoTable.previous.finalY || y) + 10;
       }
       
       doc.setTextColor(0, 0, 0);
@@ -2076,13 +2039,8 @@ function urlBase64ToUint8Array(base64String) {
       doc.text("Playlist & Recommandations", 15, y);
       y += 8;
 
-      if (playlistLink) {
-        doc.setFontSize(12); doc.setTextColor(0, 0, 0);
-        doc.text("Lien playlist:", 15, y); y += 6;
-        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
-        const splitText = doc.splitTextToSize(playlistLink, 180);
-        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
-      }
+      doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+      doc.text(`Lien playlist: ${playlistLink ? "Oui" : "Non"}`, 15, y); y += 10;
       
       if (manualMustPlay) {
         if (y > 270) { doc.addPage(); y = 20; }
@@ -2160,6 +2118,46 @@ function urlBase64ToUint8Array(base64String) {
         doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
       }
 
+      const contractOptions = ev.selectedOptions || [];
+      const requestedOptions = ev.requestedOptions || [];
+      
+      if (contractOptions.length > 0 || requestedOptions.length > 0 || (ev.optionsTarifNotes && ev.showOptionsTarifNotesToClient)) {
+        if (y > 250) { doc.addPage(); y = 20; }
+        y += 5;
+        doc.setFontSize(14); doc.setTextColor(0, 0, 0);
+        doc.text("Tarifs & Options:", 15, y); y += 8;
+        
+        if (contractOptions.length > 0) {
+          doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+          doc.text("Options validées au contrat:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          contractOptions.forEach(opt => {
+             doc.text(`- ${opt.name} (${opt.price}€)`, 15, y); y += 5;
+          });
+          y += 2;
+        }
+        
+        if (requestedOptions.length > 0) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+          doc.text("Options en attente de validation:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          requestedOptions.forEach(opt => {
+             doc.text(`- ${opt.name} (${opt.price}€)`, 15, y); y += 5;
+          });
+          y += 2;
+        }
+
+        if (ev.optionsTarifNotes && ev.showOptionsTarifNotesToClient) {
+          if (y > 270) { doc.addPage(); y = 20; }
+          doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+          doc.text("Notes sur les tarifs:", 15, y); y += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitNotes = doc.splitTextToSize(ev.optionsTarifNotes, 180);
+          doc.text(splitNotes, 15, y); y += splitNotes.length * 5 + 5;
+        }
+      }
+
       if (shouldPreview) {
         return doc.output('bloburl');
       } else {
@@ -2168,149 +2166,338 @@ function urlBase64ToUint8Array(base64String) {
       }
     };
 
-    const generateDjPDF = (shouldPreview = false) => {
+    const generateDjPDF = (shouldPreviewParam = false) => {
+      const shouldPreview = typeof shouldPreviewParam === 'boolean' ? shouldPreviewParam : false;
       const doc = new jsPDF();
-      let y = 15;
-
-      // Header Yellow
-      doc.setFillColor(202, 138, 4); // Tailwind yellow-600
-      doc.rect(0, 0, 210, 25, 'F');
       
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
-      doc.text(ev.name ? ev.name.split(' ')[0].toUpperCase() : "ÉVÉNEMENT", 105, 12, { align: 'center' });
-      doc.setFontSize(12);
-      doc.text(`Espace DJ - ${ev.dj?.name || 'DJ'}`, 105, 20, { align: 'center' });
-      
-      y = 40;
-      doc.setTextColor(0, 0, 0);
+      let y = 10;
+      const startY = 10;
+      let leftY = startY;
+      let rightY = startY;
       
       const info = ev.contractInfo;
       if (info) {
-        doc.setFontSize(16);
-        doc.text("Informations Client", 15, y);
-        y += 8;
-        doc.setFontSize(11);
+        doc.setFontSize(14);
+        doc.text("Informations Client", 15, leftY);
+        leftY += 8;
+        doc.setFontSize(10);
         doc.setTextColor(75, 85, 99);
-        doc.text(`Nom complet : ${info.name || '-'}`, 15, y); y += 6;
-        if (info.company) { doc.text(`Entreprise : ${info.company}`, 15, y); y += 6; }
-        doc.text(`Email : ${info.email || '-'}`, 15, y); y += 6;
-        doc.text(`Téléphone : ${info.phone || '-'} ${info.phone2 ? '/ ' + info.phone2 : ''}`, 15, y); y += 6;
-        doc.text(`Lieu : ${info.location || '-'}`, 15, y); y += 10;
-      }
-
-      if (scheduleItems && scheduleItems.length > 0) {
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(16);
-        doc.text("Déroulement de Soirée", 15, y);
-        y += 8;
-        doc.setFontSize(11);
-        doc.setTextColor(75, 85, 99);
-        scheduleItems.forEach(item => {
-          const surpriseText = item.isSurprise ? " (SURPRISE)" : "";
-          if (item.time) {
-            doc.text(`${item.time} - ${item.label || item.description}${surpriseText}`, 15, y);
-          } else {
-            doc.text(`${item.label || item.description}${surpriseText}`, 15, y);
-          }
-          y += 6;
-          if (y > 280) { doc.addPage(); y = 20; }
-        });
-        y += 5;
+        doc.text(`Nom complet : ${info.name || '-'}`, 15, leftY); leftY += 6;
+        if (info.company) { doc.text(`Entreprise : ${info.company}`, 15, leftY); leftY += 6; }
+        doc.text(`Email : ${info.email || '-'}`, 15, leftY); leftY += 6;
+        doc.text(`Téléphone : ${info.phone || '-'} ${info.phone2 ? '/ ' + info.phone2 : ''}`, 15, leftY); leftY += 6;
+        doc.text(`Lieu : ${info.location || '-'}`, 15, leftY); leftY += 6;
       }
       
-      if (y > 270) { doc.addPage(); y = 20; }
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(16);
-      doc.text("Playlist & Recommandations", 15, y);
-      y += 8;
+      const rawInfo = ev.rawClientInfo || {};
+      const formatDate = (dateStr) => {
+        if (!dateStr) return "Non définie";
+        const parts = dateStr.split('-');
+        if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        return dateStr;
+      };
 
-      if (playlistLink) {
-        doc.setFontSize(12); doc.setTextColor(0, 0, 0);
-        doc.text("Lien playlist:", 15, y); y += 6;
+      if (rawInfo.setup_date || rawInfo.setup_time || rawInfo.start_time || rawInfo.end_time || rawInfo.unlimited_time) {
+        const rightColX = 110;
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(14);
+        doc.text("Planning de la prestation", rightColX, rightY);
+        rightY += 8;
+        doc.setFontSize(10);
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Date d'installation : ${formatDate(rawInfo.setup_date)}`, rightColX, rightY); rightY += 6;
+        doc.text(`Heure d'installation : ${rawInfo.setup_time || "À définir"}`, rightColX, rightY); rightY += 6;
+        doc.text(`Début de prestation : ${rawInfo.start_time || "--:--"}`, rightColX, rightY); rightY += 6;
+        doc.text(`Fin de prestation : ${rawInfo.unlimited_time ? "Illimité" : (rawInfo.end_time || "--:--")}`, rightColX, rightY); rightY += 6;
+      }
+
+      y = Math.max(leftY, rightY) + 6;
+      
+      if (scheduleItems && scheduleItems.length > 0) {
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(13);
+        doc.text("Déroulement de Soirée", 15, y);
+        y += 4;
+        
+        const tableBody = scheduleItems.map(item => [
+          item.isSurprise ? "Surprise" : "",
+          item.time || "",
+          item.label || item.description || ""
+        ]);
+        
+        autoTable(doc, {
+          startY: y,
+          head: [["Type", "Horaire", "Descriptif"]],
+          body: tableBody,
+          theme: 'grid',
+          headStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], lineWidth: 0.1, lineColor: [200, 200, 200], fontStyle: 'bold' },
+          bodyStyles: { textColor: [75, 85, 99], lineWidth: 0.1, lineColor: [229, 231, 235] },
+          columnStyles: {
+            0: { cellWidth: 22 },
+            1: { cellWidth: 22 }
+          },
+          margin: { left: 15, right: 15 },
+          tableLineWidth: 0.1,
+          tableLineColor: [229, 231, 235],
+        });
+        
+        y = (doc.lastAutoTable?.finalY || doc.autoTable.previous.finalY || y) + 14;
+      }
+      
+      if (y > 240) { doc.addPage(); y = 10; }
+      
+      // --- Centered Section: Playlist & Recommandations ---
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(14);
+      doc.text("Playlist & Recommandations", 105, y, { align: 'center' });
+      y += 6;
+
+      doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+      doc.text(`Lien playlist: ${playlistLink ? "Oui" : "Non"}`, 105, y, { align: 'center' });
+      y += 6;
+      
+      if (ev && ev.selectedMusicStyles && ev.selectedMusicStyles.length > 0) {
+        if (y > 280) { doc.addPage(); y = 10; }
+        doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+        doc.text("Styles Musicaux Abordés:", 105, y, { align: 'center' });
+        y += 6;
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
-        doc.text(playlistLink, 15, y); y += 10;
+        const splitText = doc.splitTextToSize(ev.selectedMusicStyles.join(', '), 180);
+        splitText.forEach(line => {
+          if (y > 285) { doc.addPage(); y = 10; }
+          doc.text(line, 105, y, { align: 'center' });
+          y += 5;
+        });
+        y += 3;
       }
       
       if (manualMustPlay) {
-        if (y > 270) { doc.addPage(); y = 20; }
-        doc.setFontSize(12); doc.setTextColor(21, 128, 61);
-        doc.text("À passer absolument:", 15, y); y += 6;
+        if (y > 280) { doc.addPage(); y = 10; }
+        doc.setFontSize(11); doc.setTextColor(21, 128, 61); // green-700
+        doc.text("À passer absolument:", 105, y, { align: 'center' });
+        y += 6;
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
         const splitText = doc.splitTextToSize(manualMustPlay, 180);
-        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        splitText.forEach(line => {
+          if (y > 285) { doc.addPage(); y = 10; }
+          doc.text(line, 105, y, { align: 'center' });
+          y += 5;
+        });
+        y += 3;
       }
 
       if (ev && ev.eventType && ev.eventType.toLowerCase().includes('mariage')) {
         if (entreeMaries) {
-          if (y > 270) { doc.addPage(); y = 20; }
-          doc.setFontSize(12); doc.setTextColor(67, 56, 202); 
-          doc.text("Entrée des mariés:", 15, y); y += 6;
+          if (y > 280) { doc.addPage(); y = 10; }
+          doc.setFontSize(11); doc.setTextColor(67, 56, 202); // indigo-700
+          doc.text("Entrée des mariés:", 105, y, { align: 'center' });
+          y += 6;
           doc.setFontSize(10); doc.setTextColor(75, 85, 99);
           const splitText = doc.splitTextToSize(entreeMaries, 180);
-          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+          splitText.forEach(line => {
+            if (y > 285) { doc.addPage(); y = 10; }
+            doc.text(line, 105, y, { align: 'center' });
+            y += 5;
+          });
+          if (entreeMariesNotes) {
+            const splitNotes = doc.splitTextToSize(`Observation: ${entreeMariesNotes}`, 180);
+            splitNotes.forEach(line => {
+              if (y > 285) { doc.addPage(); y = 10; }
+              doc.text(line, 105, y, { align: 'center' });
+              y += 5;
+            });
+          }
+          y += 3;
         }
         if (ouvertureBal) {
-          if (y > 270) { doc.addPage(); y = 20; }
-          doc.setFontSize(12); doc.setTextColor(67, 56, 202); 
-          doc.text("Ouverture de bal:", 15, y); y += 6;
+          if (y > 280) { doc.addPage(); y = 10; }
+          doc.setFontSize(11); doc.setTextColor(67, 56, 202); 
+          doc.text("Ouverture de bal:", 105, y, { align: 'center' });
+          y += 6;
           doc.setFontSize(10); doc.setTextColor(75, 85, 99);
           const splitText = doc.splitTextToSize(ouvertureBal, 180);
-          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+          splitText.forEach(line => {
+            if (y > 285) { doc.addPage(); y = 10; }
+            doc.text(line, 105, y, { align: 'center' });
+            y += 5;
+          });
+          if (ouvertureBalNotes) {
+            const splitNotes = doc.splitTextToSize(`Observation: ${ouvertureBalNotes}`, 180);
+            splitNotes.forEach(line => {
+              if (y > 285) { doc.addPage(); y = 10; }
+              doc.text(line, 105, y, { align: 'center' });
+              y += 5;
+            });
+          }
+          y += 3;
         }
         if (dessert) {
-          if (y > 270) { doc.addPage(); y = 20; }
-          doc.setFontSize(12); doc.setTextColor(67, 56, 202);
-          doc.text("Dessert:", 15, y); y += 6;
+          if (y > 280) { doc.addPage(); y = 10; }
+          doc.setFontSize(11); doc.setTextColor(67, 56, 202);
+          doc.text("Dessert:", 105, y, { align: 'center' });
+          y += 6;
           doc.setFontSize(10); doc.setTextColor(75, 85, 99);
           const splitText = doc.splitTextToSize(dessert, 180);
-          doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+          splitText.forEach(line => {
+            if (y > 285) { doc.addPage(); y = 10; }
+            doc.text(line, 105, y, { align: 'center' });
+            y += 5;
+          });
+          if (dessertNotes) {
+            const splitNotes = doc.splitTextToSize(`Observation: ${dessertNotes}`, 180);
+            splitNotes.forEach(line => {
+              if (y > 285) { doc.addPage(); y = 10; }
+              doc.text(line, 105, y, { align: 'center' });
+              y += 5;
+            });
+          }
+          y += 3;
         }
         if (customWeddingEvents && customWeddingEvents.length > 0) {
           customWeddingEvents.forEach(item => {
             if (item.title || item.track || item.notes) {
-              if (y > 270) { doc.addPage(); y = 20; }
+              if (y > 280) { doc.addPage(); y = 10; }
               const dispTitle = item.title || "Evénement personnalisé";
-              doc.setFontSize(12); doc.setTextColor(67, 56, 202); 
-              doc.text(`${dispTitle}:`, 15, y); y += 6;
+              doc.setFontSize(11); doc.setTextColor(67, 56, 202); 
+              doc.text(`${dispTitle}:`, 105, y, { align: 'center' });
+              y += 6;
               
               if (item.track) {
                 doc.setFontSize(10); doc.setTextColor(75, 85, 99);
                 const splitTrack = doc.splitTextToSize(`Musique: ${item.track}`, 180);
-                doc.text(splitTrack, 15, y); y += splitTrack.length * 5;
+                splitTrack.forEach(line => {
+                  if (y > 285) { doc.addPage(); y = 10; }
+                  doc.text(line, 105, y, { align: 'center' });
+                  y += 5;
+                });
               }
               if (item.notes) {
                 doc.setFontSize(10); doc.setTextColor(75, 85, 99);
                 const splitNotes = doc.splitTextToSize(`Observation: ${item.notes}`, 180);
-                doc.text(splitNotes, 15, y); y += splitNotes.length * 5;
+                splitNotes.forEach(line => {
+                  if (y > 285) { doc.addPage(); y = 10; }
+                  doc.text(line, 105, y, { align: 'center' });
+                  y += 5;
+                });
               }
-              y += 5;
+              y += 3;
             }
           });
         }
       }
 
       if (dedicaces) {
-        if (y > 270) { doc.addPage(); y = 20; }
-        doc.setFontSize(12); doc.setTextColor(29, 78, 216);
-        doc.text("Dédicaces dans la soirée:", 15, y); y += 6;
+        if (y > 280) { doc.addPage(); y = 10; }
+        doc.setFontSize(11); doc.setTextColor(29, 78, 216);
+        doc.text("Dédicaces dans la soirée:", 105, y, { align: 'center' });
+        y += 6;
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
         const splitText = doc.splitTextToSize(dedicaces, 180);
-        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        splitText.forEach(line => {
+          if (y > 285) { doc.addPage(); y = 10; }
+          doc.text(line, 105, y, { align: 'center' });
+          y += 5;
+        });
+        y += 3;
       }
 
       if (blacklist) {
-        if (y > 270) { doc.addPage(); y = 20; }
-        doc.setFontSize(12); doc.setTextColor(185, 28, 28);
-        doc.text("À éviter (Blacklist):", 15, y); y += 6;
+        if (y > 280) { doc.addPage(); y = 10; }
+        doc.setFontSize(11); doc.setTextColor(185, 28, 28);
+        doc.text("À éviter (Blacklist):", 105, y, { align: 'center' });
+        y += 6;
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
         const splitText = doc.splitTextToSize(blacklist, 180);
-        doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        splitText.forEach(line => {
+          if (y > 285) { doc.addPage(); y = 10; }
+          doc.text(line, 105, y, { align: 'center' });
+          y += 5;
+        });
+        y += 3;
       }
 
+      // --- NEXT PAGE (Page suivante) for Tarifs & Options and Caractéristiques de la salle ---
+      doc.addPage();
+      const startColY = 10;
+      leftY = startColY;
+      rightY = startColY;
+      const leftColX = 15;
+      const rightColX = 110;
+      const colWidth = 85;
+
+      // Left Column: Tarifs & Options
+      const contractOptions = ev.selectedOptions || [];
+      const requestedOptions = ev.requestedOptions || [];
+      
+      doc.setFontSize(16); doc.setTextColor(0, 0, 0);
+      doc.text("Tarifs & Options", leftColX, leftY); leftY += 8;
+      
+      if (contractOptions.length > 0 || requestedOptions.length > 0 || ev.optionsTarifNotes) {
+        if (contractOptions.length > 0) {
+          doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+          doc.text("Options validées:", leftColX, leftY); leftY += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          contractOptions.forEach(opt => {
+             const splitOpt = doc.splitTextToSize(`- ${opt.name} (${opt.price}€)`, colWidth);
+             doc.text(splitOpt, leftColX, leftY); leftY += splitOpt.length * 5;
+          });
+          leftY += 4;
+        }
+        
+        if (requestedOptions.length > 0) {
+          doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+          doc.text("Options en attente:", leftColX, leftY); leftY += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          requestedOptions.forEach(opt => {
+             const splitOpt = doc.splitTextToSize(`- ${opt.name} (${opt.price}€)`, colWidth);
+             doc.text(splitOpt, leftColX, leftY); leftY += splitOpt.length * 5;
+          });
+          leftY += 4;
+        }
+
+        if (ev.optionsTarifNotes) {
+          doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+          doc.text("Notes sur les tarifs:", leftColX, leftY); leftY += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitNotes = doc.splitTextToSize(ev.optionsTarifNotes, colWidth);
+          doc.text(splitNotes, leftColX, leftY); leftY += splitNotes.length * 5 + 5;
+        }
+      } else {
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        doc.text("Aucun tarif ou option spécifique renseigné.", leftColX, leftY); leftY += 6;
+      }
+
+      // Right Column: Caractéristiques de la salle
+      const hasVenueFeatures = ev.has_limiteur_son || ev.has_detecteur_fumee || ev.has_wifi || ev.has_4g_5g;
+      
+      doc.setFontSize(16); doc.setTextColor(0, 0, 0);
+      doc.text("Caractéristiques de la salle", rightColX, rightY); rightY += 8;
+      
+      if (hasVenueFeatures || ev.venue_notes) {
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        if (ev.has_limiteur_son) { doc.text("- Présence d'un limiteur de son", rightColX, rightY); rightY += 5; }
+        if (ev.has_detecteur_fumee) { doc.text("- Présence d'un détecteur de fumée", rightColX, rightY); rightY += 5; }
+        if (ev.has_wifi) { doc.text("- Wi-Fi disponible", rightColX, rightY); rightY += 5; }
+        if (ev.has_4g_5g) { doc.text("- Réseau 4G/5G accessible", rightColX, rightY); rightY += 5; }
+        
+        if (ev.venue_notes) {
+          rightY += 4;
+          doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+          doc.text("Observations sur la salle:", rightColX, rightY); rightY += 6;
+          doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+          const splitText = doc.splitTextToSize(ev.venue_notes, colWidth);
+          doc.text(splitText, rightColX, rightY); rightY += splitText.length * 5 + 5;
+        }
+      } else {
+        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        doc.text("Aucune caractéristique spécifique renseignée.", rightColX, rightY); rightY += 6;
+      }
+
+      y = Math.max(leftY, rightY) + 12;
+
       if (notes) {
-        if (y > 270) { doc.addPage(); y = 20; }
-        doc.setFontSize(12); doc.setTextColor(0, 0, 0);
+        if (y > 275) { doc.addPage(); y = 10; }
+        doc.setFontSize(14); doc.setTextColor(0, 0, 0);
         doc.text("Notes DJ:", 15, y); y += 6;
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
         const splitText = doc.splitTextToSize(notes, 180);
@@ -2323,6 +2510,146 @@ function urlBase64ToUint8Array(base64String) {
         const safeName = (ev.contractInfo?.name || ev.name || 'Client').replace(/\s+/g, '_');
         doc.save(`Fiche_DJ_${safeName}.pdf`);
       }
+    };
+
+    const AppointmentBannerSection = () => {
+      const hasDefinedAppointment = !!ev.next_appointment_date;
+      const isAdminOrDj = currentRoute.role === 'admin' || currentRoute.role === 'dj';
+
+      const handleSaveAppointment = async () => {
+        try {
+          await updateContractDb(ev.id, {
+            next_appointment_date: appointmentDate,
+            next_appointment_time: appointmentTime
+          });
+          setIsEditingAppointment(false);
+          toast.success("Date du rendez-vous enregistrée !");
+        } catch (err) {
+          toast.error("Erreur de sauvegarde");
+        }
+      };
+
+      const handleClearAppointment = async () => {
+        if (window.confirm("Réinitialiser le rendez-vous à la valeur par défaut ?")) {
+          try {
+            await updateContractDb(ev.id, {
+              next_appointment_date: null,
+              next_appointment_time: null
+            });
+            setAppointmentDate("");
+            setAppointmentTime("");
+            setIsEditingAppointment(false);
+            toast.success("Rendez-vous réinitialisé.");
+          } catch (err) {
+            toast.error("Erreur lors de la réinitialisation");
+          }
+        }
+      };
+
+      const formatAppointmentDate = (dateStr) => {
+        if (!dateStr) return "";
+        const parts = dateStr.split('-');
+        if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        return dateStr;
+      };
+
+      const handleCancelAppointment = () => {
+        setAppointmentDate(ev.next_appointment_date || "");
+        setAppointmentTime(ev.next_appointment_time || "");
+        setIsEditingAppointment(false);
+      };
+
+      return (
+        <div className="bg-red-700/90 text-white rounded-xl p-4 shadow-md flex flex-col gap-3 border border-red-800/10 mb-6 animate-in fade-in duration-300">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-white/10 text-white rounded-lg shrink-0">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white leading-snug">
+                  Prochain rendez-vous
+                </h4>
+                <p className="text-xs text-red-100 mt-0.5 font-medium">
+                  {hasDefinedAppointment ? (
+                    <span>
+                      🗓️ Votre prochain rendez-vous de préparation est fixé le <span className="font-bold underline">{formatAppointmentDate(ev.next_appointment_date)}</span>
+                      {ev.next_appointment_time && (
+                        <span> à <span className="font-bold underline">{ev.next_appointment_time}</span></span>
+                      )}
+                    </span>
+                  ) : (
+                    <span>🔴 Le prochain rendez-vous se fera dans la semaine de l'événement.</span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {isAdminOrDj && !isEditingAppointment && (
+              <button
+                onClick={() => {
+                  setAppointmentDate(ev.next_appointment_date || "");
+                  setAppointmentTime(ev.next_appointment_time || "");
+                  setIsEditingAppointment(true);
+                }}
+                className="bg-white hover:bg-stone-50 text-red-800 font-extrabold py-1.5 px-3 rounded-lg transition text-xs flex items-center justify-center gap-1.5 shadow-md whitespace-nowrap self-stretch sm:self-auto select-none"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Modifier la date du rendez-vous
+              </button>
+            )}
+          </div>
+
+          {isEditingAppointment && (
+            <div className="bg-red-800/30 p-3 rounded-lg border border-white/10 flex flex-col gap-3 mt-1 animate-in fade-in duration-200">
+              <p className="text-xs text-red-100 font-semibold">Saisir les informations du prochain rendez-vous (DJ / Admin) :</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] text-red-200 uppercase font-bold mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={appointmentDate}
+                    onChange={(e) => setAppointmentDate(e.target.value)}
+                    className="w-full text-slate-900 bg-white border border-red-300 rounded-lg p-2 text-xs focus:ring-red-500 focus:border-red-500 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-red-200 uppercase font-bold mb-1">Heure / Précisions</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 18h35"
+                    value={appointmentTime}
+                    onChange={(e) => setAppointmentTime(e.target.value)}
+                    className="w-full text-slate-900 bg-white border border-red-300 rounded-lg p-2 text-xs focus:ring-red-500 focus:border-red-500 font-medium"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-2">
+                {hasDefinedAppointment && (
+                  <button
+                    onClick={handleClearAppointment}
+                    className="mr-auto px-3 py-1.5 bg-red-800/60 hover:bg-red-900/60 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Réinitialiser par défaut
+                  </button>
+                )}
+                <button
+                  onClick={handleCancelAppointment}
+                  className="px-3 py-1.5 bg-red-900/40 hover:bg-red-950/40 text-red-200 hover:text-white rounded-lg text-xs font-bold transition flex items-center gap-1 border border-red-500/30"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleSaveAppointment}
+                  className="px-4 py-1.5 bg-white hover:bg-stone-50 text-red-800 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-md"
+                >
+                  <Check className="w-3.5 h-3.5" /> Enregistrer
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
     };
 
     const ClientInfoSection = () => {
@@ -4726,6 +5053,7 @@ function urlBase64ToUint8Array(base64String) {
           );
         })()}
 
+        {AppointmentBannerSection()}
         {ClientInfoSection()}
         {ChatSection()}
         {PlanningSection()}
