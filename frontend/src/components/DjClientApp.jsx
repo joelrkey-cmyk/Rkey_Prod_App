@@ -890,8 +890,8 @@ function urlBase64ToUint8Array(base64String) {
   };
 
   const getClientLink = (ev) => {
-    const type = ev.name.split(' ')[0].toLowerCase().replace(/\s+/g, '-');
-    const clientName = ev.client.name.toLowerCase().replace(/\s+/g, '-');
+    const type = ev.name ? ev.name.split(' ')[0].toLowerCase().replace(/\s+/g, '-') : 'event';
+    const clientName = (ev.client?.name || ev.contractInfo?.name || 'Client').toLowerCase().replace(/\s+/g, '-');
     return `rkeyprodapp.fr/${type}-${clientName}`;
   };
 
@@ -937,7 +937,7 @@ function urlBase64ToUint8Array(base64String) {
                     </button>
                     {ev.client?.name && (
                       <div className="text-xs text-slate-500 mt-0.5">
-                        Client : <span className="font-semibold text-slate-700">{ev.client.name}</span>
+                        Client : <span className="font-semibold text-slate-700">{ev.client?.name}</span>
                       </div>
                     )}
                     {notifCount > 0 && (
@@ -1066,7 +1066,7 @@ function urlBase64ToUint8Array(base64String) {
                       {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
                     </td>
                     <td className={`px-4 ${rowBg} ${lastCellBorder}`}>
-                      <div className="text-sm font-medium mb-1">{ev.client.name}</div>
+                      <div className="text-sm font-medium mb-1">{ev.client?.name || ev.contractInfo?.name || 'Inconnu'}</div>
                       <div className="flex items-center gap-1">
                         <div className="text-xs text-green-600 bg-green-50 border border-green-100 px-2 py-1 rounded truncate max-w-[150px]">
                           {getClientLink(ev)}
@@ -1730,7 +1730,6 @@ function urlBase64ToUint8Array(base64String) {
             <div className="border rounded-lg p-5 bg-indigo-50 border-indigo-200">
               <div className="flex items-center justify-between mb-4 border-b border-indigo-100 pb-2">
                 <h4 className="font-semibold text-indigo-700 text-base">Section Mariage</h4>
-                {(role === 'client' || role === 'admin') && (
                   <button 
                     type="button"
                     onClick={handleAddCustomWeddingEvent}
@@ -1738,7 +1737,6 @@ function urlBase64ToUint8Array(base64String) {
                   >
                     <Plus className="w-4 h-4" /> Ajouter un moment
                   </button>
-                )}
               </div>
               <div className="space-y-4">
                 <div>
@@ -1750,7 +1748,6 @@ function urlBase64ToUint8Array(base64String) {
                     onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { entree_maries: e.target.value })}}
                     className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
                     placeholder="Titre exact (ex: Bruno Mars - Marry You)"
-                    disabled={role !== 'client' && role !== 'admin'}
                   />
                   <input
                     type="text"
@@ -1770,7 +1767,6 @@ function urlBase64ToUint8Array(base64String) {
                     onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { ouverture_bal: e.target.value })}}
                     className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
                     placeholder="Titre exact (ex: Ed Sheeran - Perfect)"
-                    disabled={role !== 'client' && role !== 'admin'}
                   />
                   <input
                     type="text"
@@ -1790,7 +1786,6 @@ function urlBase64ToUint8Array(base64String) {
                     onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { dessert: e.target.value })}}
                     className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
                     placeholder="Titre exact ou laissez vide si géré par le DJ"
-                    disabled={role !== 'client' && role !== 'admin'}
                   />
                   <input
                     type="text"
@@ -1815,10 +1810,8 @@ function urlBase64ToUint8Array(base64String) {
                           onBlur={handleSaveCustomWeddingEvents}
                           placeholder="Ex: Danse avec le papa"
                           className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm font-semibold text-gray-800 placeholder-gray-400 bg-white"
-                          disabled={role !== 'client' && role !== 'admin'}
                         />
                       </div>
-                      {(role === 'client' || role === 'admin') && (
                         <button
                           type="button"
                           onClick={() => handleDeleteCustomWeddingEvent(item.id)}
@@ -1827,7 +1820,6 @@ function urlBase64ToUint8Array(base64String) {
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                      )}
                     </div>
                     
                     <div className="space-y-2">
@@ -1840,7 +1832,6 @@ function urlBase64ToUint8Array(base64String) {
                           onBlur={handleSaveCustomWeddingEvents}
                           className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
                           placeholder="Ex: Henri Salvador - Jardin d'hiver"
-                          disabled={role !== 'client' && role !== 'admin'}
                         />
                       </div>
                       
@@ -1873,7 +1864,6 @@ function urlBase64ToUint8Array(base64String) {
               onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { dedicaces: e.target.value })}}
               className="w-full border rounded-md p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               placeholder="Ex: ACDC - Highway to hell pour tonton Xavier"
-              disabled={role !== 'client' && role !== 'admin'}
             />
           </div>
           
@@ -2054,9 +2044,9 @@ function urlBase64ToUint8Array(base64String) {
       
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(22);
-      doc.text(ev.name.split(' ')[0].toUpperCase() || "ÉVÉNEMENT", 105, 12, { align: 'center' });
+      doc.text(ev.name ? ev.name.split(' ')[0].toUpperCase() : "ÉVÉNEMENT", 105, 12, { align: 'center' });
       doc.setFontSize(12);
-      doc.text(`Espace Client - ${ev.client.name}`, 105, 20, { align: 'center' });
+      doc.text(`Espace Client - ${ev.contractInfo?.name || ev.name || 'Client'}`, 105, 20, { align: 'center' });
       
       y = 40;
       doc.setTextColor(0, 0, 0);
@@ -2173,7 +2163,8 @@ function urlBase64ToUint8Array(base64String) {
       if (shouldPreview) {
         return doc.output('bloburl');
       } else {
-        doc.save(`Recapitulatif_${ev.client.name.replace(/\s+/g, '_')}.pdf`);
+        const safeName = (ev.contractInfo?.name || ev.name || 'Client').replace(/\s+/g, '_');
+        doc.save(`Recapitulatif_${safeName}.pdf`);
       }
     };
 
@@ -2187,9 +2178,9 @@ function urlBase64ToUint8Array(base64String) {
       
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(22);
-      doc.text(ev.name.split(' ')[0].toUpperCase() || "ÉVÉNEMENT", 105, 12, { align: 'center' });
+      doc.text(ev.name ? ev.name.split(' ')[0].toUpperCase() : "ÉVÉNEMENT", 105, 12, { align: 'center' });
       doc.setFontSize(12);
-      doc.text(`Espace DJ - ${ev.dj.name}`, 105, 20, { align: 'center' });
+      doc.text(`Espace DJ - ${ev.dj?.name || 'DJ'}`, 105, 20, { align: 'center' });
       
       y = 40;
       doc.setTextColor(0, 0, 0);
@@ -2329,7 +2320,8 @@ function urlBase64ToUint8Array(base64String) {
       if (shouldPreview) {
         return doc.output('bloburl');
       } else {
-        doc.save(`Fiche_DJ_${ev.client.name.replace(/\s+/g, '_')}.pdf`);
+        const safeName = (ev.contractInfo?.name || ev.name || 'Client').replace(/\s+/g, '_');
+        doc.save(`Fiche_DJ_${safeName}.pdf`);
       }
     };
 
@@ -4655,7 +4647,7 @@ function urlBase64ToUint8Array(base64String) {
                   Espace DJ - {ev.name}
                 </h2>
                 <div className="mt-4 flex gap-4 items-center">
-                  <p className="opacity-90">Connecté en tant que: <span className="font-semibold">{ev.dj.name}</span></p>
+                  <p className="opacity-90">Connecté en tant que: <span className="font-semibold">{ev.dj?.name || 'DJ'}</span></p>
                 </div>
               </div>
               <button onClick={generateDjPDF} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 w-fit">
@@ -4677,7 +4669,7 @@ function urlBase64ToUint8Array(base64String) {
                 </div>
                 <h2 className="text-2xl font-bold flex items-center gap-2">
                   <Users className="w-8 h-8" />
-                  Espace Client - {ev.client.name}
+                  Espace Client - {ev.contractInfo?.name || ev.client?.name || ev.name}
                 </h2>
               </div>
               <button onClick={generateClientPDF} className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 w-fit">
@@ -4926,7 +4918,7 @@ function urlBase64ToUint8Array(base64String) {
                                             </h4>
                                             {ev.client?.name && (
                                                 <p className="text-[11px] text-slate-500 mt-0.5">
-                                                    Client : <span className="font-semibold text-slate-700">{ev.client.name}</span>
+                                                    Client : <span className="font-semibold text-slate-700">{ev.client?.name}</span>
                                                 </p>
                                             )}
                                         </div>
@@ -5025,7 +5017,7 @@ function urlBase64ToUint8Array(base64String) {
                                                             </h4>
                                                             {ev.client?.name && (
                                                                 <p className="text-[11px] text-slate-500 mt-0.5">
-                                                                    Client : <span className="font-semibold text-slate-705">{ev.client.name}</span>
+                                                                    Client : <span className="font-semibold text-slate-705">{ev.client?.name}</span>
                                                                 </p>
                                                             )}
                                                         </div>
@@ -5091,7 +5083,7 @@ function urlBase64ToUint8Array(base64String) {
                                     </h4>
                                     {ev.client?.name && (
                                         <p className="text-[11px] text-slate-505 mt-0.5">
-                                            Client : <span className="font-semibold text-slate-650">{ev.client.name}</span>
+                                            Client : <span className="font-semibold text-slate-650">{ev.client?.name}</span>
                                         </p>
                                     )}
                                 </div>
