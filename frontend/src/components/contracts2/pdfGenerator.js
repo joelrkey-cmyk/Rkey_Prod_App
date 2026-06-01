@@ -277,7 +277,7 @@ export const generateContractAndGuide = async (contract, generateContractHTMLFn,
       .replace(/\s+/g, '_')
       .substring(0, 50);
     
-    const contractFileName = `CONTRAT_ADMIN_${cleanName}_${getFormattedEventDate(contract)}.pdf`;
+    const contractFileName = `CONTRAT_RKEYPROD_${cleanName}_${getFormattedEventDate(contract)}.pdf`;
     await generatePDFFromHTML(contract, generateContractHTMLFn, loadSignatureImagesFn, { 
       mode: 'contract-only', 
       filename: contractFileName,

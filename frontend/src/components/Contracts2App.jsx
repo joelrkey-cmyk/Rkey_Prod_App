@@ -1154,7 +1154,7 @@ function Contracts2App() {
         filename = `Contrat_Prestation_RKeyProd_${cName}_${dateStr}.pdf`;
       } else {
         html = generateContractHTMLLocal(contract, null, signatureImages);
-        filename = `Contrat_Administratif_${cName}_${dateStr}.pdf`;
+        filename = `Contrat_RKEYPROD_${cName}_${dateStr}.pdf`;
       }
       
       await exportHTMLToPDF(html, filename);
