@@ -19,6 +19,13 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
 
   const isCompany = !!(contract.client_info && contract.client_info.company && contract.client_info.company.trim() !== "");
 
+  const resolvedEventType = (contract.client_info && contract.client_info.event_type === 'custom' && contract.client_info.custom_event_type)
+    ? contract.client_info.custom_event_type
+    : (contract.client_info ? contract.client_info.event_type : '');
+
+  const isHypnose = resolvedEventType && resolvedEventType.toLowerCase().trim() === 'intervention hypnose';
+  const mainPrestationName = isHypnose ? "Intervention hypnose" : (isJoel ? "Animation DJ" : "Prestation artistique");
+
   const fmtVal = (val) => (val || 0).toFixed(2) + " €";
   const fmtHTVal = (val) => (Math.round(((val || 0) / 1.20) * 100) / 100).toFixed(2) + " €";
   const fmtTvaVal = (val) => (Math.round(((val || 0) - (val || 0) / 1.20) * 100) / 100).toFixed(2) + " €";
@@ -125,14 +132,14 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             ${isJoel ? (
               isCompany ? `
                 <tr>
-                  <td><strong>Animation DJ ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td><strong>${mainPrestationName} ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
                   <td style="text-align: right;">${fmtHTVal(contract.base_price)}</td>
                   <td style="text-align: right;">${fmtTvaVal(contract.base_price)}</td>
                   <td style="text-align: right; font-weight: bold;">${fmtVal(contract.base_price)}</td>
                 </tr>
               ` : `
                 <tr>
-                  <td><strong>Animation DJ ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td><strong>${mainPrestationName} ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
                   <td style="text-align: right;"><strong>${fmtVal(contract.base_price)}</strong></td>
                 </tr>
               `
@@ -163,14 +170,14 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             ) : (
               isCompany ? `
                 <tr>
-                  <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td><strong>${mainPrestationName} ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
                   <td style="text-align: right;">${fmtHTVal(contract.base_price)}</td>
                   <td style="text-align: right;">${fmtTvaVal(contract.base_price)}</td>
                   <td style="text-align: right; font-weight: bold;">${fmtVal(contract.base_price)}</td>
                 </tr>
               ` : `
                 <tr>
-                  <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td><strong>${mainPrestationName} ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
                   <td style="text-align: right;"><strong>${fmtVal(contract.base_price)}</strong></td>
                 </tr>
               `
@@ -241,14 +248,14 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             ${isJoel ? (
               isCompany ? `
                 <tr>
-                  <td><strong>Animation DJ ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td><strong>${mainPrestationName} ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
                   <td style="text-align: right;">${fmtHTVal(contract.base_price)}</td>
                   <td style="text-align: right;">${fmtTvaVal(contract.base_price)}</td>
                   <td style="text-align: right; font-weight: bold;">${fmtVal(contract.base_price)}</td>
                 </tr>
               ` : `
                 <tr>
-                  <td><strong>Animation DJ ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td><strong>${mainPrestationName} ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
                   <td style="text-align: right;"><strong>${fmtVal(contract.base_price)}</strong></td>
                 </tr>
               `
@@ -279,14 +286,14 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             ) : (
               isCompany ? `
                 <tr>
-                  <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td><strong>${mainPrestationName} ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
                   <td style="text-align: right;">${fmtHTVal(contract.base_price)}</td>
                   <td style="text-align: right;">${fmtTvaVal(contract.base_price)}</td>
                   <td style="text-align: right; font-weight: bold;">${fmtVal(contract.base_price)}</td>
                 </tr>
               ` : `
                 <tr>
-                  <td><strong>Prestation artistique ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
+                  <td><strong>${mainPrestationName} ${contract.client_info.unlimited_time ? '(sans limite horaire)' : (contract.client_info.end_time ? `(jusqu'à ${contract.client_info.end_time})` : '')}</strong></td>
                   <td style="text-align: right;"><strong>${fmtVal(contract.base_price)}</strong></td>
                 </tr>
               `

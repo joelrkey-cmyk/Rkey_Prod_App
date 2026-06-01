@@ -266,8 +266,9 @@ export const ContractPreview = ({
 
           {/* Send email button */}
           <div className="flex justify-center pt-2">
-            <Button onClick={onSendEmail} className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-lg" data-testid="send-contract-email-btn">
-              <Send className="h-5 w-5 mr-2" />Envoyer les contrats
+            <Button onClick={() => onSendEmail(mandatTab)} className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-lg" data-testid="send-contract-email-btn">
+              <Send className="h-5 w-5 mr-2" />
+              {mandatTab === 'mandat' ? "Envoyer le Contrat Mandat par email" : "Envoyer le Contrat Artiste par email"}
             </Button>
           </div>
         </div>

@@ -224,6 +224,13 @@ export const generateArtisteHTML = (contract, resolveProfile) => {
   const cachetArtiste = contract.cachet_artiste || 0;
   const isCompany = !!(contract.client_info && contract.client_info.company && contract.client_info.company.trim() !== "");
 
+  const resolvedEventType = (contract.client_info && contract.client_info.event_type === 'custom' && contract.client_info.custom_event_type)
+    ? contract.client_info.custom_event_type
+    : (contract.client_info ? contract.client_info.event_type : '');
+
+  const isHypnose = resolvedEventType && resolvedEventType.toLowerCase().trim() === 'intervention hypnose';
+  const labelPrestation = isHypnose ? "Intervention hypnose" : "Prestation artistique DJ";
+
   return `
   <div style="font-family: Arial, 'Noto Color Emoji', sans-serif; font-size: 12px; line-height: 1.3; color: #000; max-width: 200mm; margin: 0 auto; background: white; padding: 8px;">
     <style>
@@ -272,7 +279,7 @@ export const generateArtisteHTML = (contract, resolveProfile) => {
           </thead>
           <tbody>
             <tr>
-              <td><strong>Prestation artistique DJ (Forfait global)</strong><br>
+              <td><strong>${labelPrestation} (Forfait global)</strong><br>
                 <small style="color:#555;">incluant l'infrastructure technique (son & lumiere festif) et la performance musicale</small><br>
                 <small style="color:#888;">${contract.client_info.event_type || 'Evenement'} — ${contract.client_info.event_date ? new Date(contract.client_info.event_date).toLocaleDateString('fr-FR') : ''}</small>
               </td>
@@ -360,6 +367,13 @@ export const generateEntrepriseHTML = (contract, companySettings) => {
   const acompte30 = Math.round(totalTTC * 0.30 * 100) / 100;
   const solde70 = Math.round((totalTTC - acompte30) * 100) / 100;
 
+  const resolvedEventType = (contract.client_info && contract.client_info.event_type === 'custom' && contract.client_info.custom_event_type)
+    ? contract.client_info.custom_event_type
+    : (contract.client_info ? contract.client_info.event_type : '');
+
+  const isHypnose = resolvedEventType && resolvedEventType.toLowerCase().trim() === 'intervention hypnose';
+  const labelPrestation = isHypnose ? "Intervention hypnose" : "Prestation artistique DJ";
+
   return `
   <div style="font-family: Arial, 'Noto Color Emoji', sans-serif; font-size: 12px; line-height: 1.3; color: #000; max-width: 200mm; margin: 0 auto; background: white; padding: 8px;">
     <style>${CSS_COMMON}</style>
@@ -406,7 +420,7 @@ export const generateEntrepriseHTML = (contract, companySettings) => {
           </thead>
           <tbody>
             <tr>
-              <td><strong>Prestation artistique DJ (Forfait global)</strong><br>
+              <td><strong>${labelPrestation} (Forfait global)</strong><br>
                 <small style="color:#555;">incluant l'infrastructure technique (son & lumiere festif) et la performance musicale</small>
               </td>
               <td>${totalHT.toFixed(2)} EUR</td>

@@ -1225,7 +1225,7 @@ function Contracts2App() {
     }
   };
 
-  const openContractEmailModal = (contractDataOrId) => {
+  const openContractEmailModal = (contractDataOrId, selectedTab = null) => {
     let contractData = contractDataOrId;
     if (!contractData.client_info) {
       contractData = { ...contractData, ...buildCurrentContractData() };
@@ -1237,18 +1237,38 @@ function Contracts2App() {
     const isEntreprise = contractData.contract_mode === 'entreprise' && !contractData.is_dirigeant;
 
     if (isMandat) {
-        contractHTMLs = [
-          {
-             html: generateMandatHTML(contractData, companySettings),
-             filename: `Contrat_Mandat_RKeyProd_${(contractData.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
-          },
-          {
-             html: generateArtisteHTML(contractData, resolveProfile),
-             filename: `Contrat_Artiste_${(contractData.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
-          }
-        ];
-        // Keep a fallback combined html just in case
-        contractHTML = contractHTMLs[0].html + "\n<div class='page-break' style='page-break-after: always; height: 0; min-height: 0; margin: 0; padding: 0;'></div>\n" + contractHTMLs[1].html;
+        if (selectedTab === 'mandat') {
+            contractHTML = generateMandatHTML(contractData, companySettings);
+            contractHTMLs = [
+              {
+                 html: contractHTML,
+                 filename: `Contrat_Mandat_RKeyProd_${(contractData.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+              }
+            ];
+        } else if (selectedTab === 'artiste') {
+            contractHTML = generateArtisteHTML(contractData, resolveProfile);
+            const profile = resolveProfile(contractData);
+            const artistName = (profile.nom_artistique || profile.nom_complet || 'Artiste').replace(/[^a-zA-Z0-9]/g, '_');
+            contractHTMLs = [
+              {
+                 html: contractHTML,
+                 filename: `Contrat_Artiste_${artistName}_${(contractData.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+              }
+            ];
+        } else {
+            contractHTMLs = [
+              {
+                 html: generateMandatHTML(contractData, companySettings),
+                 filename: `Contrat_Mandat_RKeyProd_${(contractData.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+              },
+              {
+                 html: generateArtisteHTML(contractData, resolveProfile),
+                 filename: `Contrat_Artiste_${(contractData.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`
+              }
+            ];
+            // Keep a fallback combined html just in case
+            contractHTML = contractHTMLs[0].html + "\n<div class='page-break' style='page-break-after: always; height: 0; min-height: 0; margin: 0; padding: 0;'></div>\n" + contractHTMLs[1].html;
+        }
     } else if (isEntreprise) {
         contractHTML = generateEntrepriseHTML(contractData, companySettings);
     } else {
@@ -2507,10 +2527,10 @@ function Contracts2App() {
                   generatedContract={generatedContract}
                   generateContractHTMLForPreview={(mode) => generateContractHTMLLocal(buildCurrentContractData(), null, signatureImages, { mode })}
                   onExportPDF={() => generateContractAndGuide(buildCurrentContractData(), generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService)}
-                  onSendEmail={() => openContractEmailModal({
+                  onSendEmail={(selectedTab) => openContractEmailModal({
                     id: generatedContract?.id || editingContract?.id,
                     ...buildCurrentContractData()
-                  })}
+                  }, selectedTab)}
                   selectedPdfNotes={selectedPdfNotes}
                   onGetCompiledGuideBlob={() => getCompiledGuideBlob(buildCurrentContractData(), generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService)}
                   isMandatMode={!isDirigeant() && contractMode === 'mandataire'}
