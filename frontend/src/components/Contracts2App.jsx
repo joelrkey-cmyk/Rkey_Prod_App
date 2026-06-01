@@ -967,6 +967,42 @@ function Contracts2App() {
       return;
     }
 
+    let activeInvoiceNumber = invoiceNumber;
+    let activeArtisteInvoiceNumber = artisteInvoiceNumber;
+
+    // Auto-generate invoice/contract numbers if they are blank
+    const needsMandat = !activeInvoiceNumber;
+    const needsArtiste = contractMode === 'mandataire' && !activeArtisteInvoiceNumber;
+
+    if (needsMandat || needsArtiste) {
+      try {
+        let typeToIncrement = 'both';
+        if (needsMandat && !needsArtiste) {
+          typeToIncrement = 'mandat';
+        } else if (!needsMandat && needsArtiste) {
+          typeToIncrement = 'artiste';
+        }
+
+        const incResponse = await axios.post(`${API}/contracts2/counters/increment`, { type: typeToIncrement });
+        const { mandat_number, artiste_number } = incResponse.data;
+        
+        if (needsMandat) {
+          activeInvoiceNumber = mandat_number;
+          setInvoiceNumber(mandat_number);
+          toast.success(`Numéro de contrat/facture automatique généré : ${mandat_number}`);
+        }
+        if (needsArtiste) {
+          activeArtisteInvoiceNumber = artiste_number;
+          setArtisteInvoiceNumber(artiste_number);
+          toast.success(`Numéro d'engagement d'artiste automatique généré : ${artiste_number}`);
+        }
+        
+        fetchNextNumbers();
+      } catch (incError) {
+        console.error("Auto-numbering error on save:", incError);
+      }
+    }
+
     const contract = {
       client_info: {
         name: clientInfo.name, email: clientInfo.email, phone: clientInfo.phone,
@@ -989,7 +1025,8 @@ function Contracts2App() {
       selected_options: selectedOptions.filter(opt => opt.selected),
       options_tarif_notes: optionsTarifNotes,
       discount_amount: discountAmount || 0,
-      invoice_number: invoiceNumber || "",
+      invoice_number: activeInvoiceNumber || "",
+      artiste_invoice_number: activeArtisteInvoiceNumber || "",
       custom_deposit_amount: customDepositAmount || 0,
       no_deposit_required: noDepositRequired || false,
       selected_rib: selectedRIB || "",
@@ -2397,8 +2434,8 @@ function Contracts2App() {
                             <Input 
                               value={invoiceNumber} 
                               onChange={(e) => setInvoiceNumber(e.target.value)} 
-                              placeholder="CTR-2026-0000"
-                              className="border-slate-300 focus:border-blue-500 text-sm h-9 flex-1 bg-white font-mono" 
+                              placeholder="Auto (généré à la sauvegarde si vide)"
+                              className="border-slate-300 focus:border-blue-500 text-xs h-9 flex-1 bg-white font-mono" 
                             />
                             <Button 
                               type="button" 
@@ -2441,8 +2478,8 @@ function Contracts2App() {
                               <Input 
                                 value={artisteInvoiceNumber} 
                                 onChange={(e) => setArtisteInvoiceNumber(e.target.value)} 
-                                placeholder="ART-SJ-2026-0000"
-                                className="border-slate-300 focus:border-amber-500 text-sm h-9 flex-1 bg-white font-mono" 
+                                placeholder="Auto (généré à la sauvegarde si vide)"
+                                className="border-slate-300 focus:border-amber-500 text-xs h-9 flex-1 bg-white font-mono" 
                               />
                               <Button 
                                 type="button" 
@@ -2540,135 +2577,7 @@ function Contracts2App() {
               </div>
               )}
 
-              {/* Mode Mandat: Numéro de contrat uniquement */}
-              {!isDirigeant() && (
-              <div className="lg:col-span-2">
-                <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-slate-800">Référence du Contrat</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {/* Integrated Dual Isolated Numbering Section */}
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                      <div className="flex items-center justify-between border-b pb-2">
-                        <div>
-                          <h4 className="font-semibold text-slate-800 text-sm">Numérotations de Dossier Séquentielles</h4>
-                          <p className="text-xs text-slate-500">Compteurs isolés pour la conformité réglementaire</p>
-                        </div>
-                        {contractMode === 'mandataire' && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleGenerateNumbers('both')}
-                            className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 text-xs flex items-center gap-1 h-8 px-2"
-                            title="Générer les deux numéros séquentiels d'un coup"
-                          >
-                            ⚡ Générer les deux
-                          </Button>
-                        )}
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* FIRST CONTRACT NUMBER (MANDAT or PRESTATION) */}
-                        <div className="space-y-2 border-r pr-0 md:pr-4 border-slate-200">
-                          <div className="flex items-center justify-between">
-                            <Label className="text-slate-700 font-medium text-xs">
-                              {contractMode === 'mandataire' ? "N° Contrat Mandat (R'KEY PROD)" : "N° Contrat Prestation"}
-                            </Label>
-                            <span className="text-[10px] bg-blue-100 text-blue-800 font-mono px-1.5 py-0.5 rounded font-bold">CTR</span>
-                          </div>
-                          
-                          <div className="flex items-center space-x-1.5">
-                            <Input 
-                              value={invoiceNumber} 
-                              onChange={(e) => setInvoiceNumber(e.target.value)} 
-                              placeholder="CTR-2026-0000"
-                              className="border-slate-300 focus:border-blue-500 text-sm h-9 flex-1 bg-white font-mono" 
-                            />
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="icon" 
-                              onClick={() => {
-                                if (invoiceNumber) {
-                                  navigator.clipboard.writeText(invoiceNumber);
-                                  toast.success("Numéro Mandat copié !");
-                                } else {
-                                  toast.error("Le numéro de contrat est vide");
-                                }
-                              }} 
-                              className="bg-white hover:bg-slate-100 h-9 w-9 border-slate-300 shrink-0"
-                              title="Copier"
-                            >
-                              <Copy className="h-4 w-4 text-slate-600" />
-                            </Button>
-                          </div>
-                          
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => handleGenerateNumbers('mandat')}
-                            className="w-full text-xs h-8 bg-white hover:bg-slate-100 border text-slate-700 border-slate-300 flex items-center justify-center gap-1 font-medium"
-                          >
-                            🎲 Incrémenter {nextNumbers.next_mandat_number ? `(${nextNumbers.next_mandat_number})` : ""}
-                          </Button>
-                        </div>
 
-                        {/* SECOND CONTRACT NUMBER (ENGAGEMENT ARTISTE) - only if in Mandataire Mode */}
-                        {contractMode === 'mandataire' ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <Label className="text-slate-700 font-medium text-xs">N° Engagement Artiste (DJ Mandaté)</Label>
-                              <span className="text-[10px] bg-amber-100 text-amber-800 font-mono px-1.5 py-0.5 rounded font-bold">ART</span>
-                            </div>
-                            
-                            <div className="flex items-center space-x-1.5">
-                              <Input 
-                                value={artisteInvoiceNumber} 
-                                onChange={(e) => setArtisteInvoiceNumber(e.target.value)} 
-                                placeholder="ART-SJ-2026-0000"
-                                className="border-slate-300 focus:border-amber-500 text-sm h-9 flex-1 bg-white font-mono" 
-                              />
-                              <Button 
-                                type="button" 
-                                variant="outline" 
-                                size="icon" 
-                                onClick={() => {
-                                  if (artisteInvoiceNumber) {
-                                    navigator.clipboard.writeText(artisteInvoiceNumber);
-                                    toast.success("Numéro d'artiste copié !");
-                                  } else {
-                                    toast.error("Le numéro d'artiste est vide");
-                                  }
-                                }} 
-                                className="bg-white hover:bg-slate-100 h-9 w-9 border-slate-300 shrink-0"
-                                title="Copier"
-                              >
-                                <Copy className="h-4 w-4 text-slate-600" />
-                              </Button>
-                            </div>
-                            
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() => handleGenerateNumbers('artiste')}
-                              className="w-full text-xs h-8 bg-white hover:bg-slate-100 border text-slate-700 border-slate-300 flex items-center justify-center gap-1 font-medium"
-                            >
-                              🎲 Incrémenter {nextNumbers.next_artiste_number ? `(${nextNumbers.next_artiste_number})` : ""}
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center border-l border-slate-200 text-slate-400 text-xs italic px-4 text-center">
-                            Mode Entreprise Actif. Un seul contrat global R'Key Prod est généré. Aucun contrat d'engagement artiste séparé requis.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-              )}
 
               {/* Bouton d'action */}
               <div className="lg:col-span-2 flex justify-center gap-4 mb-6">
