@@ -259,7 +259,7 @@ export const generateArtisteHTML = (contract, resolveProfile) => {
           </div>
           <div class="header-right">
             <strong>Date:</strong> ${new Date().toLocaleDateString('fr-FR')}<br>
-            <strong>N° Contrat:</strong> ${contract.invoice_number ? contract.invoice_number + '-ART' : 'ART-' + new Date().getFullYear() + '-' + String(Date.now()).slice(-3)}<br>
+            <strong>N° Contrat:</strong> ${contract.artiste_invoice_number || (contract.invoice_number ? contract.invoice_number + '-ART' : 'ART-' + new Date().getFullYear() + '-' + String(Date.now()).slice(-3))}<br>
             <strong>Document:</strong> 2/2
           </div>
         </div>

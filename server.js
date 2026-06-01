@@ -2458,6 +2458,117 @@ api.delete('/contracts2/:id/permanent', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 
+// ══════════ DUAL ISOLATED COUNTERS ENDPOINTS ══════════
+
+// Get current and next counter values
+api.get('/contracts2/counters', authMiddleware, async (req, res) => {
+  try {
+    const currentYear = new Date().getFullYear();
+    const doc = await db.collection('location_settings').findOne({ type: 'contracts2_counters' }) || {
+      type: 'contracts2_counters',
+      Compteur_Mandat_RKeyProd: 0,
+      Compteur_Engagement_Artiste_Independant: 0
+    };
+    
+    const pad = (num, size) => {
+      let s = num + "";
+      while (s.length < size) s = "0" + s;
+      return s;
+    };
+    
+    const mandatVal = doc.Compteur_Mandat_RKeyProd || 0;
+    const artisteVal = doc.Compteur_Engagement_Artiste_Independant || 0;
+    
+    res.json({
+      Compteur_Mandat_RKeyProd: mandatVal,
+      Compteur_Engagement_Artiste_Independant: artisteVal,
+      next_mandat_number: `CTR-${currentYear}-${pad(mandatVal + 1, 4)}`,
+      next_artiste_number: `ART-SJ-${currentYear}-${pad(artisteVal + 1, 4)}`,
+      current_mandat_number: mandatVal > 0 ? `CTR-${currentYear}-${pad(mandatVal, 4)}` : null,
+      current_artiste_number: artisteVal > 0 ? `ART-SJ-${currentYear}-${pad(artisteVal, 4)}` : null
+    });
+  } catch (error) {
+    console.error("Error retrieving contract counters:", error);
+    res.status(500).json({ error: "Failed to retrieve counters" });
+  }
+});
+
+// Increment counters
+api.post('/contracts2/counters/increment', authMiddleware, async (req, res) => {
+  try {
+    const { type } = req.body; // 'mandat', 'artiste', 'both'
+    const currentYear = new Date().getFullYear();
+    
+    const doc = await db.collection('location_settings').findOne({ type: 'contracts2_counters' }) || {
+      type: 'contracts2_counters',
+      Compteur_Mandat_RKeyProd: 0,
+      Compteur_Engagement_Artiste_Independant: 0
+    };
+    
+    let newMandatVal = doc.Compteur_Mandat_RKeyProd || 0;
+    let newArtisteVal = doc.Compteur_Engagement_Artiste_Independant || 0;
+    let updateObj = {};
+    
+    if (type === 'mandat' || type === 'both') {
+      newMandatVal += 1;
+      updateObj.Compteur_Mandat_RKeyProd = newMandatVal;
+    }
+    
+    if (type === 'artiste' || type === 'both') {
+      newArtisteVal += 1;
+      updateObj.Compteur_Engagement_Artiste_Independant = newArtisteVal;
+    }
+    
+    await db.collection('location_settings').updateOne(
+      { type: 'contracts2_counters' },
+      { $set: updateObj },
+      { upsert: true }
+    );
+    
+    const pad = (num, size) => {
+      let s = num + "";
+      while (s.length < size) s = "0" + s;
+      return s;
+    };
+    
+    res.json({
+      Compteur_Mandat_RKeyProd: newMandatVal,
+      Compteur_Engagement_Artiste_Independant: newArtisteVal,
+      mandat_number: `CTR-${currentYear}-${pad(newMandatVal, 4)}`,
+      artiste_number: `ART-SJ-${currentYear}-${pad(newArtisteVal, 4)}`
+    });
+  } catch (error) {
+    console.error("Error incrementing contract counters:", error);
+    res.status(500).json({ error: "Failed to increment counters" });
+  }
+});
+
+// Update counter settings (for reset/custom values)
+api.put('/contracts2/counters', authMiddleware, async (req, res) => {
+  try {
+    const { Compteur_Mandat_RKeyProd, Compteur_Engagement_Artiste_Independant } = req.body;
+    let updateObj = {};
+    
+    if (typeof Compteur_Mandat_RKeyProd === 'number') {
+      updateObj.Compteur_Mandat_RKeyProd = Compteur_Mandat_RKeyProd;
+    }
+    if (typeof Compteur_Engagement_Artiste_Independant === 'number') {
+      updateObj.Compteur_Engagement_Artiste_Independant = Compteur_Engagement_Artiste_Independant;
+    }
+    
+    await db.collection('location_settings').updateOne(
+      { type: 'contracts2_counters' },
+      { $set: updateObj },
+      { upsert: true }
+    );
+    
+    res.json({ success: true, updated: updateObj });
+  } catch (error) {
+    console.error("Error setting contract counters:", error);
+    res.status(500).json({ error: "Failed to set counters" });
+  }
+});
+
 // Authenticated attachments/documents endpoints for contracts2
 api.post('/contracts2/:id/documents', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
