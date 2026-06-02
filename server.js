@@ -502,12 +502,43 @@ async function syncReservationToCalendar(reservation) {
   }
 
   const bType = (reservation.booking_type || '').toLowerCase();
-  if (bType !== 'client' && bType !== 'livraison' && bType !== 'dj') {
-    throw new Error(`Booking type "${reservation.booking_type}" cannot be synced. Only "Client", "Livraison", or "DJ" types are allowed.`);
+  if (bType !== 'client' && bType !== 'livraison') {
+    throw new Error(`Booking type "${reservation.booking_type}" cannot be synced. Only "Client" or "Livraison" types are allowed.`);
   }
 
   try {
-    const title = `Location: ${reservation.client_name || reservation.dj_name || 'Client'}`;
+    let clientName = reservation.client_name || '';
+    if (reservation.client_id) {
+      try {
+        const clientObj = await db.collection('location_clients').findOne({ id: reservation.client_id });
+        if (clientObj) {
+          if (clientObj.company_name && clientObj.name) {
+            clientName = `${clientObj.name} - ${clientObj.company_name}`;
+          } else {
+            clientName = clientObj.name || clientObj.company_name || clientName;
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching client name for sync:', e);
+      }
+    }
+    
+    if (!clientName && reservation.quote_id) {
+      try {
+        const quoteObj = await db.collection('location_quotes').findOne({ id: reservation.quote_id });
+        if (quoteObj && quoteObj.client_name) {
+          clientName = quoteObj.client_name;
+        }
+      } catch (e) {
+        console.error('Error fetching quote client name for sync:', e);
+      }
+    }
+
+    if (!clientName) {
+      clientName = reservation.dj_name || 'Client';
+    }
+
+    const title = `Location: ${clientName}`;
     
     let startDateObj = new Date(reservation.start_date);
     let endDateObj = new Date(reservation.end_date);
@@ -624,7 +655,11 @@ async function deleteReservationFromGoogleCalendar(eventId) {
 async function tryAutoSyncToGoogle(reservation) {
   try {
     const bType = (reservation.booking_type || '').toLowerCase();
-    if (bType !== 'client' && bType !== 'livraison' && bType !== 'dj') {
+    if (bType !== 'client' && bType !== 'livraison') {
+      if (reservation.google_event_id) {
+        await deleteReservationFromGoogleCalendar(reservation.google_event_id);
+        return 'DELETED';
+      }
       return null; // Ignore types that shouldn't be synced
     }
     
@@ -4073,7 +4108,24 @@ api.post('/location/reservations/direct', authMiddleware, async (req, res) => {
     }
     resolvedItems.push({ ...item, equipment_name: eqName, name: eqName, reference: eqRef, daily_price: eqPrice });
   }
-  const r = { id: uuidv4(), ...req.body, items: resolvedItems, equipment_items: resolvedItems, status: req.body.status || 'active', created_at: new Date().toISOString() };
+
+  let client_name = req.body.client_name || '';
+  if (req.body.booking_type === 'client' && req.body.client_id) {
+    const client = await db.collection('location_clients').findOne({ id: req.body.client_id }, { projection: { _id: 0 } });
+    if (client) {
+      client_name = client.company_name ? `${client.name} - ${client.company_name}` : client.name;
+    }
+  }
+
+  const r = { 
+    id: uuidv4(), 
+    ...req.body, 
+    client_name: client_name,
+    items: resolvedItems, 
+    equipment_items: resolvedItems, 
+    status: req.body.status || 'active', 
+    created_at: new Date().toISOString() 
+  };
   
   // Sync to Google Calendar safely
   const googleEventId = await tryAutoSyncToGoogle(r);

@@ -111,10 +111,12 @@ function AgendaView({ stats, setCurrentView }) {
     }
     
     // Pour les clients, chercher les infos complètes du client
-    const client = clients.find(c => c.id === reservation.client_id);
-    if (client && client.company_name) {
-      // Si c'est une entreprise, afficher uniquement le nom de l'entreprise
-      return client.company_name;
+    const client = clients.find(c => String(c.id) === String(reservation.client_id));
+    if (client) {
+      if (client.company_name && client.name) {
+        return `${client.name} - ${client.company_name}`;
+      }
+      return client.name || client.company_name || reservation.client_name || 'Client';
     }
     
     // Sinon afficher le nom du contact
@@ -434,6 +436,10 @@ function AgendaView({ stats, setCurrentView }) {
 
       if (isClientBooking) {
         reservationData.client_id = addReservationForm.client_id;
+        const client = clients.find(c => String(c.id) === String(addReservationForm.client_id));
+        if (client) {
+          reservationData.client_name = client.company_name ? `${client.name} - ${client.company_name}` : client.name;
+        }
       } else {
         reservationData.dj_id = addReservationForm.dj_id;
       }
