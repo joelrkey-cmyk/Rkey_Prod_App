@@ -4,7 +4,7 @@ import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import axios from 'axios';
-import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle } from 'lucide-react';
+import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
 import API_BASE_URL from '../utils/apiUrl';
 
@@ -432,6 +432,14 @@ export default function AgendaPrestationApp() {
               <p className="text-sm text-slate-500">Vue globale des événements signés</p>
             </div>
           </div>
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 border border-indigo-150 disabled:opacity-50 text-indigo-700 font-semibold rounded-lg text-sm transition shadow-sm"
+          >
+            <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span>Actualiser</span>
+          </button>
         </header>
 
         <div className="flex-1 flex overflow-hidden p-6 gap-6">
