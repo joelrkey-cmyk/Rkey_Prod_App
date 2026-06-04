@@ -482,7 +482,10 @@ export const ConfigurationPage = ({
 
   const openCgvEditModal = (key, cgv) => {
     setEditingCgvKey(key);
-    setEditingCgvData({ name: key, content: cgv.content });
+    setEditingCgvData({ 
+      name: cgv.name || key.replace(/_[0-9]+$/, '').replace(/_/g, ' ').trim(), 
+      content: cgv.content 
+    });
     setIsCgvModalOpen(true);
   };
 
@@ -494,7 +497,7 @@ export const ConfigurationPage = ({
         ...cgvTemplates, 
         [editingCgvKey]: { 
           ...existing, 
-          name: existing.name || editingCgvKey.replace(/_[0-9]+$/, '').replace(/_/g, ' ').trim(),
+          name: editingCgvData.name.trim() || existing.name || editingCgvKey.replace(/_[0-9]+$/, '').replace(/_/g, ' ').trim(),
           content: editingCgvData.content 
         } 
       };
@@ -884,6 +887,10 @@ export const ConfigurationPage = ({
               <DialogDescription>Modifiez le contenu de vos conditions générales de vente.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="cgv-title">Nom / Titre du modèle de CGV</Label>
+                <Input id="cgv-title" value={editingCgvData.name || ""} onChange={(e) => setEditingCgvData({...editingCgvData, name: e.target.value})} disabled={isSaving} placeholder="Ex: Conditions Générales de Vente" />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="cgv-content">Contenu des CGV</Label>
                 <Textarea id="cgv-content" value={editingCgvData.content} onChange={(e) => setEditingCgvData({...editingCgvData, content: e.target.value})} rows={18} disabled={isSaving} />

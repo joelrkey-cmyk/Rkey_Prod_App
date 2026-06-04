@@ -122,7 +122,9 @@ function Contracts2App() {
   const [selectedDjProfile, setSelectedDjProfile] = useState("");
   const [basePrice, setBasePrice] = useState(0);
   // ── CONTRATS 2: Mode Mandat/Agence ──
-  const [contractMode, setContractMode] = useState('mandataire'); // 'mandataire' ou 'entreprise'
+  const [contractMode, setContractMode] = useState('entreprise'); // 'entreprise' ou 'mandataire' par défaut
+  const [cgvTitle, setCgvTitle] = useState("Conditions Générales de Vente");
+  const [artisteCgvTitle, setArtisteCgvTitle] = useState("Conditions Générales de l'Artiste");
   const [fraisMandat, setFraisMandat] = useState(0);
   const [cachetArtiste, setCachetArtiste] = useState(0);
   const [packSonorisation, setPackSonorisation] = useState(false);
@@ -515,7 +517,7 @@ function Contracts2App() {
         setArtisteInvoiceNumber(parsed.artisteInvoiceNumber || "");
         setNoDepositRequired(parsed.noDepositRequired || false);
         setCustomDepositAmount(parsed.customDepositAmount || 0);
-        setContractMode(parsed.contractMode || 'mandataire');
+        setContractMode(parsed.contractMode || 'entreprise');
         setFraisMandat(parsed.fraisMandat || 0);
         setCachetArtiste(parsed.cachetArtiste || 0);
         setPackSonorisation(parsed.packSonorisation || false);
@@ -549,6 +551,8 @@ function Contracts2App() {
         setSelectedPdfNotes(parsed.selectedPdfNotes || []);
         setCgvText(parsed.cgvText || "");
         setArtisteCgvText(parsed.artisteCgvText || defaultArtistCgv);
+        setCgvTitle(parsed.cgvTitle || "Conditions Générales de Vente");
+        setArtisteCgvTitle(parsed.artisteCgvTitle || "Conditions Générales de l'Artiste");
       } catch (e) {
         console.error('Failed to restore state:', e);
       }
@@ -566,10 +570,10 @@ function Contracts2App() {
       hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, 
       depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, 
       hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact,
-      selectedPdfNotes, cgvText, artisteCgvText
+      selectedPdfNotes, cgvText, artisteCgvText, cgvTitle, artisteCgvTitle
     };
     sessionStorage.setItem('contracts2_form_state', JSON.stringify(state));
-  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, artisteInvoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, cateringHotMealNoTable, cateringHotMealNoTableQty, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText, artisteCgvText]);
+  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, artisteInvoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, cateringHotMealNoTable, cateringHotMealNoTableQty, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText, artisteCgvText, cgvTitle, artisteCgvTitle]);
 
   const getMandataireDefaultTemplateKey = (templates) => {
     const keys = Object.keys(templates || {});
@@ -819,12 +823,55 @@ function Contracts2App() {
       return updated;
     });
 
-    if (field === 'event_type') {
-      const eventToCgvMapping = { 'Mariage': 'mariage', 'Anniversaire': 'anniversaire', 'Comité d\'entreprise': 'comite_entreprise', 'Show Hypnose': 'show_hypnose', 'Intervention hypnose': 'intervention_hypnose' };
-      const selectedCgv = eventToCgvMapping[value] || '';
-      setSelectedCgvTemplate(selectedCgv);
-      if (selectedCgv && cgvTemplates[selectedCgv]) { setCgvText(cgvTemplates[selectedCgv].content); } else { setCgvText(''); }
-      setSelectedNotes([]);
+    if (field === 'event_type' || field === 'custom_event_type') {
+      // Si la valeur est vide pour custom_event_type, utiliser la valeur de clientInfo.event_type
+      const eventValue = field === 'custom_event_type' ? value : (field === 'event_type' && value === 'custom' ? clientInfo.custom_event_type : value);
+      const isHypnose = (eventValue || '').toLowerCase().includes('hypnose');
+      let foundKey = '';
+
+      if (isHypnose) {
+        // Recherche du modèle CGV Hypnose par nom ou clé contenant 'show hypnose' ou 'hypnose'
+        const found = Object.entries(cgvTemplates).find(([key, t]) => {
+          const name = (t.name || '').toLowerCase();
+          const k = key.toLowerCase();
+          return name.includes('show hypnose') || k.includes('show_hyp_') || k.startsWith('show_hypnose');
+        }) || Object.entries(cgvTemplates).find(([key, t]) => {
+          const name = (t.name || '').toLowerCase();
+          const k = key.toLowerCase();
+          return name.includes('hypnose') || k.includes('hypnose');
+        });
+        if (found) foundKey = found[0];
+        else foundKey = 'show_hypnose';
+      } else {
+        // Recherche du modèle standard DJ par nom ou clé contenant 'standard dj' ou 'standard'
+        const found = Object.entries(cgvTemplates).find(([key, t]) => {
+          const name = (t.name || '').toLowerCase();
+          const k = key.toLowerCase();
+          return name.includes('standard dj') || k.includes('standard_dj');
+        }) || Object.entries(cgvTemplates).find(([key, t]) => {
+          const name = (t.name || '').toLowerCase();
+          const k = key.toLowerCase();
+          return name.includes('standard') || k.includes('standard');
+        });
+        if (found) foundKey = found[0];
+        else {
+          // Sinon fallback sur le premier modèle disponible ou mariage
+          const backupKey = Object.keys(cgvTemplates).find(k => k.includes('standard') || k.includes('dj') || k.includes('mariage')) || Object.keys(cgvTemplates)[0] || '';
+          foundKey = backupKey;
+        }
+      }
+
+      setSelectedCgvTemplate(foundKey);
+      if (foundKey && cgvTemplates[foundKey]) { 
+        setCgvText(cgvTemplates[foundKey].content); 
+        setCgvTitle(cgvTemplates[foundKey].name || (isHypnose ? "Show Hypnose" : "Conditions Générales de Vente"));
+      } else { 
+        setCgvText(''); 
+      }
+
+      if (field === 'event_type') {
+        setSelectedNotes([]);
+      }
     }
   };
 
@@ -869,7 +916,10 @@ function Contracts2App() {
 
   const handleCgvTemplateChange = (templateKey) => {
     setSelectedCgvTemplate(templateKey);
-    if (templateKey && cgvTemplates[templateKey]) { setCgvText(cgvTemplates[templateKey].content); }
+    if (templateKey && cgvTemplates[templateKey]) { 
+      setCgvText(cgvTemplates[templateKey].content); 
+      setCgvTitle(cgvTemplates[templateKey].name || "Conditions Générales de Vente");
+    }
     else if (templateKey === "custom") { setCgvText(""); }
   };
 
@@ -930,6 +980,7 @@ function Contracts2App() {
   // ═══════════════════════════════════════════════════
 
   const resetForm = () => {
+    setContractMode('entreprise');
     setClientInfo({ name: "", company: "", address: "", phone: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, phone2: "", guest_count: "" });
     setSelectedOptions(availableOptions.map(opt => ({ ...opt, selected: false })));
     setSelectedNotes([]); setSelectedMusicStyles([]); setDjNotes(""); setBlacklist("");
@@ -1058,6 +1109,8 @@ function Contracts2App() {
       technician_contact: technicianContact,
       cgv_text: cgvText,
       artiste_cgv_text: artisteCgvText,
+      cgv_title: cgvTitle,
+      artiste_cgv_title: artisteCgvTitle,
       status: "draft",
       draft_saved_at: new Date().toISOString()
     };
@@ -1112,7 +1165,7 @@ function Contracts2App() {
     setDepositPaymentMethod(contract.deposit_payment_method || "");
     setDepositPaidDate(contract.deposit_paid_date || "");
     setBasePrice(contract.base_price || 0);
-    setContractMode(contract.contract_mode || 'mandataire');
+    setContractMode(contract.contract_mode || 'entreprise');
     setFraisMandat(contract.frais_mandat || 0);
     setCachetArtiste(contract.cachet_artiste || 0);
     setPackSonorisation(contract.pack_sonorisation || false);
@@ -1142,6 +1195,8 @@ function Contracts2App() {
     setTechnicianContact(contract.technician_contact || { name: "", email: "", phone: "" });
     setCgvText(contract.cgv_text || "");
     setArtisteCgvText(contract.artiste_cgv_text || defaultArtistCgv);
+    setCgvTitle(contract.cgv_title || "Conditions Générales de Vente");
+    setArtisteCgvTitle(contract.artiste_cgv_title || "Conditions Générales de l'Artiste");
     setEditingContract(contract);
     setActiveTab("create");
     toast.success("Contrat chargé pour modification");
@@ -1174,7 +1229,7 @@ function Contracts2App() {
     setDepositPaymentMethod("");
     setDepositPaidDate("");
     setBasePrice(contract.base_price || 0);
-    setContractMode(contract.contract_mode || 'mandataire');
+    setContractMode(contract.contract_mode || 'entreprise');
     setFraisMandat(contract.frais_mandat || 0);
     setCachetArtiste(contract.cachet_artiste || 0);
     setPackSonorisation(contract.pack_sonorisation || false);
@@ -1204,6 +1259,8 @@ function Contracts2App() {
     setTechnicianContact(contract.technician_contact || { name: "", email: "", phone: "" });
     setCgvText(contract.cgv_text || "");
     setArtisteCgvText(contract.artiste_cgv_text || defaultArtistCgv);
+    setCgvTitle(contract.cgv_title || "Conditions Générales de Vente");
+    setArtisteCgvTitle(contract.artiste_cgv_title || "Conditions Générales de l'Artiste");
     setEditingContract(null); 
     setGeneratedContract(null); 
     setActiveTab("create");
@@ -1457,7 +1514,9 @@ function Contracts2App() {
     selected_pdf_notes: selectedPdfNotes,
     invoice_number: invoiceNumber,
     artiste_invoice_number: artisteInvoiceNumber,
-    artiste_cgv_text: artisteCgvText
+    artiste_cgv_text: artisteCgvText,
+    cgv_title: cgvTitle,
+    artiste_cgv_title: artisteCgvTitle
   });
 
   // ═══════════════════════════════════════════════════
@@ -1615,19 +1674,19 @@ function Contracts2App() {
                   <div className="flex rounded-lg overflow-hidden border border-slate-300">
                     <button
                       type="button"
-                      onClick={() => setContractMode('mandataire')}
-                      className={`px-4 py-2 text-sm font-medium transition-colors ${contractMode === 'mandataire' ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
-                      data-testid="mode-mandataire-btn"
-                    >
-                      Mandataire
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => setContractMode('entreprise')}
                       className={`px-4 py-2 text-sm font-medium transition-colors ${contractMode === 'entreprise' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
                       data-testid="mode-entreprise-btn"
                     >
                       Entreprise
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setContractMode('mandataire')}
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${contractMode === 'mandataire' ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
+                      data-testid="mode-mandataire-btn"
+                    >
+                      Mandataire
                     </button>
                   </div>
                   <span className="text-xs text-slate-500">{contractMode === 'mandataire' ? '2 contrats séparés (Mandat + Artiste)' : '1 seul contrat global (R\'KEY PROD)'}</span>
@@ -2613,6 +2672,17 @@ function Contracts2App() {
                         </SelectContent>
                       </Select>
                     </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-slate-700">Titre des CGV sur le PDF / Contrat</Label>
+                        <Input 
+                          value={cgvTitle} 
+                          onChange={(e) => setCgvTitle(e.target.value)} 
+                          className="bg-white border-slate-300 focus:border-blue-500 font-medium" 
+                          placeholder="Conditions Générales de Vente"
+                        />
+                      </div>
+                    </div>
                     <div className="space-y-2"><Label className="text-slate-700">Texte des CGV</Label><Textarea value={cgvText} onChange={(e) => setCgvText(e.target.value)} rows={6} className="border-slate-300 focus:border-blue-500" /></div>
                     {selectedCgvTemplate && selectedCgvTemplate !== 'custom' && (
                       <Button variant="outline" size="sm" className="text-blue-600 border-blue-300 hover:bg-blue-50" onClick={async () => {
@@ -2639,6 +2709,15 @@ function Contracts2App() {
                           <CardDescription className="text-xs text-slate-500">
                             Ces conditions s'appliquent séparément sur le Document 2 du mode mandat. Éditez ce texte pour ce contrat ou cliquez sur "Sauvegarder par défaut" pour l'enregistrer globalement.
                           </CardDescription>
+                          <div className="space-y-2 max-w-sm">
+                            <Label className="text-slate-700 text-xs">Titre des CGV de l'Artiste sur le PDF</Label>
+                            <Input 
+                              value={artisteCgvTitle} 
+                              onChange={(e) => setArtisteCgvTitle(e.target.value)} 
+                              className="bg-white border-slate-300 focus:border-blue-500 text-xs" 
+                              placeholder="Conditions Générales"
+                            />
+                          </div>
                           <Textarea 
                             value={artisteCgvText} 
                             onChange={(e) => setArtisteCgvText(e.target.value)} 

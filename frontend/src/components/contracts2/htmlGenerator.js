@@ -635,7 +635,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
   const page4HTML = `
     <div id="pdf-page-cgv" class="section" style="min-height: 270mm;">
       <div class="section">
-        <div class="section-title">CONDITIONS GÉNÉRALES DE VENTE</div>
+        <div class="section-title">${(contract.cgv_title || "CONDITIONS GÉNÉRALES DE VENTE").toUpperCase()}</div>
         <div class="notes-section">
           ${contract.cgv_text ? contract.cgv_text.replace(/\n/g, '<br>') : `
           <p><strong>Article 1 - Objet</strong><br>

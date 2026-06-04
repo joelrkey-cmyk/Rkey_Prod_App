@@ -193,7 +193,7 @@ export const generateMandatHTML = (contract, companySettings) => {
 
     <div id="pdf-page-cgv" class="section" style="min-height: 270mm;">
       <div class="section">
-        <div class="section-title">CONDITIONS GENERALES DE VENTE</div>
+        <div class="section-title">${(contract.cgv_title || "CONDITIONS GENERALES DE VENTE").toUpperCase()}</div>
         <div class="notes-section">
           ${contract.cgv_text ? contract.cgv_text.replace(/\n/g, '<br>') : `
           <p><strong>Article 1 - Objet</strong><br>
@@ -318,7 +318,7 @@ export const generateArtisteHTML = (contract, resolveProfile) => {
 
     <div id="pdf-page-cgv" class="section" style="min-height: 270mm;">
       <div class="section">
-        <div class="section-title">CONDITIONS GENERALES</div>
+        <div class="section-title">${(contract.artiste_cgv_title || "CONDITIONS GENERALES DE L'ARTISTE").toUpperCase()}</div>
         <div class="notes-section">
           ${contract.artiste_cgv_text ? contract.artiste_cgv_text.replace(/\n/g, '<br>') : `
           <p><strong>Article 1 - Objet</strong><br>
@@ -477,7 +477,7 @@ export const generateEntrepriseHTML = (contract, companySettings) => {
 
     <div id="pdf-page-cgv" class="section" style="min-height: 270mm;">
       <div class="section">
-        <div class="section-title">CONDITIONS GENERALES DE VENTE</div>
+        <div class="section-title">${(contract.cgv_title || "CONDITIONS GENERALES DE VENTE").toUpperCase()}</div>
         <div class="notes-section">
           ${contract.cgv_text ? contract.cgv_text.replace(/\n/g, '<br>') : `
           <p><strong>Article 1 - Objet</strong><br>

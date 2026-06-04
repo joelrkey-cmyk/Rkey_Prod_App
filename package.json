@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "build": "npm install --prefix frontend && npm run build --prefix frontend",
-    "start": "node server.js"
+    "start": "node server.js",
+    "lint": "npm run lint --prefix frontend"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.11.2",
