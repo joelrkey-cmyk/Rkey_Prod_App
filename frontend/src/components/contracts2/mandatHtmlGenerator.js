@@ -2,6 +2,12 @@
 // Document 1: Contrat de Mandat et Location (R'KEY PROD) - TVA 20%
 // Document 2: Contrat d'Engagement d'Artiste DJ - Sans TVA
 
+import { 
+  calculateContractDepositAmount, 
+  calculateContractRemainingBalance, 
+  isArtistFreelance 
+} from './calculations';
+
 const CSS_COMMON = `
   .header { border-bottom: 2px solid #FF6B00; padding-bottom: 8pt; margin-bottom: 12pt; }
   .header-content { width: 100%; }
@@ -364,8 +370,11 @@ export const generateEntrepriseHTML = (contract, companySettings) => {
   const djProfile = contract.dj_profile_data || {};
   const djName = djProfile.nom_complet || djProfile.name || djProfile.nom_artistique || 'Animateur';
 
-  const acompte30 = Math.round(totalTTC * 0.30 * 100) / 100;
-  const solde70 = Math.round((totalTTC - acompte30) * 100) / 100;
+  const acompte30 = calculateContractDepositAmount(contract);
+  const solde70 = calculateContractRemainingBalance(contract);
+
+  const acomptePercent = totalTTC > 0 ? Math.round((acompte30 / totalTTC) * 100) : (contract.client_info?.company ? 30 : 50);
+  const soldePercent = 100 - acomptePercent;
 
   const resolvedEventType = (contract.client_info && contract.client_info.event_type === 'custom' && contract.client_info.custom_event_type)
     ? contract.client_info.custom_event_type
@@ -450,12 +459,12 @@ export const generateEntrepriseHTML = (contract, companySettings) => {
         <div class="compact-payment-box">
           <div class="clearfix" style="display:flex; gap:8pt;">
             <div style="flex:1; border: 1.5px solid #1565c0; border-radius: 6px; padding: 8px; background: #f5f9ff; text-align:center;">
-              <strong>Acompte (30%)</strong><br>
+              <strong>Acompte (${acomptePercent}%)</strong><br>
               <span class="amount-big">${acompte30.toFixed(2)} EUR</span><br>
               <small>A regler a la signature</small>
             </div>
             <div style="flex:1; border: 1px solid #ccc; border-radius: 6px; padding: 8px; text-align:center;">
-              <strong>Solde (70%)</strong><br>
+              <strong>Solde (${soldePercent}%)</strong><br>
               <span class="amount-big">${solde70.toFixed(2)} EUR</span><br>
               <small>A regler dans la semaine de l'evenement</small>
             </div>

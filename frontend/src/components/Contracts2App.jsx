@@ -27,6 +27,13 @@ import { ContractHistory } from "./contracts2/ContractHistory";
 import { SignaturePadModal } from "./contracts2/SignaturePadModal";
 import ErrorBoundary from "./ErrorBoundary";
 import { generateMandatHTML, generateArtisteHTML, generateEntrepriseHTML } from "./contracts2/mandatHtmlGenerator";
+import { 
+  calculateDepositAmount as calculateDepositAmountImported, 
+  calculateRemainingBalance as calculateRemainingBalanceImported, 
+  calculateCompanyMargeHT, 
+  isArtistFreelance,
+  isContractDirigeant 
+} from "./contracts2/calculations";
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -950,17 +957,33 @@ function Contracts2App() {
   };
 
   const calculateDepositAmount = () => {
-    if (noDepositRequired) return 0;
-    if (customDepositAmount > 0) return customDepositAmount;
-    // Contrats 2: 50% du total client, ou 30% si entreprise
     const isCompany = !!(clientInfo?.company && clientInfo.company.trim().length > 0);
-    const ratio = isCompany ? 0.3 : 0.5;
-    const deposit = calculateTotal() * ratio;
-    return Math.max(0, Math.round(deposit / 50) * 50);
+    const profile = getProfileData(selectedDjProfile);
+    return calculateDepositAmountImported(
+      basePrice,
+      selectedOptions,
+      discountAmount,
+      customDepositAmount,
+      noDepositRequired,
+      isCompany,
+      contractMode,
+      profile
+    );
   };
 
   const calculateRemainingBalance = () => {
-    return Math.max(0, calculateTotal() - calculateDepositAmount());
+    const isCompany = !!(clientInfo?.company && clientInfo.company.trim().length > 0);
+    const profile = getProfileData(selectedDjProfile);
+    return calculateRemainingBalanceImported(
+      basePrice,
+      selectedOptions,
+      discountAmount,
+      customDepositAmount,
+      noDepositRequired,
+      isCompany,
+      contractMode,
+      profile
+    );
   };
 
   const calculateSetupDate = (eventDate) => {
@@ -1276,8 +1299,9 @@ function Contracts2App() {
   };
 
   const handlePreviewContract = (contract) => {
-    const isMandat = contract.contract_mode === 'mandataire';
-    const isEntreprise = contract.contract_mode === 'entreprise';
+    const isDir = isContractDirigeant(contract);
+    const isMandat = contract.contract_mode === 'mandataire' && !isDir;
+    const isEntreprise = contract.contract_mode === 'entreprise' && !isDir;
     
     const clientName = contract.client_info?.name || 'Client';
     const docs = [];
@@ -1414,8 +1438,9 @@ function Contracts2App() {
     
     let contractHTML = "";
     let contractHTMLs = null;
-    const isMandat = contractData.contract_mode === 'mandataire' && !contractData.is_dirigeant;
-    const isEntreprise = contractData.contract_mode === 'entreprise' && !contractData.is_dirigeant;
+    const isDir = isContractDirigeant(contractData);
+    const isMandat = contractData.contract_mode === 'mandataire' && !isDir;
+    const isEntreprise = contractData.contract_mode === 'entreprise' && !isDir;
 
     if (isMandat) {
         if (selectedTab === 'mandat') {
@@ -2108,6 +2133,67 @@ function Contracts2App() {
                         <div className="flex justify-between font-bold"><span>Total TTC :</span><span>{calculateTotal().toFixed(2)} €</span></div>
                         <div className="flex justify-between text-blue-600"><span>Acompte :</span><span className="font-medium">{calculateDepositAmount().toFixed(2)} €</span></div>
                         <div className="flex justify-between text-green-600"><span>Solde à régler :</span><span className="font-medium">{calculateRemainingBalance().toFixed(2)} €</span></div>
+                        {(() => {
+                          const hasFreelance = contractMode === 'entreprise' && (selectedDjProfile === "" || isArtistFreelance(getProfileData(selectedDjProfile)));
+                          if (!hasFreelance) return null;
+
+                          const optionsTotalForMargin = (selectedOptions || [])
+                            .filter(option => option.selected && !option.is_addition_post_signature && !option.added_post_signature)
+                            .reduce((sum, option) => sum + option.price, 0);
+
+                          const baseTTC = Math.max(0, basePrice - discountAmount);
+                          const baseHT = baseTTC / 1.2;
+
+                          const optionsTTC = optionsTotalForMargin;
+                          const optionsHT = optionsTTC / 1.2;
+
+                          const totalTTC = baseTTC + optionsTTC;
+                          const totalHT = totalTTC / 1.2;
+
+                          let baseCachetDJ = 0;
+                          if (totalTTC > 1500) {
+                            baseCachetDJ = 900;
+                          } else {
+                            baseCachetDJ = baseHT * 0.6428;
+                          }
+
+                          const optionsCachetDJ = optionsHT * 0.20;
+                          const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
+                          const cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+
+                          const marginHT = totalHT - cachetDJ;
+                          const acompteTTC = Math.ceil((marginHT * 1.2) / 5) * 5;
+                          const soldeTTC = totalTTC - acompteTTC;
+
+                          return (
+                            <div className="mt-3 pt-3 border-t border-blue-200 text-xs space-y-2">
+                              <div className="flex items-center justify-between text-blue-700 font-bold mb-1">
+                                <span>⚙️ MARGE INTERNE {selectedDjProfile === "" ? "(SIMULÉE)" : ""} :</span>
+                                <span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">
+                                  {selectedDjProfile === "" ? "Sans artiste" : "Freelance"}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-y-1 bg-white/80 p-2.5 rounded border border-blue-100 font-mono text-[11px] text-slate-700">
+                                <div className="text-slate-500">Total HT :</div>
+                               <div className="text-right font-semibold">{totalHT.toFixed(2)} €</div>
+                                
+                               <div className="text-slate-500">Cachet DJ HT :</div>
+                               <div className="text-right font-semibold text-purple-600">{cachetDJ.toFixed(2)} €</div>
+                                
+                               <div className="text-slate-500">Marge Brute HT :</div>
+                               <div className="text-right font-bold text-emerald-600">{marginHT.toFixed(2)} €</div>
+                                
+                               <div className="col-span-2 border-t border-dashed border-slate-200 my-1"></div>
+                                
+                               <div className="text-blue-700 font-semibold">Acompte (Marge TTC) :</div>
+                               <div className="text-right font-bold text-blue-700">{acompteTTC.toFixed(2)} €</div>
+                                
+                               <div className="text-green-700 font-semibold">Solde (Cachet DJ TTC) :</div>
+                               <div className="text-right font-bold text-green-700">{soldeTTC.toFixed(2)} €</div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                     <Textarea value={optionsTarifNotes} onChange={(e) => setOptionsTarifNotes(e.target.value)} className="border-slate-300 focus:border-blue-500" rows={3} />
@@ -2241,6 +2327,67 @@ function Contracts2App() {
                         <span className="text-lg font-bold text-slate-800">Total {isDirigeant() ? '' : 'Client'} :</span>
                         <span className="text-2xl font-bold text-blue-600">{calculateTotal().toFixed(2)} €</span>
                       </div>
+                      {(() => {
+                        const hasFreelance = contractMode === 'entreprise' && (selectedDjProfile === "" || isArtistFreelance(getProfileData(selectedDjProfile)));
+                        if (!hasFreelance) return null;
+
+                        const optionsTotalForMargin = (selectedOptions || [])
+                          .filter(option => option.selected && !option.is_addition_post_signature && !option.added_post_signature)
+                          .reduce((sum, option) => sum + option.price, 0);
+
+                        const baseTTC = Math.max(0, basePrice - discountAmount);
+                        const baseHT = baseTTC / 1.2;
+
+                        const optionsTTC = optionsTotalForMargin;
+                        const optionsHT = optionsTTC / 1.2;
+
+                        const totalTTC = baseTTC + optionsTTC;
+                        const totalHT = totalTTC / 1.2;
+
+                        let baseCachetDJ = 0;
+                        if (totalTTC > 1500) {
+                          baseCachetDJ = 900;
+                        } else {
+                          baseCachetDJ = baseHT * 0.6428;
+                        }
+
+                        const optionsCachetDJ = optionsHT * 0.20;
+                        const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
+                        const cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+
+                        const marginHT = totalHT - cachetDJ;
+                        const acompteTTC = Math.ceil((marginHT * 1.2) / 5) * 5;
+                        const soldeTTC = totalTTC - acompteTTC;
+
+                        return (
+                          <div className="mt-3 pt-3 border-t border-blue-200 text-xs space-y-2">
+                            <div className="flex items-center justify-between text-blue-700 font-bold mb-1">
+                              <span>⚙️ MARGE INTERNE {selectedDjProfile === "" ? "(SIMULÉE)" : ""} :</span>
+                              <span className="text-[10px] bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">
+                                {selectedDjProfile === "" ? "Sans artiste" : "Freelance"}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-y-1 bg-white/80 p-2.5 rounded border border-blue-100 font-mono text-[11px] text-slate-700">
+                              <div className="text-slate-500">Total HT :</div>
+                              <div className="text-right font-semibold">{totalHT.toFixed(2)} €</div>
+                              
+                              <div className="text-slate-500">Cachet DJ HT :</div>
+                              <div className="text-right font-semibold text-purple-600">{cachetDJ.toFixed(2)} €</div>
+                              
+                              <div className="text-slate-500">Marge Brute HT :</div>
+                              <div className="text-right font-bold text-emerald-600">{marginHT.toFixed(2)} €</div>
+                              
+                              <div className="col-span-2 border-t border-dashed border-slate-200 my-1"></div>
+                              
+                              <div className="text-blue-700 font-semibold">Acompte (Marge TTC) :</div>
+                              <div className="text-right font-bold text-blue-700">{acompteTTC.toFixed(2)} €</div>
+                              
+                              <div className="text-green-700 font-semibold">Solde (Cachet DJ TTC) :</div>
+                              <div className="text-right font-bold text-green-700">{soldeTTC.toFixed(2)} €</div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -2578,8 +2725,40 @@ function Contracts2App() {
 
                     <div className="bg-blue-50 p-4 rounded-lg space-y-2">
                       <div className="flex justify-between"><span className="font-medium">Montant total:</span><span className="font-bold text-blue-600">{calculateTotal()}€</span></div>
-                      <div className="flex justify-between"><span>Acompte ({clientInfo?.company?.trim() ? "30%" : "50%"} tarif + options complètes):</span><span className="font-semibold text-green-600">{calculateDepositAmount()}€</span></div>
-                      <div className="flex justify-between"><span>Solde restant:</span><span className="font-semibold">{calculateRemainingBalance()}€</span></div>
+                      {(() => {
+                        const isFreelance = contractMode === 'entreprise' && (selectedDjProfile === "" || isArtistFreelance(getProfileData(selectedDjProfile)));
+                        if (isFreelance) {
+                          const total = calculateTotal();
+                          const deposit = calculateDepositAmount();
+                          const percentage = total > 0 ? Math.round((deposit / total) * 100) : 0;
+                          return (
+                            <>
+                              <div className="flex justify-between">
+                                <span>Acompte (Marge TTC{percentage > 0 ? ` ${percentage}%` : ''}):</span>
+                                <span className="font-semibold text-green-600">{calculateDepositAmount()}€</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Solde restant (Cachet DJ TTC{percentage > 0 ? ` ${100 - percentage}%` : ''}):</span>
+                                <span className="font-semibold">{calculateRemainingBalance()}€</span>
+                              </div>
+                            </>
+                          );
+                        }
+                        const isCompany = !!(clientInfo?.company && clientInfo.company.trim().length > 0);
+                        const ratioStr = isCompany ? "30%" : "50%";
+                        return (
+                          <>
+                            <div className="flex justify-between">
+                              <span>Acompte ({ratioStr} tarif + options complètes):</span>
+                              <span className="font-semibold text-green-600">{calculateDepositAmount()}€</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Solde restant:</span>
+                              <span className="font-semibold">{calculateRemainingBalance()}€</span>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">

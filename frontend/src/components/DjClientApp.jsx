@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { generateMandatHTML, generateEntrepriseHTML, generateArtisteHTML } from './contracts2/mandatHtmlGenerator';
+import { isContractDirigeant } from './contracts2/calculations';
 import { defaultCompanySettings, musicStyles as availableMusicStyles } from './contracts2/constants';
 import MyDjLogo from './MyDjLogo';
 
@@ -3411,13 +3412,7 @@ function urlBase64ToUint8Array(base64String) {
                 {/* Contrat raccourci */}
                 {ev && ev.rawContractData && (() => {
                   const c = ev.rawContractData || {};
-                  const isDirigeant = 
-                    c.dj_profile_data?.nom_artistique?.toLowerCase().includes("r'key") || 
-                    c.dj_profile_data?.nom_artistique?.toLowerCase().includes("rkey") || 
-                    c.dj_profile_data?.titre?.includes("Gérant") || 
-                    c.dj_profile_data?.statut_artiste === 'dirigeant' ||
-                    c.dj_profile?.toLowerCase().includes("r'key") || 
-                    c.dj_profile?.toLowerCase().includes("rkey");
+                  const isDirigeant = isContractDirigeant(c);
 
                   const isEntreprise = c.contract_mode === 'entreprise' || c.contractMode === 'entreprise';
                   const isMandatMode = !isDirigeant && !isEntreprise;
@@ -3916,13 +3911,7 @@ function urlBase64ToUint8Array(base64String) {
     const OptionsSection = () => {
       const c = ev.rawContractData || {};
       
-      const isDirigeant = 
-        c.dj_profile_data?.nom_artistique?.toLowerCase().includes("r'key") || 
-        c.dj_profile_data?.nom_artistique?.toLowerCase().includes("rkey") || 
-        c.dj_profile_data?.titre?.includes("Gérant") || 
-        c.dj_profile_data?.statut_artiste === 'dirigeant' ||
-        c.dj_profile?.toLowerCase().includes("r'key") || 
-        c.dj_profile?.toLowerCase().includes("rkey");
+      const isDirigeant = isContractDirigeant(c);
 
       const basePrice = Number(c.base_price) || 0;
       const fraisMandat = Number(c.frais_mandat) || 0;
