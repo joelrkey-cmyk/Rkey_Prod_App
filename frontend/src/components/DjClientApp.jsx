@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { generateMandatHTML, generateEntrepriseHTML, generateArtisteHTML } from './contracts2/mandatHtmlGenerator';
-import { isContractDirigeant } from './contracts2/calculations';
+import { isContractDirigeant, calculateContractDepositAmount, calculateContractRemainingBalance } from './contracts2/calculations';
 import { defaultCompanySettings, musicStyles as availableMusicStyles } from './contracts2/constants';
 import MyDjLogo from './MyDjLogo';
 
@@ -3993,14 +3993,16 @@ function urlBase64ToUint8Array(base64String) {
         depositAmount = 0;
       } else if (isMandatMode) {
         depositAmount = fraisMandat;
-      } else if (Number(c.custom_deposit_amount) > 0) {
-        depositAmount = Number(c.custom_deposit_amount);
-      } else if (Number(c.deposit_amount) > 0) {
-        depositAmount = Number(c.deposit_amount);
       } else {
-        // Acompte de 50% sur le total d'origine hors ajouts post-signature
-        const originalTotal = Math.max(0, baseRate + originalOptionsTotal - discountAmount);
-        depositAmount = Math.round((originalTotal * 0.5) * 100) / 100;
+        const tempContract = {
+          ...c,
+          selected_options: contractOptions.map(opt => ({
+            ...opt,
+            selected: opt.selected !== false,
+            price: Number(opt.price) || 0
+          }))
+        };
+        depositAmount = calculateContractDepositAmount(tempContract);
       }
 
       // L'acompte est versé si expressément coché OU si le contrat est déjà signé / archivé / complété
