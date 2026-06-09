@@ -138,6 +138,13 @@ function Contracts2App() {
   const [packLumiere, setPackLumiere] = useState(false);
   const [optionsTarifNotes, setOptionsTarifNotes] = useState("");
   const [contracts, setContracts] = useState([]);
+  
+  // ── SCRIPT D'IMPORTATION DE VIEUX CONTRATS ──
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importedFile, setImportedFile] = useState(null);
+  const [importReport, setImportReport] = useState(null);
+  const [importError, setImportError] = useState(null);
   const [activeTab, setActiveTab] = useState("history");
   const [generatedContract, setGeneratedContract] = useState(null);
   const [editingContract, setEditingContract] = useState(null);
@@ -259,7 +266,19 @@ function Contracts2App() {
       ? contract.dj_profile_data
       : getProfileData(contract.dj_profile);
     const current = getProfileData(contract.dj_profile);
-    return { ...current, ...snapshot, bic: snapshot.bic || current.bic || "" };
+    const merged = { ...current, ...snapshot, bic: snapshot.bic || current.bic || "" };
+
+    // Standardize "fondateur" or empty titles to "Dirigeant" / "dirigeant"
+    if (merged.titre && typeof merged.titre === 'string') {
+      if (merged.titre.toLowerCase().includes('fondateur')) {
+        merged.titre = merged.titre.replace(/fondateur/g, "dirigeant").replace(/Fondateur/g, "Dirigeant");
+      }
+    }
+    const isJoel = (merged.name || "").toLowerCase().includes("joël") || (merged.name || "").toLowerCase().includes("joel");
+    if (isJoel && (!merged.titre || merged.titre.toLowerCase() === 'animateur dj')) {
+      merged.titre = "Dirigeant";
+    }
+    return merged;
   };
 
   // Wrapper : appelle le HTML generator importé avec le contexte local
@@ -928,6 +947,237 @@ function Contracts2App() {
       setCgvTitle(cgvTemplates[templateKey].name || "Conditions Générales de Vente");
     }
     else if (templateKey === "custom") { setCgvText(""); }
+  };
+
+  const handleImportContract = async () => {
+    if (!importedFile) {
+      setImportError("Veuillez sélectionner un fichier (PDF, PNG, JPG, TXT) à importer.");
+      return;
+    }
+    setIsImporting(true);
+    setImportError(null);
+    setImportReport(null);
+
+    const formData = new FormData();
+    formData.append('file', importedFile);
+
+    try {
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
+      const response = await fetch(`${API}/contracts2/import`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      let data = {};
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const textText = await response.text();
+        console.warn("Non-JSON response from import endpoint:", textText);
+        throw new Error(`Erreur serveur (${response.status}) : ${textText.substring(0, 150)}...`);
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.error || "Une erreur est survenue lors de l'analyse.");
+      }
+
+      if (data && data.matchedOptions) {
+        data.matchedOptions = data.matchedOptions.map(opt => {
+          if (opt.is_pending) {
+            return {
+              ...opt,
+              selected: false,
+              resolved_price: opt.price,
+              resolution_choice: 'decline' // Excluded by default
+            };
+          }
+          if (opt.has_price_conflict) {
+            return {
+              ...opt,
+              selected: true,
+              resolved_price: opt.price_in_document,
+              resolution_choice: 'imported'
+            };
+          } else {
+            return {
+              ...opt,
+              selected: opt.selected !== false,
+              resolved_price: opt.price,
+              resolution_choice: 'system'
+            };
+          }
+        });
+      }
+
+      setImportReport(data);
+      toast.success("Analyse du contrat effectuée par l'IA !");
+    } catch (err) {
+      console.error("Import error:", err);
+      setImportError(err.message || "Erreur lors de la communication de l'API avec Gemini.");
+      toast.error(err.message || "Erreur d'importation.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleResolveConflict = (optionId, decision) => {
+    setImportReport(prev => {
+      if (!prev || !prev.matchedOptions) return prev;
+      return {
+        ...prev,
+        matchedOptions: prev.matchedOptions.map(opt => {
+          if (opt.id === optionId) {
+            let selected = true;
+            let price = opt.price;
+            if (decision === 'decline' || decision === 'exclure') {
+              selected = false;
+            } else if (decision === 'imported') {
+              price = opt.price_in_document;
+            } else if (decision === 'system' || decision === 'inclure') {
+              price = opt.price;
+            }
+            return {
+              ...opt,
+              selected,
+              resolved_price: price,
+              resolution_choice: decision
+            };
+          }
+          return opt;
+        })
+      };
+    });
+  };
+
+  const applyImportedData = () => {
+    if (!importReport || !importReport.extractedData) return;
+
+    const { extractedData, matchedOptions } = importReport;
+
+    // 1. Client info
+    setClientInfo(prev => ({
+      ...prev,
+      ...extractedData.client_info
+    }));
+
+    // 2. Base Price
+    if (extractedData.base_price) {
+      setBasePrice(extractedData.base_price);
+    }
+
+    // 3. Deposit / Acompte
+    if (extractedData.custom_deposit_amount) {
+      setCustomDepositAmount(extractedData.custom_deposit_amount);
+      setNoDepositRequired(false);
+    } else {
+      setCustomDepositAmount(0);
+    }
+
+    // 4. Blacklist / Notes
+    if (extractedData.blacklist) {
+      setBlacklist(extractedData.blacklist);
+    }
+    if (extractedData.playlist) {
+      setDjNotes(prev => prev ? prev + "\n" + extractedData.playlist : extractedData.playlist);
+    }
+    if (extractedData.event_notes) {
+      setEventNotes(extractedData.event_notes);
+    }
+
+    // 5. Options
+    if (matchedOptions && Array.isArray(matchedOptions)) {
+      setSelectedOptions(prev => prev.map(opt => {
+        const matched = matchedOptions.find(m => m.id === opt.id);
+        const selected = matched ? (matched.selected !== false) : false;
+        const finalPrice = (matched && matched.resolved_price !== undefined) ? matched.resolved_price : (matched ? matched.price : opt.price);
+        return { ...opt, selected, price: finalPrice };
+      }));
+    }
+
+    // 6. Déroulement / Event list
+    if (extractedData.deroulement && Array.isArray(extractedData.deroulement)) {
+      const newSelectedEvents = [];
+      const newEventOrder = [];
+      const customRepas = [];
+      const customMusique = [];
+
+      extractedData.deroulement.forEach((item, idx) => {
+        const titleClean = (item.title || "").trim();
+        const notesClean = (item.notes || "").trim();
+        
+        // Check standard categories
+        const standardRepas = ["Apéritif", "Entrée", "Plat", "Fromage", "Dessert"];
+        const standardMusique = ["Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"];
+        const standardAnimations = ["Blind test", "Chasse au trésor", "Quiz interactif", "Confessionnal"];
+
+        const t = titleClean.toLowerCase();
+
+        // High precision robust matching logic for standard timeline events:
+        const matchedRepas = standardRepas.find(e => {
+          const el = e.toLowerCase();
+          return t === el || 
+                 (t.includes("vin") && t.includes("honneur") && el === "apéritif") ||
+                 (t.includes("plat") && el === "plat");
+        });
+
+        const matchedMusique = standardMusique.find(e => {
+          const el = e.toLowerCase();
+          return t === el ||
+                 (t.includes("entrée") && t.includes("marié") && el === "entrée des mariés") ||
+                 (t.includes("ouverture") && t.includes("bal") && el === "ouverture de bal");
+        });
+
+        const matchedAnim = standardAnimations.find(e => {
+          const el = e.toLowerCase();
+          return t === el ||
+                 (t.includes("blind") && t.includes("test") && el === "blind test") ||
+                 ((t.includes("quiz") || t.includes("quizz")) && el === "quiz interactif") ||
+                 (t.includes("chasse") && t.includes("trésor") && el === "chasse au trésor");
+        });
+
+        if (matchedRepas) {
+          const key = `repas-${matchedRepas}`;
+          newSelectedEvents.push(key);
+          newEventOrder.push({ key, label: matchedRepas, type: 'repas', note: notesClean, icon: '' });
+        } else if (matchedMusique) {
+          const key = `musique-${matchedMusique}`;
+          newSelectedEvents.push(key);
+          newEventOrder.push({ key, label: matchedMusique, type: 'musique', note: notesClean, icon: '' });
+        } else if (matchedAnim) {
+          const key = `animation-${matchedAnim}`;
+          newSelectedEvents.push(key);
+          newEventOrder.push({ key, label: matchedAnim, type: 'animation', note: notesClean, icon: '' });
+        } else {
+          // Custom event step
+          const isMusiqueWord = t.includes("musique") || t.includes("bal") || t.includes("danse") || t.includes("slow") || t.includes("playlist");
+          if (isMusiqueWord) {
+            const key = `custom-musique-${customMusique.length}`;
+            customMusique.push(titleClean);
+            newSelectedEvents.push(key);
+            newEventOrder.push({ key, label: titleClean, type: 'musique', note: notesClean, icon: '' });
+          } else {
+            const key = `custom-repas-${customRepas.length}`;
+            customRepas.push(titleClean);
+            newSelectedEvents.push(key);
+            newEventOrder.push({ key, label: titleClean, type: 'repas', note: notesClean, icon: '' });
+          }
+        }
+      });
+
+      if (customRepas.length > 0) setCustomRepasEvents(customRepas);
+      if (customMusique.length > 0) setCustomMusiqueEvents(customMusique);
+      setSelectedEvents(newSelectedEvents);
+      setEventOrder(newEventOrder);
+    }
+
+    setIsImportModalOpen(false);
+    setImportReport(null);
+    setImportedFile(null);
+    toast.success("Données de l'ancien contrat injectées avec succès !");
   };
 
   // ═══════════════════════════════════════════════════
@@ -1643,6 +1893,15 @@ function Contracts2App() {
                 setInvoiceNumber("C2-" + new Date().getFullYear() + "-001");
                 toast.success("Données de test Mariage chargées !");
               }} variant="outline" className="px-4 py-3 text-sm border-amber-400 text-amber-700 hover:bg-amber-50" data-testid="test-fill-btn">Test Mariage</Button>
+              <Button 
+                onClick={() => setIsImportModalOpen(true)} 
+                variant="outline" 
+                className="px-4 py-3 text-sm border-indigo-400 text-indigo-700 hover:bg-indigo-50 flex items-center gap-1.5"
+                data-testid="import-contract-btn"
+              >
+                <Upload className="h-4 w-4" />
+                Importer ancien contrat
+              </Button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2605,124 +2864,6 @@ function Contracts2App() {
                     <CardDescription>Configuration des modalités de paiement et acompte</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {/* Integrated Dual Isolated Numbering Section */}
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                      <div className="flex items-center justify-between border-b pb-2">
-                        <div>
-                          <h4 className="font-semibold text-slate-800 text-sm">Numérotations de Dossier Séquentielles</h4>
-                          <p className="text-xs text-slate-500">Compteurs isolés pour la conformité réglementaire</p>
-                        </div>
-                        {contractMode === 'mandataire' && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleGenerateNumbers('both')}
-                            className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 text-xs flex items-center gap-1 h-8 px-2"
-                            title="Générer les deux numéros séquentiels d'un coup"
-                          >
-                            ⚡ Générer les deux
-                          </Button>
-                        )}
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* FIRST CONTRACT NUMBER (MANDAT or PRESTATION) */}
-                        <div className="space-y-2 border-r pr-0 md:pr-4 border-slate-200">
-                          <div className="flex items-center justify-between">
-                            <Label className="text-slate-700 font-medium text-xs">
-                              {contractMode === 'mandataire' ? "N° Contrat Mandat (R'KEY PROD)" : "N° Contrat Prestation"}
-                            </Label>
-                            <span className="text-[10px] bg-blue-100 text-blue-800 font-mono px-1.5 py-0.5 rounded font-bold">CTR</span>
-                          </div>
-                          
-                          <div className="flex items-center space-x-1.5">
-                            <Input 
-                              value={invoiceNumber} 
-                              onChange={(e) => setInvoiceNumber(e.target.value)} 
-                              placeholder="Auto (généré à la sauvegarde si vide)"
-                              className="border-slate-300 focus:border-blue-500 text-xs h-9 flex-1 bg-white font-mono" 
-                            />
-                            <Button 
-                              type="button" 
-                              variant="outline" 
-                              size="icon" 
-                              onClick={() => {
-                                if (invoiceNumber) {
-                                  navigator.clipboard.writeText(invoiceNumber);
-                                  toast.success("Numéro Mandat copié !");
-                                } else {
-                                  toast.error("Le numéro de contrat est vide");
-                                }
-                              }} 
-                              className="bg-white hover:bg-slate-100 h-9 w-9 border-slate-300 shrink-0"
-                              title="Copier"
-                            >
-                              <Copy className="h-4 w-4 text-slate-600" />
-                            </Button>
-                          </div>
-                          
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => handleGenerateNumbers('mandat')}
-                            className="w-full text-xs h-8 bg-white hover:bg-slate-100 border text-slate-700 border-slate-300 flex items-center justify-center gap-1 font-medium"
-                          >
-                            🎲 Incrémenter {nextNumbers.next_mandat_number ? `(${nextNumbers.next_mandat_number})` : ""}
-                          </Button>
-                        </div>
-
-                        {/* SECOND CONTRACT NUMBER (ENGAGEMENT ARTISTE) - only if in Mandataire Mode */}
-                        {contractMode === 'mandataire' ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <Label className="text-slate-700 font-medium text-xs">N° Engagement Artiste (DJ Mandaté)</Label>
-                              <span className="text-[10px] bg-amber-100 text-amber-800 font-mono px-1.5 py-0.5 rounded font-bold">ART</span>
-                            </div>
-                            
-                            <div className="flex items-center space-x-1.5">
-                              <Input 
-                                value={artisteInvoiceNumber} 
-                                onChange={(e) => setArtisteInvoiceNumber(e.target.value)} 
-                                placeholder="Auto (généré à la sauvegarde si vide)"
-                                className="border-slate-300 focus:border-amber-500 text-xs h-9 flex-1 bg-white font-mono" 
-                              />
-                              <Button 
-                                type="button" 
-                                variant="outline" 
-                                size="icon" 
-                                onClick={() => {
-                                  if (artisteInvoiceNumber) {
-                                    navigator.clipboard.writeText(artisteInvoiceNumber);
-                                    toast.success("Numéro d'artiste copié !");
-                                  } else {
-                                    toast.error("Le numéro d'artiste est vide");
-                                  }
-                                }} 
-                                className="bg-white hover:bg-slate-100 h-9 w-9 border-slate-300 shrink-0"
-                                title="Copier"
-                              >
-                                <Copy className="h-4 w-4 text-slate-600" />
-                              </Button>
-                            </div>
-                            
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() => handleGenerateNumbers('artiste')}
-                              className="w-full text-xs h-8 bg-white hover:bg-slate-100 border text-slate-700 border-slate-300 flex items-center justify-center gap-1 font-medium"
-                            >
-                              🎲 Incrémenter {nextNumbers.next_artiste_number ? `(${nextNumbers.next_artiste_number})` : ""}
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-center border-l border-slate-200 text-slate-400 text-xs italic px-4 text-center">
-                            Mode Entreprise Actif. Un seul contrat global R'Key Prod est généré. Aucun contrat d'engagement artiste séparé requis.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
                     <div className="bg-blue-50 p-4 rounded-lg space-y-2">
                       <div className="flex justify-between"><span className="font-medium">Montant total:</span><span className="font-bold text-blue-600">{calculateTotal()}€</span></div>
                       {(() => {
@@ -3234,6 +3375,382 @@ function Contracts2App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal d'importation de vieux contrats */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 sm:p-6 text-slate-800">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden relative animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-slate-50 shrink-0">
+              <div className="flex items-center space-x-2">
+                <Upload className="h-5 w-5 text-indigo-600" />
+                <h3 className="text-lg font-bold text-slate-800">
+                  Importer un vieux contrat (Word, PDF, Image...)
+                </h3>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setImportReport(null);
+                  setImportedFile(null);
+                  setImportError(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                title="Quitter"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {!importReport ? (
+                // Step 1: Upload and analyze
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-600 leading-relaxed">
+                    Déposez votre ancien contrat (Word converti en PDF, fichier PDF exporté de Google Docs, photo/scan d'un contrat papier, ou fichier texte standard). L'intelligence artificielle Gemini lira le document, en extraira toutes les options techniques et les données client, et les comparera à vos tarifs actuels.
+                  </p>
+
+                  {/* Drag and Drop Zone */}
+                  <div 
+                    onClick={() => document.getElementById('contract-file-upload').click()}
+                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+                      importedFile 
+                        ? 'border-indigo-500 bg-indigo-50/30' 
+                        : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
+                    }`}
+                  >
+                    <input 
+                      id="contract-file-upload" 
+                      type="file" 
+                      accept=".pdf,.png,.jpg,.jpeg,.webp,.txt"
+                      className="hidden" 
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setImportedFile(e.target.files[0]);
+                          setImportError(null);
+                        }
+                      }}
+                    />
+                    <Upload className="h-10 w-10 text-slate-400 mx-auto mb-3" />
+                    {importedFile ? (
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-slate-800">{importedFile.name}</p>
+                        <p className="text-xs text-slate-500">{(importedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-slate-700">Sélectionnez ou glissez un fichier ici</p>
+                        <p className="text-xs text-slate-500">Formats acceptés : PDF, PNG, JPG, JPEG, WEBP, TXT</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {importError && (
+                    <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-xs text-red-600 flex items-center space-x-2">
+                      <span className="font-bold">Erreur:</span>
+                      <span>{importError}</span>
+                    </div>
+                  )}
+
+                  {isImporting && (
+                    <div className="p-6 bg-slate-50 rounded-xl space-y-4 text-center border">
+                      <Loader2 className="h-8 w-8 text-indigo-600 animate-spin mx-auto animate-duration-1000" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-slate-700">Analyse intelligente en cours, veuillez patienter...</p>
+                        <p className="text-xs text-slate-500">
+                          Gemini lit les clauses, décode les options et valide les tarifs d'options...
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Step 2: Show Report, parsed conflicts and validate
+                <div className="space-y-6">
+                  {/* Journal de Validation / Conflits */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-semibold text-slate-800 flex items-center space-x-2">
+                      <span className="bg-amber-100 text-amber-700 h-6 w-6 rounded-full flex items-center justify-center text-xs">📝</span>
+                      <span>Journal de Validation & Conflits de Tarifs</span>
+                    </h4>
+                    {importReport.conflicts && importReport.conflicts.length > 0 ? (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+                        {importReport.conflicts.map((conflict, cIdx) => (
+                          <div key={cIdx} className="text-xs text-amber-900 leading-relaxed flex items-start space-x-1.5">
+                            <span className="shrink-0">•</span>
+                            <span>{conflict}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-xs text-emerald-800 flex items-center space-x-1.5">
+                        <span>✨</span>
+                        <span>Aucun conflit de tarifs ni anomalie détectés ! Toutes les options correspondent parfaitement aux prix système.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Résolution Interactive des Conflits de Tarifs et Choix d'Options */}
+                  {importReport.matchedOptions && importReport.matchedOptions.some(opt => opt.has_price_conflict || opt.is_pending) && (
+                    <div className="space-y-3 bg-blue-50/50 border border-blue-100 rounded-xl p-4">
+                      <h4 className="text-sm font-semibold text-blue-800 flex items-center space-x-1.5">
+                        <span className="text-base">🎯</span>
+                        <span>Décisions sur les options (Recommandé)</span>
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        L'IA a détecté des options avec un tarif différent ou marquées comme "à définir". Sélectionnez votre action privilégiée :
+                      </p>
+                      
+                      <div className="space-y-3 mt-2">
+                        {importReport.matchedOptions.filter(opt => opt.has_price_conflict || opt.is_pending).map((opt) => (
+                          <div key={opt.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs space-y-3">
+                            <div className="flex items-center justify-between border-b pb-2">
+                              <span className="font-semibold text-slate-700 text-xs">{opt.name}</span>
+                              {opt.is_pending ? (
+                                <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                                  Option "À définir"
+                                </span>
+                              ) : (
+                                <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2 py-0.5 rounded-full border border-blue-200">
+                                  Prix différent détecté
+                                </span>
+                              )}
+                            </div>
+                            
+                            {opt.is_pending ? (
+                              <div className="grid grid-cols-2 gap-2">
+                                {/* Option pour un choix à définir : Inclure (Tarif standard) */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleResolveConflict(opt.id, 'inclure')}
+                                  className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all ${
+                                    opt.selected === true
+                                      ? 'border-emerald-600 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-200 ring-opacity-50'
+                                      : 'border-slate-150 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Activer</span>
+                                  <span className="text-sm font-bold text-slate-800 mt-1">Inclure ({opt.price} €)</span>
+                                  <span className="text-[8px] text-emerald-600 font-extrabold mt-1">
+                                    RAJOUTER
+                                  </span>
+                                </button>
+
+                                {/* Option pour un choix à définir : Exclure */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleResolveConflict(opt.id, 'exclure')}
+                                  className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all ${
+                                    opt.selected === false
+                                      ? 'border-slate-450 bg-slate-100 text-slate-900 ring-2 ring-slate-200 ring-opacity-50'
+                                      : 'border-slate-150 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Laisser de côté</span>
+                                  <span className="text-sm font-bold text-slate-500 mt-1">Exclure</span>
+                                  <span className="text-[8px] text-slate-500 font-bold mt-1">
+                                    SANS OPTION
+                                  </span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-3 gap-2">
+                                {/* Option 1: Keep Imported Price */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleResolveConflict(opt.id, 'imported')}
+                                  className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all ${
+                                    opt.resolution_choice === 'imported' && opt.selected !== false
+                                      ? 'border-indigo-600 bg-indigo-50 text-indigo-900 ring-2 ring-indigo-200 ring-opacity-50'
+                                      : 'border-slate-150 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Tarif Importé</span>
+                                  <span className="text-sm font-bold text-slate-800 mt-1">{opt.price_in_document} €</span>
+                                  <span className="text-[8px] bg-emerald-100 text-emerald-800 font-extrabold px-1 py-0.5 rounded mt-1 shadow-2xs">
+                                    CONSERVÉ
+                                  </span>
+                                </button>
+
+                                {/* Option 2: Apply Current Catalog Price */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleResolveConflict(opt.id, 'system')}
+                                  className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all ${
+                                    opt.resolution_choice === 'system' && opt.selected !== false
+                                      ? 'border-indigo-600 bg-indigo-50 text-indigo-900 ring-2 ring-indigo-200 ring-opacity-50'
+                                      : 'border-slate-150 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Tarif Système</span>
+                                  <span className="text-sm font-bold text-slate-800 mt-1">{opt.price} €</span>
+                                  <span className="text-[8px] text-slate-500 font-bold mt-1.5">
+                                    Catalogue
+                                  </span>
+                                </button>
+
+                                {/* Option 3: Exclude Option */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleResolveConflict(opt.id, 'decline')}
+                                  className={`flex flex-col items-center justify-center p-2 rounded-lg border text-center transition-all ${
+                                    opt.selected === false
+                                      ? 'border-red-500 bg-red-50 text-red-900 ring-2 ring-red-200 ring-opacity-50'
+                                      : 'border-slate-150 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Désactiver</span>
+                                  <span className="text-xs font-semibold text-red-600 mt-1">EXCLURE</span>
+                                  <span className="text-[8px] text-slate-500 font-bold mt-1.5">
+                                    Pas d'option
+                                  </span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Summary of parsed values */}
+                  <div className="border border-slate-150 rounded-xl overflow-hidden bg-slate-55/50">
+                    <div className="px-4 py-2 bg-slate-100 border-b">
+                      <p className="text-xs font-semibold text-slate-700">Résumé des données extraites</p>
+                    </div>
+                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-wider text-slate-400 font-bold">Client</p>
+                        <p><strong className="text-slate-600">Nom :</strong> {importReport.extractedData.client_info.name || "—"}</p>
+                        <p><strong className="text-slate-600">Email :</strong> {importReport.extractedData.client_info.email || "—"}</p>
+                        <p><strong className="text-slate-600">Tel :</strong> {importReport.extractedData.client_info.phone || "—"}</p>
+                        <p><strong className="text-slate-600">Adresse :</strong> {importReport.extractedData.client_info.address || "—"}</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-xs uppercase tracking-wider text-slate-400 font-bold">Prestation</p>
+                        <p><strong className="text-slate-600">Événement :</strong> {importReport.extractedData.client_info.event_type} à {importReport.extractedData.client_info.event_location || "—"}</p>
+                        <p><strong className="text-slate-600">Date :</strong> {importReport.extractedData.client_info.event_date || "—"}</p>
+                        <p><strong className="text-slate-600">Tarif de base :</strong> {importReport.extractedData.base_price} €</p>
+                        <p><strong className="text-slate-600">Acompte :</strong> {importReport.extractedData.custom_deposit_amount} €</p>
+                      </div>
+
+                      {importReport.matchedOptions && importReport.matchedOptions.length > 0 && (
+                        <div className="md:col-span-2 space-y-2 pt-2 border-t text-slate-800">
+                          <p className="text-xs uppercase tracking-wider text-slate-400 font-bold">Options Associées ({importReport.matchedOptions.length})</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {importReport.matchedOptions.map((opt, oIdx) => {
+                              if (opt.selected === false) {
+                                return (
+                                  <span key={oIdx} className="bg-slate-100 border border-slate-200 text-slate-400 line-through text-xs font-semibold px-2.5 py-1 rounded-lg italic">
+                                    {opt.name} (Exclu)
+                                  </span>
+                                );
+                              }
+                              const displayPrice = opt.resolved_price !== undefined ? opt.resolved_price : opt.price;
+                              const isConflictResolved = opt.has_price_conflict;
+                              return (
+                                <span key={oIdx} className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${
+                                  isConflictResolved 
+                                    ? "bg-indigo-50 border-indigo-200 text-indigo-800 shadow-3xs" 
+                                    : "bg-emerald-50 border-emerald-150 text-emerald-800"
+                                }`}>
+                                  {opt.name} ({displayPrice} €)
+                                  {isConflictResolved && (
+                                    <span className="ml-1 text-[9px] text-indigo-500 font-extrabold tracking-wide uppercase">
+                                      [{opt.resolution_choice === 'imported' ? 'Tarif Importé' : 'Tarif Catalogue'}]
+                                    </span>
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {importReport.extractedData.deroulement && importReport.extractedData.deroulement.length > 0 && (
+                        <div className="md:col-span-2 space-y-2 pt-2 border-t text-slate-800">
+                          <p className="text-xs uppercase tracking-wider text-slate-400 font-bold">Déroulement et Chronologie ({importReport.extractedData.deroulement.length} étapes)</p>
+                          <div className="space-y-1.5">
+                            {importReport.extractedData.deroulement.map((item, dIdx) => (
+                              <div key={dIdx} className="text-xs flex flex-col md:flex-row md:items-center bg-white p-2 rounded-lg border">
+                                <span className="font-bold text-slate-700 min-w-[140px] truncate">{item.title}</span>
+                                <span className="text-slate-500 italic md:ml-4">{item.notes || "Sans note"}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t bg-slate-50 flex items-center justify-between shrink-0">
+              <Button 
+                onClick={() => {
+                  setImportReport(null);
+                  setImportedFile(null);
+                  setImportError(null);
+                }}
+                variant="outline"
+                className="px-4 py-2 text-sm text-slate-600"
+                disabled={isImporting}
+              >
+                {importReport ? "Recommencer" : "Réinitialiser"}
+              </Button>
+
+              <div className="flex items-center space-x-2">
+                <Button 
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    setImportReport(null);
+                    setImportedFile(null);
+                    setImportError(null);
+                  }}
+                  variant="ghost"
+                  className="px-4 py-2 text-sm text-slate-500"
+                  disabled={isImporting}
+                >
+                  Annuler
+                </Button>
+
+                {!importReport ? (
+                  <Button 
+                    onClick={handleImportContract}
+                    disabled={isImporting || !importedFile}
+                    className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-sm rounded-xl"
+                  >
+                    {isImporting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Analyse...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4" />
+                        Analyser le contrat
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <Button 
+                    onClick={applyImportedData}
+                    className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-sm rounded-xl"
+                  >
+                    <span>Injecter dans le formulaire</span>
+                    <span>→</span>
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

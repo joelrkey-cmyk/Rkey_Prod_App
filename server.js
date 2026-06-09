@@ -1058,6 +1058,49 @@ function optionalAuth(req, res, next) {
   } catch { req.user = null; next(); }
 }
 
+async function generateContentWithRetry(ai, params, modelsToTry = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"]) {
+  let lastException = null;
+  for (let i = 0; i < modelsToTry.length; i++) {
+    const modelName = modelsToTry[i];
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`[Gemini SDK Request] Attempting model: ${modelName} (Model ${i + 1}/${modelsToTry.length}, Attempt ${attempt}/3)`);
+        const response = await ai.models.generateContent({
+          ...params,
+          model: modelName
+        });
+        if (response && response.text) {
+          console.log(`[Gemini SDK Request] Success with model: ${modelName} on attempt ${attempt}`);
+          return response;
+        }
+      } catch (exc) {
+        const errorMsg = exc.message || String(exc);
+        console.log(`[Gemini SDK Request Error] Model ${modelName} (Attempt ${attempt}/3) exception:`, errorMsg);
+        lastException = exc;
+        
+        const errStr = (errorMsg + JSON.stringify(exc)).toLowerCase();
+        const isQuotaOrRateLimit = errStr.includes('429') || errStr.includes('quota') || errStr.includes('exhausted') || errStr.includes('limit') || errStr.includes('503') || errStr.includes('unavailable');
+        
+        if (isQuotaOrRateLimit) {
+          console.log(`[Gemini SDK] Detected resource constraint or rate limit (429/503). Skipping further attempts on ${modelName} and moving to fallback model.`);
+          break; // Break the attempt loop to move to the next model immediately
+        }
+
+        if (attempt < 3) {
+          const delay = attempt * 1500;
+          console.log(`[Gemini SDK] Waiting ${delay}ms before next retry on ${modelName}...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    console.log(`[Gemini SDK Request] Model ${modelName} attempts exhausted. Checking next fallback model...`);
+    if (i < modelsToTry.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  throw lastException || new Error("All model fallback attempts exhausted.");
+}
+
 const ALL_APPS = ["devis","contracts","contracts2","location","agenda-prestation","rental","delivery","crm","billetterie","formulaires","dj-profiles","abonnements","parametres"];
 function getDefaultApps(role) {
   if (role === 'location') return ['rental', 'delivery'];
@@ -2493,6 +2536,250 @@ api.delete('/contracts2/:id/permanent', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 
+// Endpoint d'importation d'anciens contrats via IA Gemini
+api.post('/contracts2/import', authMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Aucun fichier n'a été fourni pour l'importation." });
+    }
+
+    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.includes('MY_GEMINI_API_KEY')) {
+      return res.status(400).json({ error: "Clé API Gemini non configurée. Veuillez l'ajouter dans vos secrets." });
+    }
+
+    // Récupérer les options de matériel réelles depuis la base de données pour l'aider à mapper
+    const systemOptions = await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1 }).toArray();
+
+    const { GoogleGenAI } = require('@google/genai');
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    // Convertir le fichier en base64 pour Gemini
+    const fileMime = req.file.mimetype;
+    let filePart;
+    if (fileMime === 'text/plain') {
+      filePart = { text: req.file.buffer.toString('utf8') };
+    } else {
+      filePart = {
+        inlineData: {
+          data: req.file.buffer.toString('base64'),
+          mimeType: fileMime
+        }
+      };
+    }
+
+    const promptText = `Vous êtes un assistant spécialisé dans l'analyse minutieuse et de haute précision de contrats d'animation DJ et d'événementiel de R'KEY PROD.
+Votre rôle est d'analyser le document fourni (un contrat d'animation ancien au format PDF ou Image) et d'extraire toutes les informations clés de manière extrêmement fine et rigoureuse pour préremplir un formulaire moderne de l'application.
+
+Voici la liste des options techniques configurées dans notre système actuel, avec leurs tarifs standards de référence et leurs identifiants (id) :
+${JSON.stringify(systemOptions, null, 2)}
+
+Instructions d'extraction & Attention au détail :
+1. CLIENT : Extrayez son nom complet (nom + prénom), email, téléphones (phone et phone2 si multiples comme "Céline / Alexandre"), adresse postale complète, entreprise correspondante si applicable.
+2. ÉVÉNEMENT : Type d'événement (ex: Mariage, Anniversaire, CE, etc.), date au format YYYY-MM-DD (traduisez par exemple "30.05.26" ou "30 mai 2026" en "2026-05-30"). Si la date est ambiguë ou incomplète, donnez votre meilleure estimation de l'année. Lieu (ville ou salle), nombre d'invités (guest_count), heure de début (start_time) et fin (end_time), et si "unlimited_time" est vrai (par exemple 'Sans limite horaire' est indiqué).
+3. PRIX & ACOMPTE : Extrayez le prix de base de la prestation technique principale (base_price, ex: 1400.0 ou 1400) et l'acompte demandé (deposit_amount, ex: 700).
+4. OPTIONS DU TABLEAU & ENTOURAGES MANUSCRITS :
+   - Regardez attentivement chaque ligne d'option du matériel (ex: "Sonorisation cérémonie extérieure", "Eclairage salle", "Machine à bulles", "Machine à fumée lourde (nuage)", "Machine à étincelles froides x2 ou x4").
+   - À droite de chaque ligne, examinez quel choix manuscrit parmi "oui", "non" ou "à définir" (ou alternativement "x2 ou x4 / non / à définir") a été ENTOURÉ, COCHÉ ou ENCADRÉ à la main par le client.
+   - RÈGLE ABSOLUE POUR LES OPTIONS ENTOURÉES :
+     * Si la mention "non" est entourée : l'option n'a PAS été choisie par le client. Renvoyez "is_selected": false.
+     * Si la mention "à définir" (ou "a definir") est entourée : le client hésite ou n'a pas arrêté sa décision. Renvoyez "is_selected": "pending".
+     * Si la mention "oui" (ou "x2", "x4", "oui/non" etc.) est entourée ou si la ligne est cochée "oui" : l'option est choisie. Renvoyez "is_selected": true.
+     * Ne vous basez pas sur le texte imprimé ou les ratures initiales de mise en page, mais uniquement sur le cercle dessiné à la main (ex: l'éclairage de salle à 120 € a la mention "oui" entourée à la main donc is_selected=true ; la mention "non" est entourée pour "Sonorisation cérémonie extérieure", "Sonorisation vin d'honneur", "Machine à bulles", etc., donc is_selected=false).
+   - Renseignez également "price_in_document" avec le prix indiqué sur le document pour cette option (ex: 120 pour l'éclairage salle, 100 pour la sonorisation cérémonie...).
+5. DÉROULEMENT ("Déroulement et Notes") :
+   - Extrayez de manière séquentielle toutes les rubriques, sections et étapes figurant dans le tableau de déroulement (souvent en page 2).
+   - IMPORTANT : IGNOREZ complètement les couleurs de fond des lignes (l'orange ou le blanc n'ont absolument aucune importance pour le regroupement ou l'exclusion).
+   - Compilez toutes les lignes les unes après les autres de manière strictement linéaire (ordre séquentiel de haut en bas, sans hiérarchie parent-enfant, sous forme de liste d'étapes plates).
+   - Extrayez TOUTES les lignes visibles (ex. pour le document d'exemple : "VIN D'HONNEUR", "Entrée des Mariés" (notes d'animation: Blind Test, etc.), "ENTRÉE", "Ouverture de Bal" (notes de musique slow, etc.), "PLAT PRINCIPAL", "FROMAGE", "Chasse aux trésors", "DESSERT" etc. doivent tous être ajoutés à la suite).
+   - Assurez-vous d'extraire tout le bloc de déroulement.
+6. NOTES DJ : Extrayez les styles musicaux suggérés dans la playlist (« Playlist fin de soirée »), les musiques exclusives, la blacklist (musiques ou styles refusés), et les notes ou thèmes (ex: "Thèmes Champêtre").
+
+IMPORTANT : Vous devez renvoyer STRICTEMENT un objet JSON valide contenant les propriétés ci-dessous. Ne mettez aucun texte d'introduction ni de conclusion, juste du JSON pur.
+
+Format attendu :
+{
+  "client_name": "...",
+  "client_email": "...",
+  "client_phone": "...",
+  "client_phone2": "...",
+  "client_address": "...",
+  "client_company": "...",
+  "event_type": "...",
+  "event_date": "YYYY-MM-DD",
+  "event_location": "...",
+  "guest_count": "...",
+  "start_time": "...",
+  "end_time": "...",
+  "unlimited_time": false,
+  "base_price": 0,
+  "deposit_amount": 0,
+  "notes": "...",
+  "blacklist": "...",
+  "playlist": "...",
+  "extracted_options": [
+    {
+      "name_in_document": "...",
+      "price_in_document": 0,
+      "is_selected": true,
+      "matched_system_option_id": "id ou null"
+    }
+  ],
+  "deroulement": [
+    {
+      "title": "Nom de l'étape",
+      "notes": "Notes ou animations de cette étape"
+    }
+  ]
+}`;
+
+    let response;
+    try {
+      response = await generateContentWithRetry(ai, {
+        contents: { parts: [filePart, { text: promptText }] },
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+    } catch (err) {
+      console.log("[Import Fail] All Gemini fallback attempts failed:", err.message || err);
+      return res.status(503).json({ detail: `L'analyse du contrat a échoué en raison d'une surcharge temporaire des serveurs d'IA. Veuillez réessayer dans quelques instants. (Détails: ${err.message || "Service Unavailable"})` });
+    }
+
+    const resultText = response.text;
+    let parsedData;
+    try {
+      parsedData = JSON.parse(resultText);
+    } catch (e) {
+      console.error("Failed to parse Gemini output as JSON:", e, resultText);
+      return res.status(500).json({ error: "Erreur lors de l'interprétation par l'IA des données du contrat." });
+    }
+
+    // Analyse des conflits et construction du journal d'erreur / validation
+    const conflicts = [];
+    const matchedOptionsForForm = [];
+
+    // Vérifier les dates
+    if (parsedData.event_date) {
+      const dateParts = parsedData.event_date.split('-');
+      if (dateParts.length === 3) {
+        const evDate = new Date(parsedData.event_date);
+        const now = new Date();
+        now.setHours(0,0,0,0);
+        if (evDate < now) {
+          conflicts.push(`⚠️ Attention : La date de la prestation (${parsedData.event_date}) est déjà passée.`);
+        }
+      }
+    }
+
+    // Traitement des options
+    if (parsedData.extracted_options && Array.isArray(parsedData.extracted_options)) {
+      for (const opt of parsedData.extracted_options) {
+        const optionSel = opt.is_selected;
+        // Check if explicitly non or not selected
+        if (optionSel === false || optionSel === 'false') {
+          // Explicitly non
+          if (opt.matched_system_option_id) {
+            const sysOpt = systemOptions.find(o => o.id === opt.matched_system_option_id);
+            if (sysOpt) {
+              matchedOptionsForForm.push({
+                id: sysOpt.id,
+                name: sysOpt.name,
+                price: sysOpt.price,
+                price_in_document: opt.price_in_document || null,
+                has_price_conflict: false,
+                is_pending: false,
+                selected: false
+              });
+            }
+          }
+          continue;
+        }
+
+        const isPending = optionSel === 'pending' || optionSel === 'à définir' || optionSel === 'a definir';
+        const isSelected = optionSel === true || optionSel === 'true' || String(optionSel).toLowerCase() === 'oui';
+
+        if (isSelected || isPending) {
+          if (opt.matched_system_option_id) {
+            // Trouver l'option système correspondante
+            const sysOpt = systemOptions.find(o => o.id === opt.matched_system_option_id);
+            if (sysOpt) {
+              const documentPrice = (opt.price_in_document !== undefined && opt.price_in_document !== null) ? Number(opt.price_in_document) : null;
+              const hasPriceConflict = !isPending && documentPrice !== null && !isNaN(documentPrice) && sysOpt.price !== documentPrice;
+              
+              matchedOptionsForForm.push({
+                id: sysOpt.id,
+                name: sysOpt.name,
+                price: sysOpt.price,
+                price_in_document: documentPrice,
+                has_price_conflict: hasPriceConflict,
+                is_pending: isPending,
+                selected: isPending ? false : true
+              });
+
+              if (isPending) {
+                conflicts.push(`ℹ️ Option à définir : L'option "${sysOpt.name}" est marquée comme "à définir" (à confirmer si vous voulez la rajouter).`);
+              } else if (hasPriceConflict) {
+                conflicts.push(`⚠️ Conflit de prix : L'option "${sysOpt.name}" est facturée ${documentPrice} € dans l'ancien contrat, mais son tarif actuel configuré est de ${sysOpt.price} €.`);
+              }
+            } else {
+              conflicts.push(`❓ L'option "${opt.name_in_document}" a été mappée à ID "${opt.matched_system_option_id}" mais celui-ci est introuvable.`);
+            }
+          } else {
+            // Option non mappée
+            if (isPending) {
+              conflicts.push(`ℹ️ Option à définir non reconnue : L'option "${opt.name_in_document}" (${opt.price_in_document || 0} €) est marquée comme "à définir" mais n'existe pas dans vos options système actuelles.`);
+            } else {
+              conflicts.push(`⚠️ Option non reconnue : L'option "${opt.name_in_document}" (${opt.price_in_document || 0} €) a été cochée sur le document, mais n'existe pas dans vos options système actuelles.`);
+            }
+          }
+        }
+      }
+    }
+
+    // Renvoyer les informations formatées prêtes à l'injection
+    res.json({
+      success: true,
+      extractedData: {
+        client_info: {
+          name: parsedData.client_name || "",
+          email: parsedData.client_email || "",
+          phone: parsedData.client_phone || "",
+          phone2: parsedData.client_phone2 || "",
+          address: parsedData.client_address || "",
+          company: parsedData.client_company || "",
+          event_type: parsedData.event_type || "Mariage",
+          event_date: parsedData.event_date || "",
+          event_location: parsedData.event_location || "",
+          guest_count: parsedData.guest_count ? String(parsedData.guest_count) : "",
+          start_time: parsedData.start_time || "",
+          end_time: parsedData.end_time || "",
+          unlimited_time: !!parsedData.unlimited_time,
+          event_note: parsedData.notes || ""
+        },
+        base_price: parsedData.base_price || 0,
+        custom_deposit_amount: parsedData.deposit_amount || 0,
+        blacklist: parsedData.blacklist || "",
+        playlist: parsedData.playlist || "",
+        event_notes: parsedData.notes || "",
+        deroulement: parsedData.deroulement || []
+      },
+      matchedOptions: matchedOptionsForForm,
+      conflicts: conflicts
+    });
+
+  } catch (error) {
+    console.error("Error in contract import endpoint:", error);
+    res.status(500).json({ error: error.message || "Une erreur s'est produite lors de l'analyse du contrat." });
+  }
+});
+
 // ══════════ DUAL ISOLATED COUNTERS ENDPOINTS ══════════
 
 // Get current and next counter values
@@ -3713,15 +4000,14 @@ api.post('/location/generate-description', authMiddleware, async (req, res) => {
         }
       }
     });
-    const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
+    const response = await generateContentWithRetry(ai, {
         contents: prompt
     });
     const description = response.text.trim() || '';
     res.json({ description });
   } catch (e) {
-    console.error('AI generation error:', e);
-    res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Vérifiez votre clé API Gemini." });
+    console.log('[AI generation info/warn] Generation exception:', e.message || e);
+    res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Veuillez réessayer dans quelques instants." });
   }
 });
 api.post('/location/generate-catalogue-description', authMiddleware, async (req, res) => {
@@ -3740,15 +4026,14 @@ api.post('/location/generate-catalogue-description', authMiddleware, async (req,
         }
       }
     });
-    const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
+    const response = await generateContentWithRetry(ai, {
         contents: prompt
     });
     const description = response.text.trim() || '';
     res.json({ description });
   } catch (e) {
-    console.error('AI catalogue description error:', e);
-    res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Vérifiez votre clé API Gemini." });
+    console.log('[AI catalogue generation info/warn] Catalogue generation exception:', e.message || e);
+    res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Veuillez réessayer dans quelques instants." });
   }
 });
 
@@ -3853,8 +4138,7 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
       
       let response;
       try {
-        response = await ai.models.generateContent({
-          model: 'gemini-3.5-flash',
+        response = await generateContentWithRetry(ai, {
           contents: prompt,
           config: {
             tools: [{ googleSearch: {} }],
@@ -3874,11 +4158,10 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
               required: ["suggestedPrice", "explanation"]
             }
           }
-        });
+        }, ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"]);
       } catch (searchError) {
-        console.warn("Pricing Search grounding failed, falling back to base model knowledge:", searchError.message || searchError);
-        response = await ai.models.generateContent({
-          model: 'gemini-3.5-flash',
+        console.log("[Pricing Search grounding notice] Grounding or model busy, trying base knowledge fallback:", searchError.message || searchError);
+        response = await generateContentWithRetry(ai, {
           contents: prompt + "\nRemarque : sers-toi uniquement de tes connaissances pré-entraînées sur le marché français de l'événementiel si la recherche internet n'est pas disponible.",
           config: {
             responseMimeType: "application/json",
@@ -3906,7 +4189,7 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
         return res.json(result);
       }
     } catch (e) {
-      console.error('AI suggest-price error (falling back to smart defaults):', e);
+      console.log('[AI suggest-price notice/info] falling back to smart defaults:', e.message || e);
       const errStr = (e.message || String(e)).toLowerCase();
       if (errStr.includes('429') || errStr.includes('quota') || errStr.includes('exhausted') || errStr.includes('limit')) {
         const quotaExplanation = fallbackExplanation + " (Note : Limite de quota IA atteinte temporairement. Nous avons calculé un tarif indicatif intelligent basé sur votre catalogue existant)";

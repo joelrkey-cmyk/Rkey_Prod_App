@@ -373,9 +373,9 @@ export const printContractWithSignature = async (contract, generateContractHTMLF
           .payment-left, .payment-right { flex: 1; text-align: center; }
           .amount-big { font-size: 14px; font-weight: bold; color: #FF6B00; }
           .signatures { display: flex; justify-content: space-between; gap: 15pt; margin-top: 20pt; }
-          .signature-left, .signature-right { flex: 1; text-align: center; border: 1pt solid #ccc; padding: 15pt; min-height: 60pt; }
+          .signature-left, .signature-right { flex: 1; text-align: center; padding: 15pt; min-height: 60pt; }
           .clearfix::after { content: ""; display: table; clear: both; }
-          .notes-section { font-size: 9px; line-height: 1.4; text-align: justify; }
+          .notes-section { font-size: 7px; line-height: 1.15; text-align: justify; }
           .technical-note { margin-bottom: 12pt; padding: 8pt; background-color: #f8f9fa; border-left: 3px solid #FF6B00; font-size: 9px; line-height: 1.3; }
           .technical-note strong { font-size: 10px; color: #FF6B00; display: block; margin-bottom: 4pt; }
           .event-schedule-table table { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 9px; }

@@ -25,5 +25,10 @@
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^9.0.1",
     "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^17.6.0"
   }
 }

@@ -208,14 +208,6 @@ function AgendaView({ stats, setCurrentView }) {
       'cancelled': 'Annulé'
     };
 
-    // Special handling for "Matériel retiré" - ouvrir la modal
-    if (newStatus === 'equipment_withdrawn') {
-      const reservation = reservations.find(r => r.id === reservationId);
-      setCurrentReservationForSlip(reservation);
-      setShowWithdrawalSlipModal(true);
-      return; // Ne pas changer le statut tout de suite, attendre la décision de l'utilisateur
-    }
-
     // Special handling for cancellation
     if (newStatus === 'cancelled') {
       const reservation = reservations.find(r => r.id === reservationId);

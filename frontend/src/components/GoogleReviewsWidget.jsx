@@ -430,9 +430,6 @@ const GoogleReviewsWidget = ({
         // Utiliser l'API réelle pour récupérer les vrais avis Google de R'Key Prod
         console.log('Fetching real Google reviews for R\'Key Prod...');
         
-        import API_BASE_URL from '../utils/apiUrl';
-
-const BACKEND_URL = API_BASE_URL;
         const token = localStorage.getItem('access_token');
         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
         

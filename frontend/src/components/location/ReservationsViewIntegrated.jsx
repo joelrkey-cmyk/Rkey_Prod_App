@@ -49,6 +49,10 @@ function ReservationsViewIntegrated({ setCurrentView, onOpenAddReservation = () 
   const [currentReservationForSlip, setCurrentReservationForSlip] = useState(null);
   const [validatedEquipment, setValidatedEquipment] = useState([]); // IDs des équipements validés
 
+  // États pour l'acceptation de réservation
+  const [showAcceptedReservationModal, setShowAcceptedReservationModal] = useState(false);
+  const [currentAcceptedReservation, setCurrentAcceptedReservation] = useState(null);
+
   // États pour la modal de consultation du bon de retrait
   const [showWithdrawalViewModal, setShowWithdrawalViewModal] = useState(false);
   const [viewingWithdrawal, setViewingWithdrawal] = useState(null);

@@ -970,15 +970,15 @@ const DjProfilesApp = () => {
                   <Input
                     value={profileForm.titre}
                     onChange={(e) => setProfileForm(prev => ({ ...prev, titre: e.target.value }))}
-                    placeholder="Ex: Fondateur, Animateur DJ"
+                    placeholder="Ex: Dirigeant, Animateur DJ"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label>Sous-titre (sous le nom)</Label>
                   <Input
                     value={profileForm.sous_titre}
                     onChange={(e) => setProfileForm(prev => ({ ...prev, sous_titre: e.target.value }))}
-                    placeholder="Ex: Animateur DJ & Fondateur"
+                    placeholder="Ex: Animateur DJ & Dirigeant"
                   />
                 </div>
               </div>

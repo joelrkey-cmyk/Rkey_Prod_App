@@ -658,7 +658,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
       
       <div class="signatures clearfix" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 4mm;">
         <div class="signature-left" style="flex: 1; max-width: 48%;">
-          <div style="text-align: center; padding: 8pt; border: 1pt solid #ccc; min-height: 25mm; height: 35mm;">
+          <div style="text-align: center; padding: 8pt; min-height: 25mm; height: 35mm;">
             <strong>Le Client</strong><br><br>
             Nom: ${contract.client_info.name}<br>
             Date: _______________<br>
@@ -669,7 +669,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
         </div>
         
         <div class="signature-right" style="flex: 1; max-width: 48%;">
-          <div style="text-align: center; padding: 8pt; border: 1pt solid #ccc; min-height: 25mm; height: 35mm;">
+          <div style="text-align: center; padding: 8pt; min-height: 25mm; height: 35mm;">
             <strong>Le Prestataire</strong><br><br>
             Date: ${new Date().toLocaleDateString('fr-FR')}<br>
             <strong style="font-size: 10px;">${_p.name}</strong><br>
@@ -720,14 +720,14 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
           .technical-note { margin: 4px 0; padding: 6px; background: #f8f9fa; border-left: 3px solid #007bff; font-size: 10px; line-height: 1.3; }
           .technical-note strong { font-size: 11px; }
           .signatures { width: 100%; margin-top: 15pt; clear: both; }
-          .signature-left { float: left; width: 48%; margin-right: 2%; text-align: center; border: 1pt solid #ccc; padding: 8pt; min-height: 25mm; font-size: 11px; }
-          .signature-right { float: right; width: 48%; text-align: center; border: 1pt solid #ccc; padding: 8pt; min-height: 25mm; font-size: 11px; }
+          .signature-left { float: left; width: 48%; margin-right: 2%; text-align: center; padding: 8pt; min-height: 25mm; font-size: 11px; }
+          .signature-right { float: right; width: 48%; text-align: center; padding: 8pt; min-height: 25mm; font-size: 11px; }
           .paraphe-box { position: absolute; right: 8px; bottom: 8px; width: 15mm; height: 8mm; border: 1px solid #000; text-align: center; font-size: 9px; line-height: 8mm; font-weight: bold; }
           .paraphe-page { position: relative; min-height: 270mm; }
           .paraphe-page + .paraphe-page { page-break-before: always; }
           .paraphe-page + .section { page-break-before: always; }
           .clearfix::after { content: ""; display: table; clear: both; }
-          .notes-section { font-size: 10px; line-height: 1.3; }
+          .notes-section { font-size: 7px; line-height: 1.15; text-align: justify; }
       </style>
       
       ${mode === 'technical-only' ? '' : page1HTML}

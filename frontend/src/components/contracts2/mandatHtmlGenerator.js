@@ -37,7 +37,7 @@ const CSS_COMMON = `
   .paraphe-page { position: relative; min-height: 270mm; }
   .paraphe-page + .paraphe-page { page-break-before: always; }
   .paraphe-page + .section { page-break-before: always; }
-  .notes-section { font-size: 10px; line-height: 1.3; }
+  .notes-section { font-size: 7px; line-height: 1.15; text-align: justify; }
 `;
 
 const clientInfoBlock = (contract) => `
@@ -70,7 +70,7 @@ const clientInfoBlock = (contract) => `
 const signatureBlock = (clientName, prestataireName, prestataireTitle) => `
   <div class="signatures clearfix" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 4mm; margin-top: 20pt;">
     <div style="flex: 1; max-width: 48%;">
-      <div style="text-align: center; padding: 8pt; border: 1pt solid #ccc; min-height: 25mm; height: 35mm;">
+      <div style="text-align: center; padding: 8pt; min-height: 25mm; height: 35mm;">
         <strong>Le Client</strong><br><br>
         Nom: ${clientName}<br>
         Date: _______________<br>
@@ -80,7 +80,7 @@ const signatureBlock = (clientName, prestataireName, prestataireTitle) => `
       </div>
     </div>
     <div style="flex: 1; max-width: 48%;">
-      <div style="text-align: center; padding: 8pt; border: 1pt solid #ccc; min-height: 25mm; height: 35mm;">
+      <div style="text-align: center; padding: 8pt; min-height: 25mm; height: 35mm;">
         <strong>${prestataireTitle}</strong><br><br>
         Date: ${new Date().toLocaleDateString('fr-FR')}<br>
         <strong style="font-size: 10px;">${prestataireName}</strong>
