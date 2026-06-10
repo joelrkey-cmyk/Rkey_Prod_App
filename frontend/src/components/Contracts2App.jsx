@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Separator } from "./ui/separator";
-import { X, Search, Users, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus, Paperclip, Upload, Loader2, Eye } from "lucide-react";
+import { X, Search, Users, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus, Paperclip, Upload, Loader2, Eye, AlertCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { toast } from "sonner";
 import apiService from "../services/api";
@@ -778,6 +778,156 @@ function Contracts2App() {
     }
   };
 
+  const handleInlineAttachmentUpload = async (e) => {
+    if (!editingContract) {
+      toast.error("Veuillez d'abord sauvegarder le contrat.");
+      return;
+    }
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    
+    const allowedTypes = [
+      "application/pdf", 
+      "image/png", 
+      "image/jpeg", 
+      "image/jpg", 
+      "image/heic", 
+      "image/heif"
+    ];
+
+    setUploadingAttachment(true);
+    const token = localStorage.getItem('access_token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      const isHeic = fileExt === 'heic' || fileExt === 'heif';
+      if (!allowedTypes.includes(file.type) && !isHeic) {
+        toast.error(`Format non supporté pour "${file.name}". PDF, PNG, JPG ou HEIC uniquement.`);
+        continue;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("category", "Administrative");
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/contracts2/${editingContract.id}/documents`, {
+          method: "POST",
+          headers,
+          body: formData
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            toast.success(`"${file.name}" a été ajouté avec succès !`);
+            
+            setEditingContract(prev => {
+              if (!prev) return prev;
+              const updatedDocs = [...(prev.event_documents || []), result.document];
+              return { ...prev, event_documents: updatedDocs };
+            });
+
+            setGeneratedContract(prev => {
+              if (!prev) return prev;
+              const updatedDocs = [...(prev.event_documents || []), result.document];
+              return { ...prev, event_documents: updatedDocs };
+            });
+
+            setContracts(prev => prev.map(c => {
+              if (c.id === editingContract.id) {
+                return { ...c, event_documents: [...(c.event_documents || []), result.document] };
+              }
+              return c;
+            }));
+          } else {
+            toast.error(`Erreur d'envoi pour "${file.name}"`);
+          }
+        } else {
+          const errRes = await response.json().catch(() => ({}));
+          toast.error(`Erreur pour "${file.name}" : ${errRes.error || 'Statut ' + response.status}`);
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error(`Erreur réseau pour "${file.name}"`);
+      }
+    }
+    
+    setUploadingAttachment(false);
+    e.target.value = null; // reset input
+    
+    loadContracts();
+    loadArchivedContracts();
+  };
+
+  const handleInlineDeleteAttachment = async (docId) => {
+    if (!window.confirm("Voulez-vous vraiment supprimer cette pièce jointe ?")) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${BACKEND_URL}/api/contracts2/${editingContract.id}/documents/${docId}`, {
+        method: "DELETE",
+        headers
+      });
+      
+      if (response.ok) {
+        toast.success("Pièce jointe supprimée !");
+        
+        setEditingContract(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            event_documents: (prev.event_documents || []).filter(a => a.id !== docId)
+          };
+        });
+
+        setGeneratedContract(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            event_documents: (prev.event_documents || []).filter(a => a.id !== docId)
+          };
+        });
+
+        setContracts(prev => prev.map(c => {
+          if (c.id === editingContract.id) {
+            return {
+              ...c,
+              event_documents: (c.event_documents || []).filter(a => a.id !== docId)
+            };
+          }
+          return c;
+        }));
+        
+        loadContracts();
+        loadArchivedContracts();
+      } else {
+        toast.error("Erreur lors de la suppression de la pièce jointe");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau lors de la suppression");
+    }
+  };
+
+  const handleInlinePreviewAttachment = async (doc) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${BACKEND_URL}/api/contracts2/${editingContract.id}/documents/${doc.id}?preview=true`, { headers });
+      if (!response.ok) throw new Error("Impossible de récupérer le document");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setPreviewPdfUrl(url);
+      setPreviewPdfFilename(doc.filename);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'ouverture du document");
+    }
+  };
+
   const markContractAsSent = async (contractId) => {
     try {
       const response = await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'sent' });
@@ -1053,7 +1203,7 @@ function Contracts2App() {
     });
   };
 
-  const applyImportedData = () => {
+  const applyImportedData = async () => {
     if (!importReport || !importReport.extractedData) return;
 
     const { extractedData, matchedOptions } = importReport;
@@ -1088,22 +1238,32 @@ function Contracts2App() {
       setEventNotes(extractedData.event_notes);
     }
 
-    // 5. Options
+    // 5. Options (price conflict choices resolved)
+    let finalAppliedOptionsList = [];
     if (matchedOptions && Array.isArray(matchedOptions)) {
-      setSelectedOptions(prev => prev.map(opt => {
-        const matched = matchedOptions.find(m => m.id === opt.id);
-        const selected = matched ? (matched.selected !== false) : false;
-        const finalPrice = (matched && matched.resolved_price !== undefined) ? matched.resolved_price : (matched ? matched.price : opt.price);
-        return { ...opt, selected, price: finalPrice };
-      }));
+      setSelectedOptions(prev => {
+        const nextOpts = prev.map(opt => {
+          const matched = matchedOptions.find(m => m.id === opt.id);
+          const selected = matched ? (matched.selected !== false) : false;
+          const finalPrice = (matched && matched.resolved_price !== undefined) ? matched.resolved_price : (matched ? matched.price : opt.price);
+          return { ...opt, selected, price: finalPrice };
+        });
+        finalAppliedOptionsList = nextOpts.filter(o => o.selected);
+        return nextOpts;
+      });
+    } else {
+      finalAppliedOptionsList = selectedOptions.filter(o => o.selected);
     }
 
     // 6. Déroulement / Event list
+    let finalSelectedEventsList = [];
+    let finalEventOrderList = [];
+    let customRepas = [];
+    let customMusique = [];
+
     if (extractedData.deroulement && Array.isArray(extractedData.deroulement)) {
       const newSelectedEvents = [];
       const newEventOrder = [];
-      const customRepas = [];
-      const customMusique = [];
 
       extractedData.deroulement.forEach((item, idx) => {
         const titleClean = (item.title || "").trim();
@@ -1172,12 +1332,179 @@ function Contracts2App() {
       if (customMusique.length > 0) setCustomMusiqueEvents(customMusique);
       setSelectedEvents(newSelectedEvents);
       setEventOrder(newEventOrder);
+
+      finalSelectedEventsList = newSelectedEvents;
+      finalEventOrderList = newEventOrder;
+    } else {
+      finalSelectedEventsList = selectedEvents;
+      finalEventOrderList = eventOrder;
+    }
+
+    // Auto-save generated draft immediately to ensure its ID is persisted
+    const clientName = extractedData.client_info?.name || clientInfo.name || "Client Importé";
+    const clientEmail = extractedData.client_info?.email || clientInfo.email || "client@import.com";
+
+    const contractDataToSave = {
+      client_info: {
+        name: clientName,
+        email: clientEmail,
+        phone: extractedData.client_info?.phone || clientInfo.phone || "",
+        address: extractedData.client_info?.address || clientInfo.address || "",
+        company: extractedData.client_info?.company || clientInfo.company || "",
+        event_type: extractedData.client_info?.event_type || clientInfo.event_type || "",
+        event_date: extractedData.client_info?.event_date || clientInfo.event_date || "",
+        event_location: extractedData.client_info?.event_location || clientInfo.event_location || "",
+        guest_count: extractedData.client_info?.guest_count || clientInfo.guest_count || "",
+        setup_date: extractedData.client_info?.setup_date || clientInfo.setup_date || "",
+        setup_time: extractedData.client_info?.setup_time || clientInfo.setup_time || "À définir",
+        start_time: extractedData.client_info?.start_time || clientInfo.start_time || "",
+        end_time: clientInfo.unlimited_time ? null : (extractedData.client_info?.end_time || clientInfo.end_time || ""),
+        unlimited_time: clientInfo.unlimited_time,
+        phone2: extractedData.client_info?.phone2 || clientInfo.phone2 || "",
+        custom_event_type: extractedData.client_info?.custom_event_type || clientInfo.custom_event_type || "",
+        event_note: extractedData.client_info?.event_note || clientInfo.event_note || ""
+      },
+      dj_profile: selectedDjProfile,
+      dj_profile_data: getProfileData(selectedDjProfile),
+      contract_mode: contractMode || 'entreprise',
+      base_price: extractedData.base_price || basePrice || 0,
+      frais_mandat: fraisMandat || 0,
+      cachet_artiste: cachetArtiste || 0,
+      pack_sonorisation: packSonorisation || false,
+      pack_lumiere: packLumiere || false,
+      selected_options: finalAppliedOptionsList.length > 0 ? finalAppliedOptionsList : selectedOptions.filter(o => o.selected),
+      options_tarif_notes: optionsTarifNotes,
+      discount_amount: discountAmount || 0,
+      invoice_number: invoiceNumber || "",
+      artiste_invoice_number: artisteInvoiceNumber || "",
+      custom_deposit_amount: extractedData.custom_deposit_amount || customDepositAmount || 0,
+      no_deposit_required: noDepositRequired || false,
+      selected_rib: selectedRIB || "",
+      deposit_paid: depositPaid || false,
+      deposit_payment_method: depositPaymentMethod || "",
+      deposit_paid_date: depositPaidDate || "",
+      has_limiteur_son: hasLimiteurSon || false,
+      has_detecteur_fumee: hasDetecteurFumee || false,
+      has_no_limiteur_ni_detecteur: hasNoLimiteurNiDetecteur || false,
+      has_wifi: hasWifi || false,
+      has_4g_5g: has4g5g || false,
+      selected_notes: selectedNotes,
+      selected_pdf_notes: selectedPdfNotes,
+      predefined_notes: predefinedNotes,
+      selected_music_styles: selectedMusicStyles,
+      dj_notes: extractedData.playlist ? (djNotes ? djNotes + "\n" + extractedData.playlist : extractedData.playlist) : djNotes,
+      blacklist: extractedData.blacklist || blacklist || "",
+      catering_notes: cateringNotes,
+      catering_drinks: cateringDrinks,
+      catering_hot_meal_no_table: cateringHotMealNoTable,
+      catering_hot_meal_no_table_qty: cateringHotMealNoTableQty,
+      background_music_aperitif: backgroundMusicAperitif,
+      selected_events: finalSelectedEventsList,
+      custom_repas_events: customRepasEvents,
+      custom_musique_events: customMusiqueEvents,
+      event_notes: extractedData.event_notes || eventNotes,
+      event_order: finalEventOrderList,
+      hypnosis_program: hypnosisProgram,
+      technician_contact: technicianContact,
+      cgv_text: cgvText,
+      artiste_cgv_text: artisteCgvText,
+      cgv_title: cgvTitle,
+      artiste_cgv_title: artisteCgvTitle,
+      status: "draft",
+      draft_saved_at: new Date().toISOString()
+    };
+
+    try {
+      toast.info("Enregistrement automatique du nouveau contrat importé...");
+      
+      let activeInvoiceNumber = contractDataToSave.invoice_number;
+      let activeArtisteInvoiceNumber = contractDataToSave.artiste_invoice_number;
+      const needsMandat = !activeInvoiceNumber;
+      const needsArtiste = (contractMode || 'entreprise') === 'mandataire' && !activeArtisteInvoiceNumber;
+
+      if (needsMandat || needsArtiste) {
+        try {
+          let typeToIncrement = 'both';
+          if (needsMandat && !needsArtiste) {
+            typeToIncrement = 'mandat';
+          } else if (!needsMandat && needsArtiste) {
+            typeToIncrement = 'artiste';
+          }
+
+          const incResponse = await axios.post(`${API}/contracts2/counters/increment`, { type: typeToIncrement });
+          const { mandat_number, artiste_number } = incResponse.data;
+          
+          if (needsMandat) {
+            activeInvoiceNumber = mandat_number;
+            setInvoiceNumber(mandat_number);
+            contractDataToSave.invoice_number = mandat_number;
+          }
+          if (needsArtiste) {
+            activeArtisteInvoiceNumber = artiste_number;
+            setArtisteInvoiceNumber(artiste_number);
+            contractDataToSave.artiste_invoice_number = artiste_number;
+          }
+          fetchNextNumbers();
+        } catch (incError) {
+          console.error("Auto-numbering error on import save:", incError);
+        }
+      }
+
+      const saveResponse = await axios.post(`${API}/contracts2`, contractDataToSave);
+      const newContract = saveResponse.data;
+      setGeneratedContract(newContract);
+      setContracts(prev => [newContract, ...prev]);
+      setEditingContract(newContract);
+
+      // Now, upload the imported original contract as an attachment
+      if (importedFile) {
+        toast.info(`Sauvegarde de l'original "${importedFile.name}" en pièce jointe...`);
+        const uploadData = new FormData();
+        uploadData.append("file", importedFile);
+        uploadData.append("category", "Ancien Contrat");
+
+        const token = localStorage.getItem('access_token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+        try {
+          const uploadResp = await fetch(`${BACKEND_URL}/api/contracts2/${newContract.id}/documents`, {
+            method: "POST",
+            headers,
+            body: uploadData
+          });
+
+          if (uploadResp.ok) {
+            const uploadResult = await uploadResp.json();
+            if (uploadResult.success) {
+              toast.success(`L'original "${importedFile.name}" a été conservé en pièce jointe !`);
+              
+              const refreshedContract = {
+                ...newContract,
+                event_documents: [uploadResult.document]
+              };
+              setGeneratedContract(refreshedContract);
+              setEditingContract(refreshedContract);
+              setContracts(prev => prev.map(c => c.id === newContract.id ? refreshedContract : c));
+            }
+          } else {
+            console.error("Failed to automatically upload original file.");
+            toast.warning("Contrat importé avec succès, mais le fichier d'origine n'a pas pu être enregistré en pièce jointe.");
+          }
+        } catch (uploadErr) {
+          console.error("Error uploading imported contract:", uploadErr);
+        }
+      } else {
+        toast.success("Données de l'ancien contrat injectées et enregistrées avec succès !");
+      }
+    } catch (saveErr) {
+      console.error("Error auto-saving contract on import:", saveErr);
+      toast.error("Erreur d'enregistrement automatique du contrat importé.");
     }
 
     setIsImportModalOpen(false);
     setImportReport(null);
     setImportedFile(null);
-    toast.success("Données de l'ancien contrat injectées avec succès !");
+    setImportError(null);
   };
 
   // ═══════════════════════════════════════════════════
@@ -1425,8 +1752,15 @@ function Contracts2App() {
       guest_count: contract.client_info.guest_count || ""
     });
     
-    const contractSelectedOptionsIds = (contract.selected_options || []).filter(opt => opt.selected).map(opt => opt.id);
-    setSelectedOptions(availableOptions.map(option => ({ ...option, selected: contractSelectedOptionsIds.includes(option.id) })));
+    const contractSelectedOptions = contract.selected_options || [];
+    setSelectedOptions(availableOptions.map(option => {
+      const saved = contractSelectedOptions.find(o => o.id === option.id);
+      return {
+        ...option,
+        selected: saved ? saved.selected !== false : false,
+        price: saved && saved.price !== undefined ? saved.price : option.price
+      };
+    }));
     
     setDiscountAmount(contract.discount_amount || 0);
     setInvoiceNumber(contract.invoice_number || "");
@@ -1489,8 +1823,15 @@ function Contracts2App() {
       guest_count: contract.client_info?.guest_count || ""
     });
     
-    const contractSelectedOptionsIds = (contract.selected_options || []).filter(opt => opt.selected).map(opt => opt.id);
-    setSelectedOptions(availableOptions.map(option => ({ ...option, selected: contractSelectedOptionsIds.includes(option.id) })));
+    const contractSelectedOptions = contract.selected_options || [];
+    setSelectedOptions(availableOptions.map(option => {
+      const saved = contractSelectedOptions.find(o => o.id === option.id);
+      return {
+        ...option,
+        selected: saved ? saved.selected !== false : false,
+        price: saved && saved.price !== undefined ? saved.price : option.price
+      };
+    }));
     
     setDiscountAmount(contract.discount_amount || 0);
     setInvoiceNumber(""); 
@@ -2955,6 +3296,120 @@ function Contracts2App() {
                 </Card>
               </div>
               )}
+
+
+
+              {/* Card Pièces Jointes & Documents */}
+              <div className="lg:col-span-2">
+                <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-emerald-800 flex items-center gap-2">
+                      <Paperclip className="w-5 h-5 text-emerald-700" />
+                      <span>Pièces Jointes & Documents (Ancien contrat, contrat signé, etc.)</span>
+                    </CardTitle>
+                    <CardDescription>
+                      Associez des documents administratifs (fichiers PDF, images converties automatiquement) à ce contrat.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {editingContract ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Zone d'importation de fichiers */}
+                        <div className="border-2 border-dashed border-emerald-200 hover:border-emerald-450 bg-emerald-50/5 rounded-xl p-6 transition-all">
+                          <div className="flex flex-col items-center text-center">
+                            <div className="p-3 bg-white rounded-full shadow-sm text-emerald-700 mb-3">
+                              <Upload className="w-6 h-6 animate-pulse" />
+                            </div>
+                            <h3 className="font-semibold text-gray-700 mb-1 text-sm">Ajouter un document</h3>
+                            <p className="text-xs text-gray-500 mb-4 max-w-xs">PDF, PNG, JPG, JPEG ou HEIC (les images seront automatiquement converties en PDF)</p>
+                            
+                            <label className="cursor-pointer">
+                              <div className="bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5 justify-center">
+                                {uploadingAttachment ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Traitement...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="w-4 h-4" />
+                                    Téléverser un document
+                                  </>
+                                )}
+                              </div>
+                              <input
+                                type="file"
+                                accept="application/pdf, image/png, image/jpeg, image/jpg, .heic, .heif"
+                                className="hidden"
+                                onChange={handleInlineAttachmentUpload}
+                                disabled={uploadingAttachment}
+                                multiple
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Liste des documents associés */}
+                        <div className="space-y-3">
+                          <h4 className="font-semibold text-gray-800 text-sm flex items-center gap-2 border-b pb-2">
+                            <FileText className="w-4 h-4 text-emerald-700" />
+                            Documents associés ({editingContract.event_documents?.length || 0})
+                          </h4>
+                          
+                          {editingContract.event_documents && editingContract.event_documents.length > 0 ? (
+                            <div className="divide-y max-h-60 overflow-y-auto">
+                              {editingContract.event_documents.map((doc) => (
+                                <div key={doc.id} className="flex items-center justify-between py-2.5 text-sm">
+                                  <div className="flex items-center gap-2 truncate pr-4">
+                                    <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                    <span className="truncate font-medium text-gray-750" title={doc.filename}>{doc.filename}</span>
+                                    <span className="text-xs text-gray-400">
+                                      ({new Date(doc.uploaded_at).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' })})
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => handleInlinePreviewAttachment(doc)} 
+                                      title="Visualiser"
+                                    >
+                                      <Eye className="w-4 h-4" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      onClick={() => handleInlineDeleteAttachment(doc.id)} 
+                                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                      title="Supprimer"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 text-gray-400 text-sm italic bg-gray-50/50 rounded-lg">
+                              Aucune pièce jointe associée pour le moment.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 text-sm flex items-start gap-2.5">
+                        <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-semibold">Contrat non sauvegardé</p>
+                          <p className="text-xs text-amber-700 mt-1">
+                            Veuillez enregistrer votre brouillon ou cliquer sur "Aperçu du contrat" pour générer et enregistrer ce contrat dans la base de données. Vous pourrez ensuite y associer des fichiers en pièces jointes.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
 
 
 

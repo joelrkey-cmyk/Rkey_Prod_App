@@ -22,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Checkbox } from '../ui/checkbox';
 import { Textarea } from '../ui/textarea';
 import EnvoiView from './EnvoiView';
-import { CalendarIcon, Package, Users, FileText, BarChart3, Plus, Edit, Trash2, Download, Check, AlertCircle, Copy, RefreshCw, CheckCircle, Clock, Printer, Archive, Headphones, BookOpen, Home, User, Settings, Target, Calendar as CalendarIcon2, Menu, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Building2, Upload, Image, Sparkles, Eye, EyeOff, X, Send, ArrowLeft, Zap, UserPlus, Truck, MapPin } from 'lucide-react';
+import { CalendarIcon, Package, Users, FileText, BarChart3, Plus, Edit, Trash2, Download, Check, AlertCircle, Copy, RefreshCw, CheckCircle, Clock, Printer, Archive, Headphones, BookOpen, Home, User, Settings, Target, Calendar as CalendarIcon2, Menu, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Building2, Upload, Image, Sparkles, Eye, EyeOff, X, Send, ArrowLeft, Zap, UserPlus, Truck, MapPin, Paperclip, Loader2 } from 'lucide-react';
 import { generateCompleteReservationDocuments, generateWithdrawalSlip, calculateGuaranteeDeposit } from '../../utils/pdfGenerator';
 import { 
   DEGRESSION_COEFFICIENTS, 
@@ -120,6 +120,150 @@ function DevisView({ setCurrentView }) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); // 'close' ou null
+
+  // Pièces jointes
+  const [showAttachmentsDialog, setShowAttachmentsDialog] = useState(false);
+  const [selectedQuoteForAttachments, setSelectedQuoteForAttachments] = useState(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+  const [previewPdfFilename, setPreviewPdfFilename] = useState('');
+
+  const handleManageAttachments = (quote) => {
+    setSelectedQuoteForAttachments(quote);
+    setShowAttachmentsDialog(true);
+  };
+
+  const handleAttachmentUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    
+    const allowedTypes = [
+      "application/pdf", 
+      "image/png", 
+      "image/jpeg", 
+      "image/jpg", 
+      "image/heic", 
+      "image/heif"
+    ];
+
+    setUploadingAttachment(true);
+    const token = localStorage.getItem('access_token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop().toLowerCase();
+      const isHeic = fileExt === 'heic' || fileExt === 'heif';
+      if (!allowedTypes.includes(file.type) && !isHeic) {
+        toast.error(`Format non supporté pour "${file.name}". PDF, PNG, JPG ou HEIC uniquement.`);
+        continue;
+      }
+
+      const uploadData = new FormData();
+      uploadData.append("file", file);
+      uploadData.append("category", "Administrative");
+
+      try {
+        const response = await fetch(`${API}/quotes/${selectedQuoteForAttachments.id}/documents`, {
+          method: "POST",
+          headers,
+          body: uploadData
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            toast.success(`"${file.name}" a été ajouté avec succès !`);
+            
+            // local update in modal state
+            setSelectedQuoteForAttachments(prev => {
+              const updatedDocs = [...(prev.documents || []), result.document];
+              return { ...prev, documents: updatedDocs };
+            });
+            
+            // update in parent quotes list
+            setQuotes(prevQuotes => {
+              return prevQuotes.map(q => {
+                if (q.id === selectedQuoteForAttachments.id) {
+                  return {
+                    ...q,
+                    documents: [...(q.documents || []), result.document]
+                  };
+                }
+                return q;
+              });
+            });
+          } else {
+            toast.error(`Erreur d'envoi pour "${file.name}"`);
+          }
+        } else {
+          const errRes = await response.json().catch(() => ({}));
+          toast.error(`Erreur pour "${file.name}" : ${errRes.error || 'Statut ' + response.status}`);
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error(`Erreur réseau pour "${file.name}"`);
+      }
+    }
+    setUploadingAttachment(false);
+    e.target.value = null; // reset input
+  };
+
+  const handlePreviewAttachment = async (doc) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${API}/quotes/${selectedQuoteForAttachments.id}/documents/${doc.id}?preview=true`, { headers });
+      if (!response.ok) throw new Error("Impossible de récupérer le document");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setPreviewPdfUrl(url);
+      setPreviewPdfFilename(doc.filename);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'ouverture du document");
+    }
+  };
+
+  const handleDeleteAttachment = async (docId) => {
+    if (!window.confirm("Voulez-vous vraiment supprimer cette pièce jointe ?")) return;
+    
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const response = await fetch(`${API}/quotes/${selectedQuoteForAttachments.id}/documents/${docId}`, {
+        method: "DELETE",
+        headers
+      });
+      
+      if (response.ok) {
+        toast.success("Pièce jointe supprimée !");
+        
+        // local update in modal state
+        setSelectedQuoteForAttachments(prev => ({
+          ...prev,
+          documents: (prev.documents || []).filter(a => a.id !== docId)
+        }));
+        
+        // update in parent quotes list
+        setQuotes(prevQuotes => {
+          return prevQuotes.map(q => {
+            if (q.id === selectedQuoteForAttachments.id) {
+              return {
+                ...q,
+                documents: (q.documents || []).filter(a => a.id !== docId)
+              };
+            }
+            return q;
+          });
+        });
+      } else {
+        toast.error("Erreur lors de la suppression de la pièce jointe");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau lors de la suppression");
+    }
+  };
 
   useEffect(() => {
     fetchQuotes();
@@ -2331,6 +2475,21 @@ function DevisView({ setCurrentView }) {
                             <Button 
                               variant="outline" 
                               size="sm" 
+                              onClick={() => handleManageAttachments(quote)}
+                              disabled={isLoading}
+                              title="Gérer les pièces jointes (Devis signé, etc.)"
+                              className="relative text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 border-emerald-200"
+                            >
+                              <Paperclip className="w-4 h-4" />
+                              {quote.documents && quote.documents.length > 0 && (
+                                <span className="absolute -top-1.5 -right-1.5 bg-emerald-600 text-white font-bold rounded-full text-[9px] w-4 h-4 flex items-center justify-center border border-white">
+                                  {quote.documents.length}
+                                </span>
+                              )}
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
                               onClick={() => handleExportPDFFromList(quote)}
                               disabled={isLoading}
                               title="Exporter en PDF"
@@ -2401,6 +2560,147 @@ function DevisView({ setCurrentView }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialogue Pièces Jointes */}
+      <Dialog open={showAttachmentsDialog} onOpenChange={setShowAttachmentsDialog}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto text-slate-800 bg-white">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-800">
+              <Paperclip className="w-5 h-5 text-emerald-700" />
+              Pièces Jointes - {selectedQuoteForAttachments ? getClientDisplayName(selectedQuoteForAttachments) : ''}
+            </DialogTitle>
+            <DialogDescription className="text-gray-500">
+              Gérez les pièces jointes associées à ce devis (images PNG, JPG, JPEG, HEIC converties automatiquement en PDF, ou directement des fichiers PDF).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Zone d'importation de fichiers */}
+            <div className="border-2 border-dashed border-emerald-200 hover:border-emerald-400 bg-emerald-50/5 rounded-xl p-6 transition-all">
+              <div className="flex flex-col items-center text-center">
+                <div className="p-3 bg-white rounded-full shadow-sm text-emerald-700 mb-3">
+                  <Upload className="w-6 h-6 animate-pulse" />
+                </div>
+                <h3 className="font-semibold text-gray-700 mb-1 text-sm">Téléverser un nouveau document</h3>
+                <p className="text-xs text-gray-500 mb-4 max-w-xs">PDF, PNG, JPG, JPEG ou HEIC (les images seront automatiquement converties en documents PDF)</p>
+                
+                <label className="cursor-pointer">
+                  <div className="bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5">
+                    {uploadingAttachment ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Traitement en cours...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        Sélectionner un fichier
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="application/pdf, image/png, image/jpeg, image/jpg, .heic, .heif"
+                    className="hidden"
+                    onChange={handleAttachmentUpload}
+                    disabled={uploadingAttachment}
+                    multiple
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Liste des documents */}
+            <div className="space-y-3">
+              <h4 className="font-semibold text-gray-800 text-sm flex items-center gap-2 border-b pb-2">
+                <FileText className="w-4 h-4 text-emerald-700" />
+                Documents associés ({selectedQuoteForAttachments?.documents?.length || 0})
+              </h4>
+              
+              {selectedQuoteForAttachments?.documents && selectedQuoteForAttachments.documents.length > 0 ? (
+                <div className="divide-y max-h-60 overflow-y-auto">
+                  {selectedQuoteForAttachments.documents.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between py-2 text-sm">
+                      <div className="flex items-center gap-2 truncate pr-4">
+                        <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                        <span className="truncate font-medium text-gray-700" title={doc.filename}>{doc.filename}</span>
+                        <span className="text-xs text-gray-400">
+                          ({new Date(doc.uploaded_at).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' })})
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handlePreviewAttachment(doc)} 
+                          title="Visualiser le document"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleDeleteAttachment(doc.id)} 
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          title="Supprimer la pièce jointe"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-gray-400 text-sm italic">
+                  Aucune pièce jointe associée pour le moment.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button variant="outline" className="border-gray-200 text-gray-700" onClick={() => setShowAttachmentsDialog(false)}>
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Visionnage Direct du PDF */}
+      <Dialog open={!!previewPdfUrl} onOpenChange={(open) => { if (!open) setPreviewPdfUrl(null); }}>
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-4 text-slate-800 bg-white">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="flex items-center gap-2 text-emerald-800">
+              <Eye className="w-5 h-5 text-emerald-700" />
+              Aperçu en Direct - {previewPdfFilename}
+            </DialogTitle>
+            <DialogDescription className="text-gray-500">
+              Prévisualisation de la pièce jointe
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 w-full overflow-hidden rounded-lg border bg-gray-100">
+            {previewPdfUrl ? (
+              <iframe
+                src={previewPdfUrl}
+                className="w-full h-full rounded"
+                title="Aperçu Document PDF"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin mr-2" />
+                Chargement en cours...
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50" onClick={() => setPreviewPdfUrl(null)}>
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

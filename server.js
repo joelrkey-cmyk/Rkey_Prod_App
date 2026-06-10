@@ -3984,6 +3984,94 @@ api.patch('/location/quotes/:id/archive', authMiddleware, async (req, res) => {
   await db.collection('location_quotes').updateOne({ id: req.params.id }, { $set: { status: 'archived', updated_at: new Date().toISOString() } });
   res.json({ success: true });
 });
+
+// Authenticated attachments/documents endpoints for location_quotes
+api.post('/location/quotes/:id/documents', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const category = req.body.category || 'Administrative';
+  const docId = uuidv4();
+  const decodedOriginalname = decodeMulterFilename(req.file.originalname);
+  
+  try {
+    const { buffer: pdfBuffer, filename: convertedFilename } = await convertToPdfBuffer(req.file.buffer, decodedOriginalname, req.file.mimetype);
+    
+    const newDoc = {
+      id: docId,
+      filename: convertedFilename,
+      category: category,
+      uploaded_at: new Date().toISOString()
+    };
+    
+    if (bucket) {
+      const gcsPath = `location-quote-documents/${req.params.id}/${docId}.pdf`;
+      const file = bucket.file(gcsPath);
+      await file.save(pdfBuffer, { metadata: { contentType: 'application/pdf' } });
+      newDoc.gcs_path = gcsPath;
+    } else {
+      newDoc.pdf_data = pdfBuffer.toString('base64');
+    }
+    
+    await db.collection('location_quotes').updateOne(
+      { id: req.params.id }, 
+      { $push: { documents: newDoc } }
+    );
+    
+    res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at } });
+  } catch (err) {
+    console.error("[LocationQuotesAttachment] Error:", err);
+    res.status(500).json({ error: "Erreur lors de la conversion ou de l'upload: " + err.message });
+  }
+});
+
+api.get('/location/quotes/:id/documents/:docId', authMiddleware, async (req, res) => {
+  const quote = await db.collection('location_quotes').findOne({ id: req.params.id });
+  if (!quote || !quote.documents) return res.status(404).json({ error: 'Not found' });
+  const doc = quote.documents.find(d => d.id === req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  
+  const isInline = req.query.preview === 'true' || req.query.inline === 'true';
+  const disposition = isInline ? 'inline' : 'attachment';
+
+  if (doc.gcs_path && bucket) {
+    const file = bucket.file(doc.gcs_path);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
+    file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
+  } else if (doc.pdf_data) {
+    const buffer = Buffer.from(doc.pdf_data, 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
+    res.send(buffer);
+  } else {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
+api.delete('/location/quotes/:id/documents/:docId', authMiddleware, async (req, res) => {
+  try {
+    const quote = await db.collection('location_quotes').findOne({ id: req.params.id });
+    if (!quote || !quote.documents) return res.status(404).json({ error: 'Not found' });
+    
+    const docToDelete = quote.documents.find(d => d.id === req.params.docId);
+    if (docToDelete && docToDelete.gcs_path && bucket) {
+      const file = bucket.file(docToDelete.gcs_path);
+      try {
+        await file.delete();
+      } catch (err) {
+        console.error('Failed to delete file from GCS:', err);
+      }
+    }
+
+    await db.collection('location_quotes').updateOne(
+      { id: req.params.id },
+      { $pull: { documents: { id: req.params.docId } } }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 api.post('/location/generate-description', authMiddleware, async (req, res) => {
   try {
     if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY.includes('MY_GEMINI_API_KEY')) {
