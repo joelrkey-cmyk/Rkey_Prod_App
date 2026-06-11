@@ -4,7 +4,7 @@ import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import axios from 'axios';
-import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw, Plus, MapPin, Edit } from 'lucide-react';
+import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw, Plus, MapPin, Edit, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import API_BASE_URL from '../utils/apiUrl';
 
@@ -71,7 +71,7 @@ export default function AgendaPrestationApp() {
   // State variables for manually added options and events
   const [addEventDate, setAddEventDate] = useState(null);
   const [addEventType, setAddEventType] = useState('option'); // 'option' or 'event'
-  const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+  const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
   const [editingCustomEventId, setEditingCustomEventId] = useState(null);
 
   useEffect(() => {
@@ -208,6 +208,8 @@ export default function AgendaPrestationApp() {
           djId: officialId,
           djName: assignedDj.name,
           clientName: client,
+          clientPhone: c.client_info?.phone || c.phone || '',
+          clientPhone2: c.client_info?.phone2 || '',
           eventType: type,
           status: String(c.status),
           type: 'Contrat Prestation',
@@ -310,6 +312,7 @@ export default function AgendaPrestationApp() {
           djId: item.isOption ? 'option_black' : (item.djId || ""),
           djName: item.isOption ? 'Option' : (item.djName || 'Non assigné'),
           clientName: item.clientName || '',
+          clientPhone: item.clientPhone || '',
           eventType: item.eventType || (item.isOption ? 'Option' : 'Événement'),
           status: item.isOption ? 'option' : 'custom_event',
           type: item.isOption ? 'Option Soirée' : 'Événement Manuel',
@@ -426,6 +429,7 @@ export default function AgendaPrestationApp() {
       djId: addEventType === 'event' ? customEventForm.djId : null,
       djName: addEventType === 'event' ? djs.find(d => d.id === customEventForm.djId)?.name : '',
       clientName: addEventType === 'event' ? customEventForm.clientName.trim() : '',
+      clientPhone: (customEventForm.clientPhone || '').trim(),
       eventType: addEventType === 'event' ? customEventForm.eventType.trim() : 'Option',
       details: customEventForm.details.trim(),
       location: (customEventForm.location || '').trim()
@@ -437,7 +441,7 @@ export default function AgendaPrestationApp() {
         const res = await axios.put(`${API}/agenda-custom-events/${editingCustomEventId}`, payload);
         if (res.data.success) {
           toast.success("Événement / Option modifié avec succès !");
-          setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
           setAddEventDate(null);
           setEditingCustomEventId(null);
           await fetchData();
@@ -448,7 +452,7 @@ export default function AgendaPrestationApp() {
         const res = await axios.post(`${API}/agenda-custom-events`, payload);
         if (res.data.success) {
           toast.success(addEventType === 'option' ? "Option de soirée enregistrée avec succès !" : "Événement enregistré avec succès !");
-          setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
           setAddEventDate(null);
           await fetchData();
         } else {
@@ -743,6 +747,26 @@ export default function AgendaPrestationApp() {
                   <span className="text-slate-500">Client :</span>
                   <span className="font-semibold text-slate-800">{selectedEvent.clientName || 'Inconnu'}</span>
                 </div>
+
+                {(selectedEvent.clientPhone || selectedEvent.clientPhone2) && (
+                  <div className="flex items-center gap-2.5 text-sm">
+                    <Phone className="w-4.5 h-4.5 text-indigo-500" />
+                    <span className="text-slate-500">Téléphone :</span>
+                    <div className="flex flex-wrap gap-x-2 text-indigo-600 font-semibold">
+                      {selectedEvent.clientPhone && (
+                        <a href={`tel:${selectedEvent.clientPhone}`} className="hover:underline">
+                          {selectedEvent.clientPhone}
+                        </a>
+                      )}
+                      {selectedEvent.clientPhone && selectedEvent.clientPhone2 && <span className="text-slate-300">/</span>}
+                      {selectedEvent.clientPhone2 && (
+                        <a href={`tel:${selectedEvent.clientPhone2}`} className="hover:underline">
+                          {selectedEvent.clientPhone2}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
                 
                 <div className="flex items-center gap-2.5 text-sm">
                   <Shield className="w-4.5 h-4.5 text-slate-400" />
@@ -789,6 +813,7 @@ export default function AgendaPrestationApp() {
                       setCustomEventForm({
                         title: selectedEvent.cleanTitle || selectedEvent.title || '',
                         clientName: selectedEvent.clientName || '',
+                        clientPhone: selectedEvent.clientPhone || '',
                         djId: selectedEvent.djId === 'option_black' ? '' : (selectedEvent.djId || ''),
                         eventType: selectedEvent.eventType || '',
                         details: selectedEvent.details || '',
@@ -847,7 +872,7 @@ export default function AgendaPrestationApp() {
                 onClick={() => {
                   setAddEventDate(null);
                   setEditingCustomEventId(null);
-                  setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+                  setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
                 }}
                 className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-lg transition"
               >
@@ -892,6 +917,17 @@ export default function AgendaPrestationApp() {
                       placeholder="Ex: Option Mariage Dupuis ou Option Soirée Privée"
                       value={customEventForm.title}
                       onChange={(e) => setCustomEventForm(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Téléphone du client</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 06 12 34 56 78"
+                      value={customEventForm.clientPhone}
+                      onChange={(e) => setCustomEventForm(prev => ({ ...prev, clientPhone: e.target.value }))}
                       className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
                     />
                   </div>
@@ -993,6 +1029,17 @@ export default function AgendaPrestationApp() {
                   </div>
 
                   <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Téléphone du client</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: 06 12 34 56 78"
+                      value={customEventForm.clientPhone}
+                      onChange={(e) => setCustomEventForm(prev => ({ ...prev, clientPhone: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Détails de l'événement</label>
                     <textarea
                       placeholder="Remarques techniques, horaires, etc..."
@@ -1012,7 +1059,7 @@ export default function AgendaPrestationApp() {
                   onClick={() => {
                     setAddEventDate(null);
                     setEditingCustomEventId(null);
-                    setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+                    setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
                   }}
                   className="px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
                 >

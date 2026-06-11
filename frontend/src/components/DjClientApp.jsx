@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3 } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -359,7 +359,10 @@ function urlBase64ToUint8Array(base64String) {
     try {
       const token = localStorage.getItem('access_token');
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-      const response = await fetch(`${BACKEND_URL}/api/dj-fiches`, { headers });
+      let response = await fetch(`${BACKEND_URL}/api/dj-fiches`, { headers });
+      if (!response.ok) {
+        response = await fetch(`${BACKEND_URL}/api/dj-fiches/public`);
+      }
       if (response.ok) {
         const data = await response.json();
         const normalizedData = data.map(dj => {
@@ -2649,6 +2652,174 @@ function urlBase64ToUint8Array(base64String) {
               </div>
             </div>
           )}
+        </div>
+      );
+    };
+
+    const DjInfoSection = () => {
+      const getPhotoSrc = (url) => {
+        if (!url) return '';
+        if (url.startsWith('data:') || url.startsWith('http://') || url.startsWith('https://')) {
+          return url;
+        }
+        const base = BACKEND_URL || '';
+        if (url.startsWith('/')) {
+          return `${base}${url}`;
+        }
+        return `${base}/${url}`;
+      };
+
+      const getCleanAvatar = (name) => {
+        if (!name) return 'DJ';
+        const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        return initials;
+      };
+
+      const djProfileKey = ev.rawContractData?.dj_profile || '';
+      
+      const currentDjProfile = djProfiles.find(p => {
+        if (!p) return false;
+        const pId = String(p.id || '').toLowerCase();
+        const pDbId = String(p._id || '').toLowerCase();
+        const pArtistLower = String(p.nom_artistique || '').toLowerCase();
+        const pCompletLower = String(p.nom_complet || '').toLowerCase();
+        const keyLower = String(djProfileKey).toLowerCase();
+
+        // Exact matches
+        if (pId === keyLower || pDbId === keyLower || pArtistLower === keyLower) {
+          return true;
+        }
+
+        // Robust matches
+        if (keyLower === 'joel' || keyLower === 'joël') {
+          return pArtistLower.includes('joel') || pArtistLower.includes('joël') || pArtistLower.includes("r'key") || pArtistLower.includes("rkey") || pCompletLower.includes('ruttkay');
+        }
+        if (keyLower === 'stephane' || keyLower === 'stéphane') {
+          return pArtistLower.includes('stephane') || pArtistLower.includes('stéphane') || pArtistLower.includes('stefan') || pArtistLower.includes('edison') || pCompletLower.includes('jacoby');
+        }
+
+        if (pArtistLower.includes(keyLower) || keyLower.includes(pArtistLower)) {
+          return true;
+        }
+
+        return false;
+      });
+      
+      const djSnapshot = ev.rawContractData?.dj_profile_data || {};
+      
+      const rawStageName = currentDjProfile?.nom_artistique || djSnapshot.nom_artistique || ev.dj?.name || 'Artiste DJ';
+      const fullName = currentDjProfile?.nom_complet || djSnapshot.nom_complet || '';
+
+      const isJoel = String(djProfileKey).toLowerCase().includes('joel') || 
+                     String(djProfileKey).toLowerCase().includes('joël') || 
+                     String(rawStageName).toLowerCase().includes("r'key") || 
+                     String(rawStageName).toLowerCase().includes("rkey") ||
+                     String(fullName).toLowerCase().includes("ruttkay");
+
+      const isStephane = String(djProfileKey).toLowerCase().includes('stephane') || 
+                        String(djProfileKey).toLowerCase().includes('stéphane') || 
+                        String(rawStageName).toLowerCase().includes('edison') ||
+                        String(fullName).toLowerCase().includes('jacoby');
+
+      let stageName = rawStageName;
+      let email = currentDjProfile?.email || djSnapshot.email || '';
+      let phone = currentDjProfile?.telephone || djSnapshot.phone || '';
+      let titre = currentDjProfile?.titre || djSnapshot.titre || 'Animateur DJ';
+      let photoUrl = currentDjProfile?.photo_url || djSnapshot.photo_url || '';
+
+      if (isJoel) {
+        stageName = "Joël R'Key";
+        email = "info@rkey-prod.fr";
+        phone = "07 83 55 36 74";
+        titre = "Gérant de R'KEY PROD";
+      } else if (isStephane) {
+        stageName = "Stefan Edison";
+        email = "stephane@rkey-prod.fr";
+        phone = "06 31 21 61 14";
+        titre = "Animateur DJ";
+      }
+
+      return (
+        <div className="bg-gradient-to-r from-indigo-50/50 to-purple-50/30 rounded-xl shadow-sm border border-indigo-100 p-6 mb-6 overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-200/10 rounded-full blur-2xl pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-purple-200/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="flex justify-between items-center mb-6 relative z-10">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-indigo-950">
+              <Sparkles className="w-5 h-5 text-indigo-600 animate-pulse" />
+              Votre DJ pour l'événement
+            </h3>
+            <span className="text-xs bg-indigo-100/70 border border-indigo-200/50 text-indigo-700 font-bold px-3 py-1 rounded-full uppercase tracking-wider backdrop-blur-xs shadow-xs">
+              {titre}
+            </span>
+          </div>
+          
+          <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
+            <div className="flex-shrink-0 flex items-center justify-center mx-auto md:mx-0">
+              {photoUrl ? (
+                <div className="relative w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden shadow-md border-2 border-indigo-200 bg-white flex-shrink-0">
+                  <img 
+                    src={getPhotoSrc(photoUrl)} 
+                    alt={stageName} 
+                    className="w-full h-full object-cover transform hover:scale-105 transition-transform duration-500" 
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      const fallback = document.getElementById('dj-photo-fallback-circle-detail');
+                      if (fallback) fallback.style.display = 'flex';
+                    }}
+                  />
+                  <div 
+                    id="dj-photo-fallback-circle-detail" 
+                    className="absolute inset-0 bg-gradient-to-br from-indigo-500 to-purple-600 flex flex-col items-center justify-center select-none"
+                    style={{ display: 'none' }}
+                  >
+                    <span className="text-white text-2xl font-black tracking-wider">
+                      {getCleanAvatar(stageName)}
+                    </span>
+                    <span className="text-[9px] text-indigo-200 font-bold uppercase mt-1 tracking-widest leading-none">
+                      DJ
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-32 h-32 md:w-40 md:h-40 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md border-2 border-indigo-200 flex flex-col items-center justify-center select-none flex-shrink-0">
+                  <span className="text-white text-2xl font-black tracking-wider">
+                    {getCleanAvatar(stageName)}
+                  </span>
+                  <span className="text-[9px] text-indigo-200 font-bold uppercase mt-1 tracking-widest leading-none">
+                    DJ
+                  </span>
+                </div>
+              )}
+            </div>
+            
+            <div className="w-full md:w-2/3 flex-1 flex flex-col justify-center">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 bg-white/70 backdrop-blur-xs p-6 rounded-2xl border border-indigo-100/50 shadow-xs">
+                <div>
+                  <p className="text-[10px] font-bold text-indigo-950/40 uppercase tracking-widest mb-1">Nom d'artiste</p>
+                  <p className="font-semibold text-slate-800 text-base leading-tight">{stageName}</p>
+                </div>
+                
+                {email && (
+                  <div className="sm:col-span-1">
+                    <p className="text-[10px] font-bold text-indigo-950/40 uppercase tracking-widest mb-1">Adresse Email</p>
+                    <a href={`mailto:${email}`} className="font-semibold text-indigo-600 hover:text-indigo-800 hover:underline text-sm leading-tight break-all inline-flex items-center gap-1">
+                      <Mail className="w-3.5 h-3.5" /> {email}
+                    </a>
+                  </div>
+                )}
+                
+                {phone && (
+                  <div className="sm:col-span-1">
+                    <p className="text-[10px] font-bold text-indigo-950/40 uppercase tracking-widest mb-1">Téléphone</p>
+                    <a href={`tel:${phone}`} className="font-semibold text-indigo-600 hover:text-indigo-800 hover:underline text-sm leading-tight inline-flex items-center gap-1">
+                      <Phone className="w-3.5 h-3.5" /> {phone}
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       );
     };
@@ -5045,6 +5216,7 @@ function urlBase64ToUint8Array(base64String) {
         })()}
 
         {AppointmentBannerSection()}
+        {DjInfoSection()}
         {ClientInfoSection()}
         {ChatSection()}
         {PlanningSection()}

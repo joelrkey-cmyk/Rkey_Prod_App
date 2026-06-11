@@ -1667,7 +1667,9 @@ api.get('/dj-fiches/public/:id', async (req, res) => {
 api.post('/dj-fiches', authMiddleware, async (req, res) => {
   const body = { ...req.body };
   if (body.photo) body.photo = await uploadBase64ToGcs(body.photo, 'dj-photos');
+  if (body.photo_url && body.photo_url.startsWith('data:')) body.photo_url = await uploadBase64ToGcs(body.photo_url, 'dj-photos');
   if (body.logo) body.logo = await uploadBase64ToGcs(body.logo, 'dj-photos');
+  if (body.logo_url && body.logo_url.startsWith('data:')) body.logo_url = await uploadBase64ToGcs(body.logo_url, 'dj-photos');
 
   const profile = { id: uuidv4(), ...body, created_at: new Date().toISOString() };
   await db.collection('dj_profiles').insertOne(profile);
@@ -1676,7 +1678,9 @@ api.post('/dj-fiches', authMiddleware, async (req, res) => {
 api.put('/dj-fiches/:id', authMiddleware, async (req, res) => {
   const body = { ...req.body };
   if (body.photo) body.photo = await uploadBase64ToGcs(body.photo, 'dj-photos');
+  if (body.photo_url && body.photo_url.startsWith('data:')) body.photo_url = await uploadBase64ToGcs(body.photo_url, 'dj-photos');
   if (body.logo) body.logo = await uploadBase64ToGcs(body.logo, 'dj-photos');
+  if (body.logo_url && body.logo_url.startsWith('data:')) body.logo_url = await uploadBase64ToGcs(body.logo_url, 'dj-photos');
 
   await db.collection('dj_profiles').updateOne({ id: req.params.id }, { $set: body });
   const updated = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0 } });
@@ -6088,7 +6092,7 @@ api.get('/agenda-custom-events', authMiddleware, async (req, res) => {
 
 api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
   try {
-    const { title, date, isOption, djId, djName, clientName, eventType, details, location } = req.body;
+    const { title, date, isOption, djId, djName, clientName, clientPhone, eventType, details, location } = req.body;
     if (!title || !date) {
       return res.status(400).json({ error: "Le titre et la date sont requis." });
     }
@@ -6099,6 +6103,7 @@ api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
       djId: djId || null,
       djName: djName || "",
       clientName: clientName || "",
+      clientPhone: clientPhone || "",
       eventType: eventType || "",
       details: details || "",
       location: location || "",
@@ -6114,7 +6119,7 @@ api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
 api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, date, isOption, djId, djName, clientName, eventType, details, location } = req.body;
+    const { title, date, isOption, djId, djName, clientName, clientPhone, eventType, details, location } = req.body;
     if (!title || !date) {
       return res.status(400).json({ error: "Le titre et la date sont requis." });
     }
@@ -6125,6 +6130,7 @@ api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
       djId: djId || null,
       djName: djName || "",
       clientName: clientName || "",
+      clientPhone: clientPhone || "",
       eventType: eventType || "",
       details: details || "",
       location: location || "",
