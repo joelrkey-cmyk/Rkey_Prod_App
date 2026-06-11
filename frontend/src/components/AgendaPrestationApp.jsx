@@ -164,6 +164,9 @@ export default function AgendaPrestationApp() {
         if (isNaN(eventDate)) return;
 
         let type = c.client_info?.event_type || 'Événement';
+        if (type && typeof type === 'string' && type.toLowerCase() === 'custom') {
+          type = c.client_info?.custom_event_type || 'Événement Personnalisé';
+        }
         if (typeof type !== 'string') type = 'Événement';
         
         let client = c.client_info?.name || c.client_name || '';
@@ -211,8 +214,8 @@ export default function AgendaPrestationApp() {
         });
       });
 
-      const allReservations = reservationsRes.data || [];
-      const djReservations = allReservations.filter(r => r.booking_type === 'dj');
+      // Désactivation de l'affichage des réservations matériel [Matériel] sur l'agenda prestation
+      const djReservations = [];
 
       djReservations.forEach(r => {
         let officialId = null;
