@@ -4,7 +4,7 @@ import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import axios from 'axios';
-import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw } from 'lucide-react';
+import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import API_BASE_URL from '../utils/apiUrl';
 
@@ -68,6 +68,11 @@ export default function AgendaPrestationApp() {
   const [calendarView, setCalendarView] = useState('month');
   const [calendarDate, setCalendarDate] = useState(new Date());
 
+  // State variables for manually added options and events
+  const [addEventDate, setAddEventDate] = useState(null);
+  const [addEventType, setAddEventType] = useState('option'); // 'option' or 'event'
+  const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', djId: '', eventType: '', details: '' });
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -76,11 +81,12 @@ export default function AgendaPrestationApp() {
     try {
       setLoading(true);
       
-      const [settingsRes, djsRes, contractsRes, reservationsRes] = await Promise.all([
+      const [settingsRes, djsRes, contractsRes, reservationsRes, customEventsRes] = await Promise.all([
         axios.get(`${API}/agenda-settings`),
         axios.get(`${API}/location/djs`),
         axios.get(`${API}/contracts2`),
-        axios.get(`${API}/location/reservations`)
+        axios.get(`${API}/location/reservations`),
+        axios.get(`${API}/agenda-custom-events`).catch(() => ({ data: [] }))
       ]);
 
       const loadedSettings = {
@@ -283,11 +289,35 @@ export default function AgendaPrestationApp() {
         });
       });
 
+      // Parse custom manual events and options
+      const customEventsList = customEventsRes?.data || [];
+      customEventsList.forEach(item => {
+        let eventDate = new Date(item.date);
+        if (isNaN(eventDate)) return;
+
+        parsedEvents.push({
+          id: `custom_${item._id || item.id}`,
+          title: item.title,
+          cleanTitle: item.title,
+          start: eventDate,
+          end: eventDate,
+          allDay: true,
+          djId: item.isOption ? 'option_black' : (item.djId || ""),
+          djName: item.isOption ? 'Option' : (item.djName || 'Non assigné'),
+          clientName: item.clientName || '',
+          eventType: item.eventType || (item.isOption ? 'Option' : 'Événement'),
+          status: item.isOption ? 'option' : 'custom_event',
+          type: item.isOption ? 'Option Soirée' : 'Événement Manuel',
+          details: item.details || '',
+          isOption: !!item.isOption
+        });
+      });
+
       const availableDjs = Array.from(officialDjMap.values()).filter(d => !loadedSettings.deleted_djs.includes(d.id));
       setDjs(availableDjs);
 
       const filteredEvents = parsedEvents
-        .filter(e => !loadedSettings.deleted_djs.includes(e.djId))
+        .filter(e => e.isOption || !loadedSettings.deleted_djs.includes(e.djId))
         .filter(e => !loadedSettings.deleted_events.includes(e.id));
       setEvents(filteredEvents);
 
@@ -330,9 +360,22 @@ export default function AgendaPrestationApp() {
     }
   };
 
-  const handleDeleteEvent = (event) => {
+  const handleDeleteEvent = async (event) => {
     setSelectedEvent(null);
     
+    if (event.id && event.id.startsWith('custom_')) {
+      const customId = event.id.replace('custom_', '');
+      try {
+        await axios.delete(`${API}/agenda-custom-events/${customId}`);
+        setEvents(prev => prev.filter(e => e.id !== event.id));
+        toast.success("Option/Événement supprimé avec succès !");
+      } catch (err) {
+        console.error("Error deleting custom event:", err);
+        toast.error("Erreur lors de la suppression définitive.");
+      }
+      return;
+    }
+
     if (undoRef.current) {
       commitDeletion(undoRef.current);
     }
@@ -357,6 +400,47 @@ export default function AgendaPrestationApp() {
         return prev - 1;
       });
     }, 1000);
+  };
+
+  const handleSaveCustomEvent = async (e) => {
+    e.preventDefault();
+    if (!customEventForm.title || !customEventForm.title.trim()) {
+      toast.error("Veuillez saisir un titre / nom d'événement.");
+      return;
+    }
+    if (addEventType === 'event' && !customEventForm.djId) {
+      toast.error("Veuillez attribuer un DJ.");
+      return;
+    }
+
+    const payload = {
+      title: customEventForm.title.trim(),
+      date: format(addEventDate, 'yyyy-MM-dd'),
+      isOption: addEventType === 'option',
+      djId: addEventType === 'event' ? customEventForm.djId : null,
+      djName: addEventType === 'event' ? djs.find(d => d.id === customEventForm.djId)?.name : '',
+      clientName: addEventType === 'event' ? customEventForm.clientName.trim() : '',
+      eventType: addEventType === 'event' ? customEventForm.eventType.trim() : 'Option',
+      details: customEventForm.details.trim()
+    };
+
+    try {
+      setLoading(true);
+      const res = await axios.post(`${API}/agenda-custom-events`, payload);
+      if (res.data.success) {
+        toast.success(addEventType === 'option' ? "Option de soirée enregistrée avec succès !" : "Événement enregistré avec succès !");
+        setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '' });
+        setAddEventDate(null);
+        await fetchData();
+      } else {
+        toast.error("Erreur lors de l'enregistrement.");
+      }
+    } catch (err) {
+      console.error("Error saving custom event:", err);
+      toast.error("Une erreur s'est produite lors de la communication de l'API.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUndoDelete = () => {
@@ -394,6 +478,24 @@ export default function AgendaPrestationApp() {
   }, []);
 
   const eventStyleGetter = (event) => {
+    if (event.isOption) {
+      return {
+        style: {
+          backgroundColor: '#000000',
+          borderRadius: '4px',
+          opacity: 0.95,
+          color: '#ffffff',
+          border: '1px solid #111111',
+          display: 'block',
+          fontSize: '12px',
+          fontWeight: '600',
+          letterSpacing: '0.2px',
+          padding: '4px 8px',
+          whiteSpace: 'pre-wrap',
+          lineHeight: '1.4'
+        }
+      };
+    }
     if (settings.hidden_djs.includes(event.djId)) {
       return { style: { display: 'none' } };
     }
@@ -417,7 +519,7 @@ export default function AgendaPrestationApp() {
     };
   };
 
-  const displayedEvents = events.filter(e => !settings.hidden_djs.includes(e.djId));
+  const displayedEvents = events.filter(e => e.isOption || !settings.hidden_djs.includes(e.djId));
 
   return (
     <div className="w-full flex-col h-screen bg-slate-50 text-left items-stretch overflow-hidden flex">
@@ -526,7 +628,30 @@ export default function AgendaPrestationApp() {
                     culture="fr"
                     eventPropGetter={eventStyleGetter}
                     components={{
-                      toolbar: CustomToolbar
+                      toolbar: CustomToolbar,
+                      month: {
+                        dateHeader: ({ date, label }) => {
+                          return (
+                            <div className="flex items-center justify-between w-full px-2 py-0.5 shrink-0 select-none">
+                              <span className="text-sm font-semibold text-slate-700">{label}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setAddEventDate(date);
+                                  setAddEventType('option');
+                                  setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '' });
+                                }}
+                                className="w-5 h-5 rounded-full bg-slate-100 hover:bg-slate-900 hover:text-white border border-slate-300 hover:border-slate-900 flex items-center justify-center text-slate-600 transition-colors shrink-0 text-xs font-bold cursor-pointer"
+                                title="Ajouter une option de soirée ou un événement"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          );
+                        }
+                      }
                     }}
                     popup
                     dayLayoutAlgorithm="no-overlap"
@@ -652,6 +777,174 @@ export default function AgendaPrestationApp() {
           >
             Annuler ({undoSeconds}s)
           </button>
+        </div>
+      )}
+
+      {addEventDate && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <CalendarDays className="w-4.5 h-4.5 text-indigo-500" />
+                <span>Planifier pour le {format(addEventDate, 'dd MMMM yyyy', { locale: fr })}</span>
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setAddEventDate(null)}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            {/* Form */}
+            <form onSubmit={handleSaveCustomEvent} className="p-6 space-y-4">
+              {/* Selector / Switcher */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-lg mb-6">
+                <button
+                  type="button"
+                  onClick={() => setAddEventType('option')}
+                  className={`py-2 text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addEventType === 'option' ? 'bg-black text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  <Tag className="w-4 h-4" />
+                  Créer une Option
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddEventType('event')}
+                  className={`py-2 text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addEventType === 'event' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
+                >
+                  <User className="w-4 h-4" />
+                  Créer un Événement
+                </button>
+              </div>
+
+              {addEventType === 'option' ? (
+                // OPTION FORM
+                <div className="space-y-4">
+                  <div className="text-xs bg-slate-50 border border-slate-150 text-slate-650 p-3 rounded-lg leading-relaxed">
+                    Les <strong>options de soirée</strong> sont marquées en <strong>noir et blanc</strong> et s'affichent par défaut pour tout le monde pour bloquer une date ou noter une possibilité.
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Titre de l'option / Client *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Option Mariage Dupuis ou Option Soirée Privée"
+                      value={customEventForm.title}
+                      onChange={(e) => setCustomEventForm(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Détails / Notes optionnelles</label>
+                    <textarea
+                      placeholder="Notes ou remarques particulières..."
+                      rows={3}
+                      value={customEventForm.details}
+                      onChange={(e) => setCustomEventForm(prev => ({ ...prev, details: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm resize-none"
+                    />
+                  </div>
+                </div>
+              ) : (
+                // EVENT FORM
+                <div className="space-y-4">
+                  <div className="text-xs bg-indigo-50/50 border border-indigo-100 text-indigo-700 p-3 rounded-lg leading-relaxed">
+                    Les <strong>événements manuels</strong> vous permettent d'enregistrer une prestation directement dans l'agenda sans générer de contrat et d'attribuer un DJ.
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Nom de l'événement *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Soirée Entreprise Décathlon ou Mariage Julie"
+                      value={customEventForm.title}
+                      onChange={(e) => setCustomEventForm(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Attribuer un DJ / Artiste *</label>
+                    {djs.length === 0 ? (
+                      <div className="text-xs text-red-500 italic">Aucun DJ disponible. Veuillez d'abord en configurer un.</div>
+                    ) : (
+                      <select
+                        required
+                        value={customEventForm.djId}
+                        onChange={(e) => setCustomEventForm(prev => ({ ...prev, djId: e.target.value }))}
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 bg-white shadow-sm"
+                      >
+                        <option value="">-- Sélectionnez un DJ --</option>
+                        {djs.map(dj => (
+                          <option key={dj.id} value={dj.id}>
+                            {dj.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Nom du client</label>
+                      <input
+                        type="text"
+                        placeholder="Dupuis"
+                        value={customEventForm.clientName}
+                        onChange={(e) => setCustomEventForm(prev => ({ ...prev, clientName: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Type de soirée</label>
+                      <input
+                        type="text"
+                        placeholder="Mariage, Anniversaire, Gala"
+                        value={customEventForm.eventType}
+                        onChange={(e) => setCustomEventForm(prev => ({ ...prev, eventType: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Détails de l'événement</label>
+                    <textarea
+                      placeholder="Remarques techniques, horaires, etc..."
+                      rows={2}
+                      value={customEventForm.details}
+                      onChange={(e) => setCustomEventForm(prev => ({ ...prev, details: e.target.value }))}
+                      className="w-full px-3.5 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm resize-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="pt-4 border-t flex justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setAddEventDate(null)}
+                  className="px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className={`px-5 py-2 text-sm font-semibold rounded-lg text-white transition flex items-center justify-center gap-1.5 shadow-md ${addEventType === 'option' ? 'bg-black hover:bg-slate-900' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Enregistrer {addEventType === 'option' ? "l'option" : "l'événement"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

@@ -1128,7 +1128,17 @@ async function ensureAdminUser() {
     });
     console.log(`Admin '${adminUser}' created`);
   } else {
-    console.log(`Admin '${adminUser}' exists`);
+    // If the admin user exists, verify if the password matches the dynamic env variable
+    // If not, update it to match the current env variable to prevent locking the administrator out.
+    if (!verifyPassword(adminPass, existing.hashed_password)) {
+      await db.collection('users').updateOne(
+        { username: adminUser },
+        { $set: { hashed_password: hashPassword(adminPass) } }
+      );
+      console.log(`Admin '${adminUser}' password updated to match environment configuration`);
+    } else {
+      console.log(`Admin '${adminUser}' exists and password is synchronized`);
+    }
   }
 }
 
@@ -2574,8 +2584,16 @@ api.post('/contracts2/import', authMiddleware, upload.single('file'), async (req
       };
     }
 
+    const categorySpecificPrompt = `
+ATTENTION : Ce document peut être soit un CONTRAT INITIAL (vierge/proposition) soit un CONTRAT SIGNE / COMPLÉMENTAIRE (retourné par le client, avec d'éventuelles annotations, ratures ou choix entourés à la main).
+Analysez minutieusement le document :
+- S'il contient des écritures manuscrites, des ronds dessinés à la main (par exemple pour entourer 'oui', 'non', 'à définir', 'x2', 'x4' pour les options) ou des signatures, extrayez en priorité absolue ces choix faits à la main par le client car ce sont ses choix réels et validés.
+- Si le document est un PDF vierge ou une proposition imprimée propre sans écritures, extrayez les options et tarifs tels qu'ils sont pré-imprimés/cochés par défaut.`;
+
     const promptText = `Vous êtes un assistant spécialisé dans l'analyse minutieuse et de haute précision de contrats d'animation DJ et d'événementiel de R'KEY PROD.
 Votre rôle est d'analyser le document fourni (un contrat d'animation ancien au format PDF ou Image) et d'extraire toutes les informations clés de manière extrêmement fine et rigoureuse pour préremplir un formulaire moderne de l'application.
+
+Voici l'analyse spécifique demandée pour ce document : ${categorySpecificPrompt}
 
 Voici la liste des options techniques configurées dans notre système actuel, avec leurs tarifs standards de référence et leurs identifiants (id) :
 ${JSON.stringify(systemOptions, null, 2)}
@@ -2594,11 +2612,24 @@ Instructions d'extraction & Attention au détail :
      * Ne vous basez pas sur le texte imprimé ou les ratures initiales de mise en page, mais uniquement sur le cercle dessiné à la main (ex: l'éclairage de salle à 120 € a la mention "oui" entourée à la main donc is_selected=true ; la mention "non" est entourée pour "Sonorisation cérémonie extérieure", "Sonorisation vin d'honneur", "Machine à bulles", etc., donc is_selected=false).
    - Renseignez également "price_in_document" avec le prix indiqué sur le document pour cette option (ex: 120 pour l'éclairage salle, 100 pour la sonorisation cérémonie...).
 5. DÉROULEMENT ("Déroulement et Notes") :
-   - Extrayez de manière séquentielle toutes les rubriques, sections et étapes figurant dans le tableau de déroulement (souvent en page 2).
-   - IMPORTANT : IGNOREZ complètement les couleurs de fond des lignes (l'orange ou le blanc n'ont absolument aucune importance pour le regroupement ou l'exclusion).
-   - Compilez toutes les lignes les unes après les autres de manière strictement linéaire (ordre séquentiel de haut en bas, sans hiérarchie parent-enfant, sous forme de liste d'étapes plates).
-   - Extrayez TOUTES les lignes visibles (ex. pour le document d'exemple : "VIN D'HONNEUR", "Entrée des Mariés" (notes d'animation: Blind Test, etc.), "ENTRÉE", "Ouverture de Bal" (notes de musique slow, etc.), "PLAT PRINCIPAL", "FROMAGE", "Chasse aux trésors", "DESSERT" etc. doivent tous être ajoutés à la suite).
-   - Assurez-vous d'extraire tout le bloc de déroulement.
+   - Regardez le tableau ou la section de déroulement (souvent en page 3) contenant des étapes comme "VIN D'HONNEUR", "Entrée des Mariés", "Blind Test", "ENTRÉE", "Ouverture de Bal", "Danse de couple", "PLAT PRINCIPAL", "Musique de 80 à début 2000", "FROMAGE", "Chasse aux trésors", "DESSERT", "Musique de 80 à aujourd'hui".
+   - RÈGLE ABSOLUE : CHAQUE case du tableau, chaque ligne et chaque cellule successive représente UN ET UN SEUL événement distinct de la soirée. Elles se suivent de manière strictement chronologique et linéaire de haut en bas.
+   - Ne regroupez pas, n'imbriquez pas et ne hiérarchisez pas les cellules. Les couleurs de fond (orange, blanc...) n'indiquent aucun niveau de regroupement ou de conteneur, elles ne servent qu'à thématiser visuellement les éléments ou les distinguer par style.
+   - Vous devez donc extraire CHAQUE case sous forme d'une étape plate séparée et indépendante dans le tableau "deroulement".
+   - Par exemple :
+     * Étape 1 : title: "VIN D'HONNEUR", notes: ""
+     * Étape 2 : title: "Entrée des Mariés", notes: ""
+     * Étape 3 : title: "Blind Test", notes: ""
+     * Étape 4 : title: "ENTRÉE", notes: ""
+     * Étape 5 : title: "Ouverture de Bal", notes: ""
+     * Étape 6 : title: "Danse de couple", notes: ""
+     * Étape 7 : title: "PLAT PRINCIPAL", notes: ""
+     * Étape 8 : title: "Musique de 80 à début 2000", notes: ""
+     * Étape 9 : title: "FROMAGE", notes: ""
+     * Étape 10 : title: "Chasse aux trésors", notes: ""
+     * Étape 11 : title: "DESSERT", notes: ""
+     * Étape 12 : title: "Musique de 80 à aujourd'hui", notes: ""
+   - Extrayez ainsi l'intégralité de ce déroulement chronologique sous la forme d'une liste plate d'étapes sans aucun regroupement.
 6. NOTES DJ : Extrayez les styles musicaux suggérés dans la playlist (« Playlist fin de soirée »), les musiques exclusives, la blacklist (musiques ou styles refusés), et les notes ou thèmes (ex: "Thèmes Champêtre").
 
 IMPORTANT : Vous devez renvoyer STRICTEMENT un objet JSON valide contenant les propriétés ci-dessous. Ne mettez aucun texte d'introduction ni de conclusion, juste du JSON pur.
@@ -2649,6 +2680,10 @@ Format attendu :
       });
     } catch (err) {
       console.log("[Import Fail] All Gemini fallback attempts failed:", err.message || err);
+      const errMsg = (err.message || String(err)).toLowerCase();
+      if (errMsg.includes("quota") || errMsg.includes("exhausted") || errMsg.includes("429") || errMsg.includes("rate limit")) {
+        return res.status(429).json({ detail: "Le quota de requêtes Gemini gratuit (20/jour max) est temporairement épuisé pour cette clé d'application. Pour bypasser cette limite, veuillez saisir votre propre clé API payante dans 'Paramètres -> Secrets' ou réessayer dans 24 heures." });
+      }
       return res.status(503).json({ detail: `L'analyse du contrat a échoué en raison d'une surcharge temporaire des serveurs d'IA. Veuillez réessayer dans quelques instants. (Détails: ${err.message || "Service Unavailable"})` });
     }
 
@@ -4095,6 +4130,10 @@ api.post('/location/generate-description', authMiddleware, async (req, res) => {
     res.json({ description });
   } catch (e) {
     console.log('[AI generation info/warn] Generation exception:', e.message || e);
+    const errMsg = (e.message || String(e)).toLowerCase();
+    if (errMsg.includes("quota") || errMsg.includes("exhausted") || errMsg.includes("429") || errMsg.includes("rate limit")) {
+      return res.status(429).json({ detail: "Le quota gratuit de génération avec l'IA est temporairement épuisé (20 requêtes/jour max). Veuillez ajouter votre propre clé payante dans 'Paramètres -> Secrets' ou réessayer plus tard." });
+    }
     res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Veuillez réessayer dans quelques instants." });
   }
 });
@@ -4121,6 +4160,10 @@ api.post('/location/generate-catalogue-description', authMiddleware, async (req,
     res.json({ description });
   } catch (e) {
     console.log('[AI catalogue generation info/warn] Catalogue generation exception:', e.message || e);
+    const errMsg = (e.message || String(e)).toLowerCase();
+    if (errMsg.includes("quota") || errMsg.includes("exhausted") || errMsg.includes("429") || errMsg.includes("rate limit")) {
+      return res.status(429).json({ detail: "Le quota gratuit de génération avec l'IA est temporairement épuisé (20 requêtes/jour max). Veuillez ajouter votre propre clé payante dans 'Paramètres -> Secrets' ou réessayer plus tard." });
+    }
     res.status(500).json({ detail: "Erreur lors de la génération avec l'IA. Veuillez réessayer dans quelques instants." });
   }
 });
@@ -6033,6 +6076,49 @@ app.get('/api/pwa-manifest', (req, res) => {
 
 // Serve widget HTML files (BEFORE api router so /api/widgets/* is served as static files)
 app.use('/api/widgets', express.static(path.join(__dirname, 'frontend', 'public', 'api', 'widgets')));
+
+api.get('/agenda-custom-events', authMiddleware, async (req, res) => {
+  try {
+    const list = await db.collection('agenda_custom_events').find({}).toArray();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
+  try {
+    const { title, date, isOption, djId, djName, clientName, eventType, details } = req.body;
+    if (!title || !date) {
+      return res.status(400).json({ error: "Le titre et la date sont requis." });
+    }
+    const newEvent = {
+      title,
+      date, // "YYYY-MM-DD"
+      isOption: !!isOption,
+      djId: djId || null,
+      djName: djName || "",
+      clientName: clientName || "",
+      eventType: eventType || "",
+      details: details || "",
+      createdAt: new Date().toISOString()
+    };
+    const result = await db.collection('agenda_custom_events').insertOne(newEvent);
+    res.json({ success: true, id: result.insertedId, document: { _id: result.insertedId, ...newEvent } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.delete('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.collection('agenda_custom_events').deleteOne({ _id: new ObjectId(id) });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 api.get('/agenda-settings', authMiddleware, async (req, res) => {
   let settings = await db.collection('agenda_settings').findOne({ id: 'global' }, { projection: { _id: 0 } });

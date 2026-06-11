@@ -138,6 +138,9 @@ function Contracts2App() {
   const [packLumiere, setPackLumiere] = useState(false);
   const [optionsTarifNotes, setOptionsTarifNotes] = useState("");
   const [contracts, setContracts] = useState([]);
+  const [importDocCategory, setImportDocCategory] = useState("Contrat Signé / Complémentaire");
+  const [inlineUploadCategory, setInlineUploadCategory] = useState("Contrat Initial");
+  const [historyUploadCategory, setHistoryUploadCategory] = useState("Contrat Initial");
   
   // ── SCRIPT D'IMPORTATION DE VIEUX CONTRATS ──
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -145,6 +148,8 @@ function Contracts2App() {
   const [importedFile, setImportedFile] = useState(null);
   const [importReport, setImportReport] = useState(null);
   const [importError, setImportError] = useState(null);
+  const [importTargetContractId, setImportTargetContractId] = useState("");
+  const [importMatchedContract, setImportMatchedContract] = useState(null);
   const [activeTab, setActiveTab] = useState("history");
   const [generatedContract, setGeneratedContract] = useState(null);
   const [editingContract, setEditingContract] = useState(null);
@@ -694,7 +699,7 @@ function Contracts2App() {
 
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("category", "Administrative");
+      formData.append("category", historyUploadCategory);
 
       try {
         const response = await fetch(`${BACKEND_URL}/api/contracts2/${selectedContractForAttachments.id}/documents`, {
@@ -809,7 +814,7 @@ function Contracts2App() {
 
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("category", "Administrative");
+      formData.append("category", inlineUploadCategory);
 
       try {
         const response = await fetch(`${BACKEND_URL}/api/contracts2/${editingContract.id}/documents`, {
@@ -1107,9 +1112,12 @@ function Contracts2App() {
     setIsImporting(true);
     setImportError(null);
     setImportReport(null);
+    setImportTargetContractId("");
+    setImportMatchedContract(null);
 
     const formData = new FormData();
     formData.append('file', importedFile);
+    formData.append('category', importDocCategory);
 
     try {
       const token = localStorage.getItem('access_token') || localStorage.getItem('token');
@@ -1165,6 +1173,53 @@ function Contracts2App() {
 
       setImportReport(data);
       toast.success("Analyse du contrat effectuée par l'IA !");
+
+      // Auto-detect matching existing contract by name or date similarity
+      if (data && data.extractedData && data.extractedData.client_info) {
+        const extName = (data.extractedData.client_info.name || "").toLowerCase().trim();
+        const extDate = (data.extractedData.client_info.event_date || "").trim();
+        
+        let foundMatch = null;
+        if (contracts && contracts.length > 0 && (extName || extDate)) {
+          for (const c of contracts) {
+            const cName = (c.client_info?.name || "").toLowerCase().trim();
+            const cDate = (c.client_info?.event_date || "").trim();
+            
+            // Priority 1: Exact date and similar name
+            if (extDate && cDate === extDate && extName && cName.includes(extName)) {
+              foundMatch = c;
+              break;
+            }
+            // Priority 2: Exact date match
+            if (extDate && cDate === extDate) {
+              foundMatch = c;
+              break;
+            }
+            // Priority 3: Exact name match
+            if (extName && cName === extName) {
+              foundMatch = c;
+              break;
+            }
+            // Priority 4: Partial name match
+            if (extName && cName && (cName.includes(extName) || extName.includes(cName))) {
+              foundMatch = c;
+              break;
+            }
+          }
+        }
+        
+        if (foundMatch) {
+          setImportMatchedContract(foundMatch);
+          // If the user checked "Contrat Signé / Complémentaire", automatically default the destination to the matched contract!
+          if (importDocCategory === "Contrat Signé / Complémentaire") {
+            setImportTargetContractId(foundMatch.id);
+            toast.info(`Contrat existant pour "${foundMatch.client_info?.name}" détecté ! Mode Complémentaire activé.`);
+          } else {
+            setImportTargetContractId("");
+            toast.info(`Contrat correspondant à "${foundMatch.client_info?.name}" détecté comme destination d'association possible.`);
+          }
+        }
+      }
     } catch (err) {
       console.error("Import error:", err);
       setImportError(err.message || "Erreur lors de la communication de l'API avec Gemini.");
@@ -1208,75 +1263,150 @@ function Contracts2App() {
 
     const { extractedData, matchedOptions } = importReport;
 
-    // 1. Client info
-    setClientInfo(prev => ({
-      ...prev,
-      ...extractedData.client_info
-    }));
+    // 1. Client info - additive and safe (never overwrite custom populated values with empty/null)
+    const mergedClientInfo = { ...clientInfo };
+    if (extractedData.client_info) {
+      Object.entries(extractedData.client_info).forEach(([key, val]) => {
+        if (val !== undefined && val !== null && val !== "" && val !== "À définir" && val !== "a definir") {
+          mergedClientInfo[key] = val;
+        }
+      });
+    }
+    setClientInfo(mergedClientInfo);
 
     // 2. Base Price
+    let nextBasePrice = basePrice;
     if (extractedData.base_price) {
-      setBasePrice(extractedData.base_price);
+      nextBasePrice = extractedData.base_price;
+      setBasePrice(nextBasePrice);
     }
 
     // 3. Deposit / Acompte
+    let nextDepositAmount = customDepositAmount;
     if (extractedData.custom_deposit_amount) {
-      setCustomDepositAmount(extractedData.custom_deposit_amount);
+      nextDepositAmount = extractedData.custom_deposit_amount;
+      setCustomDepositAmount(nextDepositAmount);
       setNoDepositRequired(false);
-    } else {
-      setCustomDepositAmount(0);
     }
 
-    // 4. Blacklist / Notes
-    if (extractedData.blacklist) {
-      setBlacklist(extractedData.blacklist);
-    }
-    if (extractedData.playlist) {
-      setDjNotes(prev => prev ? prev + "\n" + extractedData.playlist : extractedData.playlist);
-    }
-    if (extractedData.event_notes) {
-      setEventNotes(extractedData.event_notes);
+    // 4. Blacklist / Notes - Merge and append instead of replacing/deleting!
+    let nextBlacklist = blacklist || "";
+    if (extractedData.blacklist && extractedData.blacklist.trim()) {
+      if (!nextBlacklist) {
+        nextBlacklist = extractedData.blacklist.trim();
+      } else if (!nextBlacklist.toLowerCase().includes(extractedData.blacklist.toLowerCase().trim())) {
+        nextBlacklist = nextBlacklist + "\n" + extractedData.blacklist.trim();
+      }
+      setBlacklist(nextBlacklist);
     }
 
-    // 5. Options (price conflict choices resolved)
+    let nextDjNotes = djNotes || "";
+    if (extractedData.playlist && extractedData.playlist.trim()) {
+      if (!nextDjNotes) {
+        nextDjNotes = extractedData.playlist.trim();
+      } else if (!nextDjNotes.toLowerCase().includes(extractedData.playlist.toLowerCase().trim())) {
+        nextDjNotes = nextDjNotes + "\n" + extractedData.playlist.trim();
+      }
+      setDjNotes(nextDjNotes);
+    }
+
+    let nextEventNotes = eventNotes || "";
+    if (extractedData.event_notes && extractedData.event_notes.trim()) {
+      if (!nextEventNotes) {
+        nextEventNotes = extractedData.event_notes.trim();
+      } else if (!nextEventNotes.toLowerCase().includes(extractedData.event_notes.toLowerCase().trim())) {
+        nextEventNotes = nextEventNotes + "\n" + extractedData.event_notes.trim();
+      }
+      setEventNotes(nextEventNotes);
+    }
+
+    // 5. Options (NEVER unselect already-selected options !)
     let finalAppliedOptionsList = [];
-    if (matchedOptions && Array.isArray(matchedOptions)) {
-      setSelectedOptions(prev => {
-        const nextOpts = prev.map(opt => {
-          const matched = matchedOptions.find(m => m.id === opt.id);
-          const selected = matched ? (matched.selected !== false) : false;
-          const finalPrice = (matched && matched.resolved_price !== undefined) ? matched.resolved_price : (matched ? matched.price : opt.price);
-          return { ...opt, selected, price: finalPrice };
-        });
-        finalAppliedOptionsList = nextOpts.filter(o => o.selected);
-        return nextOpts;
+    setSelectedOptions(prev => {
+      const nextOpts = prev.map(opt => {
+        const isAlreadySelected = opt.selected;
+        const matched = matchedOptions ? matchedOptions.find(m => m.id === opt.id) : null;
+        const matchedSelected = matched ? (matched.selected !== false) : false;
+        
+        // Additive decision: Keep true if isAlreadySelected OR matchedSelected is true
+        const selected = isAlreadySelected || matchedSelected;
+        
+        let finalPrice = opt.price;
+        if (matched) {
+          if (isAlreadySelected) {
+            if (matchedSelected && matched.resolved_price !== undefined) {
+              finalPrice = matched.resolved_price;
+            }
+          } else if (matchedSelected) {
+            finalPrice = matched.resolved_price !== undefined ? matched.resolved_price : (matched.price || opt.price);
+          }
+        }
+        return { ...opt, selected, price: finalPrice };
       });
+      finalAppliedOptionsList = nextOpts.filter(o => o.selected);
+      return nextOpts;
+    });
+
+    // Mirroring same logic for the immediate payload to bypass async setState delays
+    if (matchedOptions && Array.isArray(matchedOptions)) {
+      const nextOptsManual = selectedOptions.map(opt => {
+        const isAlreadySelected = opt.selected;
+        const matched = matchedOptions.find(m => m.id === opt.id);
+        const matchedSelected = matched ? (matched.selected !== false) : false;
+        const selected = isAlreadySelected || matchedSelected;
+
+        let finalPrice = opt.price;
+        if (matched) {
+          if (isAlreadySelected) {
+            if (matchedSelected && matched.resolved_price !== undefined) {
+              finalPrice = matched.resolved_price;
+            }
+          } else if (matchedSelected) {
+            finalPrice = matched.resolved_price !== undefined ? matched.resolved_price : (matched.price || opt.price);
+          }
+        }
+        return { ...opt, selected, price: finalPrice };
+      });
+      finalAppliedOptionsList = nextOptsManual.filter(o => o.selected);
     } else {
       finalAppliedOptionsList = selectedOptions.filter(o => o.selected);
     }
 
-    // 6. Déroulement / Event list
-    let finalSelectedEventsList = [];
-    let finalEventOrderList = [];
-    let customRepas = [];
-    let customMusique = [];
+    // 6. Déroulement / Event list - merge and append new timelines without overwriting or deleting
+    let finalSelectedEventsList = [...selectedEvents];
+    let finalEventOrderList = [...eventOrder];
+    let localCustomRepas = [...customRepasEvents];
+    let localCustomMusique = [...customMusiqueEvents];
 
     if (extractedData.deroulement && Array.isArray(extractedData.deroulement)) {
-      const newSelectedEvents = [];
-      const newEventOrder = [];
-
-      extractedData.deroulement.forEach((item, idx) => {
+      extractedData.deroulement.forEach((item) => {
         const titleClean = (item.title || "").trim();
         const notesClean = (item.notes || "").trim();
-        
-        // Check standard categories
+        if (!titleClean) return;
+
+        // Check if identical or very similar step already exists in current order list
+        const alreadyExists = finalEventOrderList.some(e => 
+          (e.label || "").toLowerCase().trim() === titleClean.toLowerCase()
+        );
+
+        if (alreadyExists) {
+          // Just update notes if existing has none and new has notes
+          finalEventOrderList = finalEventOrderList.map(e => {
+            if ((e.label || "").toLowerCase().trim() === titleClean.toLowerCase() && !e.note && notesClean) {
+              return { ...e, note: notesClean };
+            }
+            return e;
+          });
+          return;
+        }
+
+        // Standard timeline matching definitions
         const standardRepas = ["Apéritif", "Entrée", "Plat", "Fromage", "Dessert"];
         const standardMusique = ["Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"];
         const standardAnimations = ["Blind test", "Chasse au trésor", "Quiz interactif", "Confessionnal"];
 
         const t = titleClean.toLowerCase();
 
-        // High precision robust matching logic for standard timeline events:
         const matchedRepas = standardRepas.find(e => {
           const el = e.toLowerCase();
           return t === el || 
@@ -1299,85 +1429,72 @@ function Contracts2App() {
                  (t.includes("chasse") && t.includes("trésor") && el === "chasse au trésor");
         });
 
+        let key = "";
+        let label = titleClean;
+        let type = "repas";
+
         if (matchedRepas) {
-          const key = `repas-${matchedRepas}`;
-          newSelectedEvents.push(key);
-          newEventOrder.push({ key, label: matchedRepas, type: 'repas', note: notesClean, icon: '' });
+          key = `repas-${matchedRepas}`;
+          label = matchedRepas;
+          type = "repas";
         } else if (matchedMusique) {
-          const key = `musique-${matchedMusique}`;
-          newSelectedEvents.push(key);
-          newEventOrder.push({ key, label: matchedMusique, type: 'musique', note: notesClean, icon: '' });
+          key = `musique-${matchedMusique}`;
+          label = matchedMusique;
+          type = "musique";
         } else if (matchedAnim) {
-          const key = `animation-${matchedAnim}`;
-          newSelectedEvents.push(key);
-          newEventOrder.push({ key, label: matchedAnim, type: 'animation', note: notesClean, icon: '' });
+          key = `animation-${matchedAnim}`;
+          label = matchedAnim;
+          type = "animation";
         } else {
           // Custom event step
           const isMusiqueWord = t.includes("musique") || t.includes("bal") || t.includes("danse") || t.includes("slow") || t.includes("playlist");
           if (isMusiqueWord) {
-            const key = `custom-musique-${customMusique.length}`;
-            customMusique.push(titleClean);
-            newSelectedEvents.push(key);
-            newEventOrder.push({ key, label: titleClean, type: 'musique', note: notesClean, icon: '' });
+            let index = localCustomMusique.indexOf(titleClean);
+            if (index === -1) {
+              localCustomMusique.push(titleClean);
+              index = localCustomMusique.length - 1;
+            }
+            key = `custom-musique-${index}`;
+            type = "musique";
           } else {
-            const key = `custom-repas-${customRepas.length}`;
-            customRepas.push(titleClean);
-            newSelectedEvents.push(key);
-            newEventOrder.push({ key, label: titleClean, type: 'repas', note: notesClean, icon: '' });
+            let index = localCustomRepas.indexOf(titleClean);
+            if (index === -1) {
+              localCustomRepas.push(titleClean);
+              index = localCustomRepas.length - 1;
+            }
+            key = `custom-repas-${index}`;
+            type = "repas";
           }
+        }
+
+        if (key && !finalSelectedEventsList.includes(key)) {
+          finalSelectedEventsList.push(key);
+          finalEventOrderList.push({ key, label, type, note: notesClean, icon: '' });
         }
       });
 
-      if (customRepas.length > 0) setCustomRepasEvents(customRepas);
-      if (customMusique.length > 0) setCustomMusiqueEvents(customMusique);
-      setSelectedEvents(newSelectedEvents);
-      setEventOrder(newEventOrder);
-
-      finalSelectedEventsList = newSelectedEvents;
-      finalEventOrderList = newEventOrder;
-    } else {
-      finalSelectedEventsList = selectedEvents;
-      finalEventOrderList = eventOrder;
+      setCustomRepasEvents(localCustomRepas);
+      setCustomMusiqueEvents(localCustomMusique);
+      setSelectedEvents(finalSelectedEventsList);
+      setEventOrder(finalEventOrderList);
     }
 
-    // Auto-save generated draft immediately to ensure its ID is persisted
-    const clientName = extractedData.client_info?.name || clientInfo.name || "Client Importé";
-    const clientEmail = extractedData.client_info?.email || clientInfo.email || "client@import.com";
-
     const contractDataToSave = {
-      client_info: {
-        name: clientName,
-        email: clientEmail,
-        phone: extractedData.client_info?.phone || clientInfo.phone || "",
-        address: extractedData.client_info?.address || clientInfo.address || "",
-        company: extractedData.client_info?.company || clientInfo.company || "",
-        event_type: extractedData.client_info?.event_type || clientInfo.event_type || "",
-        event_date: extractedData.client_info?.event_date || clientInfo.event_date || "",
-        event_location: extractedData.client_info?.event_location || clientInfo.event_location || "",
-        guest_count: extractedData.client_info?.guest_count || clientInfo.guest_count || "",
-        setup_date: extractedData.client_info?.setup_date || clientInfo.setup_date || "",
-        setup_time: extractedData.client_info?.setup_time || clientInfo.setup_time || "À définir",
-        start_time: extractedData.client_info?.start_time || clientInfo.start_time || "",
-        end_time: clientInfo.unlimited_time ? null : (extractedData.client_info?.end_time || clientInfo.end_time || ""),
-        unlimited_time: clientInfo.unlimited_time,
-        phone2: extractedData.client_info?.phone2 || clientInfo.phone2 || "",
-        custom_event_type: extractedData.client_info?.custom_event_type || clientInfo.custom_event_type || "",
-        event_note: extractedData.client_info?.event_note || clientInfo.event_note || ""
-      },
+      client_info: mergedClientInfo,
       dj_profile: selectedDjProfile,
       dj_profile_data: getProfileData(selectedDjProfile),
       contract_mode: contractMode || 'entreprise',
-      base_price: extractedData.base_price || basePrice || 0,
+      base_price: nextBasePrice || 0,
       frais_mandat: fraisMandat || 0,
       cachet_artiste: cachetArtiste || 0,
       pack_sonorisation: packSonorisation || false,
       pack_lumiere: packLumiere || false,
-      selected_options: finalAppliedOptionsList.length > 0 ? finalAppliedOptionsList : selectedOptions.filter(o => o.selected),
+      selected_options: finalAppliedOptionsList,
       options_tarif_notes: optionsTarifNotes,
       discount_amount: discountAmount || 0,
       invoice_number: invoiceNumber || "",
       artiste_invoice_number: artisteInvoiceNumber || "",
-      custom_deposit_amount: extractedData.custom_deposit_amount || customDepositAmount || 0,
+      custom_deposit_amount: nextDepositAmount || 0,
       no_deposit_required: noDepositRequired || false,
       selected_rib: selectedRIB || "",
       deposit_paid: depositPaid || false,
@@ -1392,17 +1509,17 @@ function Contracts2App() {
       selected_pdf_notes: selectedPdfNotes,
       predefined_notes: predefinedNotes,
       selected_music_styles: selectedMusicStyles,
-      dj_notes: extractedData.playlist ? (djNotes ? djNotes + "\n" + extractedData.playlist : extractedData.playlist) : djNotes,
-      blacklist: extractedData.blacklist || blacklist || "",
+      dj_notes: nextDjNotes,
+      blacklist: nextBlacklist,
       catering_notes: cateringNotes,
       catering_drinks: cateringDrinks,
       catering_hot_meal_no_table: cateringHotMealNoTable,
       catering_hot_meal_no_table_qty: cateringHotMealNoTableQty,
       background_music_aperitif: backgroundMusicAperitif,
       selected_events: finalSelectedEventsList,
-      custom_repas_events: customRepasEvents,
-      custom_musique_events: customMusiqueEvents,
-      event_notes: extractedData.event_notes || eventNotes,
+      custom_repas_events: localCustomRepas,
+      custom_musique_events: localCustomMusique,
+      event_notes: nextEventNotes,
       event_order: finalEventOrderList,
       hypnosis_program: hypnosisProgram,
       technician_contact: technicianContact,
@@ -1415,59 +1532,88 @@ function Contracts2App() {
     };
 
     try {
-      toast.info("Enregistrement automatique du nouveau contrat importé...");
+      let savedContractResult = null;
       
-      let activeInvoiceNumber = contractDataToSave.invoice_number;
-      let activeArtisteInvoiceNumber = contractDataToSave.artiste_invoice_number;
-      const needsMandat = !activeInvoiceNumber;
-      const needsArtiste = (contractMode || 'entreprise') === 'mandataire' && !activeArtisteInvoiceNumber;
+      if (importTargetContractId) {
+        toast.info("Mise à jour et fusion avec le contrat existant...");
+        
+        // Récupérer le contrat existant pour préserver les métadonnées non écrasées
+        const existingContract = contracts.find(c => c.id === importTargetContractId);
+        
+        // Fusionner avec préservation des documents existants et des signatures !
+        const blendedData = {
+          ...existingContract,
+          ...contractDataToSave,
+          client_info: {
+            ...existingContract?.client_info,
+            ...contractDataToSave.client_info
+          },
+          event_documents: existingContract?.event_documents || [],
+          signatures: existingContract?.signatures || [],
+          id: importTargetContractId,
+          updated_at: new Date().toISOString()
+        };
+        
+        const saveResponse = await axios.put(`${API}/contracts2/${importTargetContractId}`, blendedData);
+        savedContractResult = saveResponse.data;
+        setGeneratedContract(savedContractResult);
+        setContracts(prev => prev.map(c => c.id === importTargetContractId ? savedContractResult : c));
+        setEditingContract(savedContractResult);
+      } else {
+        toast.info("Enregistrement automatique du nouveau contrat importé...");
+        
+        let activeInvoiceNumber = contractDataToSave.invoice_number;
+        let activeArtisteInvoiceNumber = contractDataToSave.artiste_invoice_number;
+        const needsMandat = !activeInvoiceNumber;
+        const needsArtiste = (contractMode || 'entreprise') === 'mandataire' && !activeArtisteInvoiceNumber;
 
-      if (needsMandat || needsArtiste) {
-        try {
-          let typeToIncrement = 'both';
-          if (needsMandat && !needsArtiste) {
-            typeToIncrement = 'mandat';
-          } else if (!needsMandat && needsArtiste) {
-            typeToIncrement = 'artiste';
-          }
+        if (needsMandat || needsArtiste) {
+          try {
+            let typeToIncrement = 'both';
+            if (needsMandat && !needsArtiste) {
+              typeToIncrement = 'mandat';
+            } else if (!needsMandat && needsArtiste) {
+              typeToIncrement = 'artiste';
+            }
 
-          const incResponse = await axios.post(`${API}/contracts2/counters/increment`, { type: typeToIncrement });
-          const { mandat_number, artiste_number } = incResponse.data;
-          
-          if (needsMandat) {
-            activeInvoiceNumber = mandat_number;
-            setInvoiceNumber(mandat_number);
-            contractDataToSave.invoice_number = mandat_number;
+            const incResponse = await axios.post(`${API}/contracts2/counters/increment`, { type: typeToIncrement });
+            const { mandat_number, artiste_number } = incResponse.data;
+            
+            if (needsMandat) {
+              activeInvoiceNumber = mandat_number;
+              setInvoiceNumber(mandat_number);
+              contractDataToSave.invoice_number = mandat_number;
+            }
+            if (needsArtiste) {
+              activeArtisteInvoiceNumber = artiste_number;
+              setArtisteInvoiceNumber(artiste_number);
+              contractDataToSave.artiste_invoice_number = artiste_number;
+            }
+            fetchNextNumbers();
+          } catch (incError) {
+            console.error("Auto-numbering error on import save:", incError);
           }
-          if (needsArtiste) {
-            activeArtisteInvoiceNumber = artiste_number;
-            setArtisteInvoiceNumber(artiste_number);
-            contractDataToSave.artiste_invoice_number = artiste_number;
-          }
-          fetchNextNumbers();
-        } catch (incError) {
-          console.error("Auto-numbering error on import save:", incError);
         }
+
+        const saveResponse = await axios.post(`${API}/contracts2`, contractDataToSave);
+        savedContractResult = saveResponse.data;
+        setGeneratedContract(savedContractResult);
+        setContracts(prev => [savedContractResult, ...prev]);
+        setEditingContract(savedContractResult);
       }
 
-      const saveResponse = await axios.post(`${API}/contracts2`, contractDataToSave);
-      const newContract = saveResponse.data;
-      setGeneratedContract(newContract);
-      setContracts(prev => [newContract, ...prev]);
-      setEditingContract(newContract);
-
       // Now, upload the imported original contract as an attachment
-      if (importedFile) {
+      if (importedFile && savedContractResult) {
         toast.info(`Sauvegarde de l'original "${importedFile.name}" en pièce jointe...`);
         const uploadData = new FormData();
         uploadData.append("file", importedFile);
-        uploadData.append("category", "Ancien Contrat");
+        uploadData.append("category", importDocCategory);
 
         const token = localStorage.getItem('access_token');
         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
         try {
-          const uploadResp = await fetch(`${BACKEND_URL}/api/contracts2/${newContract.id}/documents`, {
+          const uploadResp = await fetch(`${BACKEND_URL}/api/contracts2/${savedContractResult.id}/documents`, {
             method: "POST",
             headers,
             body: uploadData
@@ -1479,12 +1625,12 @@ function Contracts2App() {
               toast.success(`L'original "${importedFile.name}" a été conservé en pièce jointe !`);
               
               const refreshedContract = {
-                ...newContract,
-                event_documents: [uploadResult.document]
+                ...savedContractResult,
+                event_documents: [...(savedContractResult.event_documents || []), uploadResult.document]
               };
               setGeneratedContract(refreshedContract);
               setEditingContract(refreshedContract);
-              setContracts(prev => prev.map(c => c.id === newContract.id ? refreshedContract : c));
+              setContracts(prev => prev.map(c => c.id === savedContractResult.id ? refreshedContract : c));
             }
           } else {
             console.error("Failed to automatically upload original file.");
@@ -3323,6 +3469,21 @@ function Contracts2App() {
                             <h3 className="font-semibold text-gray-700 mb-1 text-sm">Ajouter un document</h3>
                             <p className="text-xs text-gray-500 mb-4 max-w-xs">PDF, PNG, JPG, JPEG ou HEIC (les images seront automatiquement converties en PDF)</p>
                             
+                            <div className="w-full max-w-xs mb-4">
+                              <label className="block text-left text-xs font-bold text-gray-600 mb-1.5 uppercase tracking-wider">
+                                Nature du document à ajouter :
+                              </label>
+                              <select
+                                value={inlineUploadCategory}
+                                onChange={(e) => setInlineUploadCategory(e.target.value)}
+                                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 focus:ring-2 focus:ring-emerald-500 outline-none"
+                              >
+                                <option value="Contrat Initial">Contrat Initial (Envoyé)</option>
+                                <option value="Contrat Signé / Complémentaire">Contrat Signé / Complémentaire (Retourné)</option>
+                                <option value="Administrative">Autre Document Administratif</option>
+                              </select>
+                            </div>
+                            
                             <label className="cursor-pointer">
                               <div className="bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5 justify-center">
                                 {uploadingAttachment ? (
@@ -3359,13 +3520,30 @@ function Contracts2App() {
                           {editingContract.event_documents && editingContract.event_documents.length > 0 ? (
                             <div className="divide-y max-h-60 overflow-y-auto">
                               {editingContract.event_documents.map((doc) => (
-                                <div key={doc.id} className="flex items-center justify-between py-2.5 text-sm">
-                                  <div className="flex items-center gap-2 truncate pr-4">
-                                    <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                    <span className="truncate font-medium text-gray-750" title={doc.filename}>{doc.filename}</span>
-                                    <span className="text-xs text-gray-400">
-                                      ({new Date(doc.uploaded_at).toLocaleDateString('fr-FR', { hour: '2-digit', minute: '2-digit' })})
-                                    </span>
+                                <div key={doc.id} className="flex items-center justify-between py-3 text-sm border-b border-gray-150 last:border-none">
+                                  <div className="flex flex-col gap-1 min-w-0 flex-1 pr-4">
+                                    <div className="flex items-center gap-2 truncate">
+                                      <FileText className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                                      <span className="truncate font-medium text-gray-750" title={doc.filename}>{doc.filename}</span>
+                                      <span className="text-[10px] text-gray-400 flex-shrink-0">
+                                        ({new Date(doc.uploaded_at).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })})
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      {doc.category === "Contrat Initial" ? (
+                                        <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-bold py-0.5 px-2 bg-blue-50 text-blue-700 border border-blue-200 rounded">
+                                          Contrat Initial (Envoyé)
+                                        </span>
+                                      ) : (doc.category === "Contrat Signé / Complémentaire" || doc.category === "Contrat Signé / Complémentaire (Retourné)") ? (
+                                        <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-bold py-0.5 px-2 bg-emerald-50 text-emerald-800 border border-emerald-250 rounded">
+                                          Contrat Signé (Retourné)
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-bold py-0.5 px-2 bg-slate-50 text-slate-650 border border-slate-200 rounded">
+                                          {doc.category || "Autre Document"}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                   <div className="flex items-center gap-2 flex-shrink-0">
                                     <Button 
@@ -3706,6 +3884,21 @@ function Contracts2App() {
                 <h3 className="font-semibold text-gray-700 mb-1 text-sm">Téléverser de nouveaux documents</h3>
                 <p className="text-xs text-gray-500 mb-4 max-w-xs">PDF, PNG, JPG, JPEG, HEIC (les images seront automatiquement converties en documents PDF)</p>
                 
+                <div className="w-full max-w-xs mb-4">
+                  <label className="block text-left text-xs font-bold text-gray-650 mb-1.5 uppercase tracking-wider">
+                    Nature du document à ajouter :
+                  </label>
+                  <select
+                    value={historyUploadCategory}
+                    onChange={(e) => setHistoryUploadCategory(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-lg text-sm text-gray-700 focus:ring-2 focus:ring-emerald-500 outline-none shadow-xs"
+                  >
+                    <option value="Contrat Initial">Contrat Initial (Envoyé)</option>
+                    <option value="Contrat Signé / Complémentaire">Contrat Signé / Complémentaire (Retourné)</option>
+                    <option value="Administrative">Autre Document Administratif</option>
+                  </select>
+                </div>
+                
                 <label className="cursor-pointer">
                   <div className="bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5">
                     {uploadingAttachment ? (
@@ -3754,9 +3947,22 @@ function Contracts2App() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-gray-700 truncate" title={doc.filename}>{doc.filename}</p>
-                          <p className="text-xs text-gray-400 mt-0.5">
-                            Catégorie : <span className="font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">{doc.category || 'Administrative'}</span>
-                            {doc.uploaded_at && ` • Envoyé le ${new Date(doc.uploaded_at).toLocaleDateString("fr-FR", { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                          <p className="text-xs text-gray-400 mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-gray-500">Nature:</span>
+                            {doc.category === "Contrat Initial" ? (
+                              <span className="font-bold text-[10px] uppercase tracking-wider py-0.5 px-2 bg-blue-50 text-blue-700 border border-blue-200 rounded">
+                                Contrat Initial (Envoyé)
+                              </span>
+                            ) : doc.category === "Contrat Signé / Complémentaire" || doc.category === "Contrat Signé / Complémentaire (Retourné)" ? (
+                              <span className="font-bold text-[10px] uppercase tracking-wider py-0.5 px-2 bg-emerald-50 text-emerald-800 border border-emerald-250 rounded">
+                                Contrat Signé (Retourné)
+                              </span>
+                            ) : (
+                              <span className="font-bold text-[10px] uppercase tracking-wider py-0.5 px-2 bg-slate-50 text-slate-650 border border-slate-200 rounded">
+                                {doc.category || "Autre Document"}
+                              </span>
+                            )}
+                            {doc.uploaded_at && <span className="text-[10px] text-gray-400 ml-1">envoi : {new Date(doc.uploaded_at).toLocaleDateString("fr-FR", { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
                           </p>
                         </div>
                       </div>
@@ -4070,6 +4276,86 @@ function Contracts2App() {
                     </div>
                   )}
 
+                  {/* Target Contract Association Box */}
+                  <div className="bg-indigo-50/40 border border-indigo-100 rounded-xl p-4.5 space-y-3.5 shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <Paperclip className="h-4 w-4 text-indigo-600" />
+                      <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Destination ou association de l'import :
+                      </label>
+                    </div>
+                    
+                    <div className="space-y-2.5">
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setImportTargetContractId("");
+                          }}
+                          className={`flex-1 px-4 py-3 text-xs font-bold border rounded-lg transition-all text-center cursor-pointer ${
+                            !importTargetContractId
+                              ? "bg-indigo-600 text-white border-indigo-700 shadow-sm"
+                              : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          Créer un nouveau contrat indépendant
+                        </button>
+                        
+                        {contracts && contracts.length > 0 && (
+                          <select
+                            value={importTargetContractId}
+                            onChange={(e) => setImportTargetContractId(e.target.value)}
+                            className={`flex-1 px-3 py-2.5 bg-white border rounded-lg text-xs font-semibold outline-none transition-all cursor-pointer ${
+                              importTargetContractId
+                                ? "border-emerald-500 ring-2 ring-emerald-50 text-emerald-900 font-bold"
+                                : "border-slate-200 text-slate-600 hover:border-slate-300"
+                            }`}
+                          >
+                            <option value="">-- Mettre à jour un contrat existant --</option>
+                            {contracts
+                              .filter(c => c.status === 'draft' || c.status === 'validated')
+                              .map(c => (
+                                <option key={c.id} value={c.id}>
+                                  {c.client_info?.name || "Client Sans Nom"} ({c.client_info?.event_date || "Pas de Date"}) - {c.invoice_number || "Brouillon / Sans Numéro"}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                      </div>
+
+                      {importTargetContractId && (
+                        <div className="p-3 bg-emerald-50/80 border border-emerald-100 rounded-lg text-xs text-emerald-800 flex items-start gap-2.5 animate-fadeIn">
+                          <FileCheck className="w-4.5 h-4.5 text-emerald-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="font-bold">Mode Complémentaire Activé !</p>
+                            <p className="mt-0.5 text-emerald-700 leading-relaxed">
+                              Le fichier d'origine sera rattaché au contrat existant pour <strong className="font-bold text-emerald-900">{contracts.find(c => c.id === importTargetContractId)?.client_info?.name}</strong>. Les nouvelles options s'ajouteront ou fusionneront sans perte d'historique.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {!importTargetContractId && importMatchedContract && (
+                        <div className="p-3 bg-amber-50/80 border border-amber-100 rounded-lg text-xs text-amber-800 flex items-start gap-2.5">
+                          <AlertCircle className="w-4.5 h-4.5 text-amber-600 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="font-bold">Contrat existant similaire détecté !</p>
+                            <p className="mt-0.5 text-amber-700 leading-relaxed">
+                              Un contrat existant a été trouvé pour <strong className="font-bold text-amber-900">{importMatchedContract.client_info?.name}</strong> ({importMatchedContract.client_info?.event_date}). 
+                              <button
+                                type="button"
+                                onClick={() => setImportTargetContractId(importMatchedContract.id)}
+                                className="ml-1.5 underline hover:text-amber-950 font-bold cursor-pointer"
+                              >
+                                Cliquez ici pour l'associer comme complémentaire
+                              </button>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Summary of parsed values */}
                   <div className="border border-slate-150 rounded-xl overflow-hidden bg-slate-55/50">
                     <div className="px-4 py-2 bg-slate-100 border-b">
@@ -4151,6 +4437,8 @@ function Contracts2App() {
                   setImportReport(null);
                   setImportedFile(null);
                   setImportError(null);
+                  setImportTargetContractId("");
+                  setImportMatchedContract(null);
                 }}
                 variant="outline"
                 className="px-4 py-2 text-sm text-slate-600"
@@ -4166,6 +4454,8 @@ function Contracts2App() {
                     setImportReport(null);
                     setImportedFile(null);
                     setImportError(null);
+                    setImportTargetContractId("");
+                    setImportMatchedContract(null);
                   }}
                   variant="ghost"
                   className="px-4 py-2 text-sm text-slate-500"
