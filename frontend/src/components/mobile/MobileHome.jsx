@@ -210,7 +210,7 @@ const MobileHome = () => {
             { key: 'location', route: '/location', label: 'Location', desc: 'Gestion du matériel', icon: Package, bg: 'bg-purple-500 hover:bg-purple-600' },
             { key: 'rental', route: '/rental', label: 'Retrait / Retour', desc: 'Retrait et retour du matériel', icon: Handshake, bg: 'bg-slate-900 hover:bg-slate-800' },
             { key: 'delivery', route: '/delivery', label: 'Livraison', desc: 'Livrer le matériel au client', icon: Truck, bg: 'bg-blue-600 hover:bg-blue-700' },
-            { key: 'crm', route: '/crm', label: 'CRM', desc: 'Gestion des clients', icon: UsersIcon, bg: 'bg-green-500 hover:bg-green-600' },
+            { key: 'crm', route: '/crm', label: 'Fichier Client', desc: 'Gestion des clients', icon: UsersIcon, bg: 'bg-green-500 hover:bg-green-600' },
             { key: 'billetterie', route: '/billetterie', label: 'Événements', desc: 'Billetterie et événements', icon: Ticket, bg: 'bg-gray-800 hover:bg-gray-700' },
             { key: 'formulaires', route: '/formulaires', label: 'Formulaires', desc: 'Formulaires personnalisés', icon: FileText, bg: 'bg-orange-400 hover:bg-orange-500' },
             { key: 'dj-profiles', route: '/dj-profiles', label: 'Artistes', desc: 'Profils artistes', icon: User, bg: 'bg-yellow-500 hover:bg-yellow-600' },

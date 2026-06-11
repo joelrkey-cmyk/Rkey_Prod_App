@@ -6088,7 +6088,7 @@ api.get('/agenda-custom-events', authMiddleware, async (req, res) => {
 
 api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
   try {
-    const { title, date, isOption, djId, djName, clientName, eventType, details } = req.body;
+    const { title, date, isOption, djId, djName, clientName, eventType, details, location } = req.body;
     if (!title || !date) {
       return res.status(400).json({ error: "Le titre et la date sont requis." });
     }
@@ -6101,10 +6101,40 @@ api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
       clientName: clientName || "",
       eventType: eventType || "",
       details: details || "",
+      location: location || "",
       createdAt: new Date().toISOString()
     };
     const result = await db.collection('agenda_custom_events').insertOne(newEvent);
     res.json({ success: true, id: result.insertedId, document: { _id: result.insertedId, ...newEvent } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, date, isOption, djId, djName, clientName, eventType, details, location } = req.body;
+    if (!title || !date) {
+      return res.status(400).json({ error: "Le titre et la date sont requis." });
+    }
+    const updateData = {
+      title,
+      date,
+      isOption: !!isOption,
+      djId: djId || null,
+      djName: djName || "",
+      clientName: clientName || "",
+      eventType: eventType || "",
+      details: details || "",
+      location: location || "",
+      updatedAt: new Date().toISOString()
+    };
+    await db.collection('agenda_custom_events').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

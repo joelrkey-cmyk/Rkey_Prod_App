@@ -56,6 +56,22 @@ const getCompanyEventType = (company) => {
   return parsed.type || "";
 };
 
+const getCompanyEventDate = (company) => {
+  if (company.date_evenement) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(company.date_evenement)) {
+      return company.date_evenement;
+    }
+  }
+  if (!company.notes) return "";
+  const match = company.notes.match(/Événement:\s*(\d{4}-\d{2}-\d{2})/i);
+  if (match) return match[1];
+
+  const matchFr = company.notes.match(/Événement:\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+  if (matchFr) return `${matchFr[3]}-${matchFr[2]}-${matchFr[1]}`;
+
+  return "";
+};
+
 const getCompanyProvenance = (company) => {
   if (company.provenance) return company.provenance;
   if (company.notes) {
@@ -76,9 +92,12 @@ function CRMApp() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [anneeFilter, setAnneeFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
+  const [startDateFilter, setStartDateFilter] = useState("");
+  const [endDateFilter, setEndDateFilter] = useState("");
   const [showCompanyDialog, setShowCompanyDialog] = useState(false);
   const [showRelanceDialog, setShowRelanceDialog] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [selectedCompanyForDetail, setSelectedCompanyForDetail] = useState(null);
   const [editingCompany, setEditingCompany] = useState(null);
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -96,7 +115,8 @@ function CRMApp() {
     notes: "",
     blacklist_tags: "",
     annee_prestation: "",
-    type_evenement: ""
+    type_evenement: "",
+    date_evenement: ""
   });
 
   const [typeFilter, setTypeFilter] = useState("all");
@@ -268,7 +288,8 @@ function CRMApp() {
       notes: "",
       blacklist_tags: "",
       annee_prestation: "",
-      type_evenement: ""
+      type_evenement: "",
+      date_evenement: ""
     });
     setEditingCompany(null);
   };
@@ -288,7 +309,8 @@ function CRMApp() {
       notes: company.notes || "",
       blacklist_tags: company.blacklist_tags || "",
       annee_prestation: company.annee_prestation || "",
-      type_evenement: company.type_evenement || ""
+      type_evenement: company.type_evenement || "",
+      date_evenement: company.date_evenement || getCompanyEventDate(company) || ""
     });
     setShowCompanyDialog(true);
   };
@@ -405,7 +427,8 @@ function CRMApp() {
                 notes: `Importé depuis le contrat "${contract.id || 'inconnu'}".\nÉvénement: ${clientInfo.event_date || 'N/A'}\nType: ${clientInfo.event_type || 'N/A'}`,
                 blacklist_tags: "",
                 annee_prestation: eventYear,
-                type_evenement: eventType
+                type_evenement: eventType,
+                date_evenement: eventDate
             };
             
             const postResponse = await axios.post(`${API}/crm/companies`, newClient);
@@ -519,7 +542,17 @@ function CRMApp() {
     const matchesAnnee = anneeFilter === "all" || getCompanyYear(company) === anneeFilter;
     const matchesEvent = eventFilter === "all" || getCompanyEventType(company).toLowerCase() === eventFilter.toLowerCase();
 
-    return matchesSearch && matchesStatus && matchesType && matchesAnnee && matchesEvent;
+    // Filtre par date exacte d'événement
+    const evDate = getCompanyEventDate(company);
+    let matchesDateRange = true;
+    if (startDateFilter) {
+      if (!evDate || evDate < startDateFilter) matchesDateRange = false;
+    }
+    if (endDateFilter) {
+      if (!evDate || evDate > endDateFilter) matchesDateRange = false;
+    }
+
+    return matchesSearch && matchesStatus && matchesType && matchesAnnee && matchesEvent && matchesDateRange;
   });
 
   const getStatusBadge = (statut) => {
@@ -565,13 +598,62 @@ function CRMApp() {
     companies.map(c => getCompanyEventType(c)).filter(Boolean)
   )).sort();
 
+  const handleExportEmails = () => {
+    const mainEmails = filteredCompanies
+      .map(c => c.email?.trim())
+      .filter(email => email && email.includes("@"));
+    
+    const contactEmails = filteredCompanies
+      .flatMap(c => (c.contacts || []).map(contact => contact.email?.trim()))
+      .filter(email => email && email.includes("@"));
+
+    const allEmails = Array.from(new Set([...mainEmails, ...contactEmails]));
+    
+    if (allEmails.length === 0) {
+      toast.error("Aucune adresse email trouvée pour les clients filtrés.");
+      return;
+    }
+    
+    setShowExportDialog(true);
+  };
+
+  const handleDownloadCSV = () => {
+    const headers = ["Nom du Client", "Type de Client", "Statut", "Email Principal", "Téléphone Principal", "Adresse", "Date de prestation", "Type d'événement", "Année"];
+    const rows = filteredCompanies.map(c => [
+      c.nom || "",
+      c.type_client || "Particulier",
+      c.statut || "prospect",
+      c.email || "",
+      c.telephone || "",
+      c.adresse || "",
+      getCompanyEventDate(c) || "",
+      getCompanyEventType(c) || "",
+      getCompanyYear(c) || ""
+    ]);
+
+    const csvContent = [
+      headers.join(";"),
+      ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(";"))
+    ].join("\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `export_fichier_clients_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Fichier CSV exporté avec succès !");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50">
       <div className="container mx-auto py-8 px-4">
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-4xl font-bold text-gray-800 mb-2 flex items-center gap-3">
-              📇 CRM Clients
+              📇 Fichier Client
             </h1>
             <p className="text-gray-600">Base de données globale : particuliers, entreprises et associations</p>
           </div>
@@ -625,70 +707,142 @@ function CRMApp() {
         {/* Barre de recherche et filtres */}
         <Card className="mb-6">
           <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row gap-4 flex-wrap">
-              <div className="flex-1 min-w-[200px] relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Rechercher par nom, secteur, etc..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
+            <div className="space-y-4">
+              {/* Row 1: Search + Date Range Filters */}
+              <div className="flex flex-col lg:flex-row gap-4 items-center">
+                <div className="flex-1 w-full relative">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Rechercher par nom, secteur, etc..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                  <div className="flex items-center gap-1.5 min-w-[150px] w-full sm:w-auto">
+                    <span className="text-xs text-slate-500 font-medium shrink-0">Du</span>
+                    <Input 
+                      type="date" 
+                      value={startDateFilter} 
+                      onChange={(e) => setStartDateFilter(e.target.value)} 
+                      className="h-9 text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 min-w-[150px] w-full sm:w-auto">
+                    <span className="text-xs text-slate-500 font-medium shrink-0">Au</span>
+                    <Input 
+                      type="date" 
+                      value={endDateFilter} 
+                      onChange={(e) => setEndDateFilter(e.target.value)} 
+                      className="h-9 text-xs"
+                    />
+                  </div>
+                  {(startDateFilter || endDateFilter) && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => { setStartDateFilter(""); setEndDateFilter(""); }}
+                      className="text-red-550 hover:text-red-700 h-9 font-medium"
+                    >
+                      Effacer dates
+                    </Button>
+                  )}
+                </div>
               </div>
-              <Select value={anneeFilter} onValueChange={setAnneeFilter}>
-                <SelectTrigger className="w-full md:w-40">
-                  <SelectValue placeholder="Année" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Toutes les années</SelectItem>
-                  {filterYears.map(year => (
-                    <SelectItem key={year} value={year}>{year}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={eventFilter} onValueChange={setEventFilter}>
-                <SelectTrigger className="w-full md:w-48">
-                  <SelectValue placeholder="Type événement" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous événements</SelectItem>
-                  {filterEventTypes.map(type => (
-                    <SelectItem key={type} value={type.toLowerCase()}>{type}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full md:w-40">
-                  <SelectValue placeholder="Statut" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous statuts</SelectItem>
-                  <SelectItem value="client">🟢 Déjà clients</SelectItem>
-                  <SelectItem value="demarche">🟡 Démarchés</SelectItem>
-                  <SelectItem value="prospect">Prospects</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-full md:w-40">
-                  <SelectValue placeholder="Type de client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous types</SelectItem>
-                  <SelectItem value="Particulier">Particuliers</SelectItem>
-                  <SelectItem value="Entreprise">Entreprises</SelectItem>
-                  <SelectItem value="Association">Associations</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button 
-                onClick={() => {
-                  resetCompanyForm();
-                  setShowCompanyDialog(true);
-                }}
-                className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 ml-auto w-full md:w-auto"
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Nouveau Client
-              </Button>
+
+              {/* Row 2: Select Dropdowns & Buttons */}
+              <div className="flex flex-col md:flex-row gap-4 flex-wrap items-center justify-between">
+                <div className="flex flex-wrap gap-2 items-center w-full md:w-auto">
+                  <Select value={anneeFilter} onValueChange={setAnneeFilter}>
+                    <SelectTrigger className="w-full sm:w-36">
+                      <SelectValue placeholder="Année" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Toutes les années</SelectItem>
+                      {filterYears.map(year => (
+                        <SelectItem key={year} value={year}>{year}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={eventFilter} onValueChange={setEventFilter}>
+                    <SelectTrigger className="w-full sm:w-44">
+                      <SelectValue placeholder="Type événement" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous événements</SelectItem>
+                      {filterEventTypes.map(type => (
+                        <SelectItem key={type} value={type.toLowerCase()}>{type}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-full sm:w-36">
+                      <SelectValue placeholder="Statut" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous statuts</SelectItem>
+                      <SelectItem value="client">🟢 Déjà clients</SelectItem>
+                      <SelectItem value="demarche">🟡 Démarchés</SelectItem>
+                      <SelectItem value="prospect">Prospects</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="w-full sm:w-36">
+                      <SelectValue placeholder="Type de client" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous types</SelectItem>
+                      <SelectItem value="Particulier">Particuliers</SelectItem>
+                      <SelectItem value="Entreprise">Entreprises</SelectItem>
+                      <SelectItem value="Association">Associations</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {(searchTerm || anneeFilter !== "all" || eventFilter !== "all" || statusFilter !== "all" || typeFilter !== "all" || startDateFilter || endDateFilter) && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSearchTerm("");
+                        setAnneeFilter("all");
+                        setEventFilter("all");
+                        setStatusFilter("all");
+                        setTypeFilter("all");
+                        setStartDateFilter("");
+                        setEndDateFilter("");
+                      }}
+                      className="text-gray-500 hover:text-gray-800 text-xs h-9 sm:w-auto w-full"
+                    >
+                      Réinitialiser
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0 justify-end flex-wrap">
+                  <Button 
+                    onClick={handleExportEmails}
+                    variant="outline"
+                    className="border-green-300 text-green-700 hover:bg-green-50 h-9"
+                  >
+                    📥 Exporter les adresses mail ({filteredCompanies.length})
+                  </Button>
+
+                  <Button 
+                    onClick={() => {
+                      resetCompanyForm();
+                      setShowCompanyDialog(true);
+                    }}
+                    className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-9"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nouveau Client
+                  </Button>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -752,14 +906,20 @@ function CRMApp() {
                   </div>
 
                   {/* Date & Type Événement */}
-                  <div className="w-full md:w-[20%] flex flex-wrap gap-2 items-center">
-                    {getCompanyYear(company) ? (
-                      <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border border-emerald-100 font-medium text-xs">
-                        📅 {getCompanyYear(company)}
-                      </Badge>
-                    ) : (
-                      <span className="text-gray-400 text-sm">—</span>
-                    )}
+                  <div className="w-full md:w-[20%] flex flex-col gap-1 items-start">
+                    <div className="flex flex-wrap gap-1 items-center">
+                      {getCompanyEventDate(company) ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 font-semibold text-xs">
+                          📅 {new Date(getCompanyEventDate(company)).toLocaleDateString('fr-FR')}
+                        </Badge>
+                      ) : getCompanyYear(company) ? (
+                        <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border border-emerald-100 font-medium text-xs">
+                          📅 {getCompanyYear(company)}
+                        </Badge>
+                      ) : (
+                        <span className="text-gray-400 text-sm">—</span>
+                      )}
+                    </div>
                     {getCompanyEventType(company) ? (
                       <Badge className="bg-amber-50 text-amber-850 hover:bg-amber-50 border border-amber-100 font-medium text-xs truncate max-w-[120px]" title={getCompanyEventType(company)}>
                         🎉 {getCompanyEventType(company)}
@@ -903,14 +1063,29 @@ function CRMApp() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label htmlFor="annee_prestation">Année de l'événement / prestation</Label>
+                <Label htmlFor="date_evenement">Date précise de l'événement</Label>
+                <Input
+                  id="date_evenement"
+                  type="date"
+                  value={companyForm.date_evenement || ""}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    setCompanyForm(prev => {
+                      const yr = newDate ? newDate.split('-')[0] : prev.annee_prestation;
+                      return { ...prev, date_evenement: newDate, annee_prestation: yr };
+                    });
+                  }}
+                />
+              </div>
+              <div>
+                <Label htmlFor="annee_prestation">Année (Auto-remplie)</Label>
                 <Input
                   id="annee_prestation"
                   value={companyForm.annee_prestation || ""}
                   onChange={(e) => setCompanyForm(prev => ({ ...prev, annee_prestation: e.target.value }))}
-                  placeholder="Ex: 2025"
+                  placeholder="Ex: 2026"
                 />
               </div>
               <div>
@@ -919,7 +1094,7 @@ function CRMApp() {
                   id="type_evenement"
                   value={companyForm.type_evenement || ""}
                   onChange={(e) => setCompanyForm(prev => ({ ...prev, type_evenement: e.target.value }))}
-                  placeholder="Ex: Mariage, Anniversaire, Gala..."
+                  placeholder="Ex: Mariage, Gala..."
                 />
               </div>
             </div>
@@ -1140,7 +1315,11 @@ function CRMApp() {
                     )}
                     {company.secteur && <Badge variant="outline">Secteur: {company.secteur}</Badge>}
                     {company.siret && <Badge variant="secondary" className="bg-slate-100 text-slate-600 font-normal">SIRET: {company.siret}</Badge>}
-                    {getCompanyYear(company) && <Badge className="bg-emerald-100 text-emerald-800 font-semibold">📅 Année: {getCompanyYear(company)}</Badge>}
+                    {getCompanyEventDate(company) ? (
+                      <Badge className="bg-emerald-100 text-emerald-800 font-semibold">📅 Événement le: {new Date(getCompanyEventDate(company)).toLocaleDateString('fr-FR')}</Badge>
+                    ) : getCompanyYear(company) ? (
+                      <Badge className="bg-emerald-100 text-emerald-800 font-semibold">📅 Année: {getCompanyYear(company)}</Badge>
+                    ) : null}
                     {getCompanyEventType(company) && <Badge className="bg-amber-100 text-amber-850 font-semibold">🎉 Événement: {getCompanyEventType(company)}</Badge>}
                     {company.blacklist_tags && <Badge variant="destructive">{company.blacklist_tags}</Badge>}
                   </div>
@@ -1312,6 +1491,84 @@ function CRMApp() {
                   </div>
                 </DialogFooter>
               </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Exportation d'Emails */}
+      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="border-b pb-3">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              📥 Exporter les adresses email
+            </DialogTitle>
+            <DialogDescription>
+              Générez une liste des adresses email pour vos newsletters ou campagnes de communication.
+            </DialogDescription>
+          </DialogHeader>
+
+          {(() => {
+            const mainEmails = filteredCompanies
+              .map(c => c.email?.trim())
+              .filter(email => email && email.includes("@"));
+            
+            const contactEmails = filteredCompanies
+              .flatMap(c => (c.contacts || []).map(contact => contact.email?.trim()))
+              .filter(email => email && email.includes("@"));
+
+            const allEmails = Array.from(new Set([...mainEmails, ...contactEmails]));
+            const emailStringList = allEmails.join(", ");
+
+            return (
+              <div className="space-y-4 py-3">
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-sm text-blue-800">
+                  <p className="font-semibold">Filtres actifs :</p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    {startDateFilter && endDateFilter ? `Événements du ${new Date(startDateFilter).toLocaleDateString('fr-FR')} au ${new Date(endDateFilter).toLocaleDateString('fr-FR')}` : 
+                     startDateFilter ? `Événements après le ${new Date(startDateFilter).toLocaleDateString('fr-FR')}` : 
+                     endDateFilter ? `Événements avant le ${new Date(endDateFilter).toLocaleDateString('fr-FR')}` : "Tous les événements"}
+                  </p>
+                  <p className="font-medium mt-2">📊 {allEmails.length} adresse(s) email unique(s) trouvée(s)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-slate-700 text-xs font-semibold uppercase tracking-wider block">Liste brute (Séparateur: Virgule)</Label>
+                  <Textarea 
+                    value={emailStringList}
+                    readOnly
+                    rows={6}
+                    className="font-mono text-xs bg-slate-50 border-slate-200 focus:ring-0 focus:border-slate-300 resize-none select-all"
+                  />
+                  <p className="text-[10px] text-slate-450 italic">Idéal pour copier-coller dans le champ Cci/Bcc de votre client mail.</p>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2 border-t">
+                  <Button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(emailStringList);
+                      toast.success("Adresses email copiées dans le presse-papiers !");
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white w-full gap-2"
+                  >
+                    📋 Copier dans le presse-papiers
+                  </Button>
+                  <Button 
+                    onClick={handleDownloadCSV}
+                    variant="outline" 
+                    className="w-full gap-2 text-blue-700 border-blue-200 hover:bg-blue-50"
+                  >
+                    ⬇️ Télécharger le fichier CSV complet
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => setShowExportDialog(false)} 
+                    className="w-full text-slate-500 hover:text-slate-700"
+                  >
+                    Fermer
+                  </Button>
+                </div>
+              </div>
             );
           })()}
         </DialogContent>

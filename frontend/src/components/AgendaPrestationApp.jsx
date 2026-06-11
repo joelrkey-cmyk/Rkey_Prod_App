@@ -4,7 +4,7 @@ import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import axios from 'axios';
-import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw, Plus } from 'lucide-react';
+import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw, Plus, MapPin, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 import API_BASE_URL from '../utils/apiUrl';
 
@@ -71,7 +71,8 @@ export default function AgendaPrestationApp() {
   // State variables for manually added options and events
   const [addEventDate, setAddEventDate] = useState(null);
   const [addEventType, setAddEventType] = useState('option'); // 'option' or 'event'
-  const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', djId: '', eventType: '', details: '' });
+  const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+  const [editingCustomEventId, setEditingCustomEventId] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -312,6 +313,7 @@ export default function AgendaPrestationApp() {
           status: item.isOption ? 'option' : 'custom_event',
           type: item.isOption ? 'Option Soirée' : 'Événement Manuel',
           details: item.details || '',
+          location: item.location || '',
           isOption: !!item.isOption
         });
       });
@@ -424,19 +426,33 @@ export default function AgendaPrestationApp() {
       djName: addEventType === 'event' ? djs.find(d => d.id === customEventForm.djId)?.name : '',
       clientName: addEventType === 'event' ? customEventForm.clientName.trim() : '',
       eventType: addEventType === 'event' ? customEventForm.eventType.trim() : 'Option',
-      details: customEventForm.details.trim()
+      details: customEventForm.details.trim(),
+      location: (customEventForm.location || '').trim()
     };
 
     try {
       setLoading(true);
-      const res = await axios.post(`${API}/agenda-custom-events`, payload);
-      if (res.data.success) {
-        toast.success(addEventType === 'option' ? "Option de soirée enregistrée avec succès !" : "Événement enregistré avec succès !");
-        setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '' });
-        setAddEventDate(null);
-        await fetchData();
+      if (editingCustomEventId) {
+        const res = await axios.put(`${API}/agenda-custom-events/${editingCustomEventId}`, payload);
+        if (res.data.success) {
+          toast.success("Événement / Option modifié avec succès !");
+          setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+          setAddEventDate(null);
+          setEditingCustomEventId(null);
+          await fetchData();
+        } else {
+          toast.error("Erreur lors de la modification.");
+        }
       } else {
-        toast.error("Erreur lors de l'enregistrement.");
+        const res = await axios.post(`${API}/agenda-custom-events`, payload);
+        if (res.data.success) {
+          toast.success(addEventType === 'option' ? "Option de soirée enregistrée avec succès !" : "Événement enregistré avec succès !");
+          setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+          setAddEventDate(null);
+          await fetchData();
+        } else {
+          toast.error("Erreur lors de l'enregistrement.");
+        }
       }
     } catch (err) {
       console.error("Error saving custom event:", err);
@@ -733,6 +749,14 @@ export default function AgendaPrestationApp() {
                   <span className="font-semibold text-slate-800">{selectedEvent.djName}</span>
                 </div>
 
+                {selectedEvent.location && (
+                  <div className="flex items-center gap-2.5 text-sm">
+                    <MapPin className="w-4.5 h-4.5 text-slate-400" />
+                    <span className="text-slate-500">Lieu :</span>
+                    <span className="font-semibold text-slate-800">{selectedEvent.location}</span>
+                  </div>
+                )}
+
                 {selectedEvent.details && (
                   <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
                     <span className="font-bold text-slate-400 block uppercase tracking-wider text-[10px] mb-1">Détails de la prestation / Matériel</span>
@@ -744,18 +768,43 @@ export default function AgendaPrestationApp() {
 
             {/* Footer with actions */}
             <div className="p-4 bg-slate-50 border-t flex flex-col sm:flex-row justify-between gap-3">
-              <button 
-                onClick={() => {
-                  if (window.confirm("Masquer définitivement cet événement du planning de prestation ? (Le contrat d'origine ou la réservation ne seront pas modifiés)")) {
-                    handleDeleteEvent(selectedEvent);
-                  }
-                }}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 hover:text-red-700 rounded-lg text-sm font-semibold transition"
-                title="Supprime cet événement uniquement de la vue Prestation"
-              >
-                <Trash2 className="w-4 h-4" />
-                Masquer de cet agenda
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button 
+                  onClick={() => {
+                    if (window.confirm("Masquer définitivement cet événement du planning de prestation ? (Le contrat d'origine ou la réservation ne seront pas modifiés)")) {
+                      handleDeleteEvent(selectedEvent);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 hover:text-red-700 rounded-lg text-sm font-semibold transition"
+                  title="Supprime cet événement uniquement de la vue Prestation"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Masquer
+                </button>
+
+                {selectedEvent.id && selectedEvent.id.startsWith('custom_') && (
+                  <button 
+                    onClick={() => {
+                      setCustomEventForm({
+                        title: selectedEvent.cleanTitle || selectedEvent.title || '',
+                        clientName: selectedEvent.clientName || '',
+                        djId: selectedEvent.djId === 'option_black' ? '' : (selectedEvent.djId || ''),
+                        eventType: selectedEvent.eventType || '',
+                        details: selectedEvent.details || '',
+                        location: selectedEvent.location || ''
+                      });
+                      setAddEventDate(selectedEvent.start);
+                      setAddEventType(selectedEvent.isOption ? 'option' : 'event');
+                      setEditingCustomEventId(selectedEvent.id.replace('custom_', ''));
+                      setSelectedEvent(null);
+                    }}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-650 hover:text-blue-700 rounded-lg text-sm font-semibold transition animate-shake"
+                  >
+                    <Edit className="w-4 h-4" />
+                    Modifier
+                  </button>
+                )}
+              </div>
               
               <button 
                 onClick={() => setSelectedEvent(null)}
@@ -790,11 +839,15 @@ export default function AgendaPrestationApp() {
             <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <CalendarDays className="w-4.5 h-4.5 text-indigo-500" />
-                <span>Planifier pour le {format(addEventDate, 'dd MMMM yyyy', { locale: fr })}</span>
+                <span>{editingCustomEventId ? "Modifier l'événement du" : "Planifier pour le"} {format(addEventDate, 'dd MMMM yyyy', { locale: fr })}</span>
               </h3>
               <button 
                 type="button"
-                onClick={() => setAddEventDate(null)}
+                onClick={() => {
+                  setAddEventDate(null);
+                  setEditingCustomEventId(null);
+                  setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+                }}
                 className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-lg transition"
               >
                 <X className="w-5 h-5" />
@@ -811,7 +864,7 @@ export default function AgendaPrestationApp() {
                   className={`py-2 text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addEventType === 'option' ? 'bg-black text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
                 >
                   <Tag className="w-4 h-4" />
-                  Créer une Option
+                  Option de soirée
                 </button>
                 <button
                   type="button"
@@ -819,7 +872,7 @@ export default function AgendaPrestationApp() {
                   className={`py-2 text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addEventType === 'event' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
                 >
                   <User className="w-4 h-4" />
-                  Créer un Événement
+                  Événement Manuel
                 </button>
               </div>
 
@@ -838,6 +891,17 @@ export default function AgendaPrestationApp() {
                       placeholder="Ex: Option Mariage Dupuis ou Option Soirée Privée"
                       value={customEventForm.title}
                       onChange={(e) => setCustomEventForm(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Lieu de l'événement</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Château de Versailles, Villebon..."
+                      value={customEventForm.location}
+                      onChange={(e) => setCustomEventForm(prev => ({ ...prev, location: e.target.value }))}
                       className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
                     />
                   </div>
@@ -917,6 +981,17 @@ export default function AgendaPrestationApp() {
                   </div>
 
                   <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Lieu de l'événement</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Château de Versailles, Villebon..."
+                      value={customEventForm.location}
+                      onChange={(e) => setCustomEventForm(prev => ({ ...prev, location: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Détails de l'événement</label>
                     <textarea
                       placeholder="Remarques techniques, horaires, etc..."
@@ -933,7 +1008,11 @@ export default function AgendaPrestationApp() {
               <div className="pt-4 border-t flex justify-end gap-3 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setAddEventDate(null)}
+                  onClick={() => {
+                    setAddEventDate(null);
+                    setEditingCustomEventId(null);
+                    setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '', location: '' });
+                  }}
                   className="px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
                 >
                   Annuler
@@ -942,8 +1021,8 @@ export default function AgendaPrestationApp() {
                   type="submit"
                   className={`px-5 py-2 text-sm font-semibold rounded-lg text-white transition flex items-center justify-center gap-1.5 shadow-md ${addEventType === 'option' ? 'bg-black hover:bg-slate-900' : 'bg-indigo-600 hover:bg-indigo-700'}`}
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Enregistrer {addEventType === 'option' ? "l'option" : "l'événement"}</span>
+                  {editingCustomEventId ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                  <span>{editingCustomEventId ? "Modifier" : "Enregistrer"} {addEventType === 'option' ? "l'option" : "l'événement"}</span>
                 </button>
               </div>
             </form>

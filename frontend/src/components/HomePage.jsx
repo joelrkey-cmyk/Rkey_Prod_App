@@ -465,7 +465,7 @@ const HomePage = () => {
             { name: 'Retrait / Retour', icon: <Handshake className="w-7 h-7" />, color: 'bg-slate-800', route: '/rental', key: 'rental' },
             { name: 'Livraison', icon: <Truck className="w-7 h-7" />, color: 'bg-blue-600', route: '/delivery', key: 'delivery' },
             { name: 'DJ/Client', icon: <Headphones className="w-7 h-7" />, color: 'bg-pink-600', route: '/dj-client', key: 'dj-client' },
-            { name: 'CRM', icon: <Building2 className="w-7 h-7" />, color: 'bg-green-500', route: '/crm', key: 'crm' },
+            { name: 'Fichier Client', icon: <Building2 className="w-7 h-7" />, color: 'bg-green-500', route: '/crm', key: 'crm' },
             { name: 'Événements', icon: <Ticket className="w-7 h-7" />, color: 'bg-gray-800', route: '/billetterie', key: 'billetterie' },
             { name: 'Partenaires', icon: <Smile className="w-7 h-7" />, color: 'bg-indigo-600', route: '/partenaires', key: 'partenaires' },
             { name: 'Formulaires', icon: <FileText className="w-7 h-7" />, color: 'bg-orange-400', route: '/formulaires', key: 'formulaires' },
