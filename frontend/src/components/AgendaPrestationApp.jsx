@@ -211,7 +211,8 @@ export default function AgendaPrestationApp() {
           eventType: type,
           status: String(c.status),
           type: 'Contrat Prestation',
-          details: optionsDetails ? optionsDetails.trim() : ''
+          details: optionsDetails ? optionsDetails.trim() : '',
+          location: c.client_info?.event_location || ''
         });
       });
 
