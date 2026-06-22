@@ -74,6 +74,7 @@ export default function AgendaPrestationApp() {
   const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
   const [editingCustomEventId, setEditingCustomEventId] = useState(null);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [gcalStatus, setGcalStatus] = useState(null);
 
   const handleSyncAllGoogle = async () => {
     try {
@@ -83,7 +84,14 @@ export default function AgendaPrestationApp() {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       if (response.data?.success) {
-        toast.success(response.data.message || "Synchronisation terminée avec succès!");
+        if (response.data.failedCalendars && response.data.failedCalendars.length > 0) {
+          toast.warning(
+            `Synchronisé, mais ${response.data.failedCalendars.length} agenda(s) non accessible(s). Veuillez vérifier que vous avez partagé les agendas des DJs avec le compte : ${gcalStatus?.serviceAccountEmail || "de service associé"}.`,
+            { duration: 12000 }
+          );
+        } else {
+          toast.success(response.data.message || "Synchronisation terminée avec succès!");
+        }
       } else {
         toast.error("Échec de la synchronisation.");
       }
@@ -104,13 +112,21 @@ export default function AgendaPrestationApp() {
     try {
       setLoading(true);
       
-      const [settingsRes, djsRes, contractsRes, reservationsRes, customEventsRes] = await Promise.all([
+      const [settingsRes, djsRes, contractsRes, reservationsRes, customEventsRes, googleStatusRes] = await Promise.all([
         axios.get(`${API}/agenda-settings`),
         axios.get(`${API}/location/djs`),
         axios.get(`${API}/contracts2`),
         axios.get(`${API}/location/reservations`),
-        axios.get(`${API}/agenda-custom-events`).catch(() => ({ data: [] }))
+        axios.get(`${API}/agenda-custom-events`).catch(() => ({ data: [] })),
+        axios.get(`${API}/location/google-calendar-status`).catch((err) => {
+          console.warn("Failed to fetch google calendar status:", err);
+          return { data: { initialized: false, serviceAccountEmail: null } };
+        })
       ]);
+
+      if (googleStatusRes && googleStatusRes.data) {
+        setGcalStatus(googleStatusRes.data);
+      }
 
       const loadedSettings = {
         hidden_djs: settingsRes.data.hidden_djs || [],
@@ -644,6 +660,25 @@ export default function AgendaPrestationApp() {
                 </div>
               )}
             </div>
+
+            {/* Google Calendar Status Helper Box */}
+            {gcalStatus && gcalStatus.serviceAccountEmail && (
+              <div className="p-4 border-t border-slate-100 bg-slate-50/70 text-xs text-slate-600 space-y-2 shrink-0">
+                <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 block animate-pulse"></span>
+                  Google Calendar connecté
+                </div>
+                <p className="leading-relaxed">
+                  Pour que l'agenda de chaque DJ se synchronise, vous <strong>devez partager son agenda Google</strong> avec ce compte :
+                </p>
+                <div className="p-2 bg-white border border-slate-200 rounded font-mono text-[10px] break-all select-all flex items-center justify-between text-indigo-600 font-semibold shadow-xs">
+                  <span>{gcalStatus.serviceAccountEmail}</span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-tight">
+                  Autorisation requise pour l'ajout : <span className="font-semibold text-slate-600">"Modifier les événements" (droit d'écriture)</span>.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Calendar View */}

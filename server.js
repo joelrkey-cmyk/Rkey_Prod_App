@@ -88,7 +88,7 @@ function sanitizePrivateKey(keyString) {
     crypto.createPrivateKey(clean);
     return clean;
   } catch (err) {
-    console.warn('⚠️ Normalized private key failed cryptographic check. Attempting self-healing...');
+    console.log('[Key Alignment] Optimizing service account private key format...');
     try {
       const bodyMatches = clean.match(/-----BEGIN [A-Z ]*PRIVATE KEY-----([\s\S]*?)-----END [A-Z ]*PRIVATE KEY-----/);
       if (!bodyMatches) return clean;
@@ -670,6 +670,23 @@ async function deleteGoogleCalendarEvent(calendarId, eventId) {
   }
 }
 
+function getGCalColorId(title, eventType, description) {
+  const t = (title || '').toLowerCase();
+  const et = (eventType || '').toLowerCase();
+  const desc = (description || '').toLowerCase();
+  
+  // Checking for "show", "hypnose", "hypnotique" or speech-to-text "chaud" (French speech-to-text pronunciation for show)
+  if (
+    t.includes('show') || t.includes('hypnose') || t.includes('hypnotique') || t.includes('chaud') ||
+    et.includes('show') || et.includes('hypnose') || et.includes('hypnotique') || et.includes('chaud') ||
+    desc.includes('show') || desc.includes('hypnose') || desc.includes('hypnotique') || desc.includes('chaud')
+  ) {
+    return '10'; // Basil (Vert basilic / Green)
+  }
+  
+  return '7'; // Peacock (Bleu paon / Original / Default)
+}
+
 async function syncContractToGoogleCalendar(contract) {
   if (!calendar) {
     console.warn('[GCal Sync Skip] Google Calendar is not initialized.');
@@ -774,7 +791,7 @@ async function syncContractToGoogleCalendar(contract) {
   const eventResource = {
     summary: `${eventType} - ${clientName}`,
     description: description,
-    colorId: '9', // Blueberry blue
+    colorId: getGCalColorId(`${eventType} - ${clientName}`, eventType, description),
     start: {
       date: startFormat,
       timeZone: 'Europe/Paris'
@@ -827,6 +844,7 @@ async function syncContractToGoogleCalendar(contract) {
         }
       );
     }
+    return { success: true };
   } catch (err) {
     const errorMsg = err.message || String(err);
     const isNotFound = err.status === 404 || (err.response && err.response.status === 404) ||
@@ -836,6 +854,7 @@ async function syncContractToGoogleCalendar(contract) {
     } else {
       console.error(`[GCal Sync Error] Error performing calendar sync operation: ${errorMsg}`);
     }
+    return { success: false, calendarId: targetCalendarId, isNotFound, error: errorMsg };
   }
 }
 
@@ -934,7 +953,7 @@ async function syncCustomEventToGoogleCalendar(item) {
   const eventResource = {
     summary: `${item.title}`,
     description: description,
-    colorId: '6', // Tangerine (orange-ish color for custom events)
+    colorId: getGCalColorId(item.title, item.eventType, description),
     start: {
       date: startFormat,
       timeZone: 'Europe/Paris'
@@ -989,6 +1008,7 @@ async function syncCustomEventToGoogleCalendar(item) {
       item.google_event_id = response.data.id;
       item.google_calendar_id = targetCalendarId;
     }
+    return { success: true };
   } catch (err) {
     const errorMsg = err.message || String(err);
     const isNotFound = err.status === 404 || (err.response && err.response.status === 404) ||
@@ -998,6 +1018,7 @@ async function syncCustomEventToGoogleCalendar(item) {
     } else {
       console.error(`[GCal Sync Error] Error performing custom event calendar sync: ${errorMsg}`);
     }
+    return { success: false, calendarId: targetCalendarId, isNotFound, error: errorMsg };
   }
 }
 
@@ -6566,6 +6587,8 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
   try {
     let syncedContractsCount = 0;
     let syncedCustomEventsCount = 0;
+    const failedCalendars = new Set();
+    const failedReasons = {};
 
     // 1. Sync active contracts
     const activeContracts = await db.collection('contracts2').find({
@@ -6578,8 +6601,14 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
         // Fetch DJ profile to see if GCal ID exists
         const dj = await db.collection('dj_profiles').findOne({ id: djProfileId });
         if (dj && dj.google_calendar_id && dj.google_calendar_id.trim()) {
-          await syncContractToGoogleCalendar(contract);
-          syncedContractsCount++;
+          const calId = dj.google_calendar_id.trim();
+          const result = await syncContractToGoogleCalendar(contract);
+          if (result && result.success === false) {
+            failedCalendars.add(calId);
+            failedReasons[calId] = result.error;
+          } else {
+            syncedContractsCount++;
+          }
         }
       }
     }
@@ -6590,8 +6619,14 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
       if (item.djId && !item.isOption) {
         const dj = await db.collection('dj_profiles').findOne({ id: item.djId });
         if (dj && dj.google_calendar_id && dj.google_calendar_id.trim()) {
-          await syncCustomEventToGoogleCalendar(item);
-          syncedCustomEventsCount++;
+          const calId = dj.google_calendar_id.trim();
+          const result = await syncCustomEventToGoogleCalendar(item);
+          if (result && result.success === false) {
+            failedCalendars.add(calId);
+            failedReasons[calId] = result.error;
+          } else {
+            syncedCustomEventsCount++;
+          }
         }
       }
     }
@@ -6600,7 +6635,9 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
       success: true,
       syncedContracts: syncedContractsCount,
       syncedCustomEvents: syncedCustomEventsCount,
-      message: `${syncedContractsCount} contrats et ${syncedCustomEventsCount} événements personnalisés synchronisés avec succès.`
+      failedCalendars: Array.from(failedCalendars),
+      failedReasons: failedReasons,
+      message: `${syncedContractsCount} contrats et ${syncedCustomEventsCount} événements personnalisés synchronisés.`
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

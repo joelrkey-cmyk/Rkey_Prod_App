@@ -54,8 +54,13 @@ const Navigation = () => {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
-          const data = await res.json();
-          setDjClientNotifications(data.count || 0);
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            const data = await res.json();
+            setDjClientNotifications(data.count || 0);
+          } else {
+            console.warn("Received non-JSON response from /api/notifications/unread-count, possibly HTML fallback");
+          }
         }
       } catch (err) {
         console.error("Error loading notification count in Nav:", err);

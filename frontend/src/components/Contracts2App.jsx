@@ -2956,45 +2956,45 @@ function Contracts2App() {
                   <CardDescription>{isDirigeant() ? 'Configurez les options et le tarif du contrat' : 'Répartition des montants entre l\'agence et l\'artiste'}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Prix de base simple - Non modifiable en mode mandat */}
-                  <div className="space-y-2">
-                    <Label className="text-slate-700">Prix de base (TTC)</Label>
-                    <div className="flex items-center space-x-2">
-                      <Euro className="h-4 w-4 text-slate-500" />
-                      <Input 
-                        type="number" 
-                        value={basePrice} 
-                        onChange={(e) => setBasePrice(Number(e.target.value))} 
-                        disabled={!(isDirigeant() || contractMode === 'entreprise')}
-                        className={`w-32 font-bold ${!(isDirigeant() || contractMode === 'entreprise') ? "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed" : "border-slate-300 focus:border-blue-500"}`} 
-                        min="0" 
-                        step="10" 
-                      />
-                    </div>
-                  </div>
-
-                  {/* Plafond Cachet DJ Freelance */}
-                  {contractMode === 'entreprise' && (selectedDjProfile === "" || isArtistFreelance(getProfileData(selectedDjProfile))) && (
-                    <div className="space-y-2 p-4 bg-purple-50/75 rounded-lg border border-purple-200">
-                      <Label className="text-purple-800 font-semibold flex items-center gap-1.5">
-                        🎯 Plafond du cachet DJ Freelance (HT)
-                      </Label>
-                      <p className="text-xs text-purple-600">
-                        Indiquez le montant maximum hors-taxe admissible pour le cachet du DJ freelance. (Par défaut : 800 €)
-                      </p>
-                      <div className="flex items-center space-x-2 mt-1">
-                        <Euro className="h-4 w-4 text-purple-500" />
+                  {/* Prix de base & Plafond DJ Freelance */}
+                  <div className="flex flex-wrap gap-4 items-end bg-slate-50/50 p-4 rounded-lg border border-slate-100">
+                    {/* Prix de base simple - Non modifiable en mode mandat */}
+                    <div className="space-y-2">
+                      <Label className="text-slate-700">Prix de base (TTC)</Label>
+                      <div className="flex items-center space-x-2">
+                        <Euro className="h-4 w-4 text-slate-500" />
                         <Input 
                           type="number" 
-                          value={freelanceCachetCap} 
-                          onChange={(e) => setFreelanceCachetCap(Number(e.target.value) || 0)} 
-                          className="border-purple-300 focus:border-purple-500 w-32 font-bold" 
+                          value={basePrice} 
+                          onChange={(e) => setBasePrice(Number(e.target.value))} 
+                          disabled={!(isDirigeant() || contractMode === 'entreprise')}
+                          className={`w-32 font-bold ${!(isDirigeant() || contractMode === 'entreprise') ? "border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed" : "border-slate-300 focus:border-blue-500"}`} 
                           min="0" 
-                          step="50" 
+                          step="10" 
                         />
                       </div>
                     </div>
-                  )}
+
+                    {/* Plafond Cachet DJ Freelance */}
+                    {contractMode === 'entreprise' && (selectedDjProfile === "" || isArtistFreelance(getProfileData(selectedDjProfile))) && (
+                      <div className="space-y-2">
+                        <Label className="text-slate-700 font-semibold flex items-center gap-1.5">
+                          Plafond DJ freelance HT
+                        </Label>
+                        <div className="flex items-center space-x-2">
+                          <Euro className="h-4 w-4 text-purple-500" />
+                          <Input 
+                            type="number" 
+                            value={freelanceCachetCap} 
+                            onChange={(e) => setFreelanceCachetCap(Number(e.target.value) || 0)} 
+                            className="border-slate-300 focus:border-purple-500 w-32 font-bold" 
+                            min="0" 
+                            step="50" 
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Mode Mandat: Frais + Cachet */}
                   {!isDirigeant() && contractMode === 'mandataire' && (
