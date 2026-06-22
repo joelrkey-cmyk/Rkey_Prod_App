@@ -47,7 +47,7 @@ export const isArtistFreelance = (profile) => {
   return true;
 };
 
-export const calculateCompanyMargeHT = (basePrice, selectedOptions, discountAmount, contractMode = "entreprise", djProfile = null) => {
+export const calculateCompanyMargeHT = (basePrice, selectedOptions, discountAmount, contractMode = "entreprise", djProfile = null, freelanceCachetCap = 800) => {
   const isFreelance = isArtistFreelance(djProfile);
   const isCompanyMode = contractMode === "entreprise";
   
@@ -78,8 +78,10 @@ export const calculateCompanyMargeHT = (basePrice, selectedOptions, discountAmou
   const optionsCachetDJ = optionsHT * 0.20;
   const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
   let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
-  if (cachetDJ > 800) {
-    cachetDJ = 800;
+  
+  const cap = freelanceCachetCap !== undefined ? freelanceCachetCap : 800;
+  if (cachetDJ > cap) {
+    cachetDJ = cap;
   }
 
   const margeHT = totalHT - cachetDJ;
@@ -100,7 +102,8 @@ export const calculateContractCompanyMargeHT = (contract) => {
     return 0;
   }
   
-  return calculateCompanyMargeHT(basePrice, selectedOptions, discountAmount, contractMode, djProfile);
+  const freelanceCap = contract.freelance_cachet_cap !== undefined ? contract.freelance_cachet_cap : 800;
+  return calculateCompanyMargeHT(basePrice, selectedOptions, discountAmount, contractMode, djProfile, freelanceCap);
 };
 
 export const calculateTotal = (basePrice, selectedOptions, discountAmount) => {
@@ -110,7 +113,7 @@ export const calculateTotal = (basePrice, selectedOptions, discountAmount) => {
   return Math.max(0, basePrice + optionsTotal - discountAmount);
 };
 
-export const calculateDepositAmount = (basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany = false, contractMode = "entreprise", djProfile = null) => {
+export const calculateDepositAmount = (basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany = false, contractMode = "entreprise", djProfile = null, freelanceCachetCap = 800) => {
   if (noDepositRequired) return 0;
   if (customDepositAmount > 0) return customDepositAmount;
 
@@ -141,8 +144,10 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
     const optionsCachetDJ = optionsHT * 0.20;
     const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
     let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
-    if (cachetDJ > 800) {
-      cachetDJ = 800;
+    
+    const cap = freelanceCachetCap !== undefined ? freelanceCachetCap : 800;
+    if (cachetDJ > cap) {
+      cachetDJ = cap;
     }
 
     const margeHT = totalHT - cachetDJ;
@@ -159,9 +164,9 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
   return Math.max(0, Math.round(deposit / 50) * 50);
 };
 
-export const calculateRemainingBalance = (basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany = false, contractMode = "entreprise", djProfile = null) => {
+export const calculateRemainingBalance = (basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany = false, contractMode = "entreprise", djProfile = null, freelanceCachetCap = 800) => {
   const total = calculateTotal(basePrice, selectedOptions, discountAmount);
-  const deposit = calculateDepositAmount(basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany, contractMode, djProfile);
+  const deposit = calculateDepositAmount(basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany, contractMode, djProfile, freelanceCachetCap);
   return Math.max(0, total - deposit);
 };
 
@@ -209,8 +214,10 @@ export const calculateContractDepositAmount = (contract) => {
     const optionsCachetDJ = optionsHT * 0.20;
     const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
     let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
-    if (cachetDJ > 800) {
-      cachetDJ = 800;
+    
+    const freelanceCap = contract.freelance_cachet_cap !== undefined ? contract.freelance_cachet_cap : 800;
+    if (cachetDJ > freelanceCap) {
+      cachetDJ = freelanceCap;
     }
 
     const margeHT = totalHT - cachetDJ;

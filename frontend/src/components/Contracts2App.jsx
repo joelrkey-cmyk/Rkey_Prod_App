@@ -134,6 +134,7 @@ function Contracts2App() {
   const [artisteCgvTitle, setArtisteCgvTitle] = useState("Conditions Générales de l'Artiste");
   const [fraisMandat, setFraisMandat] = useState(0);
   const [cachetArtiste, setCachetArtiste] = useState(0);
+  const [freelanceCachetCap, setFreelanceCachetCap] = useState(800);
   const [packSonorisation, setPackSonorisation] = useState(false);
   const [packLumiere, setPackLumiere] = useState(false);
   const [optionsTarifNotes, setOptionsTarifNotes] = useState("");
@@ -551,6 +552,7 @@ function Contracts2App() {
         setContractMode(parsed.contractMode || 'entreprise');
         setFraisMandat(parsed.fraisMandat || 0);
         setCachetArtiste(parsed.cachetArtiste || 0);
+        setFreelanceCachetCap(parsed.freelanceCachetCap !== undefined ? parsed.freelanceCachetCap : 800);
         setPackSonorisation(parsed.packSonorisation || false);
         setPackLumiere(parsed.packLumiere || false);
         setOptionsTarifNotes(parsed.optionsTarifNotes || "");
@@ -594,7 +596,7 @@ function Contracts2App() {
     const state = {
       clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, 
       signatureImages, invoiceNumber, artisteInvoiceNumber, noDepositRequired, customDepositAmount,
-      contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, 
+      contractMode, fraisMandat, cachetArtiste, freelanceCachetCap, packSonorisation, packLumiere, 
       optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, 
       cateringNotes, cateringDrinks, cateringHotMealNoTable, cateringHotMealNoTableQty, selectedEvents, 
       customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, 
@@ -604,7 +606,7 @@ function Contracts2App() {
       selectedPdfNotes, cgvText, artisteCgvText, cgvTitle, artisteCgvTitle
     };
     sessionStorage.setItem('contracts2_form_state', JSON.stringify(state));
-  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, artisteInvoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, cateringHotMealNoTable, cateringHotMealNoTableQty, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText, artisteCgvText, cgvTitle, artisteCgvTitle]);
+  }, [clientInfo, basePrice, discountAmount, selectedOptions, selectedDjProfile, signatureImages, invoiceNumber, artisteInvoiceNumber, noDepositRequired, customDepositAmount, contractMode, fraisMandat, cachetArtiste, freelanceCachetCap, packSonorisation, packLumiere, optionsTarifNotes, selectedNotes, selectedMusicStyles, djNotes, blacklist, cateringNotes, cateringDrinks, cateringHotMealNoTable, cateringHotMealNoTableQty, selectedEvents, customRepasEvents, customMusiqueEvents, eventNotes, eventOrder, hypnosisProgram, selectedRIB, depositPaid, depositPaymentMethod, depositPaidDate, backgroundMusicAperitif, hasLimiteurSon, hasDetecteurFumee, hasNoLimiteurNiDetecteur, hasWifi, has4g5g, technicianContact, selectedPdfNotes, cgvText, artisteCgvText, cgvTitle, artisteCgvTitle]);
 
   const getMandataireDefaultTemplateKey = (templates) => {
     const keys = Object.keys(templates || {});
@@ -1487,6 +1489,7 @@ function Contracts2App() {
       base_price: nextBasePrice || 0,
       frais_mandat: fraisMandat || 0,
       cachet_artiste: cachetArtiste || 0,
+      freelance_cachet_cap: freelanceCachetCap,
       pack_sonorisation: packSonorisation || false,
       pack_lumiere: packLumiere || false,
       selected_options: finalAppliedOptionsList,
@@ -1690,7 +1693,8 @@ function Contracts2App() {
       noDepositRequired,
       isCompany,
       contractMode,
-      profile
+      profile,
+      freelanceCachetCap
     );
   };
 
@@ -1705,7 +1709,8 @@ function Contracts2App() {
       noDepositRequired,
       isCompany,
       contractMode,
-      profile
+      profile,
+      freelanceCachetCap
     );
   };
 
@@ -1732,7 +1737,7 @@ function Contracts2App() {
     setSelectedNotes([]); setSelectedMusicStyles([]); setDjNotes(""); setBlacklist("");
     setCateringNotes(""); setCateringDrinks(false); setCateringHotMealNoTable(false); setCateringHotMealNoTableQty(0);
     setSelectedEvents([]); setCustomRepasEvents([]); setCustomMusiqueEvents([]); setEventNotes(""); setEventOrder([]);
-    setBasePrice(0); setFraisMandat(0); setCachetArtiste(0); setPackSonorisation(false); setPackLumiere(false); setInvoiceNumber(""); setArtisteInvoiceNumber(""); setDiscountAmount(0); setCustomDepositAmount(0); setNoDepositRequired(false);
+    setBasePrice(0); setFraisMandat(0); setCachetArtiste(0); setFreelanceCachetCap(800); setPackSonorisation(false); setPackLumiere(false); setInvoiceNumber(""); setArtisteInvoiceNumber(""); setDiscountAmount(0); setCustomDepositAmount(0); setNoDepositRequired(false);
     setOptionsTarifNotes(""); setSelectedRIB(""); setDepositPaid(false); setDepositPaymentMethod(""); setBackgroundMusicAperitif("");
     setHasLimiteurSon(false); setHasDetecteurFumee(false); setHasNoLimiteurNiDetecteur(false);
     setHypnosisProgram(defaultHypnosisProgram);
@@ -1817,6 +1822,7 @@ function Contracts2App() {
       base_price: basePrice || 0,
       frais_mandat: fraisMandat || 0,
       cachet_artiste: cachetArtiste || 0,
+      freelance_cachet_cap: freelanceCachetCap,
       pack_sonorisation: packSonorisation || false,
       pack_lumiere: packLumiere || false,
       selected_options: selectedOptions.filter(opt => opt.selected),
@@ -1921,6 +1927,7 @@ function Contracts2App() {
     setContractMode(contract.contract_mode || 'entreprise');
     setFraisMandat(contract.frais_mandat || 0);
     setCachetArtiste(contract.cachet_artiste || 0);
+    setFreelanceCachetCap(contract.freelance_cachet_cap !== undefined ? contract.freelance_cachet_cap : 800);
     setPackSonorisation(contract.pack_sonorisation || false);
     setPackLumiere(contract.pack_lumiere || false);
     setOptionsTarifNotes(contract.options_tarif_notes || "");
@@ -1992,6 +1999,7 @@ function Contracts2App() {
     setContractMode(contract.contract_mode || 'entreprise');
     setFraisMandat(contract.frais_mandat || 0);
     setCachetArtiste(contract.cachet_artiste || 0);
+    setFreelanceCachetCap(contract.freelance_cachet_cap !== undefined ? contract.freelance_cachet_cap : 800);
     setPackSonorisation(contract.pack_sonorisation || false);
     setPackLumiere(contract.pack_lumiere || false);
     setOptionsTarifNotes(contract.options_tarif_notes || "");
@@ -2887,8 +2895,8 @@ function Contracts2App() {
                           const optionsCachetDJ = optionsHT * 0.20;
                           const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
                           let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
-                          if (cachetDJ > 800) {
-                            cachetDJ = 800;
+                          if (cachetDJ > freelanceCachetCap) {
+                            cachetDJ = freelanceCachetCap;
                           }
 
                           const marginHT = totalHT - cachetDJ;
@@ -2907,7 +2915,7 @@ function Contracts2App() {
                                 <div className="text-slate-500">Total HT :</div>
                                <div className="text-right font-semibold">{totalHT.toFixed(2)} €</div>
                                 
-                               <div className="text-slate-500">Cachet DJ HT :</div>
+                               <div className="text-slate-500">Cachet du DJ hors-taxe (Plafond {freelanceCachetCap} €) :</div>
                                <div className="text-right font-semibold text-purple-600">{cachetDJ.toFixed(2)} €</div>
                                 
                                <div className="text-slate-500">Marge Brute HT :</div>
@@ -2964,6 +2972,29 @@ function Contracts2App() {
                       />
                     </div>
                   </div>
+
+                  {/* Plafond Cachet DJ Freelance */}
+                  {contractMode === 'entreprise' && (selectedDjProfile === "" || isArtistFreelance(getProfileData(selectedDjProfile))) && (
+                    <div className="space-y-2 p-4 bg-purple-50/75 rounded-lg border border-purple-200">
+                      <Label className="text-purple-800 font-semibold flex items-center gap-1.5">
+                        🎯 Plafond du cachet DJ Freelance (HT)
+                      </Label>
+                      <p className="text-xs text-purple-600">
+                        Indiquez le montant maximum hors-taxe admissible pour le cachet du DJ freelance. (Par défaut : 800 €)
+                      </p>
+                      <div className="flex items-center space-x-2 mt-1">
+                        <Euro className="h-4 w-4 text-purple-500" />
+                        <Input 
+                          type="number" 
+                          value={freelanceCachetCap} 
+                          onChange={(e) => setFreelanceCachetCap(Number(e.target.value) || 0)} 
+                          className="border-purple-300 focus:border-purple-500 w-32 font-bold" 
+                          min="0" 
+                          step="50" 
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Mode Mandat: Frais + Cachet */}
                   {!isDirigeant() && contractMode === 'mandataire' && (
@@ -3084,8 +3115,8 @@ function Contracts2App() {
                         const optionsCachetDJ = optionsHT * 0.20;
                         const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
                         let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
-                        if (cachetDJ > 800) {
-                          cachetDJ = 800;
+                        if (cachetDJ > freelanceCachetCap) {
+                          cachetDJ = freelanceCachetCap;
                         }
 
                         const marginHT = totalHT - cachetDJ;
@@ -3104,7 +3135,7 @@ function Contracts2App() {
                               <div className="text-slate-500">Total HT :</div>
                               <div className="text-right font-semibold">{totalHT.toFixed(2)} €</div>
                               
-                              <div className="text-slate-500">Cachet DJ HT :</div>
+                              <div className="text-slate-500">Cachet du DJ hors-taxe (Plafond {freelanceCachetCap} €) :</div>
                               <div className="text-right font-semibold text-purple-600">{cachetDJ.toFixed(2)} €</div>
                               
                               <div className="text-slate-500">Marge Brute HT :</div>
