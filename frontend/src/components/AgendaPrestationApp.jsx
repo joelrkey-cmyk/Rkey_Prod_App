@@ -73,6 +73,28 @@ export default function AgendaPrestationApp() {
   const [addEventType, setAddEventType] = useState('option'); // 'option' or 'event'
   const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
   const [editingCustomEventId, setEditingCustomEventId] = useState(null);
+  const [syncingAll, setSyncingAll] = useState(false);
+
+  const handleSyncAllGoogle = async () => {
+    try {
+      setSyncingAll(true);
+      const token = localStorage.getItem('access_token');
+      const response = await axios.post(`${API}/agenda/sync-all-google`, {}, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      if (response.data?.success) {
+        toast.success(response.data.message || "Synchronisation terminée avec succès!");
+      } else {
+        toast.error("Échec de la synchronisation.");
+      }
+    } catch (error) {
+      console.error("Error triggering auto sync :", error);
+      const errMsg = error.response?.data?.error || "Erreur lors de la synchronisation.";
+      toast.error(errMsg);
+    } finally {
+      setSyncingAll(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -558,14 +580,29 @@ export default function AgendaPrestationApp() {
               <p className="text-sm text-slate-500">Vue globale des événements signés</p>
             </div>
           </div>
-          <button
-            onClick={fetchData}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 border border-indigo-150 disabled:opacity-50 text-indigo-700 font-semibold rounded-lg text-sm transition shadow-sm"
-          >
-            <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            <span>Actualiser</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSyncAllGoogle}
+              disabled={syncingAll || loading}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-sm transition shadow-sm disabled:opacity-50"
+              title="Synchroniser tous les événements actifs avec les Google Agendas de chaque DJ"
+            >
+              {syncingAll ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <CalendarDays className="w-4 h-4" />
+              )}
+              <span>Synchroniser Google Agenda</span>
+            </button>
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 border border-indigo-150 disabled:opacity-50 text-indigo-700 font-semibold rounded-lg text-sm transition shadow-sm"
+            >
+              <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <span>Actualiser</span>
+            </button>
+          </div>
         </header>
 
         <div className="flex-1 flex overflow-hidden p-6 gap-6">

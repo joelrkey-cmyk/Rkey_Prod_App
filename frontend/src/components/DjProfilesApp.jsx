@@ -86,6 +86,7 @@ const DjProfilesApp = () => {
     telephone: "",
     siret: "",
     adresse_postale: "",
+    google_calendar_id: "",
     statut_artiste: "dirigeant",
     iban: "",
     bic: "",
@@ -140,6 +141,7 @@ const DjProfilesApp = () => {
       telephone: "",
       siret: "",
       adresse_postale: "",
+      google_calendar_id: "",
       annees_experience: 0,
       nombre_evenements: 0,
       nombre_mariages: 0,
@@ -170,6 +172,7 @@ const DjProfilesApp = () => {
       telephone: profile.telephone || "",
       siret: profile.siret || "",
       adresse_postale: profile.adresse_postale || "",
+      google_calendar_id: profile.google_calendar_id || "",
       statut_artiste: profile.statut_artiste || "dirigeant",
       iban: profile.iban || "",
       bic: profile.bic || "",
@@ -847,6 +850,15 @@ const DjProfilesApp = () => {
                       onChange={(e) => setProfileForm(prev => ({ ...prev, adresse_postale: e.target.value }))}
                       placeholder="5 rue du Hohlandsbourg, 67390 Marckolsheim"
                       data-testid="input-adresse"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>ID de l'agenda Google (Google Calendar ID)</Label>
+                    <Input
+                      value={profileForm.google_calendar_id || ""}
+                      onChange={(e) => setProfileForm(prev => ({ ...prev, google_calendar_id: e.target.value }))}
+                      placeholder="nom_du_calendrier@group.calendar.google.com"
+                      data-testid="input-google-calendar-id"
                     />
                   </div>
                 </div>

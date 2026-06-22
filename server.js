@@ -652,6 +652,355 @@ async function deleteReservationFromGoogleCalendar(eventId) {
   }
 }
 
+async function deleteGoogleCalendarEvent(calendarId, eventId) {
+  if (!calendar || !calendarId || !eventId) return;
+  try {
+    await calendar.events.delete({
+      calendarId: calendarId,
+      eventId: eventId,
+    });
+    console.log(`Event ${eventId} deleted from Google Calendar ${calendarId}`);
+  } catch (error) {
+    const status = error.status || (error.response && error.response.status);
+    if (status === 404 || status === 410) {
+      console.log(`Event ${eventId} not found or already deleted on Calendar ${calendarId}.`);
+    } else {
+      console.error(`Failed to delete event from Google Calendar ${calendarId}:`, error.message || String(error));
+    }
+  }
+}
+
+async function syncContractToGoogleCalendar(contract) {
+  if (!calendar) {
+    console.warn('[GCal Sync Skip] Google Calendar is not initialized.');
+    return;
+  }
+
+  const djProfileId = typeof contract.dj_profile === 'string' ? contract.dj_profile : (contract.dj_profile?.id || contract.dj_profile_data?.id);
+  const isDeletedOrDraft = !contract.status || ['deleted', 'trash', 'draft'].includes(contract.status);
+
+  // If deleted, draft, or no DJ is assigned, we should remove the Google Calendar event if it exists
+  if (isDeletedOrDraft || !djProfileId) {
+    if (contract.google_event_id && contract.google_calendar_id) {
+      try {
+        await deleteGoogleCalendarEvent(contract.google_calendar_id, contract.google_event_id);
+        await db.collection('contracts2').updateOne(
+          { id: contract.id },
+          { $unset: { google_event_id: "", google_calendar_id: "" } }
+        );
+        console.log(`[GCal Sync] Cleaned up event ${contract.google_event_id} since contract ${contract.id} is draft/deleted/no DJ.`);
+      } catch (err) {
+        console.error(`[GCal Sync Error] Failed to clean up calendar event for contract ${contract.id}: ${err.message || String(err)}`);
+      }
+    }
+    return;
+  }
+
+  // Get DJ Profile
+  const dj = await db.collection('dj_profiles').findOne({ id: djProfileId });
+  if (!dj) {
+    console.warn(`[GCal Sync Skip] DJ Profile ${djProfileId} not found.`);
+    return;
+  }
+
+  const targetCalendarId = (dj.google_calendar_id || '').trim();
+  if (!targetCalendarId) {
+    console.log(`[GCal Sync Skip] DJ ${dj.nom_artistique || dj.nom_complet} has no Google Calendar ID configured.`);
+    // If an event already exists on an old calendar, we can clean it up
+    if (contract.google_event_id && contract.google_calendar_id) {
+      try {
+        await deleteGoogleCalendarEvent(contract.google_calendar_id, contract.google_event_id);
+        await db.collection('contracts2').updateOne(
+          { id: contract.id },
+          { $unset: { google_event_id: "", google_calendar_id: "" } }
+        );
+      } catch (err) {
+        console.error(`[GCal Sync Error] Failed to delete event from old calendar for contract ${contract.id}: ${err.message || String(err)}`);
+      }
+    }
+    return;
+  }
+
+  // If the calendar ID changed, delete the old event first!
+  if (contract.google_calendar_id && contract.google_event_id && contract.google_calendar_id !== targetCalendarId) {
+    console.log(`[GCal Sync] DJ/Calendar changed for contract ${contract.id}. Deleting event from old calendar: ${contract.google_calendar_id}`);
+    try {
+      await deleteGoogleCalendarEvent(contract.google_calendar_id, contract.google_event_id);
+      contract.google_event_id = null; // Mark as null so we insert a new one
+    } catch (err) {
+      console.error(`[GCal Sync Error] Failed to delete old event during calendar transfer: ${err.message || String(err)}`);
+    }
+  }
+
+  // Prepare Event Details
+  const clientName = contract.client_info?.name || contract.client_name || 'Client';
+  const eventType = contract.client_info?.event_type || 'Prestation';
+  const startStr = contract.client_info?.event_date;
+  if (!startStr) {
+    console.error(`[GCal Sync Error] Contract ${contract.id} has no event date.`);
+    return;
+  }
+
+  let startDateObj = new Date(startStr);
+  if (isNaN(startDateObj.getTime())) {
+    console.error(`[GCal Sync Error] Invalid date for contract ${contract.id}: ${startStr}`);
+    return;
+  }
+
+  const startFormat = startDateObj.toISOString().split('T')[0];
+  let endDateObj = new Date(startDateObj);
+  endDateObj.setDate(endDateObj.getDate() + 1);
+  const endFormat = endDateObj.toISOString().split('T')[0];
+
+  // Format phone, email, location, options
+  const phoneText = [contract.client_info?.phone, contract.client_info?.phone2].filter(Boolean).join(' / ') || 'Non fourni';
+  const emailText = contract.client_info?.email || contract.email || 'Non fourni';
+  const locationText = contract.client_info?.event_location || 'Non fourni';
+
+  const optsList = (contract.selected_options || []).map(o => typeof o === 'string' ? o : o.name).filter(Boolean);
+  const optionsText = optsList.length > 0 ? optsList.map(name => `• ${name}`).join('\n') : '• Aucune';
+
+  const description = `📅 DÉTAILS DE LA PRESTATION\n----------------------------------------\n` +
+    `👤 Client : ${clientName}\n` +
+    `📞 Téléphone : ${phoneText}\n` +
+    `✉️ Email : ${emailText}\n` +
+    `📍 Lieu : ${locationText}\n` +
+    `⚡️ Événement : ${eventType}\n\n` +
+    `✨ OPTIONS VALIDÉES :\n${optionsText}\n\n` +
+    `⚙️ Statut contrat : ${contract.status}\n` +
+    `----------------------------------------\n` +
+    `Synchronisé de façon unidirectionnelle depuis l'application Agenda Prestation.`;
+
+  const eventResource = {
+    summary: `${eventType} - ${clientName}`,
+    description: description,
+    colorId: '9', // Blueberry blue
+    start: {
+      date: startFormat,
+      timeZone: 'Europe/Paris'
+    },
+    end: {
+      date: endFormat,
+      timeZone: 'Europe/Paris'
+    }
+  };
+
+  try {
+    let response;
+    if (contract.google_event_id) {
+      try {
+        response = await calendar.events.update({
+          calendarId: targetCalendarId,
+          eventId: contract.google_event_id,
+          resource: eventResource
+        });
+        console.log(`[GCal Sync] Contract event updated successfully: ${response.data.id}`);
+      } catch (updateErr) {
+        const status = updateErr.status || (updateErr.response && updateErr.response.status);
+        if (status === 404 || status === 410) {
+          console.warn(`[GCal Sync] Event ${contract.google_event_id} not found/deleted in GCal. Re-inserting...`);
+          response = await calendar.events.insert({
+            calendarId: targetCalendarId,
+            resource: eventResource
+          });
+          console.log(`[GCal Sync] Contract event created successfully (re-inserted): ${response.data.id}`);
+        } else {
+          throw updateErr;
+        }
+      }
+    } else {
+      response = await calendar.events.insert({
+        calendarId: targetCalendarId,
+        resource: eventResource
+      });
+      console.log(`[GCal Sync] Contract event created successfully: ${response.data.id}`);
+    }
+
+    if (response && response.data && response.data.id) {
+      await db.collection('contracts2').updateOne(
+        { id: contract.id },
+        { 
+          $set: { 
+            google_event_id: response.data.id,
+            google_calendar_id: targetCalendarId
+          } 
+        }
+      );
+    }
+  } catch (err) {
+    const errorMsg = err.message || String(err);
+    const isNotFound = err.status === 404 || (err.response && err.response.status === 404) ||
+                       (err.errors && err.errors.some(e => e.reason === 'notFound' || e.reason === 'forbidden'));
+    if (isNotFound) {
+      console.warn(`[GCal Sync Warning] Google Calendar "${targetCalendarId}" non trouvé ou non accessible par le compte de service. Veuillez vérifier l'ID de l'agenda ou inviter l'adresse email du compte de service : ${errorMsg}`);
+    } else {
+      console.error(`[GCal Sync Error] Error performing calendar sync operation: ${errorMsg}`);
+    }
+  }
+}
+
+async function syncCustomEventToGoogleCalendar(item) {
+  if (!calendar) {
+    console.warn('[GCal Sync Skip] Google Calendar is not initialized.');
+    return;
+  }
+
+  const isDeletedOrDraft = item.status === 'deleted' || item.status === 'trash';
+  const djId = item.djId;
+
+  // Option events or non-DJ events are not assigned to a DJ
+  if (isDeletedOrDraft || !djId || item.isOption) {
+    if (item.google_event_id && item.google_calendar_id) {
+      try {
+        await deleteGoogleCalendarEvent(item.google_calendar_id, item.google_event_id);
+        await db.collection('agenda_custom_events').updateOne(
+          { _id: new ObjectId(item._id || item.id) },
+          { $unset: { google_event_id: "", google_calendar_id: "" } }
+        );
+        console.log(`[GCal Sync] Cleaned up custom event ${item.google_event_id} because it was deleted/unassigned.`);
+      } catch (err) {
+        console.error(`[GCal Sync Error] Failed to clean up custom event for ${item._id || item.id}: ${err.message || String(err)}`);
+      }
+    }
+    return;
+  }
+
+  // Get DJ Profile
+  const dj = await db.collection('dj_profiles').findOne({ id: djId });
+  if (!dj) {
+    console.warn(`[GCal Sync Skip] DJ Profile ${djId} not found for custom event.`);
+    return;
+  }
+
+  const targetCalendarId = (dj.google_calendar_id || '').trim();
+  if (!targetCalendarId) {
+    console.log(`[GCal Sync Skip] DJ ${dj.nom_artistique || dj.nom_complet} has no Google Calendar ID configured for custom event.`);
+    if (item.google_event_id && item.google_calendar_id) {
+      try {
+        await deleteGoogleCalendarEvent(item.google_calendar_id, item.google_event_id);
+        await db.collection('agenda_custom_events').updateOne(
+          { _id: new ObjectId(item._id || item.id) },
+          { $unset: { google_event_id: "", google_calendar_id: "" } }
+        );
+      } catch (err) {
+        console.error(`[GCal Sync Error] Failed to delete old custom event: ${err.message || String(err)}`);
+      }
+    }
+    return;
+  }
+
+  // If calendar ID changed, delete from old
+  if (item.google_calendar_id && item.google_event_id && item.google_calendar_id !== targetCalendarId) {
+    console.log(`[GCal Sync] DJ/Calendar changed for custom event ${item._id || item.id}. Deleting event from old calendar: ${item.google_calendar_id}`);
+    try {
+      await deleteGoogleCalendarEvent(item.google_calendar_id, item.google_event_id);
+      item.google_event_id = null;
+    } catch (err) {
+      console.error(`[GCal Sync Error] Failed to delete old custom event during calendar transfer: ${err.message || String(err)}`);
+    }
+  }
+
+  const startStr = item.date;
+  if (!startStr) {
+    console.error(`[GCal Sync Error] Custom event has no date.`);
+    return;
+  }
+
+  let startDateObj = new Date(startStr);
+  if (isNaN(startDateObj.getTime())) {
+    console.error(`[GCal Sync Error] Invalid date for custom event: ${startStr}`);
+    return;
+  }
+
+  const startFormat = startDateObj.toISOString().split('T')[0];
+  let endDateObj = new Date(startDateObj);
+  endDateObj.setDate(endDateObj.getDate() + 1);
+  const endFormat = endDateObj.toISOString().split('T')[0];
+
+  const clientName = item.clientName || 'Client';
+  const phoneText = item.clientPhone || 'Non fourni';
+  const locationText = item.location || 'Non fourni';
+  const details = item.details || 'Aucun détail';
+
+  const description = `📅 ÉVÉNEMENT DU DJ (AGENDA PRESTATION)\n----------------------------------------\n` +
+    `👤 Client : ${clientName}\n` +
+    `📞 Téléphone : ${phoneText}\n` +
+    `📍 Lieu : ${locationText}\n` +
+    `⚡️ Titre de l'événement : ${item.title}\n\n` +
+    `📝 DÉTAILS / NOTES :\n${details}\n` +
+    `----------------------------------------\n` +
+    `Synchronisé de façon unidirectionnelle depuis l'application Agenda Prestation.`;
+
+  const eventResource = {
+    summary: `${item.title}`,
+    description: description,
+    colorId: '6', // Tangerine (orange-ish color for custom events)
+    start: {
+      date: startFormat,
+      timeZone: 'Europe/Paris'
+    },
+    end: {
+      date: endFormat,
+      timeZone: 'Europe/Paris'
+    }
+  };
+
+  try {
+    let response;
+    if (item.google_event_id) {
+      try {
+        response = await calendar.events.update({
+          calendarId: targetCalendarId,
+          eventId: item.google_event_id,
+          resource: eventResource
+        });
+        console.log(`[GCal Sync] Custom event updated successfully: ${response.data.id}`);
+      } catch (updateErr) {
+        const status = updateErr.status || (updateErr.response && updateErr.response.status);
+        if (status === 404 || status === 410) {
+          console.warn(`[GCal Sync] Custom Event ${item.google_event_id} not found in GCal. Re-inserting...`);
+          response = await calendar.events.insert({
+            calendarId: targetCalendarId,
+            resource: eventResource
+          });
+          console.log(`[GCal Sync] Custom event created successfully (re-inserted): ${response.data.id}`);
+        } else {
+          throw updateErr;
+        }
+      }
+    } else {
+      response = await calendar.events.insert({
+        calendarId: targetCalendarId,
+        resource: eventResource
+      });
+      console.log(`[GCal Sync] Custom event created successfully: ${response.data.id}`);
+    }
+
+    if (response && response.data && response.data.id) {
+      await db.collection('agenda_custom_events').updateOne(
+        { _id: new ObjectId(item._id || item.id) },
+        { 
+          $set: { 
+            google_event_id: response.data.id,
+            google_calendar_id: targetCalendarId
+          } 
+        }
+      );
+      item.google_event_id = response.data.id;
+      item.google_calendar_id = targetCalendarId;
+    }
+  } catch (err) {
+    const errorMsg = err.message || String(err);
+    const isNotFound = err.status === 404 || (err.response && err.response.status === 404) ||
+                       (err.errors && err.errors.some(e => e.reason === 'notFound' || e.reason === 'forbidden'));
+    if (isNotFound) {
+      console.warn(`[GCal Sync Warning] Google Calendar "${targetCalendarId}" non trouvé ou non accessible pour l'événement personnalisé. Veuillez vérifier l'ID : ${errorMsg}`);
+    } else {
+      console.error(`[GCal Sync Error] Error performing custom event calendar sync: ${errorMsg}`);
+    }
+  }
+}
+
 async function tryAutoSyncToGoogle(reservation) {
   try {
     const bType = (reservation.booking_type || '').toLowerCase();
@@ -2416,6 +2765,14 @@ api.post('/contracts2/documents/migrate-to-gcs', authMiddleware, async (req, res
 
 async function syncContractReservations(contract) {
   if (!contract) return;
+
+  // Sync contract to the associated DJ Google Calendar
+  try {
+    await syncContractToGoogleCalendar(contract);
+  } catch (gcalErr) {
+    console.error('[syncContractReservations] Google Calendar sync failed:', gcalErr);
+  }
+
   // Helper to delete reservations and calendar events
   const cleanupReservations = async (contractId) => {
     const existingReservations = await db.collection('location_reservations').find({ contract_id: contractId }).toArray();
@@ -6110,7 +6467,16 @@ api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
       createdAt: new Date().toISOString()
     };
     const result = await db.collection('agenda_custom_events').insertOne(newEvent);
-    res.json({ success: true, id: result.insertedId, document: { _id: result.insertedId, ...newEvent } });
+    const insertedDoc = { _id: result.insertedId, ...newEvent };
+    
+    // Sync to Google Calendar
+    try {
+      await syncCustomEventToGoogleCalendar(insertedDoc);
+    } catch (gcalErr) {
+      console.error('[agenda-custom-events POST] GCal sync failed:', gcalErr);
+    }
+
+    res.json({ success: true, id: result.insertedId, document: insertedDoc });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -6140,7 +6506,18 @@ api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
       { _id: new ObjectId(id) },
       { $set: updateData }
     );
-    res.json({ success: true });
+    
+    const updatedDoc = await db.collection('agenda_custom_events').findOne({ _id: new ObjectId(id) });
+    if (updatedDoc) {
+      // Sync to Google Calendar
+      try {
+        await syncCustomEventToGoogleCalendar(updatedDoc);
+      } catch (gcalErr) {
+        console.error('[agenda-custom-events PUT] GCal sync failed:', gcalErr);
+      }
+    }
+
+    res.json({ success: true, document: updatedDoc });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -6149,6 +6526,17 @@ api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
 api.delete('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Fetch before deleting to remove Google Calendar event
+    const item = await db.collection('agenda_custom_events').findOne({ _id: new ObjectId(id) });
+    if (item && item.google_event_id && item.google_calendar_id) {
+      try {
+        await deleteGoogleCalendarEvent(item.google_calendar_id, item.google_event_id);
+      } catch (gcalErr) {
+        console.error('[agenda-custom-events DELETE] GCal event delete failed:', gcalErr);
+      }
+    }
+
     await db.collection('agenda_custom_events').deleteOne({ _id: new ObjectId(id) });
     res.json({ success: true });
   } catch (err) {
@@ -6168,6 +6556,55 @@ api.put('/agenda-settings', authMiddleware, async (req, res) => {
     { upsert: true }
   );
   res.json({ success: true });
+});
+
+api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
+  if (!calendar) {
+    return res.status(500).json({ error: "Google Calendar n'est pas initialisé. Identifiants manquants." });
+  }
+
+  try {
+    let syncedContractsCount = 0;
+    let syncedCustomEventsCount = 0;
+
+    // 1. Sync active contracts
+    const activeContracts = await db.collection('contracts2').find({
+      status: { $nin: ['deleted', 'trash', 'draft'] }
+    }).toArray();
+
+    for (const contract of activeContracts) {
+      const djProfileId = typeof contract.dj_profile === 'string' ? contract.dj_profile : (contract.dj_profile?.id || contract.dj_profile_data?.id);
+      if (djProfileId) {
+        // Fetch DJ profile to see if GCal ID exists
+        const dj = await db.collection('dj_profiles').findOne({ id: djProfileId });
+        if (dj && dj.google_calendar_id && dj.google_calendar_id.trim()) {
+          await syncContractToGoogleCalendar(contract);
+          syncedContractsCount++;
+        }
+      }
+    }
+
+    // 2. Sync active custom events
+    const customEvents = await db.collection('agenda_custom_events').find({}).toArray();
+    for (const item of customEvents) {
+      if (item.djId && !item.isOption) {
+        const dj = await db.collection('dj_profiles').findOne({ id: item.djId });
+        if (dj && dj.google_calendar_id && dj.google_calendar_id.trim()) {
+          await syncCustomEventToGoogleCalendar(item);
+          syncedCustomEventsCount++;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      syncedContracts: syncedContractsCount,
+      syncedCustomEvents: syncedCustomEventsCount,
+      message: `${syncedContractsCount} contrats et ${syncedCustomEventsCount} événements personnalisés synchronisés avec succès.`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Catch unregistered API routes
