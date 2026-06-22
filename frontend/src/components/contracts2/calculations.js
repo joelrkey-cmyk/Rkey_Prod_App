@@ -77,7 +77,10 @@ export const calculateCompanyMargeHT = (basePrice, selectedOptions, discountAmou
 
   const optionsCachetDJ = optionsHT * 0.20;
   const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
-  const cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+  let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+  if (cachetDJ > 800) {
+    cachetDJ = 800;
+  }
 
   const margeHT = totalHT - cachetDJ;
   return Math.max(0, margeHT);
@@ -137,7 +140,10 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
 
     const optionsCachetDJ = optionsHT * 0.20;
     const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
-    const cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+    let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+    if (cachetDJ > 800) {
+      cachetDJ = 800;
+    }
 
     const margeHT = totalHT - cachetDJ;
     const acompteTTC = Math.ceil((margeHT * 1.2) / 5) * 5;
@@ -202,7 +208,10 @@ export const calculateContractDepositAmount = (contract) => {
 
     const optionsCachetDJ = optionsHT * 0.20;
     const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
-    const cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+    let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+    if (cachetDJ > 800) {
+      cachetDJ = 800;
+    }
 
     const margeHT = totalHT - cachetDJ;
     const acompteTTC = Math.ceil((margeHT * 1.2) / 5) * 5;

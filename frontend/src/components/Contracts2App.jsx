@@ -2886,7 +2886,10 @@ function Contracts2App() {
 
                           const optionsCachetDJ = optionsHT * 0.20;
                           const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
-                          const cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+                          let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+                          if (cachetDJ > 800) {
+                            cachetDJ = 800;
+                          }
 
                           const marginHT = totalHT - cachetDJ;
                           const acompteTTC = Math.ceil((marginHT * 1.2) / 5) * 5;
@@ -3080,7 +3083,10 @@ function Contracts2App() {
 
                         const optionsCachetDJ = optionsHT * 0.20;
                         const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
-                        const cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+                        let cachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+                        if (cachetDJ > 800) {
+                          cachetDJ = 800;
+                        }
 
                         const marginHT = totalHT - cachetDJ;
                         const acompteTTC = Math.ceil((marginHT * 1.2) / 5) * 5;
