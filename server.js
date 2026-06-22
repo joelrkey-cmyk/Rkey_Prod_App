@@ -4952,8 +4952,8 @@ api.get('/rental/withdrawals', authMiddleware, async (req, res) => {
 
     // Source 1: Reservations with status 'accepted'
     const reservations = await db.collection('location_reservations').find({
-      status: 'accepted',
-      booking_type: 'client',
+      status: { $in: ['accepted', 'Accepted', 'acceptée', 'Acceptée', 'active', 'Active'] },
+      booking_type: { $nin: ['dj', 'DJ'] },
       is_archived: { $ne: true }
     }, { projection: { _id: 0 } }).toArray();
 
@@ -4992,7 +4992,7 @@ api.get('/rental/withdrawals', authMiddleware, async (req, res) => {
 
     // Source 2: Accepted quotes without reservation
     const acceptedQuotes = await db.collection('location_quotes').find({
-      status: 'Accepté',
+      status: { $in: ['Accepté', 'accepté', 'Accepted', 'accepted', 'Valide', 'valide'] },
       is_archived: { $ne: true }
     }, { projection: { _id: 0 } }).toArray();
 
@@ -5358,8 +5358,8 @@ api.post('/rental/workflows/:id/complete', authMiddleware, async (req, res) => {
 api.get('/rental/returns', authMiddleware, async (req, res) => {
   try {
     const reservations = await db.collection('location_reservations').find({
-      status: 'equipment_withdrawn',
-      booking_type: 'client',
+      status: { $in: ['equipment_withdrawn', 'withdrawn', 'delivered', 'delivered_active', 'Matériel retiré', 'Livré', 'equipment_returned', 'returned'] },
+      booking_type: { $nin: ['dj', 'DJ'] },
       is_archived: { $ne: true }
     }, { projection: { _id: 0 } }).toArray();
 

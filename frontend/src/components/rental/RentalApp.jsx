@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Package, Handshake, AlertTriangle, RefreshCw, Search, Phone, Mail, Calendar, DollarSign, ChevronRight } from "lucide-react";
+import { Package, Handshake, AlertTriangle, RefreshCw, Search, Phone, Mail, Calendar, DollarSign, ChevronRight, Check } from "lucide-react";
 import axios from "../../services/axiosConfig";
 import { Toaster } from "../ui/sonner";
 import { toast } from "sonner";
@@ -7,9 +7,101 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import DossierModal from "../location/DossierModal";
 import DisputesView from "./DisputesView";
+import { WithdrawalSlipModal, WithdrawalSignatureModal } from "../location/WithdrawalModals";
+import { generateWithdrawalSlip, calculateGuaranteeDeposit } from "../../utils/pdfGenerator";
 
 import API_BASE_URL from "../../utils/apiUrl";
 const API = `${API_BASE_URL}/api`;
+
+// Beautiful Return Registration Modal
+function ReturnSlipModal({
+  open,
+  onClose,
+  reservation,
+  checklist,
+  setChecklist,
+  returnedBy,
+  setReturnedBy,
+  onSubmit,
+  isLoading
+}) {
+  if (!open || !reservation) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto border border-slate-200 shadow-xl space-y-4">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <RefreshCw className="w-5 h-5 text-purple-600" />
+            Enregistrer le Retour Matériel
+          </h3>
+          <p className="text-slate-500 text-sm mt-1">
+            Enregistrement du retour pour <strong>{reservation.client_name}</strong> ({reservation.quote_number || 'N/A'})
+          </p>
+        </div>
+
+        {/* Checklist */}
+        <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-400 capitalize">Vérification du matériel retourné</p>
+          <div className="space-y-2">
+            {checklist.map((item, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => {
+                  setChecklist(prev => prev.map((it, i) => i === idx ? { ...it, checked: !it.checked } : it));
+                }}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                  item.checked ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200 hover:border-purple-200'
+                }`}
+              >
+                <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                  item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300'
+                }`}>
+                  {item.checked && <Check className="w-3.5 h-3.5" />}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-800">{item.equipment_name || item.name}</p>
+                  <p className="text-xs text-slate-400">Qté attendue: {item.quantity}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Handled By Form */}
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-slate-700">Responsable de la réception / vérification *</label>
+          <Input
+            value={returnedBy}
+            onChange={(e) => setReturnedBy(e.target.value)}
+            placeholder="Nom du technicien ou prénom"
+            className="h-10 text-sm border-slate-200"
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-2">
+          <Button
+            variant="outline"
+            className="flex-1 h-11 text-sm border-slate-200 rounded-xl"
+            onClick={onClose}
+            disabled={isLoading}
+          >
+            Annuler
+          </Button>
+          <Button
+            className="flex-1 h-11 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-xl shadow-sm"
+            onClick={onSubmit}
+            disabled={isLoading || !returnedBy.trim()}
+          >
+            {isLoading ? 'Enregistrement...' : 'Valider le retour'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function RentalApp() {
   const [activeTab, setActiveTab] = useState("withdrawals"); // withdrawals, returns, disputes
@@ -22,9 +114,39 @@ function RentalApp() {
   const [selectedId, setSelectedId] = useState(null);
   const [showDossier, setShowDossier] = useState(false);
 
+  // States for withdrawal slip & signature flow (matching ReservationsViewIntegrated)
+  const [showWithdrawalSlipModal, setShowWithdrawalSlipModal] = useState(false);
+  const [showWithdrawalSignaturePad, setShowWithdrawalSignaturePad] = useState(false);
+  const [currentReservationForSlip, setCurrentReservationForSlip] = useState(null);
+  const [validatedEquipment, setValidatedEquipment] = useState([]);
+  const [withdrawalSignaturePadRef, setWithdrawalSignaturePadRef] = useState(null);
+  const [withdrawalSignature, setWithdrawalSignature] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // States for return flow
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [currentReturnReservation, setCurrentReturnReservation] = useState(null);
+  const [returnChecklist, setReturnChecklist] = useState([]);
+  const [returnWfId, setReturnWfId] = useState(null);
+  const [returnedBy, setReturnedBy] = useState("");
+
+  useEffect(() => {
+    fetchClients();
+  }, []);
+
   useEffect(() => {
     fetchData();
   }, [activeTab]);
+
+  const fetchClients = async () => {
+    try {
+      const res = await axios.get(`${API}/location/clients`);
+      setClients(res.data || []);
+    } catch (e) {
+      console.error("Error fetching clients", e);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -53,6 +175,159 @@ function RentalApp() {
     setShowDossier(false);
     setSelectedId(null);
     fetchData(); // Refresh current list
+  };
+
+  // Start withdrawal slips flow
+  const handleStartWithdrawal = (e, item) => {
+    e.stopPropagation();
+    setCurrentReservationForSlip(item);
+    setValidatedEquipment([]);
+    setShowWithdrawalSlipModal(true);
+  };
+
+  // Confirm changes to "equipment_withdrawn" status (without signature)
+  const confirmWithdrawalStatus = async () => {
+    if (!currentReservationForSlip) return;
+
+    try {
+      setIsLoading(true);
+      
+      const withdrawalPerson = document.getElementById('withdrawal-person')?.value || '';
+      const depositAmount = parseFloat(document.getElementById('deposit-amount')?.value || 0);
+      const paymentMethod = document.getElementById('payment-method')?.value || 'especes';
+      const isTrustedClient = document.getElementById('trusted-client')?.checked || false;
+      
+      if (!withdrawalPerson.trim()) {
+        toast.error('Veuillez entrer le nom de la personne qui retire le matériel');
+        setIsLoading(false);
+        return;
+      }
+      
+      const withdrawalData = {
+        status: 'equipment_withdrawn',
+        withdrawal_person: withdrawalPerson,
+        deposit_amount: depositAmount,
+        deposit_payment_method: paymentMethod,
+        is_trusted_client: isTrustedClient
+      };
+      
+      await axios.put(`${API}/location/reservations/${currentReservationForSlip.id}/change-status`, withdrawalData);
+      toast.success('Statut changé vers "Matériel retiré"');
+      
+      setShowWithdrawalSlipModal(false);
+      setCurrentReservationForSlip(null);
+      setValidatedEquipment([]);
+      
+      await fetchData();
+    } catch (error) {
+      console.error('Error changing status to equipment_withdrawn:', error);
+      if (error.response?.status === 400) {
+        toast.error('Transition de statut invalide : ' + error.response.data.detail);
+      } else {
+        toast.error('Erreur lors du changement de statut');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Generate Withdrawal slip document PDF
+  const generateWithdrawalSlipDocument = () => {
+    if (!currentReservationForSlip) return;
+
+    try {
+      let equipmentDayTotal = 0;
+      
+      const reservationData = {
+        id: currentReservationForSlip.id,
+        clientName: currentReservationForSlip.client_name || 'N/A',
+        clientEmail: currentReservationForSlip.client_email || 'N/A',
+        clientPhone: currentReservationForSlip.client_phone || 'N/A',
+        endDate: currentReservationForSlip.end_date,
+        items: (currentReservationForSlip.equipment_items || currentReservationForSlip.items)?.map(item => {
+          const dailyPrice = item.daily_price || item.equipment?.daily_price || 0;
+          equipmentDayTotal += (item.quantity || 1) * dailyPrice;
+          return {
+            name: item.equipment_name || item.equipment?.name || 'N/A',
+            quantity: item.quantity || 1,
+            price: dailyPrice,
+            serialNumber: item.equipment_reference || item.equipment?.reference || 'N/A'
+          };
+        }) || []
+      };
+
+      const guaranteeAmount = calculateGuaranteeDeposit(equipmentDayTotal);
+      const doc = generateWithdrawalSlip(reservationData);
+      doc.save(`Bon_Retrait_${currentReservationForSlip.id}.pdf`);
+      
+      toast.success(`Bon de retrait généré ! Dépôt de garantie: ${guaranteeAmount}€`);
+      confirmWithdrawalStatus();
+    } catch (error) {
+      console.error('Error generating withdrawal slip:', error);
+      toast.error('Erreur lors de la génération du bon de retrait');
+    }
+  };
+
+  // Start return workflow
+  const handleStartReturn = async (e, item) => {
+    e.stopPropagation();
+    setIsLoading(true);
+    try {
+      const res = await axios.post(`${API}/rental/workflows`, {
+        reservation_id: item.id,
+        type: 'return'
+      });
+      const wf = res.data;
+      setReturnWfId(wf.id);
+      
+      const initialChecklist = (wf.checklist || []).map(checkItem => ({
+        equipment_id: checkItem.equipment_id,
+        equipment_name: checkItem.equipment_name || checkItem.name || 'Équipement',
+        quantity: checkItem.quantity || 1,
+        checked: checkItem.checked !== undefined ? checkItem.checked : true
+      }));
+      
+      setReturnChecklist(initialChecklist);
+      setCurrentReturnReservation(item);
+      setReturnedBy("");
+      setShowReturnModal(true);
+    } catch (err) {
+      console.error("Error initializing return workflow", err);
+      toast.error("Erreur lors de l'initialisation du retour");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Complete return workflow
+  const handleConfirmReturn = async () => {
+    if (!returnWfId || !currentReturnReservation) return;
+    if (!returnedBy.trim()) {
+      toast.error("Veuillez indiquer le responsable de la réception");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await axios.post(`${API}/rental/returns/${returnWfId}/complete`, {
+        return_checklist: returnChecklist,
+        returned_by: returnedBy
+      });
+      
+      toast.success("Retour enregistré avec succès !");
+      setShowReturnModal(false);
+      setCurrentReturnReservation(null);
+      setReturnChecklist([]);
+      setReturnWfId(null);
+      setReturnedBy("");
+      
+      await fetchData();
+    } catch (err) {
+      console.error("Error completing return", err);
+      toast.error("Erreur lors de la validation du retour");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const filteredWithdrawals = withdrawals.filter((item) =>
@@ -231,7 +506,10 @@ function RentalApp() {
                       </div>
 
                       <div className="flex items-center gap-2 self-end md:self-auto flex-shrink-0">
-                        <Button className="bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs h-9 font-medium shadow-sm flex items-center gap-1">
+                        <Button 
+                          onClick={(e) => handleStartWithdrawal(e, item)}
+                          className="bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs h-9 font-medium shadow-sm flex items-center gap-1"
+                        >
                           Commencer retrait
                           <ChevronRight className="w-4 h-4" />
                         </Button>
@@ -295,7 +573,10 @@ function RentalApp() {
                       </div>
 
                       <div className="flex items-center gap-2 self-end md:self-auto flex-shrink-0">
-                        <Button className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs h-9 font-medium shadow-sm flex items-center gap-1">
+                        <Button 
+                          onClick={(e) => handleStartReturn(e, item)}
+                          className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs h-9 font-medium shadow-sm flex items-center gap-1"
+                        >
                           Enregistrer retour
                           <ChevronRight className="w-4 h-4" />
                         </Button>
@@ -310,12 +591,66 @@ function RentalApp() {
 
       </div>
 
-      {/* Dossier Modal for starting Withdrawal/Return flow */}
+      {/* Dossier Modal for read-only reservation details */}
       {showDossier && selectedId && (
         <DossierModal
           open={showDossier}
           onClose={handleCloseDossier}
           reservationId={selectedId}
+        />
+      )}
+
+      {/* Interactive Withdrawal Bon de Retrait Modals */}
+      {showWithdrawalSlipModal && currentReservationForSlip && (
+        <WithdrawalSlipModal
+          showWithdrawalSlipModal={showWithdrawalSlipModal}
+          setShowWithdrawalSlipModal={setShowWithdrawalSlipModal}
+          currentReservationForSlip={currentReservationForSlip}
+          setCurrentReservationForSlip={setCurrentReservationForSlip}
+          validatedEquipment={validatedEquipment}
+          setValidatedEquipment={setValidatedEquipment}
+          clients={clients}
+          isLoading={isLoading}
+          generateWithdrawalSlipDocument={generateWithdrawalSlipDocument}
+          confirmWithdrawalStatus={confirmWithdrawalStatus}
+          onOpenSignaturePad={() => setShowWithdrawalSignaturePad(true)}
+        />
+      )}
+
+      {showWithdrawalSignaturePad && currentReservationForSlip && (
+        <WithdrawalSignatureModal
+          showWithdrawalSignaturePad={showWithdrawalSignaturePad}
+          setShowWithdrawalSignaturePad={setShowWithdrawalSignaturePad}
+          withdrawalSignaturePadRef={withdrawalSignaturePadRef}
+          setWithdrawalSignaturePadRef={setWithdrawalSignaturePadRef}
+          setWithdrawalSignature={setWithdrawalSignature}
+          currentReservationForSlip={currentReservationForSlip}
+          setShowWithdrawalSlipModal={setShowWithdrawalSlipModal}
+          setCurrentReservationForSlip={setCurrentReservationForSlip}
+          setValidatedEquipment={setValidatedEquipment}
+          isLoading={isLoading}
+          setIsLoading={setIsLoading}
+          fetchReservations={fetchData}
+        />
+      )}
+
+      {/* Interactive Return Slip Modal */}
+      {showReturnModal && currentReturnReservation && (
+        <ReturnSlipModal
+          open={showReturnModal}
+          onClose={() => {
+            setShowReturnModal(false);
+            setCurrentReturnReservation(null);
+            setReturnChecklist([]);
+            setReturnWfId(null);
+          }}
+          reservation={currentReturnReservation}
+          checklist={returnChecklist}
+          setChecklist={setReturnChecklist}
+          returnedBy={returnedBy}
+          setReturnedBy={setReturnedBy}
+          onSubmit={handleConfirmReturn}
+          isLoading={isLoading}
         />
       )}
     </div>

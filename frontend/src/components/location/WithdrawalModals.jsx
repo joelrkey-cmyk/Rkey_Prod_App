@@ -1,5 +1,5 @@
 // Modals de retrait de matériel - Extraites de ReservationsViewIntegrated
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
@@ -25,6 +25,27 @@ export function WithdrawalSlipModal({
   confirmWithdrawalStatus,
   onOpenSignaturePad,
 }) {
+  const [equipmentList, setEquipmentList] = useState([]);
+
+  useEffect(() => {
+    if (showWithdrawalSlipModal) {
+      axios.get(`${API}/equipment`)
+        .then(res => {
+          setEquipmentList(res.data || []);
+        })
+        .catch(err => {
+          console.error("Error fetching equipment in modal", err);
+        });
+    }
+  }, [showWithdrawalSlipModal]);
+
+  const getEquipmentName = (item) => {
+    if (item.equipment_name) return item.equipment_name;
+    if (item.name) return item.name;
+    const found = equipmentList.find(e => e.id === item.equipment_id);
+    return found ? found.name : `Matériel #${item.equipment_id || 'Inconnu'}`;
+  };
+
   if (!showWithdrawalSlipModal || !currentReservationForSlip) return null;
 
   return (
@@ -93,7 +114,7 @@ export function WithdrawalSlipModal({
                     >
                       <div className="flex items-center justify-between">
                         <span className={`font-medium ${isValidated ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-                          {item.equipment_name || 'Équipement'} (x{item.quantity || 1})
+                          {getEquipmentName(item)} (x{item.quantity || 1})
                         </span>
                         {isValidated && <span className="text-green-600 font-bold">✓</span>}
                       </div>
