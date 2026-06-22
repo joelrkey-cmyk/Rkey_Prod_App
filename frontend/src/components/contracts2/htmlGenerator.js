@@ -30,6 +30,14 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
   const fmtHTVal = (val) => (Math.round(((val || 0) / 1.20) * 100) / 100).toFixed(2) + " €";
   const fmtTvaVal = (val) => (Math.round(((val || 0) - (val || 0) / 1.20) * 100) / 100).toFixed(2) + " €";
 
+  const _depositVal = calculateContractDepositAmount(contract);
+  const _totalVal = calculateContractTotal(contract);
+  const _realAcomptePct = _totalVal > 0 ? (_depositVal / _totalVal) * 100 : (isCompany ? 30 : 50);
+  let acomptePercent = Math.round(_realAcomptePct / 5) * 5;
+  if (acomptePercent < 0) acomptePercent = 0;
+  if (acomptePercent > 100) acomptePercent = 100;
+  const soldePercent = 100 - acomptePercent;
+
   // Fonctions utilitaires pour vérifier si les sections ont du contenu
   const hasEventScheduleContent = () => {
     const hasEvents = contract.event_order && contract.event_order.length > 0;
@@ -350,7 +358,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             <!-- Paiement standard avec acompte -->
             <div class="payment-amounts clearfix">
               <div class="payment-left" style="${_p.statut_artiste === 'freelance' ? 'border: 1.5px solid #1565c0; border-radius: 6px; padding: 8px; background: #f5f9ff;' : ''}">
-                <strong>Acompte :</strong><br>
+                <strong>Acompte (${acomptePercent}%) :</strong><br>
                 <span class="amount-big">${calculateContractDepositAmount(contract).toFixed(2)} €</span><br>
                 ${contract.deposit_paid ? `
                   <div style="background-color: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; padding: 6px; margin-top: 5px;">
@@ -374,7 +382,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
               </div>
               ${isCompany ? '' : `
               <div class="payment-right" style="${_p.statut_artiste === 'freelance' ? 'border: 1.5px solid #2e7d32; border-radius: 6px; padding: 8px; background: #f5fdf5;' : ''}">
-                <strong>Solde :</strong><br>
+                <strong>Solde (${soldePercent}%) :</strong><br>
                 <span class="amount-big">${calculateContractRemainingBalance(contract).toFixed(2)} €</span><br>
                 <small>À régler lors de l'installation</small>
                 ${_p.statut_artiste === 'freelance' && _p.iban ? `

@@ -2399,7 +2399,16 @@ function Contracts2App() {
                   <Label className="text-slate-700 font-semibold whitespace-nowrap">Artiste :</Label>
                   <select
                     value={selectedDjProfile}
-                    onChange={(e) => setSelectedDjProfile(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedDjProfile(val);
+                      if (val) {
+                        const profile = getProfileData(val);
+                        if (profile.statut_artiste === 'freelance') {
+                          setContractMode('entreprise');
+                        }
+                      }
+                    }}
                     className="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 text-sm bg-white focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
                     data-testid="dj-profile-select"
                   >
@@ -2436,34 +2445,6 @@ function Contracts2App() {
                   );
                 })()}
               </div>
-
-              {/* Mode Toggle: Mandataire / Entreprise (visible uniquement si pas dirigeant) */}
-              {!isDirigeant() && (
-              <div className="lg:col-span-2 mb-2">
-                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <Label className="text-slate-700 font-semibold text-sm">Mode de facturation :</Label>
-                  <div className="flex rounded-lg overflow-hidden border border-slate-300">
-                    <button
-                      type="button"
-                      onClick={() => setContractMode('entreprise')}
-                      className={`px-4 py-2 text-sm font-medium transition-colors ${contractMode === 'entreprise' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
-                      data-testid="mode-entreprise-btn"
-                    >
-                      Entreprise
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setContractMode('mandataire')}
-                      className={`px-4 py-2 text-sm font-medium transition-colors ${contractMode === 'mandataire' ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'}`}
-                      data-testid="mode-mandataire-btn"
-                    >
-                      Mandataire
-                    </button>
-                  </div>
-                  <span className="text-xs text-slate-500">{contractMode === 'mandataire' ? '2 contrats séparés (Mandat + Artiste)' : '1 seul contrat global (R\'KEY PROD)'}</span>
-                </div>
-              </div>
-              )}
 
               {/* Client Information */}
               <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
@@ -3358,7 +3339,11 @@ function Contracts2App() {
                         if (isFreelance) {
                           const total = calculateTotal();
                           const deposit = calculateDepositAmount();
-                          const percentage = total > 0 ? Math.round((deposit / total) * 100) : 0;
+                          const rawPct = total > 0 ? (deposit / total) * 100 : 0;
+                          let percentage = Math.round(rawPct / 5) * 5;
+                          if (percentage < 0) percentage = 0;
+                          if (percentage > 100) percentage = 100;
+                          const soldePct = 100 - percentage;
                           return (
                             <>
                               <div className="flex justify-between">
@@ -3366,7 +3351,7 @@ function Contracts2App() {
                                 <span className="font-semibold text-green-600">{calculateDepositAmount()}€</span>
                               </div>
                               <div className="flex justify-between">
-                                <span>Solde restant (Cachet DJ TTC{percentage > 0 ? ` ${100 - percentage}%` : ''}):</span>
+                                <span>Solde restant (Cachet DJ TTC{percentage > 0 ? ` ${soldePct}%` : ''}):</span>
                                 <span className="font-semibold">{calculateRemainingBalance()}€</span>
                               </div>
                             </>

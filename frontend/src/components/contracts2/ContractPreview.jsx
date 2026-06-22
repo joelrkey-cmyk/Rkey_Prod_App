@@ -1,6 +1,7 @@
 // Onglet Aperçu du contrat PDF - Contrats 2
 // Gère 3 modes: Dirigeant (1 contrat), Mandataire (2 docs), Entreprise (1 doc global)
 import React, { useState, useEffect } from 'react';
+import { calculateContractDepositAmount, calculateContractTotal, calculateContractRemainingBalance } from './calculations';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -128,14 +129,21 @@ export const ContractPreview = ({
 
   // ── MODE ENTREPRISE: 1 seul contrat global R'KEY PROD ──
   if (isEntrepriseMode) {
-    const acompte30 = Math.round(totalEntreprise * 0.30 * 100) / 100;
-    const solde70 = Math.round((totalEntreprise - acompte30) * 100) / 100;
+    const acompteAmt = generatedContract ? calculateContractDepositAmount(generatedContract) : (totalEntreprise * 0.3);
+    const soldeAmt = generatedContract ? calculateContractRemainingBalance(generatedContract) : (totalEntreprise - acompteAmt);
+
+    const totalVal = totalEntreprise || 0;
+    const realAcomptePct = totalVal > 0 ? (acompteAmt / totalVal) * 100 : 30;
+    let roundedAcomptePct = Math.round(realAcomptePct / 5) * 5;
+    if (roundedAcomptePct < 0) roundedAcomptePct = 0;
+    if (roundedAcomptePct > 100) roundedAcomptePct = 100;
+    const roundedSoldePct = 100 - roundedAcomptePct;
+
     return (
       <Card className="shadow-lg" data-testid="contract-preview-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             Aperçu du Contrat
-            <Badge className="bg-blue-600 text-white text-xs">Mode Entreprise</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -149,12 +157,12 @@ export const ContractPreview = ({
                   <span className="text-lg font-bold text-blue-700" data-testid="flux-total-entreprise">{totalEntreprise === 0 ? 'OFFERT' : `${totalEntreprise.toFixed(2)} € TTC`}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Acompte à facturer (30%) :</span>
-                  <span className="text-sm font-semibold text-green-700">{acompte30.toFixed(2)} €</span>
+                  <span className="text-sm text-slate-600">Acompte à facturer ({roundedAcomptePct}%) :</span>
+                  <span className="text-sm font-semibold text-green-700">{acompteAmt.toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Solde restant (70%) :</span>
-                  <span className="text-sm font-semibold text-slate-700">{solde70.toFixed(2)} €</span>
+                  <span className="text-sm text-slate-600">Solde restant ({roundedSoldePct}%) :</span>
+                  <span className="text-sm font-semibold text-slate-700">{soldeAmt.toFixed(2)} €</span>
                 </div>
                 <div className="flex justify-between items-center border-t border-slate-200 pt-2">
                   <span className="text-xs text-slate-400">Coût d'achat interne (DJ) :</span>
