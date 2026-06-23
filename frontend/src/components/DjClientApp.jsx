@@ -4203,6 +4203,42 @@ function urlBase64ToUint8Array(base64String) {
         !requestedOptions.some(ro => ro.id === opt.id || ro.name === opt.name) &&
         (!opt.event_categories || opt.event_categories.length === 0 || opt.event_categories.includes(eventType))
       );
+      
+      const isEntrepriseFreelance = isEntreprise && !isDirigeant;
+      let cachetDJVal = cachetArtiste;
+      
+      if (isEntrepriseFreelance) {
+        const optionsTotalForMargin = contractOptions
+          .filter(option => option.selected !== false && !option.is_addition_post_signature && !option.added_post_signature)
+          .reduce((sum, option) => sum + (Number(option.price) || 0), 0);
+
+        const baseTTC = Math.max(0, basePrice - discountAmount);
+        const baseHT = baseTTC / 1.2;
+
+        const optionsTTC = optionsTotalForMargin;
+        const optionsHT = optionsTTC / 1.2;
+
+        const totalTTC = baseTTC + optionsTTC;
+        const totalHT = totalTTC / 1.2;
+
+        let baseCachetDJ = 0;
+        if (totalTTC > 1500) {
+          baseCachetDJ = 900;
+        } else {
+          baseCachetDJ = baseHT * 0.6428;
+        }
+
+        const optionsCachetDJ = optionsHT * 0.20;
+        const cachetDJRaw = baseCachetDJ + optionsCachetDJ;
+        let computedCachetDJ = Math.floor(cachetDJRaw / 10) * 10;
+        
+        const freelanceCachetCap = c.freelance_cachet_cap !== undefined ? c.freelance_cachet_cap : 800;
+        if (computedCachetDJ > freelanceCachetCap) {
+          computedCachetDJ = freelanceCachetCap;
+        }
+        cachetDJVal = computedCachetDJ;
+      }
+
       const role = currentRoute.role;
 
       const toggleBasket = (opt) => {
@@ -4350,6 +4386,48 @@ function urlBase64ToUint8Array(base64String) {
         }
       };
 
+      // Vue spéciale DJ en mode entreprise : uniquement le cachet DJ (violet) et les options sans prix
+      if (role === 'dj' && isEntrepriseFreelance) {
+        return (
+          <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('options')}`}>
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-gray-400" />
+              Tarifs et Options de l'Événement
+            </h3>
+
+            {/* Custom purple card for DJ view in corporate freelance mode */}
+            <div className="bg-purple-50/70 p-6 rounded-xl border border-purple-200 shadow-sm flex flex-col items-center justify-center text-center max-w-md mx-auto my-6">
+              <span className="text-xs font-bold text-purple-700 uppercase tracking-wider block mb-2">Cachet DJ à facturer à R'Key Prod</span>
+              <span className="text-4xl font-extrabold text-purple-600 mb-2">{cachetDJVal.toFixed(2)} €</span>
+              <p className="text-xs text-purple-500 italic px-4">
+                Conformément au mode entreprise pour freelances, ce montant correspond à votre cachet d'artiste DJ que vous devez facturer directement à l'entreprise R'Key Prod.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6">
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-3">Options d'animation de l'événement</h4>
+                {contractOptions.length > 0 ? (
+                  <ul className="space-y-2">
+                    {contractOptions.map((opt, idx) => (
+                      <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                        <div className="flex items-center gap-2 font-medium">
+                          <Check className="w-4 h-4 text-green-500" />
+                          {opt.name}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">Aucune option validée sur ce contrat.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Vue normale pour Admin et pour Client (la vue client n'affiche pas les détails internes)
       return (
         <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('options')}`}>
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
@@ -4366,7 +4444,12 @@ function urlBase64ToUint8Array(base64String) {
                 <span className="text-xl font-bold text-slate-800">{totalPrestation.toFixed(2)} €</span>
               </div>
               <div className="mt-3 text-[11px] text-slate-500 pt-2 border-t border-slate-100 space-y-0.5">
-                {isMandatMode ? (
+                {isEntrepriseFreelance ? (
+                  <div className="flex justify-between">
+                    <span>Tarif de base :</span>
+                    <span>{baseRate.toFixed(2)} €</span>
+                  </div>
+                ) : isMandatMode ? (
                   <>
                     <div className="flex justify-between items-center py-0.5" onClick={(e) => e.stopPropagation()}>
                       <span>Frais de mandat & gestion :</span>
@@ -4425,7 +4508,7 @@ function urlBase64ToUint8Array(base64String) {
             <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  {isMandatMode ? "Frais de mandat & gestion (Réglé)" : "Paiement déjà versé"}
+                  {isEntrepriseFreelance ? "Acompte payé à R'Key Prod" : (isMandatMode ? "Frais de mandat & gestion (Réglé)" : "Paiement déjà versé")}
                 </span>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xl font-bold text-emerald-600">
@@ -4443,6 +4526,16 @@ function urlBase64ToUint8Array(base64String) {
                   <span className="text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded block">
                     Confiance / Externe (Aucun acompte requis)
                   </span>
+                ) : isEntrepriseFreelance ? (
+                  isDepositPaid ? (
+                    <span className="text-emerald-700 font-medium block">
+                      Acompte perçu par R'Key Prod.
+                    </span>
+                  ) : (
+                    <span className="text-amber-600 font-medium block">
+                      Acompte de {depositAmount.toFixed(2)} € restant à régler.
+                    </span>
+                  )
                 ) : isMandatMode ? (
                   <span className="text-emerald-700 font-medium block">
                     Frais de mandat perçus à la création du contrat.
@@ -4463,7 +4556,7 @@ function urlBase64ToUint8Array(base64String) {
             <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  {isMandatMode ? "Cachet Artiste restants" : "Solde restant dû"}
+                  {isEntrepriseFreelance ? "Solde restant à régler à R'Key Prod" : (isMandatMode ? "Cachet Artiste restants" : "Solde restant dû")}
                 </span>
                 <span className="text-xl font-bold text-indigo-600">
                   {remainingBalance.toFixed(2)} €

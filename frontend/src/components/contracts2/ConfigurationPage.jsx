@@ -8,7 +8,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
-import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck } from 'lucide-react';
+import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Composant autocomplétion intelligente et de recherche pour l'équipement de location
@@ -198,6 +198,11 @@ export const ConfigurationPage = ({
   const [isCgvModalOpen, setIsCgvModalOpen] = useState(false);
   const [editingCgvData, setEditingCgvData] = useState({ name: "", content: "" });
 
+  const [freelanceTemplates, setFreelanceTemplates] = useState([]);
+  const [newFreelanceTemplate, setNewFreelanceTemplate] = useState({ name: "", subject: "", body: "" });
+  const [editingFreelanceTemplate, setEditingFreelanceTemplate] = useState(null);
+  const [isFreelanceModalOpen, setIsFreelanceModalOpen] = useState(false);
+
   const [equipmentList, setEquipmentList] = useState([]);
 
   // Charger les notes ordonnées au montage
@@ -220,8 +225,30 @@ export const ConfigurationPage = ({
         console.error("Error loading equipment list:", error);
       }
     };
+    const loadFreelanceTemplates = async () => {
+      try {
+        const response = await apiService.get('/freelance-email-templates');
+        const list = response.data.templates || [];
+        if (list.length === 0) {
+          // pre-create a default
+          const defTpl = {
+            name: "Félicitations Signature",
+            subject: "Contrat signé ! Détails de votre prestation : {{client_name}}",
+            body: "<p>Bonjour {{artist_name}},</p>\n<p>Félicitations ! Le contrat pour la prestation <strong>{{client_name}}</strong> du <strong>{{event_date}}</strong> a bien été signé par le client.</p>\n<p>Vous pouvez dès à présent retrouver l'ensemble des détails de la prestation, de l'installation et le planning complet sur votre espace DJ / Artiste.</p>\n<p>Bonne prestation !</p>\n<p>Cordialement,</p>",
+            is_default: true
+          };
+          const saved = await apiService.post('/freelance-email-templates', defTpl);
+          setFreelanceTemplates([saved.data]);
+        } else {
+          setFreelanceTemplates(list);
+        }
+      } catch (error) {
+        console.error("Error loading freelance templates:", error);
+      }
+    };
     loadOrderedNotes();
     loadEquipmentList();
+    loadFreelanceTemplates();
   }, [apiService]);
 
   // --- Options Matériel ---
@@ -513,6 +540,78 @@ export const ConfigurationPage = ({
     }
   };
 
+  // --- Freelance Email Templates ---
+  const addFreelanceTemplate = async () => {
+    if (!newFreelanceTemplate.name.trim() || !newFreelanceTemplate.subject.trim() || !newFreelanceTemplate.body.trim()) {
+      toast.error("Veuillez remplir tous les champs");
+      return;
+    }
+    try {
+      setIsSaving(true);
+      const res = await apiService.post('/freelance-email-templates', {
+        name: newFreelanceTemplate.name.trim(),
+        subject: newFreelanceTemplate.subject.trim(),
+        body: newFreelanceTemplate.body.trim(),
+        is_default: freelanceTemplates.length === 0
+      });
+      setFreelanceTemplates([...freelanceTemplates, res.data]);
+      setNewFreelanceTemplate({ name: "", subject: "", body: "" });
+      toast.success("Modèle de mail freelance ajouté !");
+    } catch (err) {
+      toast.error("Erreur d'ajout de modèle");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteFreelanceTemplate = async (id) => {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce modèle ?")) return;
+    try {
+      await apiService.delete(`/freelance-email-templates/${id}`);
+      setFreelanceTemplates(freelanceTemplates.filter(t => t.id !== id));
+      toast.success("Modèle supprimé avec succès !");
+    } catch {
+      toast.error("Erreur de suppression");
+    }
+  };
+
+  const saveEditedFreelanceTemplate = async () => {
+    if (!editingFreelanceTemplate.name.trim() || !editingFreelanceTemplate.subject.trim() || !editingFreelanceTemplate.body.trim()) {
+      toast.error("Veuillez remplir tous les champs");
+      return;
+    }
+    try {
+      setIsSaving(true);
+      const res = await apiService.put(`/freelance-email-templates/${editingFreelanceTemplate.id}`, editingFreelanceTemplate);
+      setFreelanceTemplates(freelanceTemplates.map(t => t.id === editingFreelanceTemplate.id ? res.data : t));
+      setIsFreelanceModalOpen(false);
+      setEditingFreelanceTemplate(null);
+      toast.success("Modèle de mail freelance mis à jour !");
+    } catch {
+      toast.error("Erreur lors de la modification");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const setFreelanceTemplateAsDefault = async (id) => {
+    try {
+      const updatedList = await Promise.all(freelanceTemplates.map(async (t) => {
+        const isTarget = t.id === id;
+        if (t.is_default !== isTarget) {
+          const res = await apiService.put(`/freelance-email-templates/${t.id}`, { ...t, is_default: isTarget });
+          return res.data;
+        }
+        return t;
+      }));
+      setFreelanceTemplates(updatedList);
+      toast.success("Modèle par défaut mis à jour !");
+    } catch (e) {
+      console.error(e);
+      toast.error("Erreur lors de la mise à jour");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6" data-testid="configuration-page">
       <div className="max-w-6xl mx-auto">
@@ -535,7 +634,7 @@ export const ConfigurationPage = ({
         </div>
 
         <Tabs value={activeConfigTab} onValueChange={setActiveConfigTab}>
-          <TabsList className="grid w-full grid-cols-4 mb-8">
+          <TabsList className="grid w-full grid-cols-5 mb-8">
             <TabsTrigger value="options" className="flex items-center space-x-2">
               <Music className="h-4 w-4" />
               <span>Options Matériel</span>
@@ -551,6 +650,10 @@ export const ConfigurationPage = ({
             <TabsTrigger value="cgv" className="flex items-center space-x-2">
               <FileCheck className="h-4 w-4" />
               <span>Modèles CGV</span>
+            </TabsTrigger>
+            <TabsTrigger value="freelance_emails" className="flex items-center space-x-2">
+              <Mail className="h-4 w-4" />
+              <span>Mails Freelances</span>
             </TabsTrigger>
           </TabsList>
 
@@ -877,6 +980,127 @@ export const ConfigurationPage = ({
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Mails Freelances */}
+          <TabsContent value="freelance_emails">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-indigo-600" />
+                  <span>Modèles d'Emails pour les Freelances / Artistes</span>
+                </CardTitle>
+                <CardDescription>
+                  Gérez les modèles de courriels envoyés directement à vos artistes ou DJ freelances pour les informer de la signature d'un contrat de prestation.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4 mb-6">
+                  {freelanceTemplates.map((t) => (
+                    <div key={t.id} className="flex items-center justify-between p-4 border rounded-lg bg-white shadow-sm hover:border-indigo-150 transition-colors">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-slate-800">{t.name}</h3>
+                          {t.is_default && (
+                            <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 border-indigo-200">
+                              Par défaut
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-indigo-600 font-medium mt-1">Sujet : {t.subject}</p>
+                        <div className="text-xs text-slate-550 mt-1 line-clamp-1 prose max-w-none" dangerouslySetInnerHTML={{ __html: t.body }}></div>
+                      </div>
+                      <div className="flex items-center space-x-2 shrink-0 ml-4">
+                        {!t.is_default && (
+                          <Button 
+                            onClick={() => setFreelanceTemplateAsDefault(t.id)} 
+                            size="sm" 
+                            variant="outline"
+                            className="text-slate-600 text-xs border-slate-350 hover:bg-slate-50"
+                          >
+                            Par défaut
+                          </Button>
+                        )}
+                        <Button 
+                          onClick={() => {
+                            setEditingFreelanceTemplate({ ...t });
+                            setIsFreelanceModalOpen(true);
+                          }} 
+                          size="sm" 
+                          variant="outline"
+                          className="border-slate-300 hover:bg-slate-50"
+                        >
+                          <Edit className="h-4 w-4 text-slate-600" />
+                        </Button>
+                        <Button 
+                          onClick={() => deleteFreelanceTemplate(t.id)} 
+                          size="sm" 
+                          variant="destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {freelanceTemplates.length === 0 && (
+                    <div className="text-center py-8 text-slate-500 border-2 border-dashed rounded-lg">
+                      Aucun modèle configuré
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t pt-6">
+                  <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                    <Plus className="h-5 w-5 text-indigo-600" />
+                    <span>Créer un nouveau modèle</span>
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-slate-750 text-xs font-semibold">Nom interne du modèle (Ex: Validation, Félicitations...)</Label>
+                        <Input 
+                          placeholder="Ex: Confirmation de prestation" 
+                          value={newFreelanceTemplate.name}
+                          onChange={(e) => setNewFreelanceTemplate({...newFreelanceTemplate, name: e.target.value})}
+                          className="border-slate-300 bg-white text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-slate-750 text-xs font-semibold">Sujet de l'email</Label>
+                        <Input 
+                          placeholder="Ex: Bonne nouvelle ! Votre contrat pour {{client_name}} est rentré" 
+                          value={newFreelanceTemplate.subject}
+                          onChange={(e) => setNewFreelanceTemplate({...newFreelanceTemplate, subject: e.target.value})}
+                          className="border-slate-300 bg-white text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-slate-750 text-xs font-semibold">Contenu du message (Supports HTML)</Label>
+                        <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-medium">
+                          Variables : {"{"}{"{"}client_name{"}"}{"}"}, {"{"}{"{"}artist_name{"}"}{"}"}, {"{"}{"{"}event_date{"}"}{"}"}, {"{"}{"{"}event_type{"}"}{"}"}, {"{"}{"{"}event_location{"}"}{"}"}
+                        </span>
+                      </div>
+                      <Textarea 
+                        placeholder="Bonjour {{artist_name}}, nous avons le plaisir de vous annoncer..." 
+                        rows={8}
+                        value={newFreelanceTemplate.body}
+                        onChange={(e) => setNewFreelanceTemplate({...newFreelanceTemplate, body: e.target.value})}
+                        className="border-slate-300 bg-white font-mono text-xs"
+                      />
+                    </div>
+                    <Button 
+                      onClick={addFreelanceTemplate} 
+                      disabled={!newFreelanceTemplate.name.trim() || !newFreelanceTemplate.subject.trim() || !newFreelanceTemplate.body.trim() || isSaving}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                    >
+                      {isSaving ? "Création..." : <><Plus className="h-4 w-4 mr-2" />Ajouter le modèle de mail</>}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         {/* Modal d'édition CGV */}
@@ -925,6 +1149,60 @@ export const ConfigurationPage = ({
             <DialogFooter>
               <Button variant="outline" onClick={() => { setIsEditModalOpen(false); setEditingNoteData({ key: "", title: "", content: "" }); }} disabled={isSaving}>Annuler</Button>
               <Button onClick={saveEditedNote} disabled={isSaving}>
+                <Save className="h-4 w-4 mr-2" />{isSaving ? "Enregistrement..." : "Enregistrer"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal d'édition Modèle Freelance */}
+        <Dialog open={isFreelanceModalOpen} onOpenChange={setIsFreelanceModalOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Modifier le modèle freelance</DialogTitle>
+              <DialogDescription>Modifiez le contenu du modèle d'email destiné à être envoyé à l'artiste.</DialogDescription>
+            </DialogHeader>
+            {editingFreelanceTemplate && (
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="freelance-name" className="text-slate-700 font-medium">Nom du modèle</Label>
+                  <Input 
+                    id="freelance-name" 
+                    value={editingFreelanceTemplate.name || ""} 
+                    onChange={(e) => setEditingFreelanceTemplate({...editingFreelanceTemplate, name: e.target.value})} 
+                    disabled={isSaving} 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="freelance-subject" className="text-slate-700 font-medium">Sujet du courriel</Label>
+                  <Input 
+                    id="freelance-subject" 
+                    value={editingFreelanceTemplate.subject || ""} 
+                    onChange={(e) => setEditingFreelanceTemplate({...editingFreelanceTemplate, subject: e.target.value})} 
+                    disabled={isSaving} 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="freelance-body" className="text-slate-700 font-medium">Contenu de l'email (ligne ou HTML)</Label>
+                    <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-medium">
+                      Variables : {"{"}{"{"}client_name{"}"}{"}"}, {"{"}{"{"}artist_name{"}"}{"}"}, {"{"}{"{"}event_date{"}"}{"}"}, {"{"}{"{"}event_type{"}"}{"}"}, {"{"}{"{"}event_location{"}"}{"}"}
+                    </span>
+                  </div>
+                  <Textarea 
+                    id="freelance-body" 
+                    value={editingFreelanceTemplate.body || ""} 
+                    onChange={(e) => setEditingFreelanceTemplate({...editingFreelanceTemplate, body: e.target.value})} 
+                    rows={12} 
+                    disabled={isSaving} 
+                    className="font-mono text-xs"
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setIsFreelanceModalOpen(false); setEditingFreelanceTemplate(null); }} disabled={isSaving}>Annuler</Button>
+              <Button onClick={saveEditedFreelanceTemplate} disabled={isSaving} className="bg-indigo-600 hover:bg-indigo-700 text-white">
                 <Save className="h-4 w-4 mr-2" />{isSaving ? "Enregistrement..." : "Enregistrer"}
               </Button>
             </DialogFooter>

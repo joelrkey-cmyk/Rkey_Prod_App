@@ -116,6 +116,19 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
               <div class="info-item"><span class="info-label">Installation :</span> ${contract.client_info.setup_date ? new Date(contract.client_info.setup_date).toLocaleDateString('fr-FR') : 'À définir'} ${contract.client_info.setup_time ? 'à ' + contract.client_info.setup_time : ''}</div>
             </div>
             ` : ''}
+
+            ${contract.client_info.additional_events && contract.client_info.additional_events.length > 0 ? `
+            <div style="margin-top: 8pt; padding-top: 4pt; border-top: 1px dashed #ccc;">
+              <div style="font-weight: bold; font-size: 10px; margin-bottom: 4px; color: #1e1b4b;">DATES SUPPLÉMENTAIRES:</div>
+              ${contract.client_info.additional_events.map((evt, idx) => `
+                <div style="margin-bottom: 5px; font-size: 9px; line-height: 1.2;">
+                  <strong style="color: #4f46e5;">Date ${idx + 2} :</strong> ${evt.event_date ? new Date(evt.event_date).toLocaleDateString('fr-FR') : 'Non définie'}<br>
+                  <span class="info-label">Prestation:</span> ${evt.start_time || 'À définir'} - ${evt.unlimited_time ? 'Sans limite' : (evt.end_time || 'À définir')}<br>
+                  <span class="info-label">Installation:</span> ${evt.setup_date ? new Date(evt.setup_date).toLocaleDateString('fr-FR') : 'À définir'} ${evt.setup_time ? 'à ' + evt.setup_time : ''}
+                </div>
+              `).join('')}
+            </div>
+            ` : ''}
           </div>
         </div>
       </div>

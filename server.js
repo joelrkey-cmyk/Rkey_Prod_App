@@ -751,7 +751,10 @@ async function syncContractToGoogleCalendar(contract) {
 
   // Prepare Event Details
   const clientName = contract.client_info?.name || contract.client_name || 'Client';
-  const eventType = contract.client_info?.event_type || 'Prestation';
+  const rawEventType = contract.client_info?.event_type || 'Prestation';
+  const eventType = (rawEventType === 'custom' && contract.client_info?.custom_event_type)
+    ? contract.client_info.custom_event_type
+    : rawEventType;
   const startStr = contract.client_info?.event_date;
   if (!startStr) {
     console.error(`[GCal Sync Error] Contract ${contract.id} has no event date.`);
@@ -783,14 +786,13 @@ async function syncContractToGoogleCalendar(contract) {
     `✉️ Email : ${emailText}\n` +
     `📍 Lieu : ${locationText}\n` +
     `⚡️ Événement : ${eventType}\n\n` +
-    `✨ OPTIONS VALIDÉES :\n${optionsText}\n\n` +
-    `⚙️ Statut contrat : ${contract.status}\n` +
-    `----------------------------------------\n` +
-    `Synchronisé de façon unidirectionnelle depuis l'application Agenda Prestation.`;
+    `✨ OPTIONS VALIDÉES :\n${optionsText}\n` +
+    `----------------------------------------`;
 
   const eventResource = {
     summary: `${eventType} - ${clientName}`,
     description: description,
+    location: locationText,
     colorId: getGCalColorId(`${eventType} - ${clientName}`, eventType, description),
     start: {
       date: startFormat,
@@ -947,12 +949,12 @@ async function syncCustomEventToGoogleCalendar(item) {
     `📍 Lieu : ${locationText}\n` +
     `⚡️ Titre de l'événement : ${item.title}\n\n` +
     `📝 DÉTAILS / NOTES :\n${details}\n` +
-    `----------------------------------------\n` +
-    `Synchronisé de façon unidirectionnelle depuis l'application Agenda Prestation.`;
+    `----------------------------------------`;
 
   const eventResource = {
     summary: `${item.title}`,
     description: description,
+    location: locationText,
     colorId: getGCalColorId(item.title, item.eventType, description),
     start: {
       date: startFormat,
@@ -3431,6 +3433,42 @@ api.put('/contract-emails/templates/:id', authMiddleware, async (req, res) => {
 api.delete('/contract-emails/templates/:id', authMiddleware, async (req, res) => {
   await db.collection('contract_email_templates').deleteOne({ id: req.params.id });
   res.json({ success: true });
+});
+
+// ══════════ FREELANCE / ARTISTE EMAIL TEMPLATES ══════════
+api.get('/freelance-email-templates', authMiddleware, async (req, res) => {
+  try {
+    const list = await db.collection('freelance_email_templates').find({}, { projection: { _id: 0 } }).toArray();
+    res.json({ templates: cleanList(list) });
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+api.post('/freelance-email-templates', authMiddleware, async (req, res) => {
+  try {
+    const t = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
+    await db.collection('freelance_email_templates').insertOne(t);
+    res.json(clean(t));
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+api.put('/freelance-email-templates/:id', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('freelance_email_templates').updateOne({ id: req.params.id }, { $set: req.body });
+    const updated = await db.collection('freelance_email_templates').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    res.json(clean(updated));
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+api.delete('/freelance-email-templates/:id', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('freelance_email_templates').deleteOne({ id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
 });
 api.post('/contract-emails/send', authMiddleware, async (req, res) => {
   try {

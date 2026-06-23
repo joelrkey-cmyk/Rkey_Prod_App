@@ -63,6 +63,18 @@ const clientInfoBlock = (contract) => `
       <div style="margin-top: 4pt; padding-top: 4pt; border-top: 1px solid #ddd;">
         <div class="info-item"><span class="info-label">Installation :</span> ${contract.client_info.setup_date ? new Date(contract.client_info.setup_date).toLocaleDateString('fr-FR') : 'A definir'} ${contract.client_info.setup_time ? 'a ' + contract.client_info.setup_time : ''}</div>
       </div>` : ''}
+
+      ${contract.client_info.additional_events && contract.client_info.additional_events.length > 0 ? `
+      <div style="margin-top: 4pt; padding-top: 4pt; border-top: 1px dashed #ccc;">
+        <div style="font-weight: bold; font-size: 8px; margin-bottom: 2px; color: #1e1b4b;">DATES SUPPLEMENTAIRES:</div>
+        ${contract.client_info.additional_events.map((evt, idx) => `
+          <div style="margin-bottom: 3px; font-size: 8px; line-height: 1.15;">
+            <strong style="color: #4f46e5;">Date ${idx + 2} :</strong> ${evt.event_date ? new Date(evt.event_date).toLocaleDateString('fr-FR') : 'Non definie'}<br>
+            <span class="info-label">Prestation:</span> ${evt.start_time || 'A definir'} - ${evt.unlimited_time ? 'Sans limite' : (evt.end_time || 'A definir')}<br>
+            <span class="info-label">Installation:</span> ${evt.setup_date ? new Date(evt.setup_date).toLocaleDateString('fr-FR') : 'A definir'} ${evt.setup_time ? 'a ' + evt.setup_time : ''}
+          </div>
+        `).join('')}
+      </div>` : ''}
     </div>
   </div>
 `;
@@ -352,7 +364,7 @@ export const generateArtisteHTML = (contract, resolveProfile) => {
 // Animateur mentionné par nom uniquement, pas de SIRET/IBAN artiste
 // TVA 20% extraite des montants TTC saisis
 // ══════════════════════════════════════════════════════════════
-export const generateEntrepriseHTML = (contract, companySettings) => {
+export const generateEntrepriseHTML = (contract, companySettings, resolveProfile) => {
   const basePrice = contract.base_price || 0;
   const options = (contract.selected_options || []).filter(opt => opt.selected);
   const optionsTotal = options.reduce((sum, opt) => sum + (opt.price || 0), 0);
@@ -367,8 +379,25 @@ export const generateEntrepriseHTML = (contract, companySettings) => {
   const fmtTVA = (ttc) => ttc === 0 ? '-' : (Math.round((ttc - ttc / 1.20) * 100) / 100).toFixed(2) + ' EUR';
   const fmtTTC = (ttc) => ttc === 0 ? 'OFFERT' : ttc.toFixed(2) + ' EUR';
 
-  const djProfile = contract.dj_profile_data || {};
-  const djName = djProfile.nom_complet || djProfile.name || djProfile.nom_artistique || 'Animateur';
+  const djProfile = (typeof resolveProfile === 'function') 
+    ? resolveProfile(contract) 
+    : (contract.dj_profile_data || {});
+  let djName = 'Animateur';
+  if (djProfile) {
+    const fullName = djProfile.nom_complet || djProfile.name || '';
+    const stageName = djProfile.nom_artistique || '';
+    
+    // Nettoyer les parenthèses existantes pour éviter les doublons
+    const cleanedFullName = fullName.replace(/\s*\(.*?\)\s*/g, '').trim();
+    
+    if (cleanedFullName && stageName && cleanedFullName.toLowerCase() !== stageName.toLowerCase()) {
+      djName = `${cleanedFullName} (${stageName})`;
+    } else if (cleanedFullName) {
+      djName = cleanedFullName;
+    } else if (stageName) {
+      djName = stageName;
+    }
+  }
 
   const acompte30 = calculateContractDepositAmount(contract);
   const solde70 = calculateContractRemainingBalance(contract);
@@ -432,24 +461,36 @@ export const generateEntrepriseHTML = (contract, companySettings) => {
               <td><strong>${labelPrestation} (Forfait global)</strong><br>
                 <small style="color:#555;">incluant l'infrastructure technique (son & lumiere festif) et la performance musicale</small>
               </td>
-              <td>${totalHT.toFixed(2)} EUR</td>
-              <td>${tva.toFixed(2)} EUR</td>
-              <td><strong>${totalTTC.toFixed(2)} EUR</strong></td>
+              <td>${(Math.round((basePrice / 1.20) * 100) / 100).toFixed(2)} EUR</td>
+              <td>${(Math.round((basePrice - (Math.round((basePrice / 1.20) * 100) / 100)) * 100) / 100).toFixed(2)} EUR</td>
+              <td><strong>${basePrice.toFixed(2)} EUR</strong></td>
             </tr>
-            ${options.length > 0 ? `
-              <tr><td colspan="4" style="font-size:10px; color:#666; padding-top:2pt;">
-                Detail inclus : ${options.map(o => o.name + (o.price === 0 ? ' (OFFERT)' : '')).join(', ')}
-              </td></tr>
-            ` : ''}
+            ${options.map(opt => {
+              const optTTC = opt.price || 0;
+              const optHT = Math.round((optTTC / 1.20) * 100) / 100;
+              const optTVA = Math.round((optTTC - optHT) * 100) / 100;
+              return `
+              <tr>
+                <td><strong>+ ${opt.name}</strong></td>
+                <td>${optHT.toFixed(2)} EUR</td>
+                <td>${optTVA.toFixed(2)} EUR</td>
+                <td><strong>${optTTC.toFixed(2)} EUR</strong></td>
+              </tr>
+              `;
+            }).join('')}
             ${discount > 0 ? `
-              <tr><td>Remise accordee</td><td colspan="2"></td><td style="color:#d32f2f;">-${discount.toFixed(2)} EUR</td></tr>
-              <tr class="compact-pricing-total">
-                <td><strong>TOTAL</strong></td>
-                <td><strong>${totalHT.toFixed(2)} EUR</strong></td>
-                <td><strong>${tva.toFixed(2)} EUR</strong></td>
-                <td><strong>${totalTTC.toFixed(2)} EUR</strong></td>
+              <tr>
+                <td><strong>Remise accordee</strong></td>
+                <td colspan="2"></td>
+                <td style="color:#d32f2f;"><strong>-${discount.toFixed(2)} EUR</strong></td>
               </tr>
             ` : ''}
+            <tr class="compact-pricing-total">
+              <td><strong>TOTAL</strong></td>
+              <td><strong>${totalHT.toFixed(2)} EUR</strong></td>
+              <td><strong>${tva.toFixed(2)} EUR</strong></td>
+              <td><strong>${totalTTC.toFixed(2)} EUR</strong></td>
+            </tr>
           </tbody>
         </table>
       </div>

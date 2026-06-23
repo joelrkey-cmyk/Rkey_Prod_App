@@ -112,7 +112,8 @@ function Contracts2App() {
     name: "", company: "", address: "", phone: "", phone2: "", email: "",
     event_date: "", event_location: "", event_type: "", custom_event_type: "",
     event_note: "", setup_date: "", setup_time: "À définir", start_time: "",
-    end_time: "", unlimited_time: false, guest_count: ""
+    end_time: "", unlimited_time: false, guest_count: "",
+    additional_events: []
   });
 
   const [availableOptions, setAvailableOptions] = useState([]);
@@ -127,6 +128,18 @@ function Contracts2App() {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [djProfiles, setDjProfiles] = useState({});
   const [selectedDjProfile, setSelectedDjProfile] = useState("");
+
+  // Artist notification email modal states
+  const [isArtistNotifOpen, setIsArtistNotifOpen] = useState(false);
+  const [notifContract, setNotifContract] = useState(null);
+  const [notifArtistProfile, setNotifArtistProfile] = useState(null);
+  const [notifTemplates, setNotifTemplates] = useState([]);
+  const [notifSelectedTemplateId, setNotifSelectedTemplateId] = useState("");
+  const [notifEmailSubject, setNotifEmailSubject] = useState("");
+  const [notifEmailBody, setNotifEmailBody] = useState("");
+  const [notifRecipientEmail, setNotifRecipientEmail] = useState("");
+  const [notifIsSending, setNotifIsSending] = useState(false);
+
   const [basePrice, setBasePrice] = useState(0);
   // ── CONTRATS 2: Mode Mandat/Agence ──
   const [contractMode, setContractMode] = useState('entreprise'); // 'entreprise' ou 'mandataire' par défaut
@@ -539,7 +552,7 @@ function Contracts2App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setClientInfo(parsed.clientInfo || { name: "", company: "", address: "", phone: "", phone2: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, guest_count: "" });
+        setClientInfo(parsed.clientInfo || { name: "", company: "", address: "", phone: "", phone2: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, guest_count: "", additional_events: [] });
         setBasePrice(parsed.basePrice || 0);
         setDiscountAmount(parsed.discountAmount || 0);
         setSelectedOptions(parsed.selectedOptions || []);
@@ -945,8 +958,143 @@ function Contracts2App() {
     } catch (error) { console.error('Error marking contract as sent:', error); toast.error("Erreur lors de la mise à jour du statut"); }
   };
 
+  const handleNotifTemplateChange = (templateId, templateList = notifTemplates, contract = notifContract, artist = notifArtistProfile) => {
+    setNotifSelectedTemplateId(templateId);
+    const tpl = templateList.find(t => t.id === templateId);
+    if (tpl && contract && artist) {
+      const clientName = contract.client_info?.name || contract.client_name || "Client";
+      const artistName = artist.nom_artistique || artist.nom_complet || "Artiste";
+      const eventDate = contract.client_info?.event_date || contract.event_date || "";
+      const eventType = contract.client_info?.event_type || contract.event_type || "";
+      const eventLocation = contract.client_info?.event_location || contract.event_location || "";
+
+      let subject = tpl.subject || "";
+      let body = tpl.body || "";
+
+      const replacements = {
+        "{{client_name}}": clientName,
+        "{{artist_name}}": artistName,
+        "{{event_date}}": eventDate,
+        "{{event_type}}": eventType,
+        "{{event_location}}": eventLocation
+      };
+
+      Object.entries(replacements).forEach(([key, val]) => {
+        subject = subject.replaceAll(key, val);
+        body = body.replaceAll(key, val);
+      });
+
+      setNotifEmailSubject(subject);
+      setNotifEmailBody(body);
+    }
+  };
+
+  const openArtistNotificationDialog = async (contract, artistProfile) => {
+    try {
+      setNotifContract(contract);
+      setNotifArtistProfile(artistProfile);
+      setNotifRecipientEmail(artistProfile.email || "");
+      
+      const res = await axios.get(`${API}/freelance-email-templates`);
+      const list = res.data.templates || [];
+      setNotifTemplates(list);
+
+      if (list.length > 0) {
+        const defTpl = list.find(t => t.is_default) || list[0];
+        setNotifSelectedTemplateId(defTpl.id);
+        
+        const clientName = contract.client_info?.name || contract.client_name || "Client";
+        const artistName = artistProfile.nom_artistique || artistProfile.nom_complet || "Artiste";
+        const eventDate = contract.client_info?.event_date || contract.event_date || "";
+        const eventType = contract.client_info?.event_type || contract.event_type || "";
+        const eventLocation = contract.client_info?.event_location || contract.event_location || "";
+
+        let subject = defTpl.subject || "";
+        let body = defTpl.body || "";
+
+        const replacements = {
+          "{{client_name}}": clientName,
+          "{{artist_name}}": artistName,
+          "{{event_date}}": eventDate,
+          "{{event_type}}": eventType,
+          "{{event_location}}": eventLocation
+        };
+
+        Object.entries(replacements).forEach(([key, val]) => {
+          subject = subject.replaceAll(key, val);
+          body = body.replaceAll(key, val);
+        });
+
+        setNotifEmailSubject(subject);
+        setNotifEmailBody(body);
+      } else {
+        setNotifSelectedTemplateId("");
+        setNotifEmailSubject("Prestation confirmée et signée");
+        setNotifEmailBody(`<p>Bonjour ${artistProfile.nom_artistique || "Artiste"},<br/>Le contrat a été signé.</p>`);
+      }
+      
+      setIsArtistNotifOpen(true);
+    } catch (err) {
+      console.error("Error preparing artist notification:", err);
+      toast.error("Erreur lors de la préparation de la notification email");
+    }
+  };
+
+  const sendArtistNotification = async () => {
+    if (!notifRecipientEmail.trim() || !notifEmailSubject.trim() || !notifEmailBody.trim()) {
+      toast.error("Veuillez remplir le destinataire, l'objet et le message.");
+      return;
+    }
+    try {
+      setNotifIsSending(true);
+      await axios.post(`${API}/contract-emails/send`, {
+        recipient_email: notifRecipientEmail.trim(),
+        email_subject: notifEmailSubject.trim(),
+        email_body: notifEmailBody
+      });
+      toast.success("Notification par email envoyée à l'artiste avec succès !");
+      setIsArtistNotifOpen(false);
+      setNotifContract(null);
+      setNotifArtistProfile(null);
+    } catch (err) {
+      console.error("Error sending artist notification email:", err);
+      toast.error("Erreur d'envoi. Veuillez vérifier la configuration SMTP et l'adresse email.");
+    } finally {
+      setNotifIsSending(false);
+    }
+  };
+
   const markContractAsSigned = async (contractId) => {
-    try { await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'archived' }); toast.success("Contrat archivé avec succès !"); loadContracts(); loadArchivedContracts(); }
+    try { 
+      await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'archived' }); 
+      toast.success("Contrat archivé avec succès !"); 
+      
+      let contractObj = contracts.find(c => c.id === contractId);
+      if (!contractObj) {
+        try {
+          const res = await axios.get(`${API}/contracts2/${contractId}`);
+          contractObj = res.data;
+        } catch (e) {
+          console.error("Could not load contract object:", e);
+        }
+      }
+      
+      loadContracts(); 
+      loadArchivedContracts(); 
+      
+      if (contractObj) {
+        const pKey = contractObj.dj_profile;
+        if (pKey) {
+          const profile = getProfileData(pKey);
+          const isFreelance = profile && (profile.statut_artiste === 'freelance' || (isArtistFreelance && isArtistFreelance(profile)));
+          if (isFreelance) {
+            setTimeout(() => {
+              openArtistNotificationDialog(contractObj, profile);
+            }, 600);
+          }
+        }
+      }
+    }
     catch (error) { toast.error("Erreur lors de l'archivage du contrat"); console.error(error); }
   };
 
@@ -1732,7 +1880,7 @@ function Contracts2App() {
 
   const resetForm = () => {
     setContractMode('entreprise');
-    setClientInfo({ name: "", company: "", address: "", phone: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, phone2: "", guest_count: "" });
+    setClientInfo({ name: "", company: "", address: "", phone: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, phone2: "", guest_count: "", additional_events: [] });
     setSelectedOptions(availableOptions.map(opt => ({ ...opt, selected: false })));
     setSelectedNotes([]); setSelectedMusicStyles([]); setDjNotes(""); setBlacklist("");
     setCateringNotes(""); setCateringDrinks(false); setCateringHotMealNoTable(false); setCateringHotMealNoTableQty(0);
@@ -1814,7 +1962,8 @@ function Contracts2App() {
         setup_time: clientInfo.setup_time, start_time: clientInfo.start_time,
         end_time: clientInfo.unlimited_time ? null : clientInfo.end_time,
         unlimited_time: clientInfo.unlimited_time, phone2: clientInfo.phone2,
-        custom_event_type: clientInfo.custom_event_type, event_note: clientInfo.event_note
+        custom_event_type: clientInfo.custom_event_type, event_note: clientInfo.event_note,
+        additional_events: clientInfo.additional_events || []
       },
       dj_profile: selectedDjProfile,
       dj_profile_data: getProfileData(selectedDjProfile),
@@ -1901,7 +2050,8 @@ function Contracts2App() {
       setup_date: contract.client_info.setup_date || "", setup_time: contract.client_info.setup_time || "À définir",
       start_time: contract.client_info.start_time || "", end_time: contract.client_info.end_time || "",
       unlimited_time: contract.client_info.unlimited_time || false, phone2: contract.client_info.phone2 || "",
-      guest_count: contract.client_info.guest_count || ""
+      guest_count: contract.client_info.guest_count || "",
+      additional_events: contract.client_info.additional_events || []
     });
     
     const contractSelectedOptions = contract.selected_options || [];
@@ -1973,7 +2123,8 @@ function Contracts2App() {
       setup_date: contract.client_info?.setup_date || "", setup_time: contract.client_info?.setup_time || "À définir",
       start_time: contract.client_info?.start_time || "", end_time: contract.client_info?.end_time || "",
       unlimited_time: contract.client_info?.unlimited_time || false, phone2: contract.client_info?.phone2 || "",
-      guest_count: contract.client_info?.guest_count || ""
+      guest_count: contract.client_info?.guest_count || "",
+      additional_events: contract.client_info?.additional_events || []
     });
     
     const contractSelectedOptions = contract.selected_options || [];
@@ -2063,7 +2214,7 @@ function Contracts2App() {
     } else if (isEntreprise) {
       docs.push({
         label: "Contrat de Prestation (Entreprise)",
-        html: generateEntrepriseHTML(contract, companySettings)
+        html: generateEntrepriseHTML(contract, companySettings, resolveProfile)
       });
     } else {
       docs.push({
@@ -2100,7 +2251,7 @@ function Contracts2App() {
         const artistName = (artisteP.nom_artistique || artisteP.nom_complet || 'Artiste').replace(/[^a-zA-Z0-9]/g, '_');
         filename = `Contrat_Artiste_${artistName}_${cName}_${dateStr}.pdf`;
       } else if (isEntrepriseDoc) {
-        html = generateEntrepriseHTML(contract, companySettings);
+        html = generateEntrepriseHTML(contract, companySettings, resolveProfile);
         filename = `Contrat_Prestation_RKeyProd_${cName}_${dateStr}.pdf`;
       } else {
         html = generateContractHTMLLocal(contract, null, signatureImages);
@@ -2133,7 +2284,7 @@ function Contracts2App() {
   // Export PDF pour Mode Entreprise (1 seul contrat global)
   const handleExportEntreprisePDF = async () => {
     const data = buildCurrentContractData();
-    const html = generateEntrepriseHTML(data, companySettings);
+    const html = generateEntrepriseHTML(data, companySettings, resolveProfile);
     await exportHTMLToPDF(html, `Contrat_Prestation_RKeyProd_${(data.client_info.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_')}_${getFormattedEventDate(data)}.pdf`);
   };
 
@@ -2221,7 +2372,7 @@ function Contracts2App() {
             contractHTML = contractHTMLs[0].html + "\n<div class='page-break' style='page-break-after: always; height: 0; min-height: 0; margin: 0; padding: 0;'></div>\n" + contractHTMLs[1].html;
         }
     } else if (isEntreprise) {
-        contractHTML = generateEntrepriseHTML(contractData, companySettings);
+        contractHTML = generateEntrepriseHTML(contractData, companySettings, resolveProfile);
     } else {
         contractHTML = generateContractHTMLLocal(contractData, null, signatureImages);
     }
@@ -2243,6 +2394,7 @@ function Contracts2App() {
   const buildCurrentContractData = () => ({
     client_info: clientInfo,
     dj_profile: selectedDjProfile,
+    dj_profile_data: getProfileData(selectedDjProfile),
     selected_options: selectedOptions.filter(opt => opt.selected),
     options_tarif_notes: optionsTarifNotes,
     selected_notes: selectedNotes,
@@ -2452,6 +2604,18 @@ function Contracts2App() {
                     <p className="mt-2 ml-[70px] text-xs text-amber-600">Aucune information privée renseignée pour cet artiste. Complétez le profil dans "Profils Artistes".</p>
                   );
                 })()}
+              </div>
+
+              {/* Boutons d'action rapides en haut */}
+              <div className="lg:col-span-2 flex justify-center gap-4 p-4 bg-slate-50/50 border border-slate-150 rounded-xl mb-2">
+                <Button onClick={() => saveContractDraft(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 text-base font-semibold shadow-sm" disabled={!clientInfo.name || !clientInfo.email}>
+                  <FileText className="h-5 w-5 mr-2" />Aperçu du contrat
+                </Button>
+                {editingContract && (
+                  <Button onClick={() => saveContractDraft(false)} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 text-base font-semibold shadow-sm" disabled={!clientInfo.name || !clientInfo.email}>
+                    <Save className="h-5 w-5 mr-2" />Mettre à jour
+                  </Button>
+                )}
               </div>
 
               {/* Client Information */}
@@ -2671,6 +2835,170 @@ function Contracts2App() {
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Dates d'événements supplémentaires */}
+                    <div className="space-y-4 p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+                          <Calendar className="h-5 w-5 text-indigo-600" />
+                          <span>Dates d'événements supplémentaires ({clientInfo.additional_events?.length || 0})</span>
+                        </h4>
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => {
+                            const newEvent = {
+                              event_date: "",
+                              setup_date: "",
+                              setup_time: "À définir",
+                              start_time: "",
+                              end_time: "",
+                              unlimited_time: false
+                            };
+                            setClientInfo(prev => ({
+                              ...prev,
+                              additional_events: [...(prev.additional_events || []), newEvent]
+                            }));
+                          }}
+                          className="text-indigo-600 border-indigo-200 hover:bg-indigo-50 flex items-center gap-1.5"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>Ajouter une date</span>
+                        </Button>
+                      </div>
+
+                      {(!clientInfo.additional_events || clientInfo.additional_events.length === 0) ? (
+                        <p className="text-xs text-slate-500 italic">Aucune autre date cochée pour ce contrat.</p>
+                      ) : (
+                        <div className="space-y-4 mt-2">
+                          {clientInfo.additional_events.map((evt, idx) => (
+                            <div key={`add-evt-${idx}`} className="p-3 bg-white border border-slate-200 rounded-md relative space-y-3">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setClientInfo(prev => ({
+                                    ...prev,
+                                    additional_events: prev.additional_events.filter((_, i) => i !== idx)
+                                  }));
+                                }}
+                                className="absolute right-2 top-2 h-7 w-7 p-0 text-red-500 hover:bg-red-50 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+
+                              <p className="text-sm font-semibold text-indigo-700 pr-8">Date supplémentaire #{idx + 2}</p>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-slate-600">Date de l'événement</Label>
+                                  <Input 
+                                    type="date"
+                                    value={evt.event_date || ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setClientInfo(prev => {
+                                        const copy = [...(prev.additional_events || [])];
+                                        copy[idx] = { ...copy[idx], event_date: val, setup_date: val };
+                                        return { ...prev, additional_events: copy };
+                                      });
+                                    }}
+                                    className="h-8 text-xs border-slate-300 focus:border-indigo-500"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-slate-600">Date d'installation</Label>
+                                  <Input 
+                                    type="date"
+                                    value={evt.setup_date || ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setClientInfo(prev => {
+                                        const copy = [...(prev.additional_events || [])];
+                                        copy[idx] = { ...copy[idx], setup_date: val };
+                                        return { ...prev, additional_events: copy };
+                                      });
+                                    }}
+                                    className="h-8 text-xs border-slate-300 focus:border-indigo-500"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-slate-600">Heure d'installation</Label>
+                                  <Input 
+                                    type="text"
+                                    placeholder="Ex: 14h00, À définir"
+                                    value={evt.setup_time || "À définir"}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setClientInfo(prev => {
+                                        const copy = [...(prev.additional_events || [])];
+                                        copy[idx] = { ...copy[idx], setup_time: val };
+                                        return { ...prev, additional_events: copy };
+                                      });
+                                    }}
+                                    className="h-8 text-xs border-slate-300 focus:border-indigo-500"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-slate-600">Début de prestation</Label>
+                                  <Input 
+                                    type="time"
+                                    value={evt.start_time || ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setClientInfo(prev => {
+                                        const copy = [...(prev.additional_events || [])];
+                                        copy[idx] = { ...copy[idx], start_time: val };
+                                        return { ...prev, additional_events: copy };
+                                      });
+                                    }}
+                                    className="h-8 text-xs border-slate-300 focus:border-indigo-500"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-slate-600">Fin de prestation</Label>
+                                  <div className="flex items-center space-x-2">
+                                    <Input 
+                                      type="time"
+                                      value={evt.end_time || ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setClientInfo(prev => {
+                                          const copy = [...(prev.additional_events || [])];
+                                          copy[idx] = { ...copy[idx], end_time: val };
+                                          return { ...prev, additional_events: copy };
+                                        });
+                                      }}
+                                      disabled={evt.unlimited_time}
+                                      className="h-8 text-xs border-slate-300 focus:border-indigo-500 flex-1"
+                                    />
+                                    <div className="flex items-center space-x-1">
+                                      <Checkbox 
+                                        id={`unlimited-${idx}`}
+                                        checked={evt.unlimited_time || false}
+                                        onCheckedChange={(checked) => {
+                                          setClientInfo(prev => {
+                                            const copy = [...(prev.additional_events || [])];
+                                            copy[idx] = { ...copy[idx], unlimited_time: checked };
+                                            return { ...prev, additional_events: copy };
+                                          });
+                                        }}
+                                      />
+                                      <Label htmlFor={`unlimited-${idx}`} className="text-xs">Illimité</Label>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Catering - Stacked Minimalist Design */}
@@ -3774,7 +4102,7 @@ function Contracts2App() {
                   isEntrepriseMode={!isDirigeant() && contractMode === 'entreprise'}
                   generateMandatHTMLForPreview={() => generateMandatHTML(buildCurrentContractData(), companySettings)}
                   generateArtisteHTMLForPreview={() => generateArtisteHTML(buildCurrentContractData(), resolveProfile)}
-                  generateEntrepriseHTMLForPreview={() => generateEntrepriseHTML(buildCurrentContractData(), companySettings)}
+                  generateEntrepriseHTMLForPreview={() => generateEntrepriseHTML(buildCurrentContractData(), companySettings, resolveProfile)}
                   onExportMandatPDF={handleExportMandatPDF}
                   onExportArtistePDF={handleExportArtistePDF}
                   onExportEntreprisePDF={handleExportEntreprisePDF}
@@ -4518,6 +4846,92 @@ function Contracts2App() {
           </div>
         </div>
       )}
+
+      {/* Dialogue d'envoi de notification email à l'artiste/freelance */}
+      <Dialog open={isArtistNotifOpen} onOpenChange={setIsArtistNotifOpen}>
+        <DialogContent className="max-w-2xl bg-white rounded-xl shadow-2xl border border-indigo-105">
+          <DialogHeader className="border-b pb-4">
+            <DialogTitle className="flex items-center gap-2 text-indigo-900 font-bold text-xl">
+              <Mail className="h-6 w-6 text-indigo-600" />
+              <span>Informer l'artiste freelance du contrat signé</span>
+            </DialogTitle>
+            <DialogDescription className="text-slate-500 text-sm mt-1">
+              Félicitations pour la signature ! Voulez-vous envoyer une notification par email à <strong>{notifArtistProfile?.nom_artistique || notifArtistProfile?.nom_complet}</strong> pour confirmer sa prestation ?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1 col-span-1">
+                <Label className="text-xs font-bold text-slate-700">Adresse e-mail destinataire</Label>
+                <Input 
+                  type="email" 
+                  value={notifRecipientEmail} 
+                  onChange={(e) => setNotifRecipientEmail(e.target.value)}
+                  className="border-slate-300 shadow-sm"
+                  placeholder="email@artiste.com"
+                />
+              </div>
+
+              <div className="space-y-1 col-span-1">
+                <Label className="text-xs font-bold text-slate-700">Choisir un modèle d'email</Label>
+                <select
+                  className="w-full h-10 px-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-505 cursor-pointer"
+                  value={notifSelectedTemplateId}
+                  onChange={(e) => handleNotifTemplateChange(e.target.value)}
+                >
+                  {notifTemplates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} {t.is_default ? "(Par défaut)" : ""}</option>
+                  ))}
+                  {notifTemplates.length === 0 && <option value="">Aucun modèle (Saisie manuelle)</option>}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-700">Objet du message</Label>
+              <Input 
+                value={notifEmailSubject} 
+                onChange={(e) => setNotifEmailSubject(e.target.value)}
+                className="border-slate-300 shadow-sm font-medium"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-slate-700">Message (Supporte le formatage HTML / variables)</Label>
+              <Textarea 
+                value={notifEmailBody} 
+                onChange={(e) => setNotifEmailBody(e.target.value)}
+                rows={8}
+                className="border-slate-300 shadow-sm font-sans text-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="border-t pt-4 flex gap-2 justify-end">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsArtistNotifOpen(false);
+                setNotifContract(null);
+                setNotifArtistProfile(null);
+                toast.info("Notification sautée, contrat signé avec succès.");
+              }} 
+              disabled={notifIsSending}
+              className="text-slate-600 border-slate-300 hover:bg-slate-50 transition-colors"
+            >
+              Passer sans envoyer
+            </Button>
+            <Button 
+              onClick={sendArtistNotification} 
+              disabled={notifIsSending || !notifRecipientEmail.trim()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[120px] transition-colors"
+            >
+              {notifIsSending ? "Envoi..." : <><Mail className="h-4 w-4 mr-2" />Envoyer le mail</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

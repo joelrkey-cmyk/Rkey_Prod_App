@@ -148,29 +148,6 @@ export const ContractPreview = ({
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Résumé financier */}
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4" data-testid="flux-financiers-resume">
-              <h3 className="text-sm font-bold text-slate-700 mb-3">Résumé financier</h3>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-700 font-medium">Total TTC de la prestation :</span>
-                  <span className="text-lg font-bold text-blue-700" data-testid="flux-total-entreprise">{totalEntreprise === 0 ? 'OFFERT' : `${totalEntreprise.toFixed(2)} € TTC`}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Acompte à facturer ({roundedAcomptePct}%) :</span>
-                  <span className="text-sm font-semibold text-green-700">{acompteAmt.toFixed(2)} €</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Solde restant ({roundedSoldePct}%) :</span>
-                  <span className="text-sm font-semibold text-slate-700">{soldeAmt.toFixed(2)} €</span>
-                </div>
-                <div className="flex justify-between items-center border-t border-slate-200 pt-2">
-                  <span className="text-xs text-slate-400">Coût d'achat interne (DJ) :</span>
-                  <span className="text-xs text-slate-400" data-testid="flux-cachet-interne">{cachetInterne === 0 ? 'OFFERT' : `${cachetInterne.toFixed(2)} €`}</span>
-                </div>
-              </div>
-            </div>
-
             <Tabs defaultValue="contract" className="w-full">
               <TabsList className="grid w-full mb-4 grid-cols-1">
                 <TabsTrigger value="contract" className="flex items-center gap-2">
@@ -191,7 +168,7 @@ export const ContractPreview = ({
 
             <div className="flex justify-center gap-4 mt-4">
               <Button onClick={onExportEntreprisePDF} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3" data-testid="export-entreprise-pdf-btn">
-                <Download className="h-5 w-5 mr-2" />Télécharger les PDFs
+                <Download className="h-5 w-5 mr-2" />Télécharger le PDF
               </Button>
               <Button onClick={onSendEmail} className="bg-green-600 hover:bg-green-700 text-white px-6 py-3" data-testid="send-contract-email-btn">
                 <Send className="h-5 w-5 mr-2" />Envoyer par email
