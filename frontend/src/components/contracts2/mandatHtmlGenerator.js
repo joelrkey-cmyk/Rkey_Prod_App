@@ -402,7 +402,10 @@ export const generateEntrepriseHTML = (contract, companySettings, resolveProfile
   const acompte30 = calculateContractDepositAmount(contract);
   const solde70 = calculateContractRemainingBalance(contract);
 
-  const acomptePercent = totalTTC > 0 ? Math.round((acompte30 / totalTTC) * 100) : (contract.client_info?.company ? 30 : 50);
+  const rawPct = totalTTC > 0 ? (acompte30 / totalTTC) * 100 : (contract.client_info?.company ? 30 : 50);
+  let acomptePercent = Math.round(rawPct / 5) * 5;
+  if (acomptePercent < 0) acomptePercent = 0;
+  if (acomptePercent > 100) acomptePercent = 100;
   const soldePercent = 100 - acomptePercent;
 
   const resolvedEventType = (contract.client_info && contract.client_info.event_type === 'custom' && contract.client_info.custom_event_type)
