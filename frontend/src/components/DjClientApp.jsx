@@ -3533,8 +3533,14 @@ function urlBase64ToUint8Array(base64String) {
         ? eventDocuments 
         : eventDocuments.filter(d => !d.hiddenForClient);
 
-      const administrativeDocs = visibleEventDocs.filter(d => d.category === 'Administrative');
-      const animationEventDocs = visibleEventDocs.filter(d => d.category !== 'Administrative');
+      const isAdministrativeDoc = (doc) => {
+        if (!doc.category) return false;
+        const cat = doc.category.toLowerCase();
+        return cat.includes('administrative') || cat.includes('contrat') || cat.includes('administratif');
+      };
+
+      const administrativeDocs = visibleEventDocs.filter(isAdministrativeDoc);
+      const animationEventDocs = visibleEventDocs.filter(d => !isAdministrativeDoc(d));
       
       const hasAnyDocs = displayGlobalDocs.length > 0 || visibleEventDocs.length > 0;
 

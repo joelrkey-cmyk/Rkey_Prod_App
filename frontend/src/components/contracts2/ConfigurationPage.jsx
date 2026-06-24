@@ -234,7 +234,7 @@ export const ConfigurationPage = ({
           const defTpl = {
             name: "Félicitations Signature",
             subject: "Contrat signé ! Détails de votre prestation : {{client_name}}",
-            body: "<p>Bonjour {{artist_name}},</p>\n<p>Félicitations ! Le contrat pour la prestation <strong>{{client_name}}</strong> du <strong>{{event_date}}</strong> a bien été signé par le client.</p>\n<p>Vous pouvez dès à présent retrouver l'ensemble des détails de la prestation, de l'installation et le planning complet sur votre espace DJ / Artiste.</p>\n<p>Bonne prestation !</p>\n<p>Cordialement,</p>",
+            body: "Bonjour {{artist_name}},\n\nFélicitations ! Le contrat pour la prestation {{client_name}} du {{event_date}} a bien été signé par le client.\n\nVous pouvez dès à présent retrouver l'ensemble des détails de la prestation, de l'installation et le planning complet sur votre espace DJ / Artiste.\n\nBonne prestation !\n\nCordialement,",
             is_default: true
           };
           const saved = await apiService.post('/freelance-email-templates', defTpl);
@@ -1007,7 +1007,7 @@ export const ConfigurationPage = ({
                           )}
                         </div>
                         <p className="text-xs text-indigo-600 font-medium mt-1">Sujet : {t.subject}</p>
-                        <div className="text-xs text-slate-550 mt-1 line-clamp-1 prose max-w-none" dangerouslySetInnerHTML={{ __html: t.body }}></div>
+                        <div className="text-xs text-slate-550 mt-1 line-clamp-1 prose max-w-none" dangerouslySetInnerHTML={{ __html: t.body && !t.body.includes('<p>') && !t.body.includes('<div') && !t.body.includes('<br') ? t.body.replace(/\n/g, '<br />') : (t.body || '') }}></div>
                       </div>
                       <div className="flex items-center space-x-2 shrink-0 ml-4">
                         {!t.is_default && (
@@ -1076,7 +1076,7 @@ export const ConfigurationPage = ({
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label className="text-slate-750 text-xs font-semibold">Contenu du message (Supports HTML)</Label>
+                        <Label className="text-slate-750 text-xs font-semibold">Contenu du message (Formatage simple ou HTML)</Label>
                         <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-medium">
                           Variables : {"{"}{"{"}client_name{"}"}{"}"}, {"{"}{"{"}artist_name{"}"}{"}"}, {"{"}{"{"}event_date{"}"}{"}"}, {"{"}{"{"}event_type{"}"}{"}"}, {"{"}{"{"}event_location{"}"}{"}"}
                         </span>
@@ -1184,7 +1184,7 @@ export const ConfigurationPage = ({
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="freelance-body" className="text-slate-700 font-medium">Contenu de l'email (ligne ou HTML)</Label>
+                    <Label htmlFor="freelance-body" className="text-slate-700 font-medium">Contenu de l'email (Formatage simple ou HTML)</Label>
                     <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-medium">
                       Variables : {"{"}{"{"}client_name{"}"}{"}"}, {"{"}{"{"}artist_name{"}"}{"}"}, {"{"}{"{"}event_date{"}"}{"}"}, {"{"}{"{"}event_type{"}"}{"}"}, {"{"}{"{"}event_location{"}"}{"}"}
                     </span>

@@ -128,6 +128,13 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     // Detect if items are pre-enriched (have equipment_name/daily_price) or need lookup
     const isEnriched = items.length > 0 && items[0].equipment_name !== undefined;
 
+    const formatDate = (dateStr) => {
+      if (!dateStr) return '';
+      const parts = dateStr.split('-');
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}`;
+      return dateStr;
+    };
+
     if (isEnriched) {
       subtotal = quoteData.subtotal || 0;
       items.forEach((item, index) => {
@@ -152,17 +159,23 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
 
         if (yPos + rowHeight > 270) { doc.addPage(); yPos = 20; }
         
-        const lineTotal = item.total_price || ((item.daily_price || 0) * item.quantity * degressionCoef);
+        const itemCoef = item.degression_coefficient || degressionCoef;
+        const lineTotal = item.total_price || ((item.daily_price || 0) * item.quantity * itemCoef);
         
         if (index % 2 === 0) {
           doc.setFillColor(250, 250, 250);
           doc.rect(margin, yPos - 4, pageWidth - 2 * margin, rowHeight, 'F');
         }
         
-        doc.text((item.equipment_name || 'N/A').substring(0, 40), colX[0] + 2, yPos);
+        let displayName = item.equipment_name || 'N/A';
+        if (item.start_date && item.end_date) {
+          displayName += ` (${formatDate(item.start_date)} au ${formatDate(item.end_date)})`;
+        }
+        
+        doc.text(displayName.substring(0, 48), colX[0] + 2, yPos);
         doc.text(item.quantity.toString(), colX[1] + 2, yPos);
         doc.text(`${(item.daily_price || 0).toFixed(2)}€`, colX[2] + 2, yPos);
-        doc.text(`x${degressionCoef}`, colX[3] + 2, yPos);
+        doc.text(`x${itemCoef.toFixed(2)}`, colX[3] + 2, yPos);
         doc.text(`${lineTotal.toFixed(2)}€`, colX[4] + 2, yPos);
 
         if (hasPackDetails) {
@@ -183,7 +196,8 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
       items.forEach((item, index) => {
         const eq = equipment.find(e => e.id === item.equipment_id);
         if (eq) {
-          const lineTotal = eq.daily_price * item.quantity * degressionCoef;
+          const itemCoef = item.degression_coefficient || degressionCoef;
+          const lineTotal = eq.daily_price * item.quantity * itemCoef;
           subtotal += lineTotal;
           
           const hasPackDetails = eq.is_pack && eq.pack_items && eq.pack_items.length > 0;
@@ -211,10 +225,15 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
             doc.rect(margin, yPos - 4, pageWidth - 2 * margin, rowHeight, 'F');
           }
           
-          doc.text(eq.name.substring(0, 40), colX[0] + 2, yPos);
+          let displayName = eq.name;
+          if (item.start_date && item.end_date) {
+            displayName += ` (${formatDate(item.start_date)} au ${formatDate(item.end_date)})`;
+          }
+          
+          doc.text(displayName.substring(0, 48), colX[0] + 2, yPos);
           doc.text(item.quantity.toString(), colX[1] + 2, yPos);
           doc.text(`${eq.daily_price.toFixed(2)}€`, colX[2] + 2, yPos);
-          doc.text(`x${degressionCoef}`, colX[3] + 2, yPos);
+          doc.text(`x${itemCoef.toFixed(2)}`, colX[3] + 2, yPos);
           doc.text(`${lineTotal.toFixed(2)}€`, colX[4] + 2, yPos);
 
           if (hasPackDetails) {

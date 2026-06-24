@@ -528,7 +528,10 @@ function DevisView({ setCurrentView }) {
         if (item.equipment_id && item.quantity > 0) {
           const eq = equipment.find(e => e.id === item.equipment_id);
           if (eq) {
-            computedSubtotal += eq.daily_price * degressionInfo.coef * item.quantity;
+            const itemStartDate = item.start_date || formData.start_date;
+            const itemEndDate = item.end_date || formData.end_date;
+            const itemDegressionInfo = getDegressionInfo(itemStartDate, itemEndDate, formData.force_weekend, manualCoef);
+            computedSubtotal += eq.daily_price * itemDegressionInfo.coef * item.quantity;
           }
         }
       });
@@ -579,10 +582,18 @@ function DevisView({ setCurrentView }) {
         degression_type: degressionInfo.isWeekendDetected ? 'weekend' : degressionInfo.label,
         force_weekend: formData.force_weekend,
         manual_coefficient: formData.manual_coefficient,
-        items: selectedEquipment.map(item => ({
-          equipment_id: item.equipment_id,
-          quantity: parseInt(item.quantity) || 1
-        }))
+        items: selectedEquipment.map(item => {
+          const itemStartDate = item.start_date || formData.start_date;
+          const itemEndDate = item.end_date || formData.end_date;
+          const itemDegressionInfo = getDegressionInfo(itemStartDate, itemEndDate, formData.force_weekend, manualCoef);
+          return {
+            equipment_id: item.equipment_id,
+            quantity: parseInt(item.quantity) || 1,
+            start_date: item.start_date || null,
+            end_date: item.end_date || null,
+            degression_coefficient: itemDegressionInfo.coef
+          };
+        })
       };
 
       // Ajouter client_id ou dj_id selon le type (sauf si devis rapide)
@@ -689,7 +700,12 @@ function DevisView({ setCurrentView }) {
       selectedEquipment.forEach(item => {
         if (item.equipment_id && item.quantity > 0) {
           const eq = equipment.find(e => e.id === item.equipment_id);
-          if (eq) { computedSubtotal += eq.daily_price * degressionInfo.coef * item.quantity; }
+          if (eq) {
+            const itemStartDate = item.start_date || formData.start_date;
+            const itemEndDate = item.end_date || formData.end_date;
+            const itemDegressionInfo = getDegressionInfo(itemStartDate, itemEndDate, formData.force_weekend, manualCoef);
+            computedSubtotal += eq.daily_price * itemDegressionInfo.coef * item.quantity;
+          }
         }
       });
       let computedDiscount = 0;
@@ -730,10 +746,18 @@ function DevisView({ setCurrentView }) {
         degression_type: degressionInfo.isWeekendDetected ? 'weekend' : degressionInfo.label,
         force_weekend: formData.force_weekend,
         manual_coefficient: formData.manual_coefficient,
-        items: selectedEquipment.map(item => ({
-          equipment_id: item.equipment_id,
-          quantity: parseInt(item.quantity) || 1
-        }))
+        items: selectedEquipment.map(item => {
+          const itemStartDate = item.start_date || formData.start_date;
+          const itemEndDate = item.end_date || formData.end_date;
+          const itemDegressionInfo = getDegressionInfo(itemStartDate, itemEndDate, formData.force_weekend, manualCoef);
+          return {
+            equipment_id: item.equipment_id,
+            quantity: parseInt(item.quantity) || 1,
+            start_date: item.start_date || null,
+            end_date: item.end_date || null,
+            degression_coefficient: itemDegressionInfo.coef
+          };
+        })
       };
 
       if (formData.booking_type === 'client' && !isQuickQuote) {
@@ -817,7 +841,12 @@ function DevisView({ setCurrentView }) {
       selectedEquipment.forEach(item => {
         if (item.equipment_id && item.quantity > 0) {
           const eq = equipment.find(e => e.id === item.equipment_id);
-          if (eq) { computedSubtotal += eq.daily_price * degressionInfo.coef * item.quantity; }
+          if (eq) {
+            const itemStartDate = item.start_date || formData.start_date;
+            const itemEndDate = item.end_date || formData.end_date;
+            const itemDegressionInfo = getDegressionInfo(itemStartDate, itemEndDate, formData.force_weekend, manualCoef);
+            computedSubtotal += eq.daily_price * itemDegressionInfo.coef * item.quantity;
+          }
         }
       });
       let computedDiscount = 0;
@@ -858,10 +887,18 @@ function DevisView({ setCurrentView }) {
         force_weekend: formData.force_weekend,
         manual_coefficient: formData.manual_coefficient,
         status: 'Brouillon', // Marquer comme brouillon
-        items: selectedEquipment.filter(item => item.equipment_id).map(item => ({
-          equipment_id: item.equipment_id,
-          quantity: parseInt(item.quantity) || 1
-        }))
+        items: selectedEquipment.filter(item => item.equipment_id).map(item => {
+          const itemStartDate = item.start_date || formData.start_date;
+          const itemEndDate = item.end_date || formData.end_date;
+          const itemDegressionInfo = getDegressionInfo(itemStartDate, itemEndDate, formData.force_weekend, manualCoef);
+          return {
+            equipment_id: item.equipment_id,
+            quantity: parseInt(item.quantity) || 1,
+            start_date: item.start_date || null,
+            end_date: item.end_date || null,
+            degression_coefficient: itemDegressionInfo.coef
+          };
+        })
       };
 
       // Ajouter client_id ou dj_id selon le type
@@ -1159,8 +1196,11 @@ function DevisView({ setCurrentView }) {
       if (item.equipment_id && item.quantity > 0) {
         const eq = equipment.find(e => e.id === item.equipment_id);
         if (eq) {
+          const itemStartDate = item.start_date || formData.start_date;
+          const itemEndDate = item.end_date || formData.end_date;
+          const itemDegressionInfo = getDegressionInfo(itemStartDate, itemEndDate, formData.force_weekend, manualCoef);
           // Appliquer le coefficient de dégressivité au lieu de multiplier par le nombre de jours
-          subtotal += eq.daily_price * degressionInfo.coef * item.quantity;
+          subtotal += eq.daily_price * itemDegressionInfo.coef * item.quantity;
         }
       }
     });
@@ -1518,147 +1558,219 @@ function DevisView({ setCurrentView }) {
                   </Button>
                 </div>
                 
-                {selectedEquipment.map((item, index) => {
-                  const categoryIcons = {
-                    'Sonorisation': '🔊',
-                    'Éclairage': '💡',
-                    'Lumière': '💡',
-                    'Vidéo': '📺',
-                    'Câbles': '🔌',
-                    'Machine FX': '🌫️',
-                    'Structure et pieds': '🏗️',
-                    'Structure Truss': '🏗️',
-                    'DJ': '🎧',
-                    'Divers': '🔧',
-                    'Packs': '📦'
-                  };
-                  
-                  return (
-                    <div key={index} className="flex gap-2 items-center mb-2 p-2 border rounded">
-                      <div className="flex-1 relative">
-                        {/* Barre de recherche avec autocomplétion et bouton déroulant */}
-                        <div className="relative">
-                          <div className="flex gap-1">
-                            <Input
-                              type="text"
-                              placeholder="🔍 Rechercher un équipement (nom, référence...)"
-                              value={item.equipment_id ? getEquipmentName(item.equipment_id) : (equipmentSearch[index] || '')}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                setEquipmentSearch({ ...equipmentSearch, [index]: value });
-                                setShowSuggestions({ ...showSuggestions, [index]: value.length >= 2 });
-                                if (!value) {
-                                  updateEquipmentInQuote(index, 'equipment_id', '');
-                                }
-                              }}
-                              onFocus={() => {
-                                if (equipmentSearch[index]?.length >= 2) {
-                                  setShowSuggestions({ ...showSuggestions, [index]: true });
-                                }
-                              }}
-                              className="flex-1 text-sm"
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setShowSuggestions({ ...showSuggestions, [index]: !showSuggestions[index] })}
-                              className="px-2"
-                              title="Voir tous les équipements"
-                            >
-                              <ChevronDown className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          
-                          {/* Suggestions dropdown */}
-                          {showSuggestions[index] && (
-                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                              {(equipmentSearch[index]?.length >= 2 
-                                ? getFilteredEquipment(equipmentSearch[index]) 
-                                : equipment.filter(eq => eq.quantity > 0)
-                              ).length > 0 ? (
-                                (equipmentSearch[index]?.length >= 2 
-                                  ? getFilteredEquipment(equipmentSearch[index]) 
-                                  : equipment.filter(eq => eq.quantity > 0)
-                                ).map((eq) => (
-                                  <div
-                                    key={eq.id}
-                                    onClick={() => selectEquipmentFromSearch(index, eq.id)}
-                                    className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-0"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex-1">
-                                        <div className="font-medium text-sm">
-                                          {categoryIcons[eq.category] || '📦'} {eq.name}
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                          {eq.reference} • {eq.category}
-                                        </div>
-                                      </div>
-                                      <div className="text-right ml-2">
-                                        <div className="text-sm font-semibold text-blue-600">
-                                          {eq.daily_price}€/jour
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                          {eq.quantity >= 999999 ? '∞' : eq.quantity} dispo
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))
-                              ) : (
-                                <div className="px-3 py-2 text-sm text-gray-500 text-center">
-                                  Aucun équipement disponible
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* Detail du pack en tout petit */}
-                        {(() => {
-                          const selectedEq = item.equipment_id ? equipment.find(eq => eq.id === item.equipment_id) : null;
-                          if (selectedEq && selectedEq.is_pack && selectedEq.pack_items && selectedEq.pack_items.length > 0) {
-                            return (
-                              <div className="mt-1 pl-1.5 text-[9.5px] text-gray-500 bg-gray-50/60 rounded p-1.5 border border-dashed border-gray-250">
-                                <div className="space-y-0.5">
-                                  {selectedEq.pack_items.map((packItem, pIdx) => {
-                                    const subEq = equipment.find(e => e.id === packItem.equipment_id);
-                                    return (
-                                      <div key={pIdx} className="flex items-center gap-1 leading-tight font-medium text-slate-500">
-                                        <span>•</span>
-                                        <span>{packItem.quantity}x {subEq ? subEq.name : packItem.equipment_id}</span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          }
-                          return null;
-                        })()}
-                      </div>
-                      <div className="w-20">
-                        <Input
-                          type="number"
-                          min="1"
-                          placeholder="Qté"
-                          value={item.quantity}
-                          onChange={(e) => updateEquipmentInQuote(index, 'quantity', parseInt(e.target.value) || 1)}
-                          className="text-center text-sm"
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => removeEquipmentFromQuote(index)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  );
-                })}
+                 {selectedEquipment.map((item, index) => {
+                   const categoryIcons = {
+                     'Sonorisation': '🔊',
+                     'Éclairage': '💡',
+                     'Lumière': '💡',
+                     'Vidéo': '📺',
+                     'Câbles': '🔌',
+                     'Machine FX': '🌫️',
+                     'Structure et pieds': '🏗️',
+                     'Structure Truss': '🏗️',
+                     'DJ': '🎧',
+                     'Divers': '🔧',
+                     'Packs': '📦'
+                   };
+                   
+                   return (
+                     <div key={index} className="p-3 border rounded-lg mb-3 space-y-2 bg-slate-50/50 hover:border-blue-200 transition-colors">
+                       <div className="flex gap-2 items-center">
+                         <div className="flex-1 relative">
+                           {/* Barre de recherche avec autocomplétion et bouton déroulant */}
+                           <div className="relative">
+                             <div className="flex gap-1">
+                               <Input
+                                 type="text"
+                                 placeholder="🔍 Rechercher un équipement (nom, référence...)"
+                                 value={item.equipment_id ? getEquipmentName(item.equipment_id) : (equipmentSearch[index] || '')}
+                                 onChange={(e) => {
+                                   const value = e.target.value;
+                                   setEquipmentSearch({ ...equipmentSearch, [index]: value });
+                                   setShowSuggestions({ ...showSuggestions, [index]: value.length >= 2 });
+                                   if (!value) {
+                                     updateEquipmentInQuote(index, 'equipment_id', '');
+                                   }
+                                 }}
+                                 onFocus={() => {
+                                   if (equipmentSearch[index]?.length >= 2) {
+                                     setShowSuggestions({ ...showSuggestions, [index]: true });
+                                   }
+                                 }}
+                                 className="flex-1 text-sm bg-white"
+                               />
+                               <Button
+                                 type="button"
+                                 variant="outline"
+                                 size="sm"
+                                 onClick={() => setShowSuggestions({ ...showSuggestions, [index]: !showSuggestions[index] })}
+                                 className="px-2 bg-white"
+                                 title="Voir tous les équipements"
+                               >
+                                 <ChevronDown className="h-4 w-4" />
+                               </Button>
+                             </div>
+                             
+                             {/* Suggestions dropdown */}
+                             {showSuggestions[index] && (
+                               <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                 {(equipmentSearch[index]?.length >= 2 
+                                   ? getFilteredEquipment(equipmentSearch[index]) 
+                                   : equipment.filter(eq => eq.quantity > 0)
+                                 ).length > 0 ? (
+                                   (equipmentSearch[index]?.length >= 2 
+                                     ? getFilteredEquipment(equipmentSearch[index]) 
+                                     : equipment.filter(eq => eq.quantity > 0)
+                                   ).map((eq) => (
+                                     <div
+                                       key={eq.id}
+                                       onClick={() => selectEquipmentFromSearch(index, eq.id)}
+                                       className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-0"
+                                     >
+                                       <div className="flex items-center justify-between">
+                                         <div className="flex-1">
+                                           <div className="font-medium text-sm">
+                                             {categoryIcons[eq.category] || '📦'} {eq.name}
+                                           </div>
+                                           <div className="text-xs text-gray-500">
+                                             {eq.reference} • {eq.category}
+                                           </div>
+                                         </div>
+                                         <div className="text-right ml-2">
+                                           <div className="text-sm font-semibold text-blue-600">
+                                             {eq.daily_price}€/jour
+                                           </div>
+                                           <div className="text-xs text-gray-500">
+                                             {eq.quantity >= 999999 ? '∞' : eq.quantity} dispo
+                                           </div>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   ))
+                                 ) : (
+                                   <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                                     Aucun équipement disponible
+                                   </div>
+                                 )}
+                               </div>
+                             )}
+                           </div>
+                         </div>
+                         
+                         <div className="w-20">
+                           <Input
+                             type="number"
+                             min="1"
+                             placeholder="Qté"
+                             value={item.quantity}
+                             onChange={(e) => updateEquipmentInQuote(index, 'quantity', parseInt(e.target.value) || 1)}
+                             className="text-center text-sm bg-white"
+                           />
+                         </div>
+
+                         {/* Custom Dates Toggle Button */}
+                         <Button
+                           type="button"
+                           variant={item.start_date ? "default" : "outline"}
+                           size="sm"
+                           onClick={() => {
+                             if (item.start_date) {
+                               updateEquipmentInQuote(index, 'start_date', null);
+                               updateEquipmentInQuote(index, 'end_date', null);
+                             } else {
+                               updateEquipmentInQuote(index, 'start_date', formData.start_date || new Date().toISOString().split('T')[0]);
+                               updateEquipmentInQuote(index, 'end_date', formData.end_date || new Date().toISOString().split('T')[0]);
+                             }
+                           }}
+                           className={cn(
+                             "px-2.5 h-9",
+                             item.start_date ? "bg-blue-600 hover:bg-blue-700 text-white" : "text-slate-600 hover:text-blue-600 bg-white border-slate-200"
+                           )}
+                           title={item.start_date ? "Revenir aux dates générales du devis" : "Définir des dates de location spécifiques"}
+                         >
+                           <CalendarIcon className="w-4 h-4 mr-1" />
+                           <span className="text-xs hidden sm:inline">{item.start_date ? "Dates spéc." : "+ Dates"}</span>
+                         </Button>
+
+                         <Button
+                           type="button"
+                           variant="destructive"
+                           size="sm"
+                           onClick={() => removeEquipmentFromQuote(index)}
+                           className="h-9 px-2"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </Button>
+                       </div>
+
+                       {/* Specific Date Range Inputs if Custom Dates is active */}
+                       {item.start_date && (
+                         <div className="flex flex-wrap gap-2 items-center pl-2 py-2 bg-blue-50/55 border border-blue-100 rounded-md text-xs">
+                           <span className="font-semibold text-blue-850 flex items-center mr-1">
+                             <Clock className="w-3.5 h-3.5 mr-1 text-blue-600" />
+                             Dates spécifiques :
+                           </span>
+                           <div className="flex items-center gap-1.5">
+                             <span className="text-slate-500 font-medium">Du</span>
+                             <Input
+                               type="date"
+                               value={item.start_date}
+                               onChange={(e) => updateEquipmentInQuote(index, 'start_date', e.target.value)}
+                               className="h-7 py-0.5 px-2 text-xs w-32 border-slate-300 bg-white"
+                             />
+                           </div>
+                           <div className="flex items-center gap-1.5">
+                             <span className="text-slate-500 font-medium">Au</span>
+                             <Input
+                               type="date"
+                               value={item.end_date}
+                               min={item.start_date}
+                               onChange={(e) => updateEquipmentInQuote(index, 'end_date', e.target.value)}
+                               className="h-7 py-0.5 px-2 text-xs w-32 border-slate-300 bg-white"
+                             />
+                           </div>
+                           {(() => {
+                             const itemDays = calculateDays(item.start_date, item.end_date);
+                             const itemCoef = getDegressionInfo(
+                               item.start_date, 
+                               item.end_date, 
+                               formData.force_weekend, 
+                               formData.manual_coefficient ? parseFloat(formData.manual_coefficient) : null
+                             ).coef;
+                             return (
+                               <span className="text-slate-600 font-semibold ml-2">
+                                 ({itemDays} jour{itemDays > 1 ? 's' : ''}, coef x{itemCoef})
+                               </span>
+                             );
+                           })()}
+                         </div>
+                       )}
+
+                       {/* Detail du pack en tout petit */}
+                       {(() => {
+                         const selectedEq = item.equipment_id ? equipment.find(eq => eq.id === item.equipment_id) : null;
+                         if (selectedEq && selectedEq.is_pack && selectedEq.pack_items && selectedEq.pack_items.length > 0) {
+                           return (
+                             <div className="mt-1 pl-1.5 text-[9.5px] text-gray-500 bg-gray-50/60 rounded p-1.5 border border-dashed border-gray-250">
+                               <div className="space-y-0.5">
+                                 {selectedEq.pack_items.map((packItem, pIdx) => {
+                                   const subEq = equipment.find(e => e.id === packItem.equipment_id);
+                                   return (
+                                     <div key={pIdx} className="flex items-center gap-1 leading-tight font-medium text-slate-500">
+                                       <span>•</span>
+                                       <span>{packItem.quantity}x {subEq ? subEq.name : packItem.equipment_id}</span>
+                                     </div>
+                                   );
+                                 })}
+                               </div>
+                             </div>
+                           );
+                         }
+                         return null;
+                       })()}
+                     </div>
+                   );
+                 })}
                 
                 {selectedEquipment.length === 0 && (
                   <div className="text-center text-gray-500 py-4 border-2 border-dashed border-gray-300 rounded-lg">

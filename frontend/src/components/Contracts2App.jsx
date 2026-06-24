@@ -1030,7 +1030,7 @@ function Contracts2App() {
       } else {
         setNotifSelectedTemplateId("");
         setNotifEmailSubject("Prestation confirmée et signée");
-        setNotifEmailBody(`<p>Bonjour ${artistProfile.nom_artistique || "Artiste"},<br/>Le contrat a été signé.</p>`);
+        setNotifEmailBody(`Bonjour ${artistProfile.nom_artistique || "Artiste"},\n\nLe contrat a été signé.`);
       }
       
       setIsArtistNotifOpen(true);
@@ -4898,7 +4898,7 @@ function Contracts2App() {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs font-bold text-slate-700">Message (Supporte le formatage HTML / variables)</Label>
+              <Label className="text-xs font-bold text-slate-700">Message (Formatage simple ou HTML)</Label>
               <Textarea 
                 value={notifEmailBody} 
                 onChange={(e) => setNotifEmailBody(e.target.value)}

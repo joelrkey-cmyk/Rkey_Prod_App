@@ -652,6 +652,101 @@ async function deleteReservationFromGoogleCalendar(eventId) {
   }
 }
 
+async function syncGoogleCalendarChangesBack() {
+  if (!calendar || !locationCalendarId) return;
+  try {
+    const listRes = await calendar.events.list({
+      calendarId: locationCalendarId,
+      singleEvents: true,
+      maxResults: 250,
+      showDeleted: false
+    });
+    const gEvents = listRes.data.items || [];
+    
+    const gEventsMap = {};
+    gEvents.forEach(event => {
+      if (event.id) {
+        gEventsMap[event.id] = event;
+      }
+    });
+
+    const reservations = await db.collection('location_reservations').find({
+      google_event_id: { $exists: true, $ne: "" }
+    }).toArray();
+
+    for (const reservation of reservations) {
+      const event = gEventsMap[reservation.google_event_id];
+      
+      if (!event || event.status === 'cancelled') {
+        console.log(`[GCal Sync Back] Event ${reservation.google_event_id} was deleted on Google. Deleting local reservation ${reservation.id}.`);
+        await db.collection('location_reservations').deleteOne({ id: reservation.id });
+        continue;
+      }
+
+      let needsUpdate = false;
+      const updateFields = {};
+
+      const gStart = event.start.date || (event.start.dateTime ? event.start.dateTime.split('T')[0] : null);
+      const gEnd = event.end.date || (event.end.dateTime ? event.end.dateTime.split('T')[0] : null);
+
+      if (gStart && gStart !== reservation.start_date) {
+        updateFields.start_date = gStart;
+        needsUpdate = true;
+      }
+
+      if (gEnd) {
+        let inclusiveEnd = gEnd;
+        try {
+          const d = new Date(gEnd);
+          d.setDate(d.getDate() - 1);
+          inclusiveEnd = d.toISOString().split('T')[0];
+        } catch (e) {}
+
+        if (inclusiveEnd !== reservation.end_date) {
+          updateFields.end_date = inclusiveEnd;
+          needsUpdate = true;
+        }
+      }
+
+      if (event.summary) {
+        let updatedClientName = reservation.client_name;
+        const summaryMatch = event.summary.match(/^Location:\s*(.*)/i);
+        if (summaryMatch && summaryMatch[1]) {
+          updatedClientName = summaryMatch[1].trim();
+        } else {
+          updatedClientName = event.summary;
+        }
+
+        if (updatedClientName !== reservation.client_name) {
+          updateFields.client_name = updatedClientName;
+          needsUpdate = true;
+        }
+      }
+
+      if (event.description) {
+        let updatedNotes = reservation.notes || "";
+        const notesMatch = event.description.match(/Notes\s*:\s*([\s\S]*)$/i);
+        if (notesMatch && notesMatch[1]) {
+          updatedNotes = notesMatch[1].trim();
+          updatedNotes = updatedNotes.split('-----------------')[0].trim();
+        }
+
+        if (updatedNotes !== reservation.notes) {
+          updateFields.notes = updatedNotes;
+          needsUpdate = true;
+        }
+      }
+
+      if (needsUpdate) {
+        console.log(`[GCal Sync Back] Updating reservation ${reservation.id} based on Google Calendar changes:`, updateFields);
+        await db.collection('location_reservations').updateOne({ id: reservation.id }, { $set: updateFields });
+      }
+    }
+  } catch (err) {
+    console.error('[GCal Sync Back Error] Failed to sync changes back from Google Calendar:', err);
+  }
+}
+
 async function deleteGoogleCalendarEvent(calendarId, eventId) {
   if (!calendar || !calendarId || !eventId) return;
   try {
@@ -3497,8 +3592,13 @@ api.post('/contract-emails/send', authMiddleware, async (req, res) => {
       });
     }
     
+    let formattedBody = email_body || '<p>Veuillez trouver ci-joint votre contrat.</p>';
+    if (typeof formattedBody === 'string' && !formattedBody.includes('<p>') && !formattedBody.includes('<div') && !formattedBody.includes('<br')) {
+      formattedBody = formattedBody.replace(/\n/g, '<br />');
+    }
+
     const { html: finalHtml, attachments } = convertDataUriToCid(
-      email_body || '<p>Veuillez trouver ci-joint votre contrat.</p>',
+      formattedBody,
       pdfAttachments
     );
     
@@ -4879,6 +4979,11 @@ api.get('/location/gcs-diagnostic', authMiddleware, async (req, res) => {
 
 // Location Reservations
 api.get('/location/reservations', authMiddleware, async (req, res) => {
+  try {
+    await syncGoogleCalendarChangesBack();
+  } catch (err) {
+    console.error('Error during GCal sync-back in GET endpoint:', err);
+  }
   res.json(cleanList(await db.collection('location_reservations').find({}, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
 api.post('/location/reservations', authMiddleware, async (req, res) => {
