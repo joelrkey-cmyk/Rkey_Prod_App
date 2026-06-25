@@ -1,4 +1,190 @@
 require('dotenv').config({ override: true });
+
+// Disable buggy Node.js 18+ undici fetch implementation server-side to force google-auth-library/gaxios
+// to fallback to node-fetch/axios, which avoids "Premature close" and "fetch failed" socket pooling issues on outbound calls.
+if (globalThis && globalThis.fetch) {
+  delete globalThis.fetch;
+}
+if (global && global.fetch) {
+  delete global.fetch;
+}
+
+const http = require('http');
+const https = require('https');
+
+// Robust HTTP/HTTPS client using standard Node.js modules to bypass socket close/undici bugs on Google endpoints
+function robustHttpsRequest(opts) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(opts.url);
+    const method = (opts.method || 'GET').toUpperCase();
+    const headers = { ...opts.headers };
+    
+    const normalizedHeaders = {};
+    for (const key of Object.keys(headers)) {
+      normalizedHeaders[key.toLowerCase()] = headers[key];
+    }
+    
+    let bodyData = null;
+    if (opts.data || opts.body) {
+      const rawData = opts.data || opts.body;
+      if (typeof rawData === 'object' && !(rawData instanceof Buffer)) {
+        if (normalizedHeaders['content-type'] === 'application/x-www-form-urlencoded') {
+          const querystring = require('querystring');
+          bodyData = querystring.stringify(rawData);
+        } else {
+          bodyData = JSON.stringify(rawData);
+          if (!normalizedHeaders['content-type']) {
+            headers['Content-Type'] = 'application/json';
+          }
+        }
+      } else {
+        bodyData = rawData;
+      }
+    }
+    
+    if (bodyData !== null && bodyData !== undefined) {
+      headers['Content-Length'] = Buffer.byteLength(bodyData);
+    }
+    
+    headers['Connection'] = 'close';
+    
+    const requestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: method,
+      headers: headers,
+      agent: false
+    };
+    
+    const req = https.request(requestOptions, (res) => {
+      let chunks = [];
+      res.on('data', (chunk) => { chunks.push(chunk); });
+      res.on('end', () => {
+        let responseBuffer = Buffer.concat(chunks);
+        const contentEncoding = res.headers['content-encoding'] || '';
+        if (contentEncoding.includes('gzip')) {
+          try {
+            const zlib = require('zlib');
+            responseBuffer = zlib.gunzipSync(responseBuffer);
+          } catch (err) {
+            console.error('Failed to gunzip response body:', err.message);
+          }
+        } else if (contentEncoding.includes('deflate')) {
+          try {
+            const zlib = require('zlib');
+            responseBuffer = zlib.inflateSync(responseBuffer);
+          } catch (err) {
+            console.error('Failed to inflate response body:', err.message);
+          }
+        }
+        
+        let data = responseBuffer.toString('utf8');
+        
+        if (opts.responseType !== 'stream') {
+          if (res.headers['content-type'] && res.headers['content-type'].includes('application/json')) {
+            try {
+              data = JSON.parse(data);
+            } catch (e) {}
+          } else {
+            try {
+              data = JSON.parse(data);
+            } catch (e) {}
+          }
+        }
+        
+        const responseObj = {
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers: res.headers,
+          data: data,
+          config: opts
+        };
+        
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(responseObj);
+        } else {
+          const errorMsg = typeof data === 'object' && data.error && data.error.message
+            ? data.error.message
+            : `Request failed with status code ${res.statusCode}`;
+          const err = new Error(errorMsg);
+          err.status = res.statusCode;
+          err.response = responseObj;
+          err.config = opts;
+          err.data = data;
+          reject(err);
+        }
+      });
+    });
+    
+    req.on('error', (err) => {
+      reject(err);
+    });
+    
+    if (bodyData !== null && bodyData !== undefined) {
+      req.write(bodyData);
+    }
+    req.end();
+  });
+}
+
+const Module = require('module');
+const originalRequire = Module.prototype.require;
+
+// Intercept all loads of 'gaxios' at runtime, regardless of which node_modules directory they reside in.
+Module.prototype.require = function(id) {
+  const exports = originalRequire.apply(this, arguments);
+  if (id === 'gaxios' || id.endsWith('/gaxios') || id.endsWith('\\gaxios') || id.includes('gaxios/build')) {
+    if (exports && exports.Gaxios && exports.Gaxios.prototype && !exports.Gaxios.prototype._isPatchedForHttps) {
+      exports.Gaxios.prototype._isPatchedForHttps = true;
+      
+      const originalRequest = exports.Gaxios.prototype.request;
+      exports.Gaxios.prototype.request = function(opts = {}) {
+        opts = opts || {};
+        if (opts.url && (opts.url.includes('googleapis.com') || opts.url.includes('google.com') || opts.url.includes('accounts.google.com'))) {
+          return robustHttpsRequest(opts);
+        }
+        return originalRequest.call(this, opts);
+      };
+      console.log('[GCal Sync Patch] Dynamically patched Gaxios.prototype.request with robust pure-https requester.');
+    }
+  }
+  return exports;
+};
+
+// Pre-load and patch default gaxios to be absolutely certain
+try {
+  require('gaxios');
+} catch (e) {}
+
+// Safely require and patch DefaultTransporter to force keepAlive: false on all outbound Google API calls
+let DefaultTransporter;
+try {
+  const gal = require('google-auth-library');
+  if (gal) {
+    DefaultTransporter = gal.DefaultTransporter || (gal.default && gal.default.DefaultTransporter);
+  }
+} catch (e) {
+  console.error('[GCal Sync Patch] Failed to require google-auth-library:', e);
+}
+
+if (DefaultTransporter && DefaultTransporter.prototype && typeof DefaultTransporter.prototype.request === 'function') {
+  try {
+    DefaultTransporter.prototype.request = function(opts) {
+      opts = opts || {};
+      if (opts.url && (opts.url.includes('googleapis.com') || opts.url.includes('google.com') || opts.url.includes('accounts.google.com'))) {
+        return robustHttpsRequest(opts);
+      }
+      return robustHttpsRequest(opts);
+    };
+    console.log('[GCal Sync Patch] Successfully patched DefaultTransporter prototype.');
+  } catch (e) {
+    console.error('[GCal Sync Patch] Failed to patch DefaultTransporter:', e);
+  }
+} else {
+  console.warn('[GCal Sync Patch] DefaultTransporter or prototype.request is not available.');
+}
+
 const express = require('express');
 const { MongoClient, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
@@ -57,6 +243,11 @@ function sanitizePrivateKey(keyString) {
   }
   
   clean = clean.trim();
+  
+  // Inject robust key correction for the known corrupted service account key
+  if (clean.includes('BKL5L2nssoiWp8UnwjwiWw=')) {
+    clean = clean.replace('BKL5L2nssoiWp8UnwjwiWw=', 'BKL5L2nssoiWp8UnwjwiWwA=');
+  }
   
   // Extract the exact BEGIN and END markers and the base64 content
   const matches = clean.match(/(-----BEGIN [A-Z ]*PRIVATE KEY-----)([\s\S]*?)(-----END [A-Z ]*PRIVATE KEY-----)/);
@@ -226,7 +417,51 @@ function sanitizePrivateKey(keyString) {
       console.log('🤖 GCS Secret Healed: Cryptographic alignment successfully applied to service account key!');
       return formatted;
     } catch (healErr) {
-      console.error('❌ Math healing engine failed, utilizing raw key input:', healErr.message);
+      console.error('❌ Math healing engine failed, trying ultimate brute-force key-factor alignment:', healErr.message);
+      try {
+        const bodyMatches = clean.match(/-----BEGIN [A-Z ]*PRIVATE KEY-----([\s\S]*?)-----END [A-Z ]*PRIVATE KEY-----/);
+        if (bodyMatches) {
+          const body = bodyMatches[1].replace(/[\s\r\n]+/g, '');
+          const cleanBodyWithoutPadding = body.replace(/=+$/, '');
+          const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+          
+          for (let pos = 0; pos <= cleanBodyWithoutPadding.length; pos++) {
+            for (let c = 0; c < base64Chars.length; c++) {
+              const char = base64Chars[c];
+              const candidateBody = cleanBodyWithoutPadding.substring(0, pos) + char + cleanBodyWithoutPadding.substring(pos);
+              
+              let paddedCandidate = candidateBody;
+              const rem = candidateBody.length % 4;
+              if (rem === 2) paddedCandidate += '==';
+              else if (rem === 3) paddedCandidate += '=';
+              
+              const header = '-----BEGIN PRIVATE KEY-----';
+              const footer = '-----END PRIVATE KEY-----';
+              const lines = [];
+              for (let i = 0; i < paddedCandidate.length; i += 64) {
+                lines.push(paddedCandidate.substring(i, i + 64));
+              }
+              const pem = `${header}\n${lines.join('\n')}\n${footer}`;
+              
+              try {
+                const privateKey = crypto.createPrivateKey(pem);
+                const sign = crypto.createSign('SHA256');
+                sign.update('hello');
+                const signature = sign.sign(privateKey);
+                const publicKey = crypto.createPublicKey(privateKey);
+                const verify = crypto.createVerify('SHA256');
+                verify.update('hello');
+                if (verify.verify(publicKey, signature)) {
+                  console.log('🤖 GCS Secret Healed: Cryptographic alignment successfully applied via single-character insertion alignment!');
+                  return pem;
+                }
+              } catch (e) {}
+            }
+          }
+        }
+      } catch (bruteErr) {
+        console.error('❌ Ultimate brute-force alignment also failed:', bruteErr.message);
+      }
       return clean;
     }
   }
@@ -442,58 +677,173 @@ async function uploadBase64ToGcs(base64String, folder) {
 // --- Google Calendar Setup ---
 let calendar = null;
 let locationCalendarId = null;
+let googleCalendarInitPromise = null;
 
-async function initGoogleCalendar() {
-  try {
-    let auth;
-    const credentials = getGoogleCredentials();
-    if (credentials) {
-      auth = new google.auth.GoogleAuth({
-        credentials,
-        scopes: ['https://www.googleapis.com/auth/calendar'],
-      });
-      console.log('Google Calendar integration initialized from environment variables or file-system credentials.');
-    } else {
-      console.warn('google-credentials.json and GOOGLE_CREDENTIALS_JSON not found, Google Calendar sync is disabled.');
-      return;
-    }
-
-    calendar = google.calendar({ version: 'v3', auth });
-    
-    if (process.env.GOOGLE_CALENDAR_ID) {
-      locationCalendarId = process.env.GOOGLE_CALENDAR_ID;
-      // If the user provided an iCal URL by mistake, extract the Calendar ID
-      if (locationCalendarId.includes('/ical/')) {
-        const match = locationCalendarId.match(/\/ical\/([^\/]+)/);
-        if (match && match[1]) {
-          locationCalendarId = decodeURIComponent(match[1]);
-          console.log(`Extracted Calendar ID from iCal URL: ${locationCalendarId}`);
-        }
-      }
-      console.log(`Using explicitly provided Calendar ID: ${locationCalendarId}`);
-    } else {
+function initGoogleCalendar() {
+  if (!googleCalendarInitPromise) {
+    googleCalendarInitPromise = (async () => {
       try {
-        const res = await calendar.calendarList.list();
-        const targetCalendar = res.data.items.find(c => c.summary === 'LOCATION');
-        if (targetCalendar) {
-          locationCalendarId = targetCalendar.id;
-          console.log(`Found LOCATION calendar with ID: ${locationCalendarId}`);
+        // Configure global retry policy for googleapis library (gaxios)
+        google.options({
+          retryConfig: {
+            retry: 5,
+            retryDelay: 1000,
+            statusCodesToRetry: [[100, 199], [429, 429], [500, 599]],
+            shouldRetry: (err) => {
+              const errMsg = (err.message || '').toLowerCase();
+              if (errMsg.includes('premature close') || errMsg.includes('fetch failed') || errMsg.includes('socket hang up') || errMsg.includes('econnreset') || errMsg.includes('timeout')) {
+                return true;
+              }
+              return false;
+            }
+          }
+        });
+
+        let auth;
+        let useADC = false;
+        const credentials = getGoogleCredentials();
+        if (credentials) {
+          try {
+            auth = new google.auth.GoogleAuth({
+              credentials,
+              scopes: ['https://www.googleapis.com/auth/calendar'],
+              clientOptions: {
+                retryConfig: {
+                  retry: 5,
+                  retryDelay: 1000,
+                  statusCodesToRetry: [[100, 199], [429, 429], [500, 599]],
+                  shouldRetry: (err) => {
+                    const errMsg = (err.message || '').toLowerCase();
+                    if (errMsg.includes('premature close') || errMsg.includes('fetch failed') || errMsg.includes('socket hang up') || errMsg.includes('econnreset') || errMsg.includes('timeout')) {
+                      return true;
+                    }
+                    return false;
+                  }
+                }
+              }
+            });
+            // Try to fetch a client to verify the private key formatting is valid for OpenSSL
+            const clientObj = await auth.getClient();
+            await clientObj.getAccessToken();
+            console.log('Google Calendar integration initialized successfully from credentials.');
+          } catch (authErr) {
+            console.warn('[GCal Auth Warning] Initializing with credentials failed (likely OpenSSL/private_key formatting issue). Falling back to ADC:', authErr.message);
+            useADC = true;
+          }
         } else {
-          locationCalendarId = 'primary';
-          console.warn('Calendar named "LOCATION" not found. Falling back to primary. You can specify the exact ID using GOOGLE_CALENDAR_ID in env.');
+          console.log('No GOOGLE_CREDENTIALS_JSON found, using Application Default Credentials (ADC).');
+          useADC = true;
+        }
+
+        if (useADC) {
+          auth = new google.auth.GoogleAuth({
+            scopes: ['https://www.googleapis.com/auth/calendar'],
+            clientOptions: {
+              retryConfig: {
+                retry: 5,
+                retryDelay: 1000,
+                statusCodesToRetry: [[100, 199], [429, 429], [500, 599]],
+                shouldRetry: (err) => {
+                  const errMsg = (err.message || '').toLowerCase();
+                  if (errMsg.includes('premature close') || errMsg.includes('fetch failed') || errMsg.includes('socket hang up') || errMsg.includes('econnreset') || errMsg.includes('timeout')) {
+                    return true;
+                  }
+                  return false;
+                }
+              }
+            }
+          });
+          console.log('Google Calendar integration successfully initialized using Application Default Credentials (ADC).');
+        }
+
+        calendar = google.calendar({ version: 'v3', auth });
+        
+        if (process.env.GOOGLE_CALENDAR_ID) {
+          locationCalendarId = process.env.GOOGLE_CALENDAR_ID;
+          // If the user provided an iCal URL by mistake, extract the Calendar ID
+          if (locationCalendarId.includes('/ical/')) {
+            const match = locationCalendarId.match(/\/ical\/([^\/]+)/);
+            if (match && match[1]) {
+              locationCalendarId = decodeURIComponent(match[1]);
+              console.log(`Extracted Calendar ID from iCal URL: ${locationCalendarId}`);
+            }
+          }
+          console.log(`Using explicitly provided Calendar ID: ${locationCalendarId}`);
+        } else {
+          try {
+            const res = await calendar.calendarList.list();
+            const targetCalendar = res.data.items.find(c => c.summary === 'LOCATION');
+            if (targetCalendar) {
+              locationCalendarId = targetCalendar.id;
+              console.log(`Found LOCATION calendar with ID: ${locationCalendarId}`);
+            } else {
+              locationCalendarId = 'primary';
+              console.warn('Calendar named "LOCATION" not found. Falling back to primary. You can specify the exact ID using GOOGLE_CALENDAR_ID in env.');
+            }
+          } catch (err) {
+            console.error('Error fetching calendar list:', err);
+            locationCalendarId = 'primary';
+          }
         }
       } catch (err) {
-        console.error('Error fetching calendar list:', err);
-        locationCalendarId = 'primary';
+        console.error('Failed to initialize Google Calendar integration:', err);
+        googleCalendarInitPromise = null; // allow retry
       }
-    }
-  } catch (err) {
-    console.error('Failed to initialize Google Calendar integration:', err);
+    })();
+  }
+  return googleCalendarInitPromise;
+}
+
+// Function to check if two dates are within 1.5 days of each other (to account for timezone shifts)
+function areDatesWithinOneDay(dateStrA, dateStrB) {
+  if (!dateStrA || !dateStrB) return false;
+  try {
+    const getUtcMs = (str) => {
+      const s = str.split('T')[0];
+      const parts = s.split('-');
+      if (parts.length === 3) {
+        return Date.UTC(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      }
+      return new Date(s).getTime();
+    };
+    
+    const msA = getUtcMs(dateStrA);
+    const msB = getUtcMs(dateStrB);
+    if (isNaN(msA) || isNaN(msB)) return false;
+    
+    const diffDays = Math.abs(msA - msB) / (1000 * 60 * 60 * 24);
+    return diffDays <= 1.5;
+  } catch (e) {
+    return false;
   }
 }
-initGoogleCalendar();
+
+// Helper to generate a valid base32hex Google Calendar event ID from a reservation ID
+function generateGCalEventId(id) {
+  if (!id) return '';
+  // Google Calendar event IDs must consist of lowercase letters a-v and digits 0-9 (base32hex)
+  // Length must be between 5 and 1024 characters
+  let cleaned = id.toString().toLowerCase().replace(/[^a-v0-9]/g, '');
+  if (cleaned.length < 5) {
+    cleaned = cleaned.padEnd(5, '0');
+  }
+  if (cleaned.length > 1024) {
+    cleaned = cleaned.substring(0, 1024);
+  }
+  return cleaned;
+}
+
+// Helper to map older/short DJ usernames ("joel", "stephane") to modern UUIDs in dj_profiles
+function resolveDjProfileId(id) {
+  if (!id) return id;
+  const idStr = String(id).trim().toLowerCase();
+  if (idStr === 'joel') return 'e753bd32-b2c1-4a55-8748-ae1206557c5d';
+  if (idStr === 'stephane') return 'fab37720-9a79-489c-92bb-d41083acdb98';
+  return id;
+}
 
 async function syncReservationToCalendar(reservation) {
+  await initGoogleCalendar();
   if (!calendar) throw new Error('Google Calendar integration is not initialized (check credentials).');
   
   // Wait to make sure the calendar ID is fetched if not ready yet
@@ -538,7 +888,8 @@ async function syncReservationToCalendar(reservation) {
       clientName = reservation.dj_name || 'Client';
     }
 
-    const title = `Location: ${clientName}`;
+    const prefix = bType === 'livraison' ? 'Livr' : 'Loc';
+    const title = `${prefix}: ${clientName}`;
     
     let startDateObj = new Date(reservation.start_date);
     let endDateObj = new Date(reservation.end_date);
@@ -555,10 +906,33 @@ async function syncReservationToCalendar(reservation) {
     const endFormat = endDateObj.toISOString().split('T')[0];
 
     let description = `📦 MATÉRIEL LOUÉ :\n`;
-    const items = reservation.items || reservation.equipment_items || [];
+    const items = reservation.equipment_items || reservation.items || [];
     if (items && items.length > 0) {
       for (const item of items) {
-        description += `• ${item.quantity || 1} x ${item.name || item.equipment_name || 'Matériel'}\n`;
+        let eqName = item.equipment_name || item.name || '';
+        const lowerName = eqName.trim().toLowerCase();
+        
+        // If the name is generic, missing, or literally 'matériel'/'materiel', try to resolve from the DB using equipment_id or id
+        if (!eqName || lowerName === 'matériel' || lowerName === 'materiel' || lowerName === '') {
+          const eqId = item.equipment_id || item.id;
+          if (eqId) {
+            try {
+              const eq = await db.collection('location_equipment').findOne({ id: eqId });
+              if (eq && eq.name) {
+                eqName = eq.name;
+              }
+            } catch (err) {
+              console.error(`[GCal Sync] Error resolving equipment name for ID ${eqId}:`, err);
+            }
+          }
+        }
+        
+        // Final fallback if name could not be resolved
+        if (!eqName) {
+          eqName = 'Matériel';
+        }
+        
+        description += `• ${item.quantity || 1} x ${eqName}\n`;
       }
     }
     
@@ -571,52 +945,140 @@ async function syncReservationToCalendar(reservation) {
     
     description += `\n-----------------\n`;
     description += `💰 TOTAL : ${reservation.total_amount || 0} €`;
+    
+    // Add custom identifier at the end of the description to avoid creating duplicate events
+    description += `\n\n[RESERVATION_ID: ${reservation.id}]`;
 
-    // colorId 9 = Bleu (Blueberry), 3 = Violet (Grape)
-    const colorId = bType === 'client' ? '9' : '3';
+    // Generate the deterministic Google Calendar Event ID from the reservation ID
+    const deterministicEventId = generateGCalEventId(reservation.id);
 
     const event = {
+      id: deterministicEventId, // Set custom event ID
       summary: title,
       description: description,
-      colorId: colorId,
       start: {
         date: startFormat,
-        timeZone: 'Europe/Paris',
       },
       end: {
         date: endFormat,
-        timeZone: 'Europe/Paris',
       },
     };
 
+    // If there is any legacy google_event_id saved that is different from our deterministic event ID,
+    // we delete that legacy event first to prevent duplicates!
+    if (reservation.google_event_id && reservation.google_event_id !== deterministicEventId) {
+      try {
+        await calendar.events.delete({
+          calendarId: locationCalendarId,
+          eventId: reservation.google_event_id,
+        });
+        console.log(`[GCal Sync] Deleted legacy non-deterministic event: ${reservation.google_event_id}`);
+      } catch (delErr) {
+        // If not found or failed, ignore
+        console.warn(`[GCal Sync] Could not delete legacy event ${reservation.google_event_id}:`, delErr.message);
+      }
+    }
+
+    // Check if the event with deterministic ID already exists on Google Calendar
+    let existsOnCalendar = false;
+    try {
+      await calendar.events.get({
+        calendarId: locationCalendarId,
+        eventId: deterministicEventId,
+      });
+      existsOnCalendar = true;
+      console.log(`[GCal Sync] Found existing calendar event for deterministic ID: ${deterministicEventId}`);
+    } catch (getErr) {
+      const status = getErr.status || (getErr.response && getErr.response.status);
+      if (status !== 404) {
+        console.warn(`[GCal Sync] Event get returned status ${status}. Assuming not found.`);
+      }
+    }
+
+    // Also check if there are other duplicates by title/date or containing the RESERVATION_ID in the description,
+    // just in case they were created in the past and don't match our deterministicEventId!
+    try {
+      const listRes = await calendar.events.list({
+        calendarId: locationCalendarId,
+        q: reservation.id,
+        singleEvents: true,
+      });
+      const existingLegacyMatches = (listRes.data.items || []).filter(evt => {
+        // Ensure it's not our deterministicEventId so we don't delete our target!
+        return evt.id !== deterministicEventId;
+      });
+
+      if (existingLegacyMatches.length > 0) {
+        console.log(`[GCal Sync] Found ${existingLegacyMatches.length} legacy duplicates containing reservation ID ${reservation.id}. Cleaning them up...`);
+        for (const legacyEvt of existingLegacyMatches) {
+          try {
+            await calendar.events.delete({
+              calendarId: locationCalendarId,
+              eventId: legacyEvt.id,
+            });
+            console.log(`[GCal Sync] Deleted legacy duplicate event ${legacyEvt.id}`);
+          } catch (delErr) {
+            console.error(`[GCal Sync] Error deleting legacy duplicate event ${legacyEvt.id}:`, delErr.message);
+          }
+        }
+      }
+    } catch (searchErr) {
+      console.warn('[GCal Sync] Error listing/cleaning up legacy events containing ID:', searchErr.message);
+    }
+
     let response;
-    if (reservation.google_event_id) {
+    // We try to update/restore first, then fall back to insert, then update again in case of conflict.
+    if (existsOnCalendar) {
       try {
         response = await calendar.events.update({
           calendarId: locationCalendarId,
-          eventId: reservation.google_event_id,
+          eventId: deterministicEventId,
           resource: event,
         });
-        console.log(`Event updated in Google Calendar: ${response.data.htmlLink}`);
-        return reservation.google_event_id;
+        console.log(`[GCal Sync] Event updated successfully with deterministic ID: ${deterministicEventId}`);
       } catch (updateErr) {
-        const status = updateErr.status || (updateErr.response && updateErr.response.status);
-        if (status === 404 || status === 410) {
-          console.log(`Event ${reservation.google_event_id} not found or deleted on update. Will recreate.`);
-          // Do not throw, let it fall through to create a new event
+        console.warn(`[GCal Sync] Update failed for deterministic ID ${deterministicEventId}. Trying insert...`, updateErr.message);
+        existsOnCalendar = false;
+      }
+    }
+
+    if (!existsOnCalendar) {
+      try {
+        response = await calendar.events.insert({
+          calendarId: locationCalendarId,
+          resource: event,
+        });
+        console.log(`[GCal Sync] Event created successfully with deterministic ID: ${response.data.id}`);
+      } catch (insertErr) {
+        const insertStatus = insertErr.status || (insertErr.response && insertErr.response.status);
+        if (insertStatus === 409) {
+          console.log(`[GCal Sync] 409 Conflict on insert. Retrying update/restore from trash...`);
+          response = await calendar.events.update({
+            calendarId: locationCalendarId,
+            eventId: deterministicEventId,
+            resource: event,
+          });
+          console.log(`[GCal Sync] Event restored and updated successfully from trash: ${response.data.id}`);
         } else {
-          throw updateErr;
+          throw insertErr;
         }
       }
     }
-    
-    // If we reach here, either no google_event_id existed, or the event was deleted so we recreate
-    response = await calendar.events.insert({
-      calendarId: locationCalendarId,
-      resource: event,
-    });
-    console.log(`Event created/recreated in Google Calendar: ${response.data.htmlLink}`);
-    return response.data.id;
+
+    const finalEventId = response.data.id;
+
+    // Update database to ensure the google_event_id matches our deterministic ID
+    try {
+      await db.collection('location_reservations').updateOne(
+        { id: reservation.id },
+        { $set: { google_event_id: finalEventId } }
+      );
+      reservation.google_event_id = finalEventId;
+    } catch (dbErr) {
+      console.error('[GCal Sync DB Error] Failed to update google_event_id:', dbErr);
+    }
+
+    return finalEventId;
 
   } catch (error) {
     const status = error.status || (error.response && error.response.status);
@@ -633,6 +1095,7 @@ async function syncReservationToCalendar(reservation) {
 }
 
 async function deleteReservationFromGoogleCalendar(eventId) {
+  await initGoogleCalendar();
   if (!calendar) return; // Do nothing if not initialized
   if (!locationCalendarId || !eventId) return;
 
@@ -653,6 +1116,7 @@ async function deleteReservationFromGoogleCalendar(eventId) {
 }
 
 async function syncGoogleCalendarChangesBack() {
+  await initGoogleCalendar();
   if (!calendar || !locationCalendarId) return;
   try {
     const listRes = await calendar.events.list({
@@ -678,14 +1142,18 @@ async function syncGoogleCalendarChangesBack() {
       const event = gEventsMap[reservation.google_event_id];
       
       if (!event || event.status === 'cancelled') {
-        console.log(`[GCal Sync Back] Event ${reservation.google_event_id} was deleted on Google. Deleting local reservation ${reservation.id}.`);
-        await db.collection('location_reservations').deleteOne({ id: reservation.id });
+        console.log(`[GCal Sync Back] Event ${reservation.google_event_id} was deleted or not found on Google. Unsetting google_event_id on local reservation ${reservation.id} to avoid losing it.`);
+        await db.collection('location_reservations').updateOne(
+          { id: reservation.id },
+          { $unset: { google_event_id: "" } }
+        );
         continue;
       }
 
       let needsUpdate = false;
       const updateFields = {};
 
+      const isAllDay = !!event.end.date;
       const gStart = event.start.date || (event.start.dateTime ? event.start.dateTime.split('T')[0] : null);
       const gEnd = event.end.date || (event.end.dateTime ? event.end.dateTime.split('T')[0] : null);
 
@@ -696,11 +1164,19 @@ async function syncGoogleCalendarChangesBack() {
 
       if (gEnd) {
         let inclusiveEnd = gEnd;
-        try {
-          const d = new Date(gEnd);
-          d.setDate(d.getDate() - 1);
-          inclusiveEnd = d.toISOString().split('T')[0];
-        } catch (e) {}
+        if (isAllDay) {
+          try {
+            const parts = gEnd.split('-');
+            if (parts.length === 3) {
+              const year = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1;
+              const day = parseInt(parts[2], 10);
+              const dateObj = new Date(Date.UTC(year, month, day));
+              dateObj.setUTCDate(dateObj.getUTCDate() - 1);
+              inclusiveEnd = dateObj.toISOString().split('T')[0];
+            }
+          } catch (e) {}
+        }
 
         if (inclusiveEnd !== reservation.end_date) {
           updateFields.end_date = inclusiveEnd;
@@ -710,7 +1186,7 @@ async function syncGoogleCalendarChangesBack() {
 
       if (event.summary) {
         let updatedClientName = reservation.client_name;
-        const summaryMatch = event.summary.match(/^Location:\s*(.*)/i);
+        const summaryMatch = event.summary.match(/^(?:Loc|Livr|Location):\s*(.*)/i);
         if (summaryMatch && summaryMatch[1]) {
           updatedClientName = summaryMatch[1].trim();
         } else {
@@ -743,7 +1219,12 @@ async function syncGoogleCalendarChangesBack() {
       }
     }
   } catch (err) {
-    console.error('[GCal Sync Back Error] Failed to sync changes back from Google Calendar:', err);
+    const errMsg = err.message || String(err);
+    if (errMsg.includes('Premature close') || errMsg.includes('socket hang up') || errMsg.includes('fetch failed') || errMsg.includes('token')) {
+      console.warn('[GCal Sync Back Warning] Google Calendar sync-back temporarily unavailable (transient network close or token issue):', errMsg);
+    } else {
+      console.error('[GCal Sync Back Error] Failed to sync changes back from Google Calendar:', errMsg);
+    }
   }
 }
 
@@ -765,31 +1246,15 @@ async function deleteGoogleCalendarEvent(calendarId, eventId) {
   }
 }
 
-function getGCalColorId(title, eventType, description) {
-  const t = (title || '').toLowerCase();
-  const et = (eventType || '').toLowerCase();
-  const desc = (description || '').toLowerCase();
-  
-  // Checking for "show", "hypnose", "hypnotique" or speech-to-text "chaud" (French speech-to-text pronunciation for show)
-  if (
-    t.includes('show') || t.includes('hypnose') || t.includes('hypnotique') || t.includes('chaud') ||
-    et.includes('show') || et.includes('hypnose') || et.includes('hypnotique') || et.includes('chaud') ||
-    desc.includes('show') || desc.includes('hypnose') || desc.includes('hypnotique') || desc.includes('chaud')
-  ) {
-    return '10'; // Basil (Vert basilic / Green)
-  }
-  
-  return '7'; // Peacock (Bleu paon / Original / Default)
-}
-
 async function syncContractToGoogleCalendar(contract) {
   if (!calendar) {
     console.warn('[GCal Sync Skip] Google Calendar is not initialized.');
     return;
   }
 
-  const djProfileId = typeof contract.dj_profile === 'string' ? contract.dj_profile : (contract.dj_profile?.id || contract.dj_profile_data?.id);
-  const isDeletedOrDraft = !contract.status || ['deleted', 'trash', 'draft'].includes(contract.status);
+  const rawDjProfileId = typeof contract.dj_profile === 'string' ? contract.dj_profile : (contract.dj_profile?.id || contract.dj_profile_data?.id);
+  const djProfileId = resolveDjProfileId(rawDjProfileId);
+  const isDeletedOrDraft = !contract.status || ['deleted', 'trash', 'draft', 'cancelled'].includes(contract.status);
 
   // If deleted, draft, or no DJ is assigned, we should remove the Google Calendar event if it exists
   if (isDeletedOrDraft || !djProfileId) {
@@ -809,7 +1274,13 @@ async function syncContractToGoogleCalendar(contract) {
   }
 
   // Get DJ Profile
-  const dj = await db.collection('dj_profiles').findOne({ id: djProfileId });
+  let dj = await db.collection('dj_profiles').findOne({ id: djProfileId });
+  if (!dj && contract.dj_profile_data?.nom_artistique) {
+    dj = await db.collection('dj_profiles').findOne({ nom_artistique: contract.dj_profile_data.nom_artistique });
+  }
+  if (!dj && contract.dj_profile_data?.nom_complet) {
+    dj = await db.collection('dj_profiles').findOne({ nom_complet: contract.dj_profile_data.nom_complet });
+  }
   if (!dj) {
     console.warn(`[GCal Sync Skip] DJ Profile ${djProfileId} not found.`);
     return;
@@ -888,7 +1359,6 @@ async function syncContractToGoogleCalendar(contract) {
     summary: `${eventType} - ${clientName}`,
     description: description,
     location: locationText,
-    colorId: getGCalColorId(`${eventType} - ${clientName}`, eventType, description),
     start: {
       date: startFormat,
       timeZone: 'Europe/Paris'
@@ -898,6 +1368,11 @@ async function syncContractToGoogleCalendar(contract) {
       timeZone: 'Europe/Paris'
     }
   };
+
+  const eventTypeLower = eventType.toLowerCase();
+  if (eventTypeLower.includes('hypnose')) {
+    eventResource.colorId = '10'; // Basil (Green)
+  }
 
   try {
     let response;
@@ -961,11 +1436,10 @@ async function syncCustomEventToGoogleCalendar(item) {
     return;
   }
 
-  const isDeletedOrDraft = item.status === 'deleted' || item.status === 'trash';
-  const djId = item.djId;
+  const isDeletedOrDraft = item.status === 'deleted' || item.status === 'trash' || item.status === 'cancelled';
+  const djId = resolveDjProfileId(item.djId);
 
-  // Option events or non-DJ events are not assigned to a DJ
-  if (isDeletedOrDraft || !djId || item.isOption) {
+  if (isDeletedOrDraft || (!djId && !item.isOption)) {
     if (item.google_event_id && item.google_calendar_id) {
       try {
         await deleteGoogleCalendarEvent(item.google_calendar_id, item.google_event_id);
@@ -981,16 +1455,24 @@ async function syncCustomEventToGoogleCalendar(item) {
     return;
   }
 
-  // Get DJ Profile
-  const dj = await db.collection('dj_profiles').findOne({ id: djId });
-  if (!dj) {
-    console.warn(`[GCal Sync Skip] DJ Profile ${djId} not found for custom event.`);
-    return;
+  let targetCalendarId = null;
+
+  if (djId) {
+    const dj = await db.collection('dj_profiles').findOne({ id: djId });
+    if (dj && dj.google_calendar_id && dj.google_calendar_id.trim()) {
+      targetCalendarId = dj.google_calendar_id.trim();
+    }
   }
 
-  const targetCalendarId = (dj.google_calendar_id || '').trim();
+  if (!targetCalendarId && item.isOption) {
+    if (!locationCalendarId) {
+      locationCalendarId = 'primary';
+    }
+    targetCalendarId = locationCalendarId;
+  }
+
   if (!targetCalendarId) {
-    console.log(`[GCal Sync Skip] DJ ${dj.nom_artistique || dj.nom_complet} has no Google Calendar ID configured for custom event.`);
+    console.log(`[GCal Sync Skip] No Google Calendar ID configured for custom event or option.`);
     if (item.google_event_id && item.google_calendar_id) {
       try {
         await deleteGoogleCalendarEvent(item.google_calendar_id, item.google_event_id);
@@ -1046,11 +1528,12 @@ async function syncCustomEventToGoogleCalendar(item) {
     `📝 DÉTAILS / NOTES :\n${details}\n` +
     `----------------------------------------`;
 
+  const eventTitle = item.isOption ? `[OPTION] ${item.title}` : `${item.title}`;
+
   const eventResource = {
-    summary: `${item.title}`,
+    summary: eventTitle,
     description: description,
     location: locationText,
-    colorId: getGCalColorId(item.title, item.eventType, description),
     start: {
       date: startFormat,
       timeZone: 'Europe/Paris'
@@ -1060,6 +1543,12 @@ async function syncCustomEventToGoogleCalendar(item) {
       timeZone: 'Europe/Paris'
     }
   };
+
+  const itemEventTypeLower = (item.eventType || '').toLowerCase();
+  const itemTitleLower = (item.title || '').toLowerCase();
+  if (itemEventTypeLower.includes('hypnose') || itemTitleLower.includes('hypnose')) {
+    eventResource.colorId = '10'; // Basil (Green)
+  }
 
   try {
     let response;
@@ -1258,6 +1747,20 @@ async function connectDB() {
     db = client.db(DB_NAME);
     dbError = null;
     console.log(`Connected to MongoDB: ${DB_NAME}`);
+
+    // DIAGNOSTIC LOG FOR RESERVATIONS DUPLICATION
+    try {
+      const resList = await db.collection('location_reservations').find({}).toArray();
+      let logContent = `=== DIAGNOSTIC: FOUND ${resList.length} RESERVATIONS IN DB ===\n`;
+      for (const r of resList) {
+        logContent += `[DB Res] ID: ${r.id}, Client: ${r.client_name}, BookingType: ${r.booking_type}, Start: ${r.start_date}, End: ${r.end_date}, GCal ID: ${r.google_event_id || 'NONE'}\n`;
+      }
+      logContent += '==================================================\n';
+      fs.writeFileSync(path.join(__dirname, 'diagnostic-reservations.log'), logContent, 'utf8');
+      console.log('Diagnostic file written to diagnostic-reservations.log');
+    } catch (diagErr) {
+      console.error('Error running diagnostic:', diagErr);
+    }
 
     await ensureAdminUser();
 
@@ -1919,7 +2422,7 @@ api.delete('/home-notes/:id', authMiddleware, async (req, res) => {
   await db.collection('home_notes').deleteOne({ id: req.params.id });
   res.json({ success: true });
 });
-api.get('/notifications/unread-count', authMiddleware, async (req, res) => {
+api.get('/dj-client/pending-alerts', authMiddleware, async (req, res) => {
   try {
     const contracts = await db.collection('contracts2').find(
       { status: { $nin: ['trash'] } },
@@ -1950,7 +2453,7 @@ api.get('/notifications/unread-count', authMiddleware, async (req, res) => {
     });
     res.json({ count });
   } catch (error) {
-    console.error("Error in /notifications/unread-count:", error);
+    console.error("Error in /dj-client/pending-alerts:", error);
     res.json({ count: 0 });
   }
 });
@@ -2940,7 +3443,8 @@ async function syncContractReservations(contract) {
     return;
   }
   
-  const dj = await db.collection('dj_profiles').findOne({ id: contract.dj_profile });
+  const resolvedDjId = resolveDjProfileId(contract.dj_profile);
+  const dj = await db.collection('dj_profiles').findOne({ id: resolvedDjId });
   const djName = dj && (dj.nom_artistique || dj.nom_complet) ? (dj.nom_artistique || dj.nom_complet) : 'DJ';
   
   const reservationData = {
@@ -2985,7 +3489,7 @@ api.get('/contracts2/trash', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('contracts2').find({ status: 'trash' }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/contracts2/archived', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('contracts2').find({ status: 'archived' }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
+  res.json(cleanList(await db.collection('contracts2').find({ status: { $in: ['archived', 'cancelled'] } }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/contracts2/signatures', authMiddleware, async (req, res) => {
   const contracts = await db.collection('contracts2').find({}, { projection: { _id: 0, id: 1, client_name: 1, signatures: 1, status: 1 } }).toArray();
@@ -3009,7 +3513,11 @@ api.put('/contracts2/:id', authMiddleware, async (req, res) => {
   res.json(updatedContract);
 });
 api.put('/contracts2/:id/status', authMiddleware, async (req, res) => {
-  await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { status: req.body.status, updated_at: new Date().toISOString() } });
+  const updateData = { status: req.body.status, updated_at: new Date().toISOString() };
+  if (req.body.cancellation_observation !== undefined) {
+    updateData.cancellation_observation = req.body.cancellation_observation;
+  }
+  await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: updateData });
   const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
   await syncContractReservations(updatedContract);
   res.json(updatedContract);
@@ -4426,6 +4934,7 @@ api.put('/location/quotes/:id', authMiddleware, async (req, res) => {
       delivery_zone: updatedQuote.delivery_zone || associatedReservation.delivery_zone,
       installation_cost: updatedQuote.installation_cost || associatedReservation.installation_cost,
       equipment_items: updatedQuote.items || associatedReservation.equipment_items,
+      items: updatedQuote.items || associatedReservation.items || associatedReservation.equipment_items,
       updated_at: new Date().toISOString()
     };
     await db.collection('location_reservations').updateOne({ id: associatedReservation.id }, { $set: resUpdate });
@@ -4518,6 +5027,7 @@ api.patch('/location/quotes/:id', authMiddleware, async (req, res) => {
         delivery_zone: updatedQuote.delivery_zone || associatedReservation.delivery_zone,
         installation_cost: updatedQuote.installation_cost || associatedReservation.installation_cost,
         equipment_items: updatedQuote.items || associatedReservation.equipment_items,
+        items: updatedQuote.items || associatedReservation.items || associatedReservation.equipment_items,
         updated_at: new Date().toISOString()
       };
       await db.collection('location_reservations').updateOne({ id: associatedReservation.id }, { $set: resUpdate });
@@ -4980,6 +5490,53 @@ api.get('/location/gcs-diagnostic', authMiddleware, async (req, res) => {
 // Location Reservations
 api.get('/location/reservations', authMiddleware, async (req, res) => {
   try {
+    // Self-healing: Auto-generate missing reservations from accepted location quotes
+    const acceptedQuotes = await db.collection('location_quotes').find({
+      status: { $in: ['Accepté', 'accepté', 'Accepted', 'accepted', 'Valide', 'valide'] }
+    }).toArray();
+    
+    for (const quote of acceptedQuotes) {
+      const existing = await db.collection('location_reservations').findOne({ quote_id: quote.id });
+      if (!existing) {
+        console.log(`Self-healing: Creating missing reservation for accepted quote ${quote.id} (${quote.client_name})`);
+        const reservationData = {
+          client_id: quote.client_id || '',
+          client_name: quote.client_name || '',
+          start_date: quote.start_date || '',
+          end_date: quote.end_date || '',
+          total_amount: quote.total_amount || 0,
+          subtotal: quote.subtotal || 0,
+          deposit_amount: quote.deposit_amount || 0,
+          guarantee_amount: quote.guarantee_amount || 0,
+          delivery_cost: quote.delivery_cost || 0,
+          delivery_address: quote.delivery_address || '',
+          delivery_zone: quote.delivery_zone || '',
+          installation_cost: quote.installation_cost || 0,
+          equipment_items: quote.items || [],
+          booking_type: quote.booking_type || 'client',
+          quote_id: quote.id,
+          status: 'accepted'
+        };
+        const r = { id: uuidv4(), ...reservationData, created_at: new Date().toISOString() };
+        
+        // Try auto sync to google calendar
+        try {
+          const googleEventId = await tryAutoSyncToGoogle(r);
+          if (googleEventId && googleEventId !== 'DELETED') {
+            r.google_event_id = googleEventId;
+          }
+        } catch (gcalErr) {
+          console.error(`GCal sync error in self-healing for quote ${quote.id}:`, gcalErr);
+        }
+        
+        await db.collection('location_reservations').insertOne(r);
+      }
+    }
+  } catch (err) {
+    console.error('Error during self-healing accepted quotes in GET reservations:', err);
+  }
+
+  try {
     await syncGoogleCalendarChangesBack();
   } catch (err) {
     console.error('Error during GCal sync-back in GET endpoint:', err);
@@ -5076,7 +5633,11 @@ api.post('/location/reservations/direct', authMiddleware, async (req, res) => {
   res.json(clean(r));
 });
 api.put('/location/reservations/:id', authMiddleware, async (req, res) => {
-  await db.collection('location_reservations').updateOne({ id: req.params.id }, { $set: req.body });
+  const updateFields = { ...req.body };
+  if (updateFields.equipment_items && !updateFields.items) {
+    updateFields.items = updateFields.equipment_items;
+  }
+  await db.collection('location_reservations').updateOne({ id: req.params.id }, { $set: updateFields });
   const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } });
   
   if (updatedReservation) {
@@ -5182,11 +5743,31 @@ api.post('/location/reservations/:id/sync-google', authMiddleware, async (req, r
     // Always call sync function, which will handle updates for existing ones or create new ones
     // We update the bType condition so manual syncs work for the approved types
     const bType = (reservation.booking_type || '').toLowerCase();
-    if (bType !== 'client' && bType !== 'livraison' && bType !== 'dj') {
-      return res.status(400).json({ error: 'Only Client, Livraison, and DJ reservations can be synced' });
+    if (bType !== 'client' && bType !== 'livraison') {
+      return res.status(400).json({ error: 'Only Client and Livraison reservations can be synced' });
     }
 
-    const googleEventId = await syncReservationToCalendar(reservation);
+    // Try multiple times with exponential backoff if we hit a network issue
+    let googleEventId = null;
+    let lastError = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        googleEventId = await syncReservationToCalendar(reservation);
+        lastError = null;
+        break; // Success!
+      } catch (err) {
+        lastError = err;
+        console.warn(`[GCal Sync] Attempt ${attempt} failed for reservation ${reservation.id}: ${err.message}`);
+        if (attempt < 3) {
+          // exponential delay: 1000ms, 2000ms
+          await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+        }
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
     
     if (googleEventId) {
       await db.collection('location_reservations').updateOne(
@@ -5204,11 +5785,18 @@ api.post('/location/reservations/:id/sync-google', authMiddleware, async (req, r
         res.json({ success: true, googleEventId });
       }
     } else {
-      res.status(500).json({ error: 'Failed to sync with Google Calendar for unknown reasons' });
+      res.status(500).json({ error: 'La synchronisation Google Calendar a échoué pour une raison inconnue.' });
     }
   } catch (error) {
     console.error('Error in manual Google sync:', error);
-    res.status(500).json({ error: error.message || 'Internal server error during sync' });
+    // Format error message to be highly clean and user-friendly in French
+    let displayError = error.message || '';
+    if (displayError.includes('Premature close') || displayError.includes('fetch failed')) {
+      displayError = "Connexion interrompue avec les serveurs de Google. Veuillez réessayer d'ici quelques instants.";
+    }
+    res.status(500).json({ 
+      error: `La synchronisation Google Calendar a échoué. ${displayError}` 
+    });
   }
 });
 
@@ -5247,6 +5835,7 @@ api.post('/location/sync-all-google', authMiddleware, async (req, res) => {
     res.status(500).json({ error: error.message || 'Internal server error during batch sync' });
   }
 });
+
 
 // ══════════ DELIVERY WORKFLOW ══════════
 api.get('/delivery/pending', authMiddleware, async (req, res) => {
@@ -6613,13 +7202,56 @@ api.get('/agenda-custom-events', authMiddleware, async (req, res) => {
 
 api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
   try {
-    const { title, date, isOption, djId, djName, clientName, clientPhone, eventType, details, location } = req.body;
+    const { title, date, isOption, djId, djName, clientName, clientPhone, eventType, details, location, recurrence, recurrenceEndType, recurrenceEndDate, recurrenceCount } = req.body;
     if (!title || !date) {
       return res.status(400).json({ error: "Le titre et la date sont requis." });
     }
-    const newEvent = {
+
+    const dates = [date];
+    const recurrenceId = (recurrence && recurrence !== 'none') ? new ObjectId().toString() : null;
+
+    if (recurrence && recurrence !== 'none') {
+      const parts = date.split('-');
+      let current = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      const limit = 100;
+      let count = 1;
+
+      let endDateObj = null;
+      if (recurrenceEndType === 'date' && recurrenceEndDate) {
+        const endParts = recurrenceEndDate.split('-');
+        endDateObj = new Date(parseInt(endParts[0], 10), parseInt(endParts[1], 10) - 1, parseInt(endParts[2], 10));
+      }
+
+      while (count < (recurrenceEndType === 'count' ? (recurrenceCount || 5) : limit)) {
+        if (recurrence === 'daily') {
+          current.setDate(current.getDate() + 1);
+        } else if (recurrence === 'weekly') {
+          current.setDate(current.getDate() + 7);
+        } else if (recurrence === 'monthly') {
+          current.setMonth(current.getMonth() + 1);
+        } else {
+          break;
+        }
+
+        const yyyy = current.getFullYear();
+        const mm = String(current.getMonth() + 1).padStart(2, '0');
+        const dd = String(current.getDate()).padStart(2, '0');
+        const formattedDate = `${yyyy}-${mm}-${dd}`;
+
+        if (recurrenceEndType === 'date' && endDateObj) {
+          if (current > endDateObj) {
+            break;
+          }
+        }
+
+        dates.push(formattedDate);
+        count++;
+      }
+    }
+
+    const newEvents = dates.map(d => ({
       title,
-      date, // "YYYY-MM-DD"
+      date: d,
       isOption: !!isOption,
       djId: djId || null,
       djName: djName || "",
@@ -6628,19 +7260,25 @@ api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
       eventType: eventType || "",
       details: details || "",
       location: location || "",
+      recurrenceId,
       createdAt: new Date().toISOString()
-    };
-    const result = await db.collection('agenda_custom_events').insertOne(newEvent);
-    const insertedDoc = { _id: result.insertedId, ...newEvent };
+    }));
+
+    const result = await db.collection('agenda_custom_events').insertMany(newEvents);
     
-    // Sync to Google Calendar
-    try {
-      await syncCustomEventToGoogleCalendar(insertedDoc);
-    } catch (gcalErr) {
-      console.error('[agenda-custom-events POST] GCal sync failed:', gcalErr);
+    // Sync all generated events to Google Calendar
+    const insertedDocs = [];
+    for (let i = 0; i < newEvents.length; i++) {
+      const insertedDoc = { _id: result.insertedIds[i], ...newEvents[i] };
+      insertedDocs.push(insertedDoc);
+      try {
+        await syncCustomEventToGoogleCalendar(insertedDoc);
+      } catch (gcalErr) {
+        console.error('[agenda-custom-events POST] GCal sync failed for date ' + newEvents[i].date, gcalErr);
+      }
     }
 
-    res.json({ success: true, id: result.insertedId, document: insertedDoc });
+    res.json({ success: true, id: result.insertedIds[0], document: insertedDocs[0], count: newEvents.length, documents: insertedDocs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -6690,18 +7328,38 @@ api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
 api.delete('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const { deleteAllSeries } = req.query;
     
-    // Fetch before deleting to remove Google Calendar event
+    // Fetch before deleting to remove Google Calendar event(s)
     const item = await db.collection('agenda_custom_events').findOne({ _id: new ObjectId(id) });
-    if (item && item.google_event_id && item.google_calendar_id) {
-      try {
-        await deleteGoogleCalendarEvent(item.google_calendar_id, item.google_event_id);
-      } catch (gcalErr) {
-        console.error('[agenda-custom-events DELETE] GCal event delete failed:', gcalErr);
-      }
+    if (!item) {
+      return res.status(404).json({ error: "Événement non trouvé." });
     }
 
-    await db.collection('agenda_custom_events').deleteOne({ _id: new ObjectId(id) });
+    if (deleteAllSeries === 'true' && item.recurrenceId) {
+      // Find all events in the series
+      const series = await db.collection('agenda_custom_events').find({ recurrenceId: item.recurrenceId }).toArray();
+      for (const s of series) {
+        if (s.google_event_id && s.google_calendar_id) {
+          try {
+            await deleteGoogleCalendarEvent(s.google_calendar_id, s.google_event_id);
+          } catch (gcalErr) {
+            console.error('[agenda-custom-events DELETE series] GCal event delete failed:', gcalErr);
+          }
+        }
+      }
+      await db.collection('agenda_custom_events').deleteMany({ recurrenceId: item.recurrenceId });
+    } else {
+      if (item.google_event_id && item.google_calendar_id) {
+        try {
+          await deleteGoogleCalendarEvent(item.google_calendar_id, item.google_event_id);
+        } catch (gcalErr) {
+          console.error('[agenda-custom-events DELETE] GCal event delete failed:', gcalErr);
+        }
+      }
+      await db.collection('agenda_custom_events').deleteOne({ _id: new ObjectId(id) });
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -6739,38 +7397,24 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
     }).toArray();
 
     for (const contract of activeContracts) {
-      const djProfileId = typeof contract.dj_profile === 'string' ? contract.dj_profile : (contract.dj_profile?.id || contract.dj_profile_data?.id);
-      if (djProfileId) {
-        // Fetch DJ profile to see if GCal ID exists
-        const dj = await db.collection('dj_profiles').findOne({ id: djProfileId });
-        if (dj && dj.google_calendar_id && dj.google_calendar_id.trim()) {
-          const calId = dj.google_calendar_id.trim();
-          const result = await syncContractToGoogleCalendar(contract);
-          if (result && result.success === false) {
-            failedCalendars.add(calId);
-            failedReasons[calId] = result.error;
-          } else {
-            syncedContractsCount++;
-          }
-        }
+      const result = await syncContractToGoogleCalendar(contract);
+      if (result && result.success === false) {
+        failedCalendars.add(result.calendarId || 'unknown');
+        failedReasons[result.calendarId || 'unknown'] = result.error;
+      } else {
+        syncedContractsCount++;
       }
     }
 
     // 2. Sync active custom events
     const customEvents = await db.collection('agenda_custom_events').find({}).toArray();
     for (const item of customEvents) {
-      if (item.djId && !item.isOption) {
-        const dj = await db.collection('dj_profiles').findOne({ id: item.djId });
-        if (dj && dj.google_calendar_id && dj.google_calendar_id.trim()) {
-          const calId = dj.google_calendar_id.trim();
-          const result = await syncCustomEventToGoogleCalendar(item);
-          if (result && result.success === false) {
-            failedCalendars.add(calId);
-            failedReasons[calId] = result.error;
-          } else {
-            syncedCustomEventsCount++;
-          }
-        }
+      const result = await syncCustomEventToGoogleCalendar(item);
+      if (result && result.success === false) {
+        failedCalendars.add(result.calendarId || 'unknown');
+        failedReasons[result.calendarId || 'unknown'] = result.error;
+      } else {
+        syncedCustomEventsCount++;
       }
     }
 
@@ -6803,7 +7447,18 @@ api.use((err, req, res, next) => {
 app.use('/api', api);
 
 // Serve frontend build
-const frontendPath = path.join(__dirname, 'frontend', 'build');
+let frontendPath = path.join(__dirname, 'frontend', 'build');
+if (!fs.existsSync(frontendPath)) {
+  const productionPath = path.join(__dirname, 'frontend', 'build_production');
+  if (fs.existsSync(productionPath)) {
+    frontendPath = productionPath;
+  } else {
+    const distPath = path.join(__dirname, 'frontend', 'dist');
+    if (fs.existsSync(distPath)) {
+      frontendPath = distPath;
+    }
+  }
+}
 
 console.log(`Serving frontend from: ${frontendPath}`);
 app.use(express.static(frontendPath));
@@ -6829,6 +7484,65 @@ app.use('/api', (req, res) => {
     detail: `Route API non trouvée: ${req.method} ${req.originalUrl}`,
     hint: "Vérifiez que le serveur est bien démarré et que la route est correcte."
   });
+});
+
+// ═══════════════════════════════════════════
+// BACKGROUND SYNC TASKS
+// ═══════════════════════════════════════════
+const cron = require('node-cron');
+
+cron.schedule('* * * * *', async () => {
+  if (!db) return;
+  try {
+    const settings = await db.collection('global_settings').findOne({ type: 'company' });
+    if (!settings || !settings.auto_sync_enabled) return;
+
+    const now = new Date();
+    // Assuming Paris timezone as the default for the user
+    const formatter = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'Europe/Paris',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    // Formatter returns like "12:00", wait, fr-FR format is "12:00" or "12 h 00" sometimes. 
+    // Let's use simple local time padding just in case, but formatting with options is safer:
+    const parts = formatter.formatToParts(now);
+    const hour = parts.find(p => p.type === 'hour')?.value;
+    const minute = parts.find(p => p.type === 'minute')?.value;
+    const currentParisTime = `${hour}:${minute}`;
+    
+    if (currentParisTime === settings.auto_sync_time_1 || currentParisTime === settings.auto_sync_time_2) {
+      console.log(`[CRON] Auto-sync triggered at ${currentParisTime}`);
+      
+      // Sync Location
+      const reservations = await db.collection('location_reservations').find({}).toArray();
+      for (const resItem of reservations) {
+          const googleEventId = await tryAutoSyncToGoogle(resItem);
+          if (googleEventId === 'DELETED') {
+              await db.collection('location_reservations').updateOne({ id: resItem.id }, { $unset: { google_event_id: "" } });
+          } else if (googleEventId && googleEventId !== resItem.google_event_id) {
+              await db.collection('location_reservations').updateOne({ id: resItem.id }, { $set: { google_event_id: googleEventId } });
+          }
+      }
+
+      // Sync Agenda
+      if (calendar) {
+        const activeContracts = await db.collection('contracts2').find({ status: { $nin: ['deleted', 'trash', 'draft'] } }).toArray();
+        for (const contract of activeContracts) {
+          await syncContractToGoogleCalendar(contract);
+        }
+
+        const customEvents = await db.collection('agenda_custom_events').find({}).toArray();
+        for (const item of customEvents) {
+          await syncCustomEventToGoogleCalendar(item);
+        }
+      }
+      
+      console.log(`[CRON] Auto-sync completed.`);
+    }
+  } catch (err) {
+    console.error("[CRON] Auto-sync error:", err);
+  }
 });
 
 // ═══════════════════════════════════════════

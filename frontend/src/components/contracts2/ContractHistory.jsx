@@ -6,7 +6,7 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { 
   FileText, Calendar, MapPin, Music, Printer, Edit, Send, 
-  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye, Paperclip, Copy
+  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye, Paperclip, Copy, MoreVertical, XCircle
 } from 'lucide-react';
 
 export const ContractHistory = ({
@@ -30,12 +30,16 @@ export const ContractHistory = ({
   onPermanentDelete,
   onMarkArchivedAsUnsigned,
   onDeleteArchived,
+  onCancelArchived,
   onManageAttachments
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterYear, setFilterYear] = useState('All');
   const [filterTime, setFilterTime] = useState('All');
   const [actionLoading, setActionLoading] = useState({});
+  const [contractToCancel, setContractToCancel] = useState(null);
+  const [cancelObservation, setCancelObservation] = useState('');
+  const [openDropdownId, setOpenDropdownId] = useState(null);
 
   const handleRunAction = async (id, actionFn) => {
     if (!actionFn) return;
@@ -255,15 +259,23 @@ export const ContractHistory = ({
                           {contract.status === 'sent' && (
                             <Badge className="bg-green-100 text-green-800 border-green-200">Envoyé</Badge>
                           )}
-                          {contract.status !== 'draft' && contract.status !== 'sent' && (
+                          {contract.status === 'cancelled' && (
+                            <Badge className="bg-red-100 text-red-800 border-red-200">Annulé</Badge>
+                          )}
+                          {contract.status !== 'draft' && contract.status !== 'sent' && contract.status !== 'cancelled' && (
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                               contract.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
                             }`}>
-                              {contract.status}
+                              {contract.status === 'archived' ? 'Archivé' : contract.status}
                             </span>
                           )}
                         </div>
                         <p className="text-gray-600 mt-1">{contract.client_info.email}</p>
+                        {contract.status === 'cancelled' && contract.cancellation_observation && (
+                          <div className="mt-2 bg-red-50 border border-red-100 rounded-md p-2 text-sm text-red-800">
+                            <strong>Observation d'annulation: </strong> {contract.cancellation_observation}
+                          </div>
+                        )}
                         <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
                           <div className="flex items-center space-x-1">
                             <Calendar className="h-4 w-4" />
@@ -337,41 +349,59 @@ export const ContractHistory = ({
                         )}
 
                         {showArchive && (
-                          <>
-                            <Button 
-                              onClick={() => onDuplicateContract?.(contract)}
+                          <div className="relative">
+                            <Button
+                              onClick={() => setOpenDropdownId(openDropdownId === contract.id ? null : contract.id)}
                               variant="outline"
                               size="sm"
-                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                              title="Dupliquer ce contrat"
+                              className="text-gray-600 border-gray-200 hover:bg-gray-100 px-2"
                             >
-                              <Copy className="h-4 w-4 mr-1" />Dupliquer
+                              <MoreVertical className="h-4 w-4" />
                             </Button>
-                            <Button onClick={() => onManageAttachments(contract)} variant="outline" size="sm" className="text-emerald-800 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-900 font-medium">
-                              <Paperclip className="h-4 w-4 mr-1 text-emerald-700" />Pièces Jointes ({contract.event_documents?.length || 0})
-                            </Button>
-                            <Button onClick={() => onPreviewContract(contract)} variant="outline" size="sm" className="text-gray-600 border-gray-200 hover:bg-gray-50">
-                              <Eye className="h-4 w-4 mr-1" />Aperçu
-                            </Button>
-                            <Button 
-                              onClick={() => handleRunAction(contract.id, onMarkArchivedAsUnsigned)} 
-                              disabled={actionLoading[contract.id]}
-                              variant="outline" 
-                              size="sm" 
-                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                            >
-                              <RotateCcw className="h-4 w-4 mr-1" />Non signé
-                            </Button>
-                            <Button 
-                              onClick={() => handleRunAction(contract.id, onDeleteArchived)} 
-                              disabled={actionLoading[contract.id]}
-                              variant="outline" 
-                              size="sm" 
-                              className="text-red-600 border-red-200 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />Supprimer
-                            </Button>
-                          </>
+                            {openDropdownId === contract.id && (
+                              <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 shadow-xl rounded-md z-50 flex flex-col py-1 animate-in fade-in zoom-in-95 duration-100">
+                                <button
+                                  className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+                                  onClick={() => { setOpenDropdownId(null); onDuplicateContract?.(contract); }}
+                                >
+                                  <Copy className="h-4 w-4 mr-2" />Dupliquer
+                                </button>
+                                <button
+                                  className="w-full text-left px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50 flex items-center"
+                                  onClick={() => { setOpenDropdownId(null); onManageAttachments(contract); }}
+                                >
+                                  <Paperclip className="h-4 w-4 mr-2" />Pièces Jointes ({contract.event_documents?.length || 0})
+                                </button>
+                                <button
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center"
+                                  onClick={() => { setOpenDropdownId(null); onPreviewContract(contract); }}
+                                >
+                                  <Eye className="h-4 w-4 mr-2" />Aperçu
+                                </button>
+                                <button
+                                  className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+                                  onClick={() => { setOpenDropdownId(null); handleRunAction(contract.id, onMarkArchivedAsUnsigned); }}
+                                >
+                                  <RotateCcw className="h-4 w-4 mr-2" />Non signé
+                                </button>
+                                {contract.status !== 'cancelled' && (
+                                  <button
+                                    className="w-full text-left px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 flex items-center"
+                                    onClick={() => { setOpenDropdownId(null); setContractToCancel(contract.id); }}
+                                  >
+                                    <XCircle className="h-4 w-4 mr-2" />Annuler
+                                  </button>
+                                )}
+                                <div className="h-px bg-gray-100 my-1"></div>
+                                <button
+                                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center"
+                                  onClick={() => { setOpenDropdownId(null); handleRunAction(contract.id, onDeleteArchived); }}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />Supprimer
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
 
                         {showTrash && (
@@ -435,6 +465,52 @@ export const ContractHistory = ({
           )}
         </CardContent>
       </Card>
+
+      {/* Cancellation Modal */}
+      {contractToCancel && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/65 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center">
+                <XCircle className="w-5 h-5 text-red-500 mr-2" />
+                Annuler le contrat
+              </h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-4">
+              Veuillez saisir une observation pour cette annulation. Le contrat sera marqué comme annulé et retiré de l'agenda des prestations.
+            </p>
+            <div className="mb-6">
+              <textarea
+                className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[100px]"
+                placeholder="Ex: Annulation par le client suite à..."
+                value={cancelObservation}
+                onChange={(e) => setCancelObservation(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => { setContractToCancel(null); setCancelObservation(''); }}
+                className="text-slate-600"
+              >
+                Retour
+              </Button>
+              <Button
+                onClick={() => {
+                  if (onCancelArchived) {
+                    onCancelArchived(contractToCancel, cancelObservation);
+                  }
+                  setContractToCancel(null);
+                  setCancelObservation('');
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Confirmer l'annulation
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

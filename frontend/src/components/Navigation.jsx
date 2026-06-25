@@ -50,7 +50,7 @@ const Navigation = () => {
       try {
         const token = localStorage.getItem('access_token');
         if (!token) return;
-        const res = await fetch(`${BACKEND_URL}/api/notifications/unread-count`, {
+        const res = await fetch(`${BACKEND_URL}/api/dj-client/pending-alerts`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
@@ -59,7 +59,7 @@ const Navigation = () => {
             const data = await res.json();
             setDjClientNotifications(data.count || 0);
           } else {
-            console.warn("Received non-JSON response from /api/notifications/unread-count, possibly HTML fallback");
+            console.warn("Received non-JSON response from /api/dj-client/pending-alerts, possibly HTML fallback");
           }
         }
       } catch (err) {

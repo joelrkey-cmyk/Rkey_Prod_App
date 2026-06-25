@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Building2, Landmark, Loader2, Mail, Upload, Trash2, Server, Send, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Save, Building2, Landmark, Loader2, Mail, Upload, Trash2, Server, Send, Eye, EyeOff, Calendar } from 'lucide-react';
 import UserManagement from './settings/UserManagement';
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -43,6 +43,9 @@ const GlobalSettingsApp = () => {
     bank_iban: '',
     bank_bic: '',
     bank_titulaire: '',
+    auto_sync_enabled: false,
+    auto_sync_time_1: '12:00',
+    auto_sync_time_2: '00:00',
   });
 
   useEffect(() => {
@@ -69,6 +72,9 @@ const GlobalSettingsApp = () => {
         bank_iban: data.bank_iban || '',
         bank_bic: data.bank_bic || '',
         bank_titulaire: data.bank_titulaire || '',
+        auto_sync_enabled: !!data.auto_sync_enabled,
+        auto_sync_time_1: data.auto_sync_time_1 || '12:00',
+        auto_sync_time_2: data.auto_sync_time_2 || '00:00',
       });
       setSmtpData({
         smtp_server: data.smtp_server || '',
@@ -630,6 +636,61 @@ const GlobalSettingsApp = () => {
                       <strong>Utilisation :</strong> Ces paramètres sont utilisés par toutes les applications qui envoient des emails : Contrats artistiques, Devis, Location matériel, Formulaires.
                     </p>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Synchronisation Automatique Google Calendar */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-green-600" />
+                    Synchronisation Automatique (Agenda & Location)
+                  </CardTitle>
+                  <CardDescription>
+                    Configurez la synchronisation automatique des événements vers Google Calendar.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between p-4 bg-slate-50 border rounded-lg">
+                    <div>
+                      <h4 className="font-medium text-slate-800">Activer la synchronisation automatique</h4>
+                      <p className="text-sm text-slate-500">
+                        Synchronise automatiquement vos événements et locations avec Google Calendar.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={formData.auto_sync_enabled}
+                        onChange={(e) => updateField('auto_sync_enabled', e.target.checked)}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                    </label>
+                  </div>
+                  
+                  {formData.auto_sync_enabled && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 animate-in fade-in duration-300">
+                      <div>
+                        <Label htmlFor="auto_sync_time_1">Heure de synchronisation 1</Label>
+                        <Input
+                          id="auto_sync_time_1"
+                          type="time"
+                          value={formData.auto_sync_time_1}
+                          onChange={(e) => updateField('auto_sync_time_1', e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="auto_sync_time_2">Heure de synchronisation 2 (optionnel)</Label>
+                        <Input
+                          id="auto_sync_time_2"
+                          type="time"
+                          value={formData.auto_sync_time_2}
+                          onChange={(e) => updateField('auto_sync_time_2', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

@@ -54,7 +54,7 @@ function AgendaView({ stats, setCurrentView }) {
   
   // Form states for reservation creation
   const [addReservationForm, setAddReservationForm] = useState({
-    booking_type: 'dj',
+    booking_type: 'client',
     client_id: '',
     dj_id: '',
     start_date: '',
@@ -94,7 +94,9 @@ function AgendaView({ stats, setCurrentView }) {
   const fetchReservations = async () => {
     try {
       const response = await axios.get(`${API}/reservations`);
-      setReservations(response.data || []);
+      // Filtrer pour ne garder que les réservations de location et livraison (exclure 'dj')
+      const filtered = (response.data || []).filter(r => r.booking_type !== 'dj' && r.booking_type !== 'DJ');
+      setReservations(filtered);
     } catch (error) {
       console.error('Error fetching reservations:', error);
       setReservations([]);
@@ -123,6 +125,13 @@ function AgendaView({ stats, setCurrentView }) {
     return reservation.client_name || 'Client';
   };
 
+  // Truncate event title text to prevent overflow
+  const truncateText = (text, maxLength = 22) => {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+  };
+
   // Helper function to get display text and color for reservations
   const getReservationDisplay = (reservation) => {
     // Protection contre les réservations invalides
@@ -133,7 +142,9 @@ function AgendaView({ stats, setCurrentView }) {
     // Vérifier si la réservation inclut une livraison (delivery_zone non vide)
     const hasDelivery = reservation.delivery_zone && reservation.delivery_zone !== '' && reservation.delivery_zone !== 'none';
     
-    if (reservation.booking_type === 'client') {
+    const isClientOrDelivery = reservation.booking_type !== 'dj' && reservation.booking_type !== 'DJ';
+    
+    if (isClientOrDelivery) {
       // Client avec livraison: couleur violette
       if (hasDelivery) {
         return {
@@ -233,15 +244,10 @@ function AgendaView({ stats, setCurrentView }) {
           
           // Update the selected day reservations if modal is open
           if (showDayDetails && selectedDate) {
+            const selectedDateStr = formatDateLocal(selectedDate);
             const dayReservations = reservations.filter(reservation => {
-              const startDate = new Date(reservation.start_date);
-              const endDate = new Date(reservation.end_date);
-              const currentDay = new Date(selectedDate);
-              currentDay.setHours(0, 0, 0, 0);
-              startDate.setHours(0, 0, 0, 0);
-              endDate.setHours(0, 0, 0, 0);
-              
-              return currentDay >= startDate && currentDay <= endDate && reservation.id !== reservationId;
+              if (!reservation.start_date || !reservation.end_date) return false;
+              return selectedDateStr >= reservation.start_date && selectedDateStr <= reservation.end_date && reservation.id !== reservationId;
             });
             setSelectedDayReservations(dayReservations);
           }
@@ -263,15 +269,10 @@ function AgendaView({ stats, setCurrentView }) {
           
           // Update the selected day reservations if modal is open
           if (showDayDetails && selectedDate) {
+            const selectedDateStr = formatDateLocal(selectedDate);
             const dayReservations = reservations.filter(reservation => {
-              const startDate = new Date(reservation.start_date);
-              const endDate = new Date(reservation.end_date);
-              const currentDay = new Date(selectedDate);
-              currentDay.setHours(0, 0, 0, 0);
-              startDate.setHours(0, 0, 0, 0);
-              endDate.setHours(0, 0, 0, 0);
-              
-              return currentDay >= startDate && currentDay <= endDate;
+              if (!reservation.start_date || !reservation.end_date) return false;
+              return selectedDateStr >= reservation.start_date && selectedDateStr <= reservation.end_date;
             });
             setSelectedDayReservations(dayReservations);
           }
@@ -374,7 +375,7 @@ function AgendaView({ stats, setCurrentView }) {
     const targetDate = date || new Date();
     setSelectedDate(targetDate);
     setAddReservationForm({
-      booking_type: 'dj',
+      booking_type: 'client',
       client_id: '',
       dj_id: '',
       start_date: formatDateLocal(targetDate),
@@ -444,7 +445,7 @@ function AgendaView({ stats, setCurrentView }) {
       
       // Reset form
       setAddReservationForm({
-        booking_type: 'dj',
+        booking_type: 'client',
         client_id: '',
         dj_id: '',
         start_date: '',
@@ -585,11 +586,10 @@ function AgendaView({ stats, setCurrentView }) {
       
       // Rafraîchir les détails du jour si ouvert
       if (showDayDetails && selectedDate) {
+        const selectedDateStr = formatDateLocal(selectedDate);
         const dayReservations = reservations.filter(reservation => {
           if (!reservation.start_date || !reservation.end_date) return false;
-          const startDate = new Date(reservation.start_date);
-          const endDate = new Date(reservation.end_date);
-          return selectedDate >= startDate && selectedDate <= endDate;
+          return selectedDateStr >= reservation.start_date && selectedDateStr <= reservation.end_date;
         });
         setSelectedDayReservations(dayReservations);
       }
@@ -657,11 +657,10 @@ function AgendaView({ stats, setCurrentView }) {
       
       // Update the selected day reservations
       if (showDayDetails && selectedDate) {
+        const selectedDateStr = formatDateLocal(selectedDate);
         const dayReservations = reservations.filter(res => {
           if (!res.start_date || !res.end_date) return false;
-          const startDate = new Date(res.start_date);
-          const endDate = new Date(res.end_date);
-          return selectedDate >= startDate && selectedDate <= endDate && res.id !== reservation.id;
+          return selectedDateStr >= res.start_date && selectedDateStr <= res.end_date && res.id !== reservation.id;
         });
         setSelectedDayReservations(dayReservations);
         
@@ -773,29 +772,21 @@ function AgendaView({ stats, setCurrentView }) {
 
   return (
     <div className="p-6">
-      {/* Légende des couleurs DJ */}
+      {/* Légende des couleurs Location */}
       <div className="bg-white rounded-lg border p-4 mb-6">
         <h3 className="text-sm font-semibold text-gray-700 mb-3">🎨 Légende des couleurs</h3>
         <div className="flex flex-wrap gap-3">
           {/* Clients - toujours en bleu */}
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded" style={{ backgroundColor: '#3b82f6' }}></div>
-            <span className="text-sm text-gray-600">👤 Clients</span>
+            <span className="text-sm text-gray-600">👤 Location</span>
           </div>
           
           {/* Clients avec livraison - en violet */}
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded" style={{ backgroundColor: '#8b5cf6' }}></div>
-            <span className="text-sm text-gray-600">🚚 Livraisons</span>
+            <span className="text-sm text-gray-600">🚚 Livraison</span>
           </div>
-          
-          {/* DJs avec leurs couleurs */}
-          {djs.map((dj) => (
-            <div key={dj.id} className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: dj.color || '#f97316' }}></div>
-              <span className="text-sm text-gray-600">🎧 {dj.name}</span>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -891,7 +882,7 @@ function AgendaView({ stats, setCurrentView }) {
         {/* Vue mensuelle avec numéros de semaine */}
         <div className="bg-white rounded-lg border">
           {/* En-têtes des jours */}
-          <div className="grid border-b" style={{gridTemplateColumns: '40px repeat(7, 1fr)'}}>
+          <div className="grid border-b" style={{gridTemplateColumns: '40px repeat(7, minmax(0, 1fr))'}}>
             <div className="p-2 text-center font-medium text-gray-500 text-xs border-r">
               #
             </div>
@@ -903,39 +894,35 @@ function AgendaView({ stats, setCurrentView }) {
           </div>
 
           {/* Grille du calendrier */}
-          <div className="grid" style={{gridTemplateColumns: '40px repeat(7, 1fr)'}}>
+          <div className="grid" style={{gridTemplateColumns: '40px repeat(7, minmax(0, 1fr))'}}>
             {calendarDays.map((day, index) => {
               const isCurrentMonth = day.getMonth() === currentDate.getMonth();
               const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
               const dayOfWeek = index % 7; // 0 = Lundi, 6 = Dimanche
               
+              const dayStr = format(day, 'yyyy-MM-dd');
+              
               // Get reservations for this day
               const dayReservations = reservations.filter(reservation => {
-                const startDate = new Date(reservation.start_date);
-                const endDate = new Date(reservation.end_date);
-                const currentDay = new Date(day);
-                currentDay.setHours(0, 0, 0, 0);
-                startDate.setHours(0, 0, 0, 0);
-                endDate.setHours(0, 0, 0, 0);
-                
-                return currentDay >= startDate && currentDay <= endDate;
+                if (!reservation.start_date || !reservation.end_date) return false;
+                const sDate = reservation.start_date.substring(0, 10);
+                const eDate = reservation.end_date.substring(0, 10);
+                return dayStr >= sDate && dayStr <= eDate;
               });
               
               // Séparer les réservations mono-jour et multi-jours
               const getReservationDuration = (reservation) => {
-                const start = new Date(reservation.start_date);
-                const end = new Date(reservation.end_date);
-                start.setHours(0, 0, 0, 0);
-                end.setHours(0, 0, 0, 0);
-                return Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                const sDate = reservation.start_date.substring(0, 10);
+                const eDate = reservation.end_date.substring(0, 10);
+                const partsS = sDate.split('-');
+                const partsE = eDate.split('-');
+                const s = new Date(Date.UTC(parseInt(partsS[0], 10), parseInt(partsS[1], 10) - 1, parseInt(partsS[2], 10)));
+                const e = new Date(Date.UTC(parseInt(partsE[0], 10), parseInt(partsE[1], 10) - 1, parseInt(partsE[2], 10)));
+                return Math.round((e - s) / (1000 * 60 * 60 * 24)) + 1;
               };
 
               const isStartOfReservation = (reservation) => {
-                const startDate = new Date(reservation.start_date);
-                startDate.setHours(0, 0, 0, 0);
-                const currentDay = new Date(day);
-                currentDay.setHours(0, 0, 0, 0);
-                return startDate.getTime() === currentDay.getTime();
+                return reservation.start_date.substring(0, 10) === dayStr;
               };
 
               const isFirstDayOfWeek = (reservation) => {
@@ -943,25 +930,22 @@ function AgendaView({ stats, setCurrentView }) {
               };
               
               const isEndOfReservation = (reservation) => {
-                const endDate = new Date(reservation.end_date);
-                endDate.setHours(0, 0, 0, 0);
-                const currentDay = new Date(day);
-                currentDay.setHours(0, 0, 0, 0);
-                return endDate.getTime() === currentDay.getTime();
+                return reservation.end_date.substring(0, 10) === dayStr;
               };
 
               // Sort day reservations so multi-day events appear consistently in the vertical stack
               const sortedDayReservations = [...dayReservations].sort((a, b) => {
-                const startA = new Date(a.start_date).getTime();
-                const startB = new Date(b.start_date).getTime();
-                if (startA !== startB) return startA - startB;
+                const sA = a.start_date.substring(0, 10);
+                const sB = b.start_date.substring(0, 10);
+                if (sA !== sB) {
+                  return sA.localeCompare(sB);
+                }
                 const durA = getReservationDuration(a);
                 const durB = getReservationDuration(b);
                 return durB - durA; // longest first
               });
               
-              const clientReservations = sortedDayReservations.filter(r => r.booking_type === 'client');
-              const djReservations = sortedDayReservations.filter(r => r.booking_type === 'dj');
+              const clientReservations = sortedDayReservations;
               
               // Ajouter le numéro de semaine au début de chaque ligne (tous les 7 jours)
               const elements = [];
@@ -1073,7 +1057,7 @@ function AgendaView({ stats, setCurrentView }) {
                           title={titleText}
                         >
                           {isStart ? (
-                            <>{display.text}{isMultiDay ? ` (${duration}j)` : ''}</>
+                            <>{truncateText(display.text, 22)}{isMultiDay ? ` (${duration}j)` : ''}</>
                           ) : (
                             <>&nbsp;</>
                           )}
@@ -1112,79 +1096,23 @@ function AgendaView({ stats, setCurrentView }) {
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleCreateReservation} className="space-y-4">
-              {/* Booking Type Selection */}
+              {/* Client Selection */}
               <div>
-                <Label className="font-semibold mb-2 block">Type de réservation *</Label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="booking_type"
-                      value="dj"
-                      checked={addReservationForm.booking_type === 'dj'}
-                      onChange={(e) => setAddReservationForm({
-                        ...addReservationForm, 
-                        booking_type: e.target.value,
-                        client_id: '',
-                        dj_id: ''
-                      })}
-                      className="mr-2"
-                    />
-                    DJ
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="booking_type"
-                      value="client"
-                      checked={addReservationForm.booking_type === 'client'}
-                      onChange={(e) => setAddReservationForm({
-                        ...addReservationForm, 
-                        booking_type: e.target.value,
-                        client_id: '',
-                        dj_id: ''
-                      })}
-                      className="mr-2"
-                    />
-                    Client
-                  </label>
-                </div>
+                <Label htmlFor="client">Client *</Label>
+                <select
+                  value={addReservationForm.client_id}
+                  onChange={(e) => setAddReservationForm({...addReservationForm, client_id: e.target.value})}
+                  required
+                  className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">Sélectionner un client</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.company_name || client.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-
-              {/* Client/DJ Selection */}
-              {addReservationForm.booking_type === 'client' ? (
-                <div>
-                  <Label htmlFor="client">Client *</Label>
-                  <select
-                    value={addReservationForm.client_id}
-                    onChange={(e) => setAddReservationForm({...addReservationForm, client_id: e.target.value})}
-                    required
-                    className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="">Sélectionner un client</option>
-                    {clients.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.company_name || client.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div>
-                  <Label htmlFor="dj">DJ *</Label>
-                  <select
-                    value={addReservationForm.dj_id}
-                    onChange={(e) => setAddReservationForm({...addReservationForm, dj_id: e.target.value})}
-                    required
-                    className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring"
-                  >
-                    <option value="">Sélectionner un DJ</option>
-                    {djs.map((dj) => (
-                      <option key={dj.id} value={dj.id}>{dj.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
               {/* Date Selection */}
               <div className="grid grid-cols-2 gap-4">
@@ -1219,18 +1147,16 @@ function AgendaView({ stats, setCurrentView }) {
                 </div>
               </div>
 
-              {/* Event field - Only for DJ bookings */}
-              {addReservationForm.booking_type === 'dj' && (
-                <div>
-                  <Label htmlFor="event">Évènement (optionnel)</Label>
-                  <ContractEventAutocomplete
-                    id="event"
-                    value={addReservationForm.event}
-                    onChange={(val) => setAddReservationForm({...addReservationForm, event: val})}
-                    placeholder="Ex: Mariage, Anniversaire, Soirée d'entreprise..."
-                  />
-                </div>
-              )}
+              {/* Event field */}
+              <div>
+                <Label htmlFor="event">Évènement (optionnel)</Label>
+                <ContractEventAutocomplete
+                  id="event"
+                  value={addReservationForm.event}
+                  onChange={(val) => setAddReservationForm({...addReservationForm, event: val})}
+                  placeholder="Ex: Mariage, Anniversaire, Soirée d'entreprise..."
+                />
+              </div>
 
               {/* Equipment Selection */}
               <div>
@@ -1386,34 +1312,30 @@ function AgendaView({ stats, setCurrentView }) {
                 <p className="text-gray-500 text-center py-8">Aucune réservation pour cette date</p>
               ) : (
                 selectedDayReservations
-                  .sort((a, b) => {
-                    // DJ first, then Client
-                    if (a.booking_type === 'dj' && b.booking_type === 'client') return -1;
-                    if (a.booking_type === 'client' && b.booking_type === 'dj') return 1;
-                    return 0;
-                  })
-                  .map((reservation) => (
-                  <div 
-                    key={reservation.id} 
-                    className={`p-4 rounded-lg border-l-4 ${
-                      reservation.booking_type === 'client' 
-                        ? 'border-l-green-500 bg-green-50' 
-                        : 'border-l-orange-500 bg-orange-50'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge 
-                            variant={reservation.booking_type === 'client' ? 'default' : 'secondary'}
-                            className={reservation.booking_type === 'client' ? 'bg-green-500' : 'bg-orange-500'}
-                          >
-                            {reservation.booking_type === 'client' ? 'CLIENT' : 'DJ'}
-                          </Badge>
-                          <span className="font-medium">
-                            {getClientDisplayNameFromReservation(reservation)}
-                          </span>
-                        </div>
+                  .map((reservation) => {
+                    const hasDelivery = reservation.delivery_zone && reservation.delivery_zone !== '' && reservation.delivery_zone !== 'none';
+                    return (
+                      <div 
+                        key={reservation.id} 
+                        className={`p-4 rounded-lg border-l-4 ${
+                          hasDelivery 
+                            ? 'border-l-violet-500 bg-violet-50' 
+                            : 'border-l-blue-500 bg-blue-50'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge 
+                                variant="default"
+                                className={hasDelivery ? 'bg-violet-500 text-white' : 'bg-blue-500 text-white'}
+                              >
+                                {hasDelivery ? 'LIVRAISON' : 'LOCATION'}
+                              </Badge>
+                              <span className="font-medium">
+                                {getClientDisplayNameFromReservation(reservation)}
+                              </span>
+                            </div>
 
                         <div className="flex items-center gap-2 mb-3">
                           {getStatusBadge(reservation.status)}
@@ -1496,32 +1418,37 @@ function AgendaView({ stats, setCurrentView }) {
                           <div className="mt-3">
                             <p className="text-sm font-medium text-gray-700 mb-2">Matériel loué :</p>
                             <div className="space-y-2">
-                              {reservation.equipment_items.map((item, index) => (
-                                <div key={index} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200">
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="outline" className="text-xs bg-blue-50">
-                                        x{item.quantity}
-                                      </Badge>
-                                      <span className="text-sm font-medium">{item.equipment_name}</span>
+                              {reservation.equipment_items.map((item, index) => {
+                                const eqInfo = equipment.find(e => e.id === item.equipment_id) || {};
+                                const displayName = item.equipment_name || item.name || eqInfo.name || 'Matériel';
+                                const dailyPrice = item.daily_price !== undefined && item.daily_price !== null ? item.daily_price : (eqInfo.daily_price || 0);
+                                return (
+                                  <div key={index} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <Badge variant="outline" className="text-xs bg-blue-50">
+                                          x{item.quantity}
+                                        </Badge>
+                                        <span className="text-sm font-medium">{displayName}</span>
+                                      </div>
+                                      {/* Hide pricing for DJ bookings */}
+                                      {reservation.booking_type !== 'dj' && (
+                                        <div className="text-xs text-gray-500 mt-1">
+                                          {dailyPrice}€/jour × {item.total_days || 1} jour{(item.total_days || 1) > 1 ? 's' : ''}
+                                        </div>
+                                      )}
                                     </div>
-                                    {/* Hide pricing for DJ bookings */}
+                                    {/* Hide subtotal for DJ bookings */}
                                     {reservation.booking_type !== 'dj' && (
-                                      <div className="text-xs text-gray-500 mt-1">
-                                        {item.daily_price || 0}€/jour × {item.total_days || 1} jour{(item.total_days || 1) > 1 ? 's' : ''}
+                                      <div className="text-right">
+                                        <div className="text-sm font-semibold text-gray-900">
+                                          {((item.subtotal && item.subtotal > 0) ? item.subtotal : (dailyPrice * (item.quantity || 1) * (item.total_days || 1))).toFixed(2)}€
+                                        </div>
                                       </div>
                                     )}
                                   </div>
-                                  {/* Hide subtotal for DJ bookings */}
-                                  {reservation.booking_type !== 'dj' && (
-                                    <div className="text-right">
-                                      <div className="text-sm font-semibold text-gray-900">
-                                        {((item.subtotal && item.subtotal > 0) ? item.subtotal : ((item.daily_price || 0) * (item.quantity || 1) * (item.total_days || 1))).toFixed(2)}€
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                             {/* Hide total amount for DJ bookings */}
                             {reservation.booking_type !== 'dj' && (
@@ -1537,8 +1464,9 @@ function AgendaView({ stats, setCurrentView }) {
                       </div>
                     </div>
                   </div>
-                ))
-              )}
+                );
+              })
+            )}
             </div>
             
             <DialogFooter>

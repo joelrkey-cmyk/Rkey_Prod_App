@@ -71,8 +71,22 @@ export default function AgendaPrestationApp() {
   // State variables for manually added options and events
   const [addEventDate, setAddEventDate] = useState(null);
   const [addEventType, setAddEventType] = useState('option'); // 'option' or 'event'
-  const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
+  const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
+
+  const getEventTypesList = (djId) => {
+    const baseTypes = ["Mariage", "Anniversaire", "Comité d'entreprise", "Soirée privée", "Événement professionnel"];
+    const dj = djs.find(d => d.id === djId);
+    if (dj && (dj.name?.toLowerCase().includes("r'key") || dj.name?.toLowerCase().includes("rkey"))) {
+      baseTypes.push("Show Hypnose", "Intervention hypnose");
+    }
+    return baseTypes;
+  };
   const [editingCustomEventId, setEditingCustomEventId] = useState(null);
+  const [recurrence, setRecurrence] = useState('none'); // 'none', 'daily', 'weekly', 'monthly'
+  const [recurrenceEndType, setRecurrenceEndType] = useState('count'); // 'count', 'date'
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
+  const [recurrenceCount, setRecurrenceCount] = useState(5);
+  const [deleteRecurringEvent, setDeleteRecurringEvent] = useState(null);
   const [syncingAll, setSyncingAll] = useState(false);
   const [gcalStatus, setGcalStatus] = useState(null);
 
@@ -165,7 +179,7 @@ export default function AgendaPrestationApp() {
       const stefanId = nameToOfficialId.get(normalize("Stefan Edison"));
       if (stefanId) nameToOfficialId.set("stephane", stefanId);
 
-      const allContracts = (contractsRes.data || []).filter(c => !['deleted', 'trash', 'draft'].includes(c.status));
+      const allContracts = (contractsRes.data || []).filter(c => !['deleted', 'trash', 'draft', 'cancelled'].includes(c.status));
       
       const parsedEvents = [];
       const eventSignatures = new Set();
@@ -275,9 +289,18 @@ export default function AgendaPrestationApp() {
         
         let assignedDj = officialDjMap.get(officialId);
         
-        let startDate = new Date(r.start_date);
-        let endDate = new Date(r.end_date);
-        if (isNaN(startDate) || isNaN(endDate)) return;
+        let startDate;
+        let endDate;
+        try {
+          const partsS = r.start_date.split('-');
+          const partsE = r.end_date.split('-');
+          startDate = new Date(parseInt(partsS[0], 10), parseInt(partsS[1], 10) - 1, parseInt(partsS[2], 10));
+          // Set end date to 23:59:59 to make it inclusive in react-big-calendar
+          endDate = new Date(parseInt(partsE[0], 10), parseInt(partsE[1], 10) - 1, parseInt(partsE[2], 10), 23, 59, 59, 999);
+        } catch (e) {
+          return;
+        }
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return;
         
         const itemsList = r.equipment_items || r.items || [];
         const itemRefs = [];
@@ -356,7 +379,8 @@ export default function AgendaPrestationApp() {
           type: item.isOption ? 'Option Soirée' : 'Événement Manuel',
           details: item.details || '',
           location: item.location || '',
-          isOption: !!item.isOption
+          isOption: !!item.isOption,
+          recurrenceId: item.recurrenceId || null
         });
       });
 
@@ -407,18 +431,38 @@ export default function AgendaPrestationApp() {
     }
   };
 
-  const handleDeleteEvent = async (event) => {
+  const handleDeleteEvent = async (event, deleteAllSeries = false) => {
     setSelectedEvent(null);
     
     if (event.id && event.id.startsWith('custom_')) {
       const customId = event.id.replace('custom_', '');
+      
+      if (event.recurrenceId && !deleteAllSeries && deleteRecurringEvent === null) {
+        setDeleteRecurringEvent(event);
+        return;
+      }
+
       try {
-        await axios.delete(`${API}/agenda-custom-events/${customId}`);
-        setEvents(prev => prev.filter(e => e.id !== event.id));
-        toast.success("Option/Événement supprimé avec succès !");
+        setLoading(true);
+        const url = deleteAllSeries 
+          ? `${API}/agenda-custom-events/${customId}?deleteAllSeries=true`
+          : `${API}/agenda-custom-events/${customId}`;
+          
+        await axios.delete(url);
+        
+        if (deleteAllSeries && event.recurrenceId) {
+          setEvents(prev => prev.filter(e => e.recurrenceId !== event.recurrenceId));
+          toast.success("Toute la série d'événements a été supprimée !");
+        } else {
+          setEvents(prev => prev.filter(e => e.id !== event.id));
+          toast.success("Option/Événement supprimé avec succès !");
+        }
+        setDeleteRecurringEvent(null);
       } catch (err) {
         console.error("Error deleting custom event:", err);
         toast.error("Erreur lors de la suppression définitive.");
+      } finally {
+        setLoading(false);
       }
       return;
     }
@@ -464,13 +508,17 @@ export default function AgendaPrestationApp() {
       title: customEventForm.title.trim(),
       date: format(addEventDate, 'yyyy-MM-dd'),
       isOption: addEventType === 'option',
-      djId: addEventType === 'event' ? customEventForm.djId : null,
-      djName: addEventType === 'event' ? djs.find(d => d.id === customEventForm.djId)?.name : '',
+      djId: customEventForm.djId || null,
+      djName: customEventForm.djId ? djs.find(d => d.id === customEventForm.djId)?.name : '',
       clientName: addEventType === 'event' ? customEventForm.clientName.trim() : '',
       clientPhone: (customEventForm.clientPhone || '').trim(),
-      eventType: addEventType === 'event' ? customEventForm.eventType.trim() : 'Option',
+      eventType: addEventType === 'event' ? (customEventForm.eventType === 'custom' ? (customEventForm.customEventTypeInput || '').trim() : customEventForm.eventType.trim()) : 'Option',
       details: customEventForm.details.trim(),
-      location: (customEventForm.location || '').trim()
+      location: (customEventForm.location || '').trim(),
+      recurrence: !editingCustomEventId ? recurrence : 'none',
+      recurrenceEndType: !editingCustomEventId ? recurrenceEndType : 'count',
+      recurrenceEndDate: !editingCustomEventId ? recurrenceEndDate : '',
+      recurrenceCount: !editingCustomEventId ? Number(recurrenceCount) : 5
     };
 
     try {
@@ -479,9 +527,13 @@ export default function AgendaPrestationApp() {
         const res = await axios.put(`${API}/agenda-custom-events/${editingCustomEventId}`, payload);
         if (res.data.success) {
           toast.success("Événement / Option modifié avec succès !");
-          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
+          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
           setAddEventDate(null);
           setEditingCustomEventId(null);
+          setRecurrence('none');
+          setRecurrenceEndType('count');
+          setRecurrenceEndDate('');
+          setRecurrenceCount(5);
           await fetchData();
         } else {
           toast.error("Erreur lors de la modification.");
@@ -490,8 +542,12 @@ export default function AgendaPrestationApp() {
         const res = await axios.post(`${API}/agenda-custom-events`, payload);
         if (res.data.success) {
           toast.success(addEventType === 'option' ? "Option de soirée enregistrée avec succès !" : "Événement enregistré avec succès !");
-          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
+          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
           setAddEventDate(null);
+          setRecurrence('none');
+          setRecurrenceEndType('count');
+          setRecurrenceEndDate('');
+          setRecurrenceCount(5);
           await fetchData();
         } else {
           toast.error("Erreur lors de l'enregistrement.");
@@ -737,7 +793,7 @@ export default function AgendaPrestationApp() {
                                   e.stopPropagation();
                                   setAddEventDate(date);
                                   setAddEventType('option');
-                                  setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', details: '' });
+                                  setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', customEventTypeInput: '', details: '' });
                                 }}
                                 className="w-5 h-5 rounded-full bg-slate-100 hover:bg-slate-900 hover:text-white border border-slate-300 hover:border-slate-900 flex items-center justify-center text-slate-600 transition-colors shrink-0 text-xs font-bold cursor-pointer"
                                 title="Ajouter une option de soirée ou un événement"
@@ -887,7 +943,8 @@ export default function AgendaPrestationApp() {
                         clientName: selectedEvent.clientName || '',
                         clientPhone: selectedEvent.clientPhone || '',
                         djId: selectedEvent.djId === 'option_black' ? '' : (selectedEvent.djId || ''),
-                        eventType: selectedEvent.eventType || '',
+                        eventType: (selectedEvent.eventType && !getEventTypesList(selectedEvent.djId).includes(selectedEvent.eventType)) ? 'custom' : (selectedEvent.eventType || ''),
+                        customEventTypeInput: (selectedEvent.eventType && !getEventTypesList(selectedEvent.djId).includes(selectedEvent.eventType)) ? selectedEvent.eventType : '',
                         details: selectedEvent.details || '',
                         location: selectedEvent.location || ''
                       });
@@ -944,7 +1001,11 @@ export default function AgendaPrestationApp() {
                 onClick={() => {
                   setAddEventDate(null);
                   setEditingCustomEventId(null);
-                  setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
+                  setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
+                  setRecurrence('none');
+                  setRecurrenceEndType('count');
+                  setRecurrenceEndDate('');
+                  setRecurrenceCount(5);
                 }}
                 className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-lg transition"
               >
@@ -954,6 +1015,22 @@ export default function AgendaPrestationApp() {
             
             {/* Form */}
             <form onSubmit={handleSaveCustomEvent} className="p-6 space-y-4">
+              {/* Date Input */}
+              <div className="mb-4">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Date de l'événement *</label>
+                <input
+                  type="date"
+                  required
+                  value={addEventDate ? format(addEventDate, 'yyyy-MM-dd') : ''}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setAddEventDate(new Date(e.target.value));
+                    }
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 bg-white shadow-sm"
+                />
+              </div>
+
               {/* Selector / Switcher */}
               <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-lg mb-6">
                 <button
@@ -991,6 +1068,26 @@ export default function AgendaPrestationApp() {
                       onChange={(e) => setCustomEventForm(prev => ({ ...prev, title: e.target.value }))}
                       className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Attribuer un DJ (Optionnel)</label>
+                    {djs.length === 0 ? (
+                      <div className="text-xs text-red-500 italic">Aucun DJ disponible.</div>
+                    ) : (
+                      <select
+                        value={customEventForm.djId}
+                        onChange={(e) => setCustomEventForm(prev => ({ ...prev, djId: e.target.value }))}
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm text-slate-900 bg-white shadow-sm"
+                      >
+                        <option value="">-- Sélectionnez un DJ (pour synchronisation) --</option>
+                        {djs.map(dj => (
+                          <option key={dj.id} value={dj.id}>
+                            {dj.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
 
                   <div>
@@ -1077,15 +1174,34 @@ export default function AgendaPrestationApp() {
                         className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Type de soirée</label>
-                      <input
-                        type="text"
-                        placeholder="Mariage, Anniversaire, Gala"
-                        value={customEventForm.eventType}
-                        onChange={(e) => setCustomEventForm(prev => ({ ...prev, eventType: e.target.value }))}
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
-                      />
+                    <div className={customEventForm.eventType === 'custom' ? "space-y-4" : ""}>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Type de soirée</label>
+                        <select
+                          value={customEventForm.eventType}
+                          onChange={(e) => setCustomEventForm(prev => ({ ...prev, eventType: e.target.value, customEventTypeInput: e.target.value !== 'custom' ? '' : prev.customEventTypeInput }))}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 bg-white shadow-sm"
+                        >
+                          <option value="">-- Sélectionnez un type --</option>
+                          {getEventTypesList(customEventForm.djId).map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                          <option value="custom">Type personnalisé</option>
+                        </select>
+                      </div>
+                      
+                      {customEventForm.eventType === 'custom' && (
+                        <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-150">
+                          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Type d'événement personnalisé</label>
+                          <input
+                            type="text"
+                            placeholder="Ex: Festival, Soirée étudiante..."
+                            value={customEventForm.customEventTypeInput || ''}
+                            onChange={(e) => setCustomEventForm(prev => ({ ...prev, customEventTypeInput: e.target.value }))}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm text-slate-900 placeholder:text-gray-400 bg-white shadow-sm"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1124,6 +1240,85 @@ export default function AgendaPrestationApp() {
                 </div>
               )}
 
+              {!editingCustomEventId && (
+                <div className="border-t pt-4 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Récurrence</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Fréquence</label>
+                      <select
+                        value={recurrence}
+                        onChange={(e) => {
+                          setRecurrence(e.target.value);
+                          if (e.target.value !== 'none' && !recurrenceEndDate && addEventDate) {
+                            const defaultEnd = new Date(addEventDate);
+                            defaultEnd.setMonth(defaultEnd.getMonth() + 1);
+                            const yyyy = defaultEnd.getFullYear();
+                            const mm = String(defaultEnd.getMonth() + 1).padStart(2, '0');
+                            const dd = String(defaultEnd.getDate()).padStart(2, '0');
+                            setRecurrenceEndDate(`${yyyy}-${mm}-${dd}`);
+                          }
+                        }}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-205 outline-none text-sm text-slate-900 bg-white shadow-sm cursor-pointer"
+                      >
+                        <option value="none">Aucune</option>
+                        <option value="daily">Quotidienne (Tous les jours)</option>
+                        <option value="weekly">Hebdomadaire (Toutes les semaines)</option>
+                        <option value="monthly">Mensuelle (Tous les mois)</option>
+                      </select>
+                    </div>
+
+                    {recurrence !== 'none' && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Finir par</label>
+                        <select
+                          value={recurrenceEndType}
+                          onChange={(e) => setRecurrenceEndType(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border border-slate-205 outline-none text-sm text-slate-900 bg-white shadow-sm cursor-pointer"
+                        >
+                          <option value="count">Nombre de fois</option>
+                          <option value="date">Une date précise</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {recurrence !== 'none' && (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-150">
+                      {recurrenceEndType === 'count' ? (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">Nombre de répétitions</label>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={recurrenceCount}
+                              onChange={(e) => setRecurrenceCount(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
+                              className="w-24 px-3 py-2 rounded-lg border border-slate-205 outline-none text-sm text-slate-900 bg-white shadow-sm"
+                            />
+                            <span className="text-xs text-slate-500">occurrences au total (max 100)</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">Date de fin</label>
+                          <input
+                            type="date"
+                            value={recurrenceEndDate}
+                            onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-205 outline-none text-sm text-slate-900 bg-white shadow-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Action buttons */}
               <div className="pt-4 border-t flex justify-end gap-3 shrink-0">
                 <button
@@ -1131,7 +1326,11 @@ export default function AgendaPrestationApp() {
                   onClick={() => {
                     setAddEventDate(null);
                     setEditingCustomEventId(null);
-                    setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', details: '', location: '' });
+                    setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
+                    setRecurrence('none');
+                    setRecurrenceEndType('count');
+                    setRecurrenceEndDate('');
+                    setRecurrenceCount(5);
                   }}
                   className="px-4 py-2 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
                 >
@@ -1146,6 +1345,43 @@ export default function AgendaPrestationApp() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteRecurringEvent && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200 text-center">
+            <div className="w-12 h-12 bg-red-50 text-red-650 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-2">Événement récurrent</h3>
+            <p className="text-sm text-slate-500 mb-6 leading-relaxed">
+              Cet événement fait partie d'une série récurrente. Que souhaitez-vous supprimer ?
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => handleDeleteEvent(deleteRecurringEvent, false)}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-sm font-semibold transition cursor-pointer"
+              >
+                Supprimer uniquement cet événement
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteEvent(deleteRecurringEvent, true)}
+                className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold transition shadow-sm cursor-pointer"
+              >
+                Supprimer toute la série
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteRecurringEvent(null)}
+                className="w-full py-2.5 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-medium transition cursor-pointer"
+              >
+                Annuler
+              </button>
+            </div>
           </div>
         </div>
       )}

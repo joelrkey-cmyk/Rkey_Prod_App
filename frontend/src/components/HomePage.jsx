@@ -69,7 +69,7 @@ const HomePage = () => {
 
   const loadUnreadNotifications = async () => {
     try {
-      const response = await axios.get(`${API}/notifications/unread-count`);
+      const response = await axios.get(`${API}/dj-client/pending-alerts`);
       setUnreadNotifications(response.data.count || 0);
     } catch (error) {
       console.error("Error loading notifications:", error);
