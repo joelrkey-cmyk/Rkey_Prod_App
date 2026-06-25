@@ -654,7 +654,7 @@ async function autoSignGcsUrlsInObject(obj) {
   return obj;
 }
 
-async function uploadBase64ToGcs(base64String, folder) {
+async function uploadBase64ToGcs(base64String, folder = 'uploads') {
   if (!getGcsBucket() || !base64String || typeof base64String !== 'string' || !base64String.startsWith('data:image')) {
     return base64String;
   }
@@ -664,7 +664,13 @@ async function uploadBase64ToGcs(base64String, folder) {
     const ext = `.${matches[1] === 'jpeg' ? 'jpg' : matches[1]}`;
     const buffer = Buffer.from(matches[2], 'base64');
     const imageId = uuidv4();
-    const gcsPath = `${folder}/${imageId}${ext}`;
+    let gcsPath = `${folder}/${imageId}${ext}`;
+    if (gcsPath.startsWith('/')) gcsPath = gcsPath.substring(1);
+    
+    if (!gcsPath || gcsPath.trim() === '') {
+      throw new Error("You must specify an object name");
+    }
+    
     const file = bucket.file(gcsPath);
     await file.save(buffer, { metadata: { contentType: `image/${matches[1]}` } });
     return `/api/gcs/${gcsPath}`;
