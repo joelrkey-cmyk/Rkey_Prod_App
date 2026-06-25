@@ -667,7 +667,7 @@ function Contracts2App() {
   const loadContracts = async () => {
     try {
       const response = await axios.get(`${API}/contracts2`);
-      const activeContracts = response.data.filter(contract => !['deleted', 'archived'].includes(contract.status));
+      const activeContracts = response.data.filter(contract => !['deleted', 'archived', 'cancelled'].includes(contract.status));
       setContracts(activeContracts);
     } catch (error) { toast.error("Erreur lors du chargement des contrats"); console.error("Error loading contracts:", error); }
   };
@@ -1126,7 +1126,7 @@ function Contracts2App() {
   };
 
   const cancelArchivedContract = async (contractId, observation) => {
-      try { await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'cancelled', cancellation_observation: observation }); toast.success("Contrat annulé avec succès"); loadArchivedContracts(); }
+      try { await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'cancelled', cancellation_observation: observation }); toast.success("Contrat annulé avec succès"); loadContracts(); loadArchivedContracts(); }
       catch (error) { toast.error("Erreur lors de l'annulation du contrat"); console.error(error); }
   };
 

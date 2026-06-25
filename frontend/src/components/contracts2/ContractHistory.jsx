@@ -336,6 +336,14 @@ export const ContractHistory = ({
                               <FileCheck className="h-4 w-4 mr-1" />Signé
                             </Button>
                             <Button 
+                              onClick={() => setContractToCancel(contract.id)} 
+                              variant="outline" 
+                              size="sm" 
+                              className="text-orange-600 border-orange-200 hover:bg-orange-50" 
+                            >
+                              <XCircle className="h-4 w-4 mr-1" />Annuler
+                            </Button>
+                            <Button 
                               onClick={() => handleRunAction(contract.id, onMoveToTrash)} 
                               disabled={actionLoading[contract.id]}
                               variant="outline" 
