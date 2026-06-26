@@ -1253,6 +1253,7 @@ async function deleteGoogleCalendarEvent(calendarId, eventId) {
 }
 
 async function syncContractToGoogleCalendar(contract) {
+  await initGoogleCalendar();
   if (!calendar) {
     console.warn('[GCal Sync Skip] Google Calendar is not initialized.');
     return;
@@ -1437,6 +1438,7 @@ async function syncContractToGoogleCalendar(contract) {
 }
 
 async function syncCustomEventToGoogleCalendar(item) {
+  await initGoogleCalendar();
   if (!calendar) {
     console.warn('[GCal Sync Skip] Google Calendar is not initialized.');
     return;
