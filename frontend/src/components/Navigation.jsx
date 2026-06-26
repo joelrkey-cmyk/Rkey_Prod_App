@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
-import { Home, FileSignature, FileCheck, Package, Users, Ticket, User, Send, LogOut, FileText, Handshake, Truck, CreditCard, Settings, ChevronDown, Building2, Smile, Headphones, Calendar } from 'lucide-react';
+import { Home, FileSignature, FileCheck, Package, Users, Ticket, User, Send, LogOut, FileText, Handshake, Truck, CreditCard, Settings, ChevronDown, Building2, Smile, Headphones, Calendar, MapPin } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const NAV_ITEMS = [
   { key: 'home', path: '/', icon: Home, label: 'Accueil', activeClass: 'bg-gray-800 text-white hover:bg-gray-900', inactiveClass: 'text-gray-600 hover:bg-gray-100' },
   { key: 'agenda-prestation', path: '/agenda-prestation', icon: Calendar, label: 'Agenda Presta', activeClass: 'bg-rose-600 text-white hover:bg-rose-700', inactiveClass: 'text-rose-600 hover:bg-rose-50' },
   { key: 'contracts2', path: '/contracts2', icon: FileSignature, label: 'Contrats', activeClass: 'bg-amber-600 text-white hover:bg-amber-700', inactiveClass: 'text-amber-600 hover:bg-amber-50' },
+  { key: 'venues', path: '/venues', icon: MapPin, label: 'Lieux', activeClass: 'bg-indigo-600 text-white hover:bg-indigo-700', inactiveClass: 'text-indigo-600 hover:bg-indigo-50' },
   { key: 'devis', path: '/devis', icon: Send, label: 'Envoi de Devis', activeClass: 'bg-orange-600 text-white hover:bg-orange-700', inactiveClass: 'text-orange-600 hover:bg-orange-50' },
   { key: 'dj-client', path: '/dj-client', icon: Headphones, label: 'DJ / Client', activeClass: 'bg-pink-600 text-white hover:bg-pink-700', inactiveClass: 'text-pink-600 hover:bg-pink-50' },
   { key: 'location', path: '/location', icon: Package, label: 'Location', activeClass: 'bg-purple-600 text-white hover:bg-purple-700', inactiveClass: 'text-purple-600 hover:bg-purple-50' },
@@ -108,6 +109,7 @@ const Navigation = () => {
 
   const getCurrentApp = () => {
     if (location.pathname.startsWith('/contracts2')) return 'contracts2';
+    if (location.pathname.startsWith('/venues')) return 'venues';
     if (location.pathname.startsWith('/location')) return 'location';
     if (location.pathname.startsWith('/rental')) return 'rental';
     if (location.pathname.startsWith('/delivery')) return 'delivery';

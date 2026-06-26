@@ -112,9 +112,15 @@ function Contracts2App() {
     name: "", company: "", address: "", phone: "", phone2: "", email: "",
     event_date: "", event_location: "", event_type: "", custom_event_type: "",
     event_note: "", setup_date: "", setup_time: "À définir", start_time: "",
-    end_time: "", unlimited_time: false, guest_count: "",
+    end_time: "", unlimited_time: false, guest_count: "", venue_id: "",
     additional_events: []
   });
+
+  const [venues, setVenues] = useState([]);
+  const [venueSearch, setVenueSearch] = useState("");
+  const [isNewVenueDialogOpen, setIsNewVenueDialogOpen] = useState(false);
+  const [newVenueForm, setNewVenueForm] = useState({ name: "", department: "", city: "" });
+  const [isVenueDropdownOpen, setIsVenueDropdownOpen] = useState(false);
 
   const [availableOptions, setAvailableOptions] = useState([]);
   const [selectedOptions, setSelectedOptions] = useState([]);
@@ -354,12 +360,16 @@ function Contracts2App() {
     loadCompanySettings();
     loadCrmCompanies();
     fetchNextNumbers();
+    loadVenues();
   }, []);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (!e.target.closest('#crm-search-container')) {
         setShowCrmDropdown(false);
+      }
+      if (!e.target.closest('#venue-select-container')) {
+        setIsVenueDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -411,6 +421,45 @@ function Contracts2App() {
       (c.contacts && c.contacts.some(contact => contact.nom && contact.nom.toLowerCase().includes(q)))
     );
   }, [crmCompanies, searchCrmQuery]);
+
+  const loadVenues = async () => {
+    try {
+      const response = await axios.get(`${API}/venues`);
+      setVenues(response.data);
+    } catch (error) {
+      console.error('Erreur de chargement des lieux de réception:', error);
+    }
+  };
+
+  const handleQuickCreateVenue = async () => {
+    if (!newVenueForm.name || !newVenueForm.department || !newVenueForm.city) {
+      toast.error("Veuillez remplir tous les champs obligatoires.");
+      return;
+    }
+    try {
+      const response = await axios.post(`${API}/venues`, {
+        ...newVenueForm,
+        is_complete: false
+      });
+      const createdVenue = response.data;
+      toast.success("Lieu de réception créé !");
+      
+      setVenues(prev => [...prev, createdVenue]);
+      
+      handleClientInfoChange("event_location", `${createdVenue.department} / ${createdVenue.city} / ${createdVenue.name}`);
+      setClientInfo(prev => ({
+        ...prev,
+        venue_id: createdVenue.id
+      }));
+      
+      setIsNewVenueDialogOpen(false);
+      setNewVenueForm({ name: "", department: "", city: "" });
+      setIsVenueDropdownOpen(false);
+    } catch (err) {
+      console.error("Error quick creating venue:", err);
+      toast.error("Erreur lors de la création.");
+    }
+  };
 
   const loadOptions = async () => {
     try {
@@ -2788,9 +2837,99 @@ function Contracts2App() {
                       <Label htmlFor="event_date" className="text-slate-700 flex items-center space-x-1"><Calendar className="h-4 w-4" /><span>Date de l'événement *</span></Label>
                       <Input id="event_date" type="date" value={clientInfo.event_date} onChange={(e) => handleClientInfoChange("event_date", e.target.value)} className="border-slate-300 focus:border-blue-500" />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-2 relative" id="venue-select-container">
                       <Label htmlFor="event_location" className="text-slate-700 flex items-center space-x-1"><MapPin className="h-4 w-4" /><span>Lieu de l'événement *</span></Label>
-                      <Input id="event_location" value={clientInfo.event_location} onChange={(e) => handleClientInfoChange("event_location", e.target.value)} className="border-slate-300 focus:border-blue-500" />
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setIsVenueDropdownOpen(!isVenueDropdownOpen)}
+                          className="w-full text-left bg-white border border-slate-300 hover:border-slate-400 rounded-md px-3 py-2 text-sm text-slate-800 flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <span className="truncate">{clientInfo.event_location || "Sélectionnez un lieu de réception..."}</span>
+                          <span className="text-slate-400 text-xs">▼</span>
+                        </button>
+
+                        {isVenueDropdownOpen && (
+                          <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-300 rounded-md shadow-lg z-50 flex flex-col max-h-[300px] overflow-hidden">
+                            <div className="p-2 border-b bg-slate-50 flex gap-2 items-center">
+                              <Input
+                                placeholder="Rechercher une salle, ville..."
+                                value={venueSearch}
+                                onChange={(e) => setVenueSearch(e.target.value)}
+                                className="h-8 text-xs flex-1"
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setIsVenueDropdownOpen(false)}
+                                className="h-8 px-2 text-xs"
+                              >
+                                Fermer
+                              </Button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto max-h-[200px]">
+                              {venues.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-slate-500">Aucune salle disponible</div>
+                              ) : (
+                                Object.entries(
+                                  venues
+                                    .filter(v => {
+                                      const q = venueSearch.toLowerCase();
+                                      return (
+                                        (v.name || "").toLowerCase().includes(q) ||
+                                        (v.city || "").toLowerCase().includes(q) ||
+                                        (v.department || "").toLowerCase().includes(q)
+                                      );
+                                    })
+                                    .reduce((acc, v) => {
+                                      const dept = v.department || "Autre";
+                                      const city = v.city || "Autre";
+                                      if (!acc[dept]) acc[dept] = {};
+                                      if (!acc[dept][city]) acc[dept][city] = [];
+                                      acc[dept][city].push(v);
+                                      return acc;
+                                    }, {})
+                                ).map(([dept, cities]) => (
+                                  <div key={dept} className="text-xs">
+                                    <div className="bg-indigo-50 text-indigo-900 font-bold px-3 py-1 uppercase tracking-wider">{dept}</div>
+                                    {Object.entries(cities).map(([city, hallList]) => (
+                                      <div key={city} className="pl-2">
+                                        <div className="text-slate-500 font-semibold py-0.5 uppercase text-[10px]">{city}</div>
+                                        {hallList.map(h => (
+                                          <div
+                                            key={h.id}
+                                            onClick={() => {
+                                              handleClientInfoChange("event_location", `${h.department} / ${h.city} / ${h.name}`);
+                                              setClientInfo(prev => ({ ...prev, venue_id: h.id }));
+                                              setIsVenueDropdownOpen(false);
+                                            }}
+                                            className="hover:bg-slate-100 pl-4 pr-3 py-1.5 cursor-pointer flex justify-between items-center text-slate-700 text-xs"
+                                          >
+                                            <span className="font-medium">{h.name}</span>
+                                            {clientInfo.venue_id === h.id && <span className="text-indigo-600 text-xs">✓</span>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+
+                            <div 
+                              onClick={() => {
+                                setIsNewVenueDialogOpen(true);
+                                setIsVenueDropdownOpen(false);
+                              }}
+                              className="bg-slate-50 border-t p-2.5 text-center text-xs text-indigo-600 hover:bg-indigo-50 font-bold cursor-pointer transition-colors"
+                            >
+                              ➕ Ajouter un nouveau lieu de réception...
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -4392,6 +4531,78 @@ function Contracts2App() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal d'ajout rapide de lieu de réception */}
+      {isNewVenueDialogOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/65 backdrop-blur-xs p-4 text-slate-800">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border p-6 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-indigo-600" />
+                Ajouter un nouveau lieu
+              </h3>
+              <button 
+                type="button" 
+                onClick={() => setIsNewVenueDialogOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="quick-venue-name" className="text-xs font-bold text-slate-700">Nom de la salle *</Label>
+                <Input
+                  id="quick-venue-name"
+                  placeholder="Ex: Salle des fêtes, Château..."
+                  value={newVenueForm.name}
+                  onChange={(e) => setNewVenueForm(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="quick-venue-dept" className="text-xs font-bold text-slate-700">Département *</Label>
+                  <Input
+                    id="quick-venue-dept"
+                    placeholder="Ex: Bas-Rhin, 67"
+                    value={newVenueForm.department}
+                    onChange={(e) => setNewVenueForm(prev => ({ ...prev, department: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="quick-venue-city" className="text-xs font-bold text-slate-700">Ville *</Label>
+                  <Input
+                    id="quick-venue-city"
+                    placeholder="Ex: Mussig"
+                    value={newVenueForm.city}
+                    onChange={(e) => setNewVenueForm(prev => ({ ...prev, city: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t">
+              <Button 
+                type="button" 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setIsNewVenueDialogOpen(false)}
+              >
+                Annuler
+              </Button>
+              <Button 
+                type="button" 
+                size="sm" 
+                onClick={handleQuickCreateVenue}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+              >
+                Créer la salle
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal d'importation de vieux contrats */}
       {isImportModalOpen && (

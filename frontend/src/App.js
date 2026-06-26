@@ -27,6 +27,8 @@ import GlobalSettingsApp from "./components/GlobalSettingsApp";
 import PartnersApp from "./components/PartnersApp";
 import DjClientApp from "./components/DjClientApp";
 import AgendaPrestationApp from "./components/AgendaPrestationApp";
+import VenueApp from "./components/VenueApp";
+import PublicVenuesApp from "./components/PublicVenuesApp";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -152,6 +154,17 @@ function App() {
                 </ProtectedRoute>
               } />
 
+              <Route path="/venues" element={
+                <ProtectedRoute>
+                  <>
+                    <Navigation />
+                    <ErrorBoundary>
+                      <VenueApp />
+                    </ErrorBoundary>
+                  </>
+                </ProtectedRoute>
+              } />
+
               <Route path="/abonnements" element={
                 <ProtectedRoute>
                   <>
@@ -239,6 +252,13 @@ function App() {
                   </>
                 </ProtectedRoute>
               } />
+
+              <Route path="/lieux-reception" element={
+                <ErrorBoundary>
+                  <PublicVenuesApp />
+                </ErrorBoundary>
+              } />
+
                <Route path="/:slug" element={
                  <ErrorBoundary>
                    <DjClientApp isPublic={true} />

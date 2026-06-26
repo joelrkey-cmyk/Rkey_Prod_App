@@ -9,8 +9,51 @@ if (global && global.fetch) {
   delete global.fetch;
 }
 
-const http = require('http');
+// Polyfill fetch using safe, non-buggy node-fetch (v2) so that Google's new @google/genai SDK works properly.
+const nodeFetch = require('node-fetch');
 const https = require('https');
+const http = require('http');
+
+const customFetch = (url, options = {}) => {
+  const newOptions = { ...options };
+  
+  // Create an agent with keepAlive: false to prevent pooling/reuse
+  const targetUrl = typeof url === 'string' ? url : (url && url.url ? url.url : '');
+  const isHttps = typeof targetUrl === 'string' && targetUrl.startsWith('https');
+  newOptions.agent = isHttps 
+    ? new https.Agent({ keepAlive: false }) 
+    : new http.Agent({ keepAlive: false });
+
+  // Handle headers safely
+  let headers = {};
+  if (options.headers) {
+    if (typeof options.headers.forEach === 'function') {
+      options.headers.forEach((value, key) => {
+        headers[key.toLowerCase()] = value;
+      });
+    } else if (Array.isArray(options.headers)) {
+      options.headers.forEach(([key, value]) => {
+        headers[key.toLowerCase()] = value;
+      });
+    } else if (typeof options.headers === 'object') {
+      for (const k of Object.keys(options.headers)) {
+        headers[k.toLowerCase()] = options.headers[k];
+      }
+    }
+  }
+  
+  // Force Connection: close
+  headers['connection'] = 'close';
+  newOptions.headers = headers;
+
+  return nodeFetch(url, newOptions);
+};
+
+globalThis.fetch = customFetch;
+global.fetch = customFetch;
+globalThis.Headers = nodeFetch.Headers;
+globalThis.Request = nodeFetch.Request;
+globalThis.Response = nodeFetch.Response;
 
 // Robust HTTP/HTTPS client using standard Node.js modules to bypass socket close/undici bugs on Google endpoints
 function robustHttpsRequest(opts) {
@@ -3173,6 +3216,7 @@ api.get('/public/dj-client/:slug', async (req, res) => {
 api.put('/public/dj-client/:id', async (req, res) => {
   const id = req.params.id;
   await db.collection('contracts2').updateOne({ id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
+  await syncVenueFromContract(id, req.body);
   res.json({ success: true });
 });
 
@@ -3490,6 +3534,570 @@ async function syncContractReservations(contract) {
   }
 }
 
+// ══════════ RECEPTION VENUES (LIEUX DE RÉCEPTION) ══════════
+
+async function syncVenueFromContract(contractId, payload) {
+  try {
+    const contract = await db.collection('contracts2').findOne({ id: contractId });
+    if (!contract) return;
+
+    const venueId = payload?.client_info?.venue_id || contract?.client_info?.venue_id;
+    if (!venueId) return;
+
+    const updateObj = {};
+    const fieldsToSync = [
+      'venue_photos',
+      'venue_notes',
+      'has_limiteur_son',
+      'has_detecteur_fumee',
+      'has_no_limiteur_ni_detecteur',
+      'has_wifi',
+      'has_4g_5g'
+    ];
+
+    fieldsToSync.forEach(field => {
+      if (payload[field] !== undefined) {
+        updateObj[field] = payload[field];
+      } else if (payload?.client_info && payload.client_info[field] !== undefined) {
+        updateObj[field] = payload.client_info[field];
+      }
+    });
+
+    if (updateObj.venue_notes !== undefined) {
+      updateObj.notes = updateObj.venue_notes;
+    }
+
+    if (Object.keys(updateObj).length > 0) {
+      updateObj.updated_at = new Date().toISOString();
+      // If we are adding photos or notes, let's mark it as complete if it had nothing before
+      const existingVenue = await db.collection('reception_venues').findOne({ id: venueId });
+      if (existingVenue) {
+        const hasPhotos = (updateObj.venue_photos && updateObj.venue_photos.length > 0) || (existingVenue.venue_photos && existingVenue.venue_photos.length > 0);
+        const hasNotes = (updateObj.venue_notes && updateObj.venue_notes.trim().length > 0) || (existingVenue.notes && existingVenue.notes.trim().length > 0);
+        if (hasPhotos || hasNotes) {
+          updateObj.is_complete = true;
+        }
+        await db.collection('reception_venues').updateOne({ id: venueId }, { $set: updateObj });
+        console.log(`[Venue Sync] Synced fields to venue ${venueId}`);
+      }
+    }
+  } catch (err) {
+    console.error('[Venue Sync Error]', err);
+  }
+}
+
+api.get('/public/venues', async (req, res) => {
+  try {
+    const venues = await db.collection('reception_venues').find({ is_complete: true }).toArray();
+    const contracts = await db.collection('contracts2').find({}).toArray();
+    
+    const resolved = venues.map(v => {
+      let resolvedCity = v.city || 'À préciser';
+      let resolvedDept = v.department || 'À préciser';
+
+      if (resolvedCity === 'À préciser' || resolvedDept === 'À préciser') {
+        const associatedContracts = contracts.filter(c => {
+          if (c.client_info?.venue_id === v.id) return true;
+          const loc = (c.client_info?.event_location || c.event_location || '').toLowerCase();
+          const vName = (v.name || '').toLowerCase();
+          return loc && vName && loc.includes(vName);
+        });
+
+        for (const c of associatedContracts) {
+          const loc = c.client_info?.event_location || c.event_location || '';
+          if (loc && !loc.toLowerCase().includes('à préciser')) {
+            if (loc.includes('/')) {
+              const parts = loc.split('/').map(p => p.trim());
+              if (parts.length >= 2 && parts[1] && !parts[1].toLowerCase().includes('à préciser')) {
+                if (resolvedCity === 'À préciser') resolvedCity = parts[1];
+              }
+              if (parts.length >= 1 && parts[0] && !parts[0].toLowerCase().includes('à préciser')) {
+                if (resolvedDept === 'À préciser') resolvedDept = parts[0];
+              }
+            } else if (loc.includes(',')) {
+              const parts = loc.split(',').map(p => p.trim());
+              if (parts.length >= 2 && parts[1] && !parts[1].toLowerCase().includes('à préciser')) {
+                if (resolvedCity === 'À préciser') resolvedCity = parts[1];
+              }
+            }
+          }
+        }
+      }
+
+      if (resolvedCity === 'À préciser' && v.name && v.name !== 'À préciser') {
+        resolvedCity = v.name;
+      }
+
+      return {
+        ...v,
+        city: resolvedCity,
+        department: resolvedDept
+      };
+    });
+
+    res.json(cleanList(resolved));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.post('/venues/import-all', authMiddleware, async (req, res) => {
+  try {
+    const contracts = await db.collection('contracts2').find({}).toArray();
+    const existingVenues = await db.collection('reception_venues').find({}).toArray();
+    
+    const normalize = (str) => str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+    
+    let importedCount = 0;
+    
+    for (const c of contracts) {
+      const locationStr = c.client_info?.event_location || c.event_location;
+      if (!locationStr || !locationStr.trim()) continue;
+      
+      let department = 'À préciser';
+      let city = 'À préciser';
+      let name = locationStr.trim();
+      
+      if (locationStr.includes('/')) {
+        const parts = locationStr.split('/').map(p => p.trim());
+        if (parts.length >= 3) {
+          department = parts[0];
+          city = parts[1];
+          name = parts.slice(2).join(' / ');
+        } else if (parts.length === 2) {
+          city = parts[0];
+          name = parts[1];
+        }
+      } else if (locationStr.includes(',')) {
+        const parts = locationStr.split(',').map(p => p.trim());
+        if (parts.length >= 2) {
+          name = parts[0];
+          city = parts[1];
+        }
+      }
+      
+      const normName = normalize(name);
+      const normCity = normalize(city);
+      
+      // Check if already exists in reception_venues or in the newly imported set
+      let existing = existingVenues.find(v => {
+        return normalize(v.name) === normName && normalize(v.city) === normCity;
+      });
+      
+      let venueId;
+      if (existing) {
+        venueId = existing.id;
+      } else {
+        venueId = uuidv4();
+        
+        const notesVal = c.venue_notes || c.client_info?.venue_notes || '';
+        const photosVal = c.venue_photos || c.client_info?.venue_photos || [];
+        
+        const newVenue = {
+          id: venueId,
+          name,
+          department,
+          city,
+          notes: notesVal || c.notes || '',
+          has_limiteur_son: !!(c.has_limiteur_son || c.client_info?.has_limiteur_son),
+          has_detecteur_fumee: !!(c.has_detecteur_fumee || c.client_info?.has_detecteur_fumee),
+          has_no_limiteur_ni_detecteur: !!(c.has_no_limiteur_ni_detecteur || c.client_info?.has_no_limiteur_ni_detecteur),
+          has_wifi: !!(c.has_wifi || c.client_info?.has_wifi),
+          has_4g_5g: !!(c.has_4g_5g || c.client_info?.has_4g_5g),
+          venue_photos: photosVal,
+          is_complete: false, // Always set to false initially so they are in "à compléter"
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        await db.collection('reception_venues').insertOne(newVenue);
+        existingVenues.push(newVenue); // Add to local list to prevent duplicate creation in this loop
+        importedCount++;
+      }
+      
+      // Update the contract if it doesn't have a venue_id already
+      if (!c.client_info?.venue_id || c.client_info.venue_id !== venueId) {
+        await db.collection('contracts2').updateOne(
+          { id: c.id },
+          {
+            $set: {
+              'client_info.venue_id': venueId,
+              'client_info.event_location': `${department} / ${city} / ${name}`,
+              updated_at: new Date().toISOString()
+            }
+          }
+        );
+      }
+    }
+    
+    res.json({ success: true, importedCount });
+  } catch (err) {
+    console.error('Error importing venues from contracts:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.post('/venues/suggest', authMiddleware, async (req, res) => {
+  const { name, city, department } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: "Le nom de la salle est requis pour la recherche." });
+  }
+
+  try {
+    const { GoogleGenAI, Type } = require('@google/genai');
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    const prompt = `Recherche sur Internet (en France) la salle de réception ou le lieu d'événement suivant :
+Nom : "${name}"
+Ville : "${city || 'non spécifiée'}"
+Département : "${department || 'non spécifié'}"
+
+Trouve son adresse exacte, son site web officiel, son code postal réel, ses informations clés d'accessibilité ou description, et génère un lien de recherche Google Maps direct de type "https://www.google.com/maps/search/?api=1&query=..." encodé correctement avec le nom et la ville de la salle.
+
+Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ces clés :
+{
+  "found": true ou false (si la salle existe réellement et a été identifiée),
+  "suggestedName": "Le nom exact et officiel de la salle/lieu de réception",
+  "suggestedAddress": "L'adresse postale complète (rue, numéro, etc.) sans la ville ni le code postal",
+  "suggestedCity": "La ville exacte",
+  "suggestedPostalCode": "Le code postal (ex: 67000)",
+  "suggestedDepartment": "Le département officiel (ex: Bas-Rhin)",
+  "description": "Une description concise de 2-3 phrases sur la salle (ex: château du XVIIIe siècle, salle des fêtes moderne, capacité, charme...)",
+  "website": "L'URL officielle du site web ou de la page Facebook du lieu, ou vide si non trouvé",
+  "googleMapsUrl": "Le lien de recherche Google Maps généré"
+}`;
+
+    const response = await generateContentWithRetry(ai, {
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            found: { type: Type.BOOLEAN },
+            suggestedName: { type: Type.STRING },
+            suggestedAddress: { type: Type.STRING },
+            suggestedCity: { type: Type.STRING },
+            suggestedPostalCode: { type: Type.STRING },
+            suggestedDepartment: { type: Type.STRING },
+            description: { type: Type.STRING },
+            website: { type: Type.STRING },
+            googleMapsUrl: { type: Type.STRING }
+          },
+          required: ["found", "suggestedName", "suggestedAddress", "suggestedCity", "suggestedPostalCode", "suggestedDepartment", "description", "website", "googleMapsUrl"]
+        }
+      }
+    });
+
+    const result = JSON.parse(response.text.trim());
+    res.json(result);
+  } catch (err) {
+    console.error('Error generating venue suggestion:', err);
+    
+    // Check if the error is related to quota or API constraints and return a beautiful fallback response
+    const errStr = (err.message || String(err)).toLowerCase();
+    const isQuotaError = errStr.includes('429') || errStr.includes('quota') || errStr.includes('exhausted') || errStr.includes('limit');
+    
+    const descriptionText = isQuotaError 
+      ? "Note : Limite de quota API Gemini atteinte temporairement (20 requêtes/jour max). Veuillez saisir les détails de la salle manuellement." 
+      : "Note : Les suggestions automatiques de l'IA sont temporairement indisponibles. Veuillez saisir les détails de la salle manuellement.";
+
+    res.json({
+      found: false,
+      suggestedName: name,
+      suggestedAddress: "",
+      suggestedCity: city || "",
+      suggestedPostalCode: "",
+      suggestedDepartment: department || "",
+      description: descriptionText,
+      website: "",
+      googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + (city || ''))}`
+    });
+  }
+});
+
+api.get('/venues', async (req, res) => {
+  try {
+    const venues = await db.collection('reception_venues').find({}).toArray();
+    const contracts = await db.collection('contracts2').find({}).toArray();
+    
+    const resolved = venues.map(v => {
+      let resolvedCity = v.city || 'À préciser';
+      let resolvedDept = v.department || 'À préciser';
+
+      if (resolvedCity === 'À préciser' || resolvedDept === 'À préciser') {
+        const associatedContracts = contracts.filter(c => {
+          if (c.client_info?.venue_id === v.id) return true;
+          const loc = (c.client_info?.event_location || c.event_location || '').toLowerCase();
+          const vName = (v.name || '').toLowerCase();
+          return loc && vName && loc.includes(vName);
+        });
+
+        for (const c of associatedContracts) {
+          const loc = c.client_info?.event_location || c.event_location || '';
+          if (loc && !loc.toLowerCase().includes('à préciser')) {
+            if (loc.includes('/')) {
+              const parts = loc.split('/').map(p => p.trim());
+              if (parts.length >= 2 && parts[1] && !parts[1].toLowerCase().includes('à préciser')) {
+                if (resolvedCity === 'À préciser') resolvedCity = parts[1];
+              }
+              if (parts.length >= 1 && parts[0] && !parts[0].toLowerCase().includes('à préciser')) {
+                if (resolvedDept === 'À préciser') resolvedDept = parts[0];
+              }
+            } else if (loc.includes(',')) {
+              const parts = loc.split(',').map(p => p.trim());
+              if (parts.length >= 2 && parts[1] && !parts[1].toLowerCase().includes('à préciser')) {
+                if (resolvedCity === 'À préciser') resolvedCity = parts[1];
+              }
+            }
+          }
+        }
+      }
+
+      if (resolvedCity === 'À préciser' && v.name && v.name !== 'À préciser') {
+        resolvedCity = v.name;
+      }
+
+      return {
+        ...v,
+        city: resolvedCity,
+        department: resolvedDept
+      };
+    });
+
+    // Auto-detect duplicates
+    const duplicateIds = new Set();
+    const normalize = (str) => str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+    
+    for (let i = 0; i < resolved.length; i++) {
+      const v1 = resolved[i];
+      const normName1 = normalize(v1.name);
+      const city1 = (v1.city || '').toLowerCase().trim();
+      
+      for (let j = i + 1; j < resolved.length; j++) {
+        const v2 = resolved[j];
+        const normName2 = normalize(v2.name);
+        const city2 = (v2.city || '').toLowerCase().trim();
+        
+        if (city1 === city2 && (normName1 === normName2 || normName1.includes(normName2) || normName2.includes(normName1))) {
+          duplicateIds.add(v1.id);
+          duplicateIds.add(v2.id);
+        }
+      }
+    }
+    
+    const venuesWithDupFlag = resolved.map(v => ({
+      ...v,
+      has_potential_duplicate: duplicateIds.has(v.id)
+    }));
+    
+    res.json(cleanList(venuesWithDupFlag));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.get('/venues/:id', async (req, res) => {
+  try {
+    const venue = await db.collection('reception_venues').findOne({ id: req.params.id });
+    if (!venue) return res.status(404).json({ detail: 'Venue not found' });
+    
+    let resolvedCity = venue.city || 'À préciser';
+    let resolvedDept = venue.department || 'À préciser';
+    
+    if (resolvedCity === 'À préciser' || resolvedDept === 'À préciser') {
+      const contracts = await db.collection('contracts2').find({}).toArray();
+      const associatedContracts = contracts.filter(c => {
+        if (c.client_info?.venue_id === venue.id) return true;
+        const loc = (c.client_info?.event_location || c.event_location || '').toLowerCase();
+        const vName = (venue.name || '').toLowerCase();
+        return loc && vName && loc.includes(vName);
+      });
+
+      for (const c of associatedContracts) {
+        const loc = c.client_info?.event_location || c.event_location || '';
+        if (loc && !loc.toLowerCase().includes('à préciser')) {
+          if (loc.includes('/')) {
+            const parts = loc.split('/').map(p => p.trim());
+            if (parts.length >= 2 && parts[1] && !parts[1].toLowerCase().includes('à préciser')) {
+              resolvedCity = parts[1];
+            }
+            if (parts.length >= 1 && parts[0] && !parts[0].toLowerCase().includes('à préciser')) {
+              resolvedDept = parts[0];
+            }
+          } else if (loc.includes(',')) {
+            const parts = loc.split(',').map(p => p.trim());
+            if (parts.length >= 2 && parts[1] && !parts[1].toLowerCase().includes('à préciser')) {
+              resolvedCity = parts[1];
+            }
+          }
+        }
+      }
+    }
+    
+    if (resolvedCity === 'À préciser' && venue.name && venue.name !== 'À préciser') {
+      resolvedCity = venue.name;
+    }
+    
+    res.json(clean({
+      ...venue,
+      city: resolvedCity,
+      department: resolvedDept
+    }));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.post('/venues', async (req, res) => {
+  try {
+    const { name, department, city } = req.body;
+    if (!name || !city || !department) {
+      return res.status(400).json({ detail: 'Nom, département et ville sont requis.' });
+    }
+    
+    const newVenue = {
+      id: uuidv4(),
+      name: name.trim(),
+      department: department.trim(),
+      city: city.trim(),
+      notes: req.body.notes || '',
+      notes_observation: req.body.notes_observation || '',
+      notes_accessibilite: req.body.notes_accessibilite || '',
+      rating_accessibilite: req.body.rating_accessibilite || 0,
+      notes_technique: req.body.notes_technique || '',
+      notes_lumiere: req.body.notes_lumiere || '',
+      has_limiteur_son: !!req.body.has_limiteur_son,
+      has_detecteur_fumee: !!req.body.has_detecteur_fumee,
+      has_no_limiteur_ni_detecteur: !!req.body.has_no_limiteur_ni_detecteur,
+      has_wifi: !!req.body.has_wifi,
+      has_4g_5g: !!req.body.has_4g_5g,
+      venue_photos: req.body.venue_photos || [],
+      is_complete: req.body.is_complete !== undefined ? req.body.is_complete : false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    await db.collection('reception_venues').insertOne(newVenue);
+    res.json(clean(newVenue));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.put('/venues/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const existing = await db.collection('reception_venues').findOne({ id });
+    if (!existing) return res.status(404).json({ detail: 'Venue not found' });
+    
+    const updateData = {
+      ...req.body,
+      updated_at: new Date().toISOString()
+    };
+    delete updateData._id;
+    delete updateData.id;
+    
+    await db.collection('reception_venues').updateOne({ id }, { $set: updateData });
+    const updated = await db.collection('reception_venues').findOne({ id });
+    res.json(clean(updated));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.delete('/venues/:id', async (req, res) => {
+  try {
+    await db.collection('reception_venues').deleteOne({ id: req.params.id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.post('/venues/merge', async (req, res) => {
+  try {
+    const { targetVenueId, sourceVenueIds } = req.body;
+    if (!targetVenueId || !Array.isArray(sourceVenueIds) || sourceVenueIds.length === 0) {
+      return res.status(400).json({ detail: 'Paramètres invalides pour la fusion.' });
+    }
+    
+    const target = await db.collection('reception_venues').findOne({ id: targetVenueId });
+    if (!target) return res.status(404).json({ detail: 'Venue cible non trouvée.' });
+    
+    const sources = await db.collection('reception_venues').find({ id: { $in: sourceVenueIds } }).toArray();
+    
+    let mergedNotes = target.notes || '';
+    let mergedPhotos = [...(target.venue_photos || [])];
+    let has_limiteur = target.has_limiteur_son;
+    let has_detecteur = target.has_detecteur_fumee;
+    let has_no_lim_det = target.has_no_limiteur_ni_detecteur;
+    let has_wifi = target.has_wifi;
+    let has_4g = target.has_4g_5g;
+    
+    for (const src of sources) {
+      if (src.notes && !mergedNotes.includes(src.notes)) {
+        mergedNotes += (mergedNotes ? '\n\n' : '') + `[Fusion ${src.name}] ${src.notes}`;
+      }
+      if (src.venue_photos && Array.isArray(src.venue_photos)) {
+        src.venue_photos.forEach(p => {
+          if (!mergedPhotos.some(mp => mp.url === p.url)) {
+            mergedPhotos.push(p);
+          }
+        });
+      }
+      if (src.has_limiteur_son) has_limiteur = true;
+      if (src.has_detecteur_fumee) has_detecteur = true;
+      if (src.has_no_limiteur_ni_detecteur && !has_limiteur && !has_detecteur) has_no_lim_det = true;
+      if (src.has_wifi) has_wifi = true;
+      if (src.has_4g_5g) has_4g = true;
+    }
+    
+    await db.collection('reception_venues').updateOne(
+      { id: targetVenueId },
+      {
+        $set: {
+          notes: mergedNotes,
+          venue_photos: mergedPhotos,
+          has_limiteur_son: has_limiteur,
+          has_detecteur_fumee: has_detecteur,
+          has_no_limiteur_ni_detecteur: has_no_lim_det,
+          has_wifi,
+          has_4g_5g: has_4g,
+          is_complete: true,
+          updated_at: new Date().toISOString()
+        }
+      }
+    );
+    
+    await db.collection('contracts2').updateMany(
+      { 'client_info.venue_id': { $in: sourceVenueIds } },
+      {
+        $set: {
+          'client_info.venue_id': targetVenueId,
+          'client_info.event_location': `${target.department} / ${target.city} / ${target.name}`,
+          updated_at: new Date().toISOString()
+        }
+      }
+    );
+    
+    await db.collection('reception_venues').deleteMany({ id: { $in: sourceVenueIds } });
+    
+    res.json({ success: true, targetId: targetVenueId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 api.get('/contracts2', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('contracts2').find({ status: { $nin: ['trash'] } }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
@@ -3511,12 +4119,14 @@ api.get('/contracts2/:id', authMiddleware, async (req, res) => {
 api.post('/contracts2', authMiddleware, async (req, res) => {
   const contract = { id: uuidv4(), ...req.body, status: req.body.status || 'draft', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   await db.collection('contracts2').insertOne(contract);
+  await syncVenueFromContract(contract.id, req.body);
   await syncContractReservations(contract);
   res.json(clean(contract));
 });
 api.put('/contracts2/:id', authMiddleware, async (req, res) => {
   await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
   const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  await syncVenueFromContract(req.params.id, req.body);
   await syncContractReservations(updatedContract);
   res.json(updatedContract);
 });
