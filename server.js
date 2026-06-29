@@ -2757,8 +2757,9 @@ api.get('/dj-fiches/:id/attachments/:docId', authMiddleware, async (req, res) =>
   const isInline = req.query.preview === 'true' || req.query.inline === 'true';
   const disposition = isInline ? 'inline' : 'attachment';
 
-  if (doc.gcs_path && bucket) {
-    const file = bucket.file(doc.gcs_path);
+  const activeBucket = getGcsBucket();
+  if (doc.gcs_path && activeBucket) {
+    const file = activeBucket.file(doc.gcs_path);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
     file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
@@ -2779,9 +2780,10 @@ api.delete('/dj-fiches/:id/attachments/:docId', authMiddleware, async (req, res)
     const doc = profile.attachments.find(d => d.id === req.params.docId);
     if (!doc) return res.status(404).json({ error: 'Document not found' });
 
-    if (doc.gcs_path && bucket) {
+    const activeBucket = getGcsBucket();
+    if (doc.gcs_path && activeBucket) {
       try {
-        await bucket.file(doc.gcs_path).delete();
+        await activeBucket.file(doc.gcs_path).delete();
       } catch (err) {
         console.error("Error deleting GCS file:", err);
       }
@@ -3034,23 +3036,33 @@ api.get('/public/contract-pdf-notes', async (req, res) => {
 });
 
 api.get('/public/contract-pdf-notes/:id/download', async (req, res) => {
+  console.log(`[GET PDF-NOTE] id: ${req.params.id}, preview: ${req.query.preview}`);
   const note = await db.collection('contract_technical_pdf_notes').findOne({ id: req.params.id });
-  if (!note) return res.status(404).json({ detail: 'Not found' });
+  if (!note) {
+    console.log(`[GET PDF-NOTE] Note not found for id: ${req.params.id}`);
+    return res.status(404).json({ detail: 'Not found' });
+  }
   
   const isInline = req.query.preview === 'true' || req.query.inline === 'true';
   const disposition = isInline ? 'inline' : 'attachment';
 
-  if (note.gcs_path && bucket) {
-    const file = bucket.file(note.gcs_path);
+  const activeBucket = getGcsBucket();
+  console.log(`[GET PDF-NOTE] Found note title: ${note.title}, has gcs_path: ${!!note.gcs_path}, has pdf_data: ${!!note.pdf_data}, has activeBucket: ${!!activeBucket}`);
+  if (note.gcs_path && activeBucket) {
+    const file = activeBucket.file(note.gcs_path);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${note.filename || note.title}.pdf"`);
-    file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
+    file.createReadStream().on('error', (err) => {
+      console.error(`[GET PDF-NOTE] GCS stream error for ${note.gcs_path}:`, err);
+      res.status(500).send('Error');
+    }).pipe(res);
   } else if (note.pdf_data) {
     const buffer = Buffer.from(note.pdf_data, 'base64');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${note.filename || note.title}.pdf"`);
     res.send(buffer);
   } else {
+    console.log(`[GET PDF-NOTE] note has no gcs_path or activeBucket is null, and has no pdf_data`);
     res.status(404).json({ detail: 'Not found' });
   }
 });
@@ -3076,8 +3088,9 @@ api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
         for (const note of notes) {
           try {
             let buffer;
-            if (note.gcs_path && bucket) {
-              const file = bucket.file(note.gcs_path);
+            const activeBucket = getGcsBucket();
+            if (note.gcs_path && activeBucket) {
+              const file = activeBucket.file(note.gcs_path);
               const [fileContent] = await file.download();
               buffer = fileContent;
             } else if (note.pdf_data) {
@@ -3324,14 +3337,24 @@ api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, r
     uploaded_at: new Date().toISOString(),
     ...(category === 'Administrative' ? { hiddenForClient: true } : {})
   };
+  let savedToGcs = false;
   if (bucket) {
-    const ext = path.extname(req.file.originalname) || '';
-    const gcsPath = `contract-event-documents/${req.params.id}/${docId}${ext}`;
-    const file = bucket.file(gcsPath);
-    await file.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
-    newDoc.gcs_path = gcsPath;
-  } else {
+    try {
+      const ext = path.extname(req.file.originalname) || '';
+      const gcsPath = `contract-event-documents/${req.params.id}/${docId}${ext}`;
+      const file = bucket.file(gcsPath);
+      await file.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+      newDoc.gcs_path = gcsPath;
+      savedToGcs = true;
+      console.log(`[UPLOAD] Document ${docId} successfully saved to GCS at ${gcsPath}`);
+    } catch (gcsErr) {
+      console.error(`[UPLOAD] Error saving to GCS, falling back to local MongoDB base64 pdf_data:`, gcsErr);
+    }
+  }
+
+  if (!savedToGcs) {
     newDoc.pdf_data = req.file.buffer.toString('base64');
+    console.log(`[UPLOAD] Document ${docId} saved locally in MongoDB collection`);
   }
   await db.collection('contracts2').updateOne(
     { id: req.params.id }, 
@@ -3341,27 +3364,68 @@ api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, r
 });
 
 api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
+  console.log(`[GET DOCUMENT] id: ${req.params.id}, docId: ${req.params.docId}, preview: ${req.query.preview}`);
   const contract = await db.collection('contracts2').findOne({ id: req.params.id });
-  if (!contract || !contract.event_documents) return res.status(404).json({ error: 'Not found' });
+  if (!contract) {
+    console.log(`[GET DOCUMENT] Contract not found for id: ${req.params.id}`);
+    return res.status(404).json({ error: 'Not found' });
+  }
+  if (!contract.event_documents) {
+    console.log(`[GET DOCUMENT] Contract found but event_documents is missing/empty for id: ${req.params.id}`);
+    return res.status(404).json({ error: 'Not found' });
+  }
   const doc = contract.event_documents.find(d => d.id === req.params.docId);
-  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!doc) {
+    console.log(`[GET DOCUMENT] Document ${req.params.docId} not found in event_documents of contract ${req.params.id}`);
+    return res.status(404).json({ error: 'Document not found' });
+  }
   
   const isInline = req.query.preview === 'true' || req.query.inline === 'true';
   const disposition = isInline ? 'inline' : 'attachment';
 
-  if (doc.gcs_path && bucket) {
-    const file = bucket.file(doc.gcs_path);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
-    file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
-  } else if (doc.pdf_data) {
+  const activeBucket = getGcsBucket();
+  
+  let gcsPath = doc.gcs_path;
+  if (!gcsPath && doc.filename) {
+    const ext = path.extname(doc.filename) || '.pdf';
+    gcsPath = `contract-event-documents/${req.params.id}/${doc.id}${ext}`;
+  }
+
+  console.log(`[GET DOCUMENT] Found doc filename: ${doc.filename}, gcsPath: ${gcsPath}, has pdf_data: ${!!doc.pdf_data}, has activeBucket: ${!!activeBucket}`);
+  
+  if (gcsPath && activeBucket) {
+    const file = activeBucket.file(gcsPath);
+    let exists = false;
+    try {
+      const [fileExist] = await file.exists();
+      exists = fileExist;
+    } catch (err) {
+      console.warn(`[GET DOCUMENT] Error checking GCS file existence for ${gcsPath}:`, err.message);
+    }
+
+    if (exists) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
+      return file.createReadStream().on('error', (err) => {
+        console.error(`[GET DOCUMENT] GCS stream error for ${gcsPath}:`, err);
+        if (!res.headersSent) {
+          res.status(500).send('Error');
+        }
+      }).pipe(res);
+    } else {
+      console.log(`[GET DOCUMENT] File does not exist on GCS at ${gcsPath}. Checking if pdf_data exists.`);
+    }
+  }
+
+  if (doc.pdf_data) {
     const buffer = Buffer.from(doc.pdf_data, 'base64');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
-    res.send(buffer);
-  } else {
-    res.status(404).json({ error: 'Not found' });
+    return res.send(buffer);
   }
+
+  console.log(`[GET DOCUMENT] Document not found on GCS or locally (no pdf_data)`);
+  res.status(404).json({ error: 'Not found' });
 });
 
 api.delete('/public/dj-client/:id/documents/:docId', async (req, res) => {
@@ -3371,8 +3435,9 @@ api.delete('/public/dj-client/:id/documents/:docId', async (req, res) => {
     
     // Find the document to potentially delete from GCS
     const docToDelete = contract.event_documents.find(d => d.id === req.params.docId);
-    if (docToDelete && docToDelete.gcs_path && bucket) {
-      const file = bucket.file(docToDelete.gcs_path);
+    const activeBucket = getGcsBucket();
+    if (docToDelete && docToDelete.gcs_path && activeBucket) {
+      const file = activeBucket.file(docToDelete.gcs_path);
       try {
         await file.delete();
       } catch (err) {
@@ -4549,13 +4614,23 @@ api.post('/contracts2/:id/documents', authMiddleware, upload.single('file'), asy
       ...(category === 'Administrative' ? { hiddenForClient: true } : {})
     };
     
+    let savedToGcs = false;
     if (bucket) {
-      const gcsPath = `contract-event-documents/${req.params.id}/${docId}.pdf`;
-      const file = bucket.file(gcsPath);
-      await file.save(pdfBuffer, { metadata: { contentType: 'application/pdf' } });
-      newDoc.gcs_path = gcsPath;
-    } else {
+      try {
+        const gcsPath = `contract-event-documents/${req.params.id}/${docId}.pdf`;
+        const file = bucket.file(gcsPath);
+        await file.save(pdfBuffer, { metadata: { contentType: 'application/pdf' } });
+        newDoc.gcs_path = gcsPath;
+        savedToGcs = true;
+        console.log(`[ADMIN UPLOAD] Document ${docId} successfully saved to GCS at ${gcsPath}`);
+      } catch (gcsErr) {
+        console.error(`[ADMIN UPLOAD] Error saving to GCS, falling back to local MongoDB base64 pdf_data:`, gcsErr);
+      }
+    }
+    
+    if (!savedToGcs) {
       newDoc.pdf_data = pdfBuffer.toString('base64');
+      console.log(`[ADMIN UPLOAD] Document ${docId} saved locally in MongoDB collection`);
     }
     
     await db.collection('contracts2').updateOne(
@@ -4571,27 +4646,68 @@ api.post('/contracts2/:id/documents', authMiddleware, upload.single('file'), asy
 });
 
 api.get('/contracts2/:id/documents/:docId', authMiddleware, async (req, res) => {
+  console.log(`[GET ADMIN DOCUMENT] id: ${req.params.id}, docId: ${req.params.docId}, preview: ${req.query.preview}`);
   const contract = await db.collection('contracts2').findOne({ id: req.params.id });
-  if (!contract || !contract.event_documents) return res.status(404).json({ error: 'Not found' });
+  if (!contract) {
+    console.log(`[GET ADMIN DOCUMENT] Contract not found for id: ${req.params.id}`);
+    return res.status(404).json({ error: 'Not found' });
+  }
+  if (!contract.event_documents) {
+    console.log(`[GET ADMIN DOCUMENT] Contract found but event_documents is missing/empty for id: ${req.params.id}`);
+    return res.status(404).json({ error: 'Not found' });
+  }
   const doc = contract.event_documents.find(d => d.id === req.params.docId);
-  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!doc) {
+    console.log(`[GET ADMIN DOCUMENT] Document ${req.params.docId} not found in event_documents of contract ${req.params.id}`);
+    return res.status(404).json({ error: 'Document not found' });
+  }
   
   const isInline = req.query.preview === 'true' || req.query.inline === 'true';
   const disposition = isInline ? 'inline' : 'attachment';
 
-  if (doc.gcs_path && bucket) {
-    const file = bucket.file(doc.gcs_path);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
-    file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
-  } else if (doc.pdf_data) {
+  const activeBucket = getGcsBucket();
+  
+  let gcsPath = doc.gcs_path;
+  if (!gcsPath && doc.filename) {
+    const ext = path.extname(doc.filename) || '.pdf';
+    gcsPath = `contract-event-documents/${req.params.id}/${doc.id}${ext}`;
+  }
+
+  console.log(`[GET ADMIN DOCUMENT] Found doc filename: ${doc.filename}, gcsPath: ${gcsPath}, has pdf_data: ${!!doc.pdf_data}, has activeBucket: ${!!activeBucket}`);
+  
+  if (gcsPath && activeBucket) {
+    const file = activeBucket.file(gcsPath);
+    let exists = false;
+    try {
+      const [fileExist] = await file.exists();
+      exists = fileExist;
+    } catch (err) {
+      console.warn(`[GET ADMIN DOCUMENT] Error checking GCS file existence for ${gcsPath}:`, err.message);
+    }
+
+    if (exists) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
+      return file.createReadStream().on('error', (err) => {
+        console.error(`[GET ADMIN DOCUMENT] GCS stream error for ${gcsPath}:`, err);
+        if (!res.headersSent) {
+          res.status(500).send('Error');
+        }
+      }).pipe(res);
+    } else {
+      console.log(`[GET ADMIN DOCUMENT] File does not exist on GCS at ${gcsPath}. Checking if pdf_data exists.`);
+    }
+  }
+
+  if (doc.pdf_data) {
     const buffer = Buffer.from(doc.pdf_data, 'base64');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
-    res.send(buffer);
-  } else {
-    res.status(404).json({ error: 'Not found' });
+    return res.send(buffer);
   }
+
+  console.log(`[GET ADMIN DOCUMENT] Document not found on GCS or locally (no pdf_data)`);
+  res.status(404).json({ error: 'Not found' });
 });
 
 api.delete('/contracts2/:id/documents/:docId', authMiddleware, async (req, res) => {
@@ -4600,8 +4716,9 @@ api.delete('/contracts2/:id/documents/:docId', authMiddleware, async (req, res) 
     if (!contract || !contract.event_documents) return res.status(404).json({ error: 'Not found' });
     
     const docToDelete = contract.event_documents.find(d => d.id === req.params.docId);
-    if (docToDelete && docToDelete.gcs_path && bucket) {
-      const file = bucket.file(docToDelete.gcs_path);
+    const activeBucket = getGcsBucket();
+    if (docToDelete && docToDelete.gcs_path && activeBucket) {
+      const file = activeBucket.file(docToDelete.gcs_path);
       try {
         await file.delete();
       } catch (err) {
@@ -5715,8 +5832,9 @@ api.get('/location/quotes/:id/documents/:docId', authMiddleware, async (req, res
   const isInline = req.query.preview === 'true' || req.query.inline === 'true';
   const disposition = isInline ? 'inline' : 'attachment';
 
-  if (doc.gcs_path && bucket) {
-    const file = bucket.file(doc.gcs_path);
+  const activeBucket = getGcsBucket();
+  if (doc.gcs_path && activeBucket) {
+    const file = activeBucket.file(doc.gcs_path);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
     file.createReadStream().on('error', (err) => res.status(500).send('Error')).pipe(res);
@@ -5736,8 +5854,9 @@ api.delete('/location/quotes/:id/documents/:docId', authMiddleware, async (req, 
     if (!quote || !quote.documents) return res.status(404).json({ error: 'Not found' });
     
     const docToDelete = quote.documents.find(d => d.id === req.params.docId);
-    if (docToDelete && docToDelete.gcs_path && bucket) {
-      const file = bucket.file(docToDelete.gcs_path);
+    const activeBucket = getGcsBucket();
+    if (docToDelete && docToDelete.gcs_path && activeBucket) {
+      const file = activeBucket.file(docToDelete.gcs_path);
       try {
         await file.delete();
       } catch (err) {

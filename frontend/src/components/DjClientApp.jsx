@@ -8,6 +8,11 @@ import { generateMandatHTML, generateEntrepriseHTML, generateArtisteHTML } from 
 import { isContractDirigeant, calculateContractDepositAmount, calculateContractRemainingBalance } from './contracts2/calculations';
 import { defaultCompanySettings, musicStyles as availableMusicStyles } from './contracts2/constants';
 import MyDjLogo from './MyDjLogo';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
+import 'react-pdf/dist/esm/Page/TextLayer.css';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -40,6 +45,10 @@ const DjClientApp = ({ isPublic = false }) => {
   const [docsUploading, setDocsUploading] = useState(false);
   const [docsUploadCategory, setDocsUploadCategory] = useState("Administrative");
   const [previewDoc, setPreviewDoc] = useState(null); // { title: string, url: string, type: 'pdf' | 'html' }
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+  const [loadingPreviewBlob, setLoadingPreviewBlob] = useState(false);
+  const [previewBlobError, setPreviewBlobError] = useState(null);
+  const [previewNumPages, setPreviewNumPages] = useState(null);
   const [optionsBasket, setOptionsBasket] = useState([]);
   const [optionsSubmitting, setOptionsSubmitting] = useState(false);
   const [chatNewMessage, setChatNewMessage] = useState("");
@@ -232,6 +241,52 @@ function urlBase64ToUint8Array(base64String) {
       window.removeEventListener('resize', checkStandalone);
     };
   }, []);
+
+  // Fetch and manage local blob URLs for PDF previews to avoid iframe security/cookie blocks
+  useEffect(() => {
+    let active = true;
+    let urlToRevoke = null;
+
+    if (previewDoc && previewDoc.type === 'pdf') {
+      setLoadingPreviewBlob(true);
+      setPreviewBlobError(null);
+      setPreviewBlobUrl(null);
+      setPreviewNumPages(null);
+
+      fetch(previewDoc.url)
+        .then(async (res) => {
+          if (!res.ok) {
+            throw new Error(`Erreur lors du chargement (HTTP ${res.status})`);
+          }
+          const blob = await res.blob();
+          if (active) {
+            const objectUrl = URL.createObjectURL(blob);
+            urlToRevoke = objectUrl;
+            setPreviewBlobUrl(objectUrl);
+            setLoadingPreviewBlob(false);
+          }
+        })
+        .catch((err) => {
+          console.error("Error fetching preview PDF blob:", err);
+          if (active) {
+            setPreviewBlobError(err.message || "Impossible de charger le PDF");
+            setLoadingPreviewBlob(false);
+          }
+        });
+    } else {
+      setPreviewBlobUrl(null);
+      setLoadingPreviewBlob(false);
+      setPreviewBlobError(null);
+      setPreviewNumPages(null);
+    }
+
+    return () => {
+      active = false;
+      if (urlToRevoke) {
+        URL.revokeObjectURL(urlToRevoke);
+      }
+    };
+  }, [previewDoc]);
 
   // Monitor updates of notifications to trigger local pushes
   useEffect(() => {
@@ -3216,9 +3271,29 @@ function urlBase64ToUint8Array(base64String) {
         }
       };
 
-      const handleDownloadPdf = (pdfId) => {
-        const downloadUrl = `${BACKEND_URL}/api/public/contract-pdf-notes/${pdfId}/download`;
-        window.open(downloadUrl, '_blank');
+      const handleDownloadPdf = async (pdfId) => {
+        try {
+          toast.info("Téléchargement en cours...", { duration: 2000 });
+          const doc = pdfNotes?.find(d => d.id === pdfId);
+          const filename = doc ? (doc.title || doc.filename || "document") : "document";
+          const finalFilename = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
+          const downloadUrl = `${BACKEND_URL}/api/public/contract-pdf-notes/${pdfId}/download`;
+          
+          const res = await fetch(downloadUrl);
+          if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+          const blob = await res.blob();
+          const localUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = localUrl;
+          a.download = finalFilename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(localUrl);
+        } catch (err) {
+          console.error("Download failed:", err);
+          toast.error("Échec du téléchargement du document.");
+        }
       };
       
       const exportHTMLToPDF = async (htmlContent, fileName) => {
@@ -3359,9 +3434,28 @@ function urlBase64ToUint8Array(base64String) {
         await exportHTMLToPDF(html, filename);
       };
 
-      const handleDownloadEventDoc = (docId) => {
-        const downloadUrl = `${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/${docId}`;
-        window.open(downloadUrl, '_blank');
+      const handleDownloadEventDoc = async (docId) => {
+        try {
+          toast.info("Téléchargement en cours...", { duration: 2000 });
+          const doc = ev?.eventDocuments?.find(d => d.id === docId);
+          const filename = doc?.filename || "document.pdf";
+          const downloadUrl = `${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/${docId}`;
+          
+          const res = await fetch(downloadUrl);
+          if (!res.ok) throw new Error(`Erreur HTTP ${res.status}`);
+          const blob = await res.blob();
+          const localUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = localUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(localUrl);
+        } catch (err) {
+          console.error("Download failed:", err);
+          toast.error("Échec du téléchargement du document.");
+        }
       };
       
       const handleDeleteEventDoc = async (docId) => {
@@ -5823,13 +5917,35 @@ function urlBase64ToUint8Array(base64String) {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {previewDoc.type === 'pdf' && (
-                  <a 
-                    href={previewDoc.url.replace('?preview=true', '').replace('&preview=true', '')} 
-                    download 
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5" /> Télécharger
-                  </a>
+                  <>
+                    <button 
+                      onClick={() => {
+                        window.open(previewDoc.url.replace('?preview=true', '').replace('&preview=true', ''), '_blank');
+                      }}
+                      className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
+                      title="Ouvrir le document dans un nouvel onglet"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" /> Ouvrir dans un onglet
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if (previewBlobUrl) {
+                          const a = document.createElement('a');
+                          a.href = previewBlobUrl;
+                          a.download = previewDoc.title.endsWith('.pdf') ? previewDoc.title : `${previewDoc.title}.pdf`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                        } else {
+                          // Fallback
+                          window.open(previewDoc.url.replace('?preview=true', '').replace('&preview=true', ''), '_blank');
+                        }
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Télécharger
+                    </button>
+                  </>
                 )}
                 <button 
                   onClick={() => setPreviewDoc(null)}
@@ -5844,11 +5960,61 @@ function urlBase64ToUint8Array(base64String) {
             {/* Content of preview */}
             <div className="flex-1 bg-slate-100 overflow-y-auto relative min-h-0">
               {previewDoc.type === 'pdf' ? (
-                <iframe 
-                  src={previewDoc.url} 
-                  className="w-full h-full border-0 select-text bg-white" 
-                  title={previewDoc.title}
-                />
+                loadingPreviewBlob ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 gap-3">
+                    <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-sm font-semibold text-slate-600">Chargement sécurisé du PDF en cours...</p>
+                  </div>
+                ) : previewBlobError ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 gap-3 p-6 text-center">
+                    <p className="text-red-500 font-semibold">Une erreur s'est produite lors du chargement du document.</p>
+                    <p className="text-xs text-slate-500 max-w-md">{previewBlobError}</p>
+                    <button 
+                      onClick={() => {
+                        setPreviewDoc({ ...previewDoc });
+                      }}
+                      className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition"
+                    >
+                      Réessayer
+                    </button>
+                  </div>
+                ) : (
+                  <div className="min-h-full flex flex-col items-center bg-slate-100 py-6 overflow-x-auto">
+                    <Document
+                      file={previewBlobUrl}
+                      onLoadSuccess={({ numPages: n }) => setPreviewNumPages(n)}
+                      loading={
+                        <div className="flex flex-col items-center justify-center p-12 bg-white gap-3 rounded-xl shadow-xs">
+                          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                          <p className="text-sm text-slate-500 font-medium">Chargement des pages du PDF...</p>
+                        </div>
+                      }
+                      error={
+                        <div className="flex flex-col items-center justify-center p-12 bg-white gap-3 text-red-500 rounded-xl shadow-xs text-center max-w-md">
+                          <p className="font-semibold">Erreur lors de l'affichage du PDF</p>
+                          <p className="text-xs text-slate-500">Utilisez le bouton "Télécharger" ou "Ouvrir dans un onglet" ci-dessus pour lire ou télécharger ce document.</p>
+                        </div>
+                      }
+                    >
+                      <div className="flex flex-col items-center gap-6">
+                        {previewNumPages && Array.from({ length: previewNumPages }, (_, i) => (
+                          <div key={i} className="shadow-lg bg-white border border-slate-200/80 rounded-sm overflow-hidden" style={{ width: 'fit-content' }}>
+                            <Page 
+                              pageNumber={i + 1} 
+                              renderTextLayer={false} 
+                              renderAnnotationLayer={false} 
+                              width={720} 
+                              className="max-w-full"
+                            />
+                            <div className="bg-slate-50 text-center py-1.5 border-t text-[10px] font-bold text-slate-500">
+                              Page {i + 1} sur {previewNumPages}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </Document>
+                  </div>
+                )
               ) : (
                 <div className="max-w-4xl mx-auto my-6 bg-white p-6 sm:p-10 shadow-md border rounded-xl overflow-x-auto select-text font-serif text-slate-900 leading-relaxed">
                   <div dangerouslySetInnerHTML={{ __html: previewDoc.url }} />

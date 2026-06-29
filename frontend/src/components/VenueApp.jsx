@@ -51,7 +51,7 @@ export default function VenueApp() {
   const [venues, setVenues] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('list'); // 'list' | 'incomplete'
+  const [activeTab, setActiveTab] = useState('list'); // 'list' | 'incomplete' | 'blacklist'
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCity, setSelectedCity] = useState('');
@@ -81,7 +81,9 @@ export default function VenueApp() {
     has_wifi: false,
     has_4g_5g: false,
     venue_photos: [],
-    is_complete: true
+    is_complete: true,
+    is_blacklisted: false,
+    blacklist_reason: ''
   });
 
   const [formDeptKey, setFormDeptKey] = useState(''); // 'Bas-Rhin (67)' | ... | 'Autre'
@@ -274,13 +276,18 @@ export default function VenueApp() {
     return textMatch && matchesDept && matchesCity && matchesWifi && matches4g && matchesLimiter && matchesSmoke;
   });
 
-  const incompleteVenues = filteredVenues.filter(v => !v.is_complete || (v.venue_photos?.length === 0 && !v.notes));
-  const completeVenues = filteredVenues.filter(v => v.is_complete && (v.venue_photos?.length > 0 || v.notes));
+  const blacklistedVenues = filteredVenues.filter(v => v.is_blacklisted);
+  const activeFilteredVenues = filteredVenues.filter(v => !v.is_blacklisted);
+  const incompleteVenues = activeFilteredVenues.filter(v => !v.is_complete || (v.venue_photos?.length === 0 && !v.notes));
+  const completeVenues = activeFilteredVenues.filter(v => v.is_complete && (v.venue_photos?.length > 0 || v.notes));
 
   // Sectorization group
   // Grouping structure: Department -> City -> Venues
   const groupedVenues = {};
-  const listToGroup = activeTab === 'incomplete' ? incompleteVenues : filteredVenues;
+  const listToGroup = 
+    activeTab === 'blacklist' ? blacklistedVenues : 
+    activeTab === 'incomplete' ? incompleteVenues : 
+    activeFilteredVenues;
 
   listToGroup.forEach(v => {
     const dept = v.department || 'Non spécifié';
@@ -312,7 +319,9 @@ export default function VenueApp() {
         has_wifi: !!venue.has_wifi,
         has_4g_5g: !!venue.has_4g_5g,
         venue_photos: venue.venue_photos || [],
-        is_complete: venue.is_complete !== undefined ? venue.is_complete : true
+        is_complete: venue.is_complete !== undefined ? venue.is_complete : true,
+        is_blacklisted: !!venue.is_blacklisted,
+        blacklist_reason: venue.blacklist_reason || ''
       });
 
       const deptKey = detectDeptKey(venue.department);
@@ -344,7 +353,9 @@ export default function VenueApp() {
         has_wifi: false,
         has_4g_5g: false,
         venue_photos: [],
-        is_complete: true
+        is_complete: true,
+        is_blacklisted: false,
+        blacklist_reason: ''
       });
       setFormDeptKey('');
       setFormCityKey('');
@@ -733,7 +744,7 @@ export default function VenueApp() {
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            Tous les Lieux ({completeVenues.length + incompleteVenues.length})
+            Tous les Lieux ({activeFilteredVenues.length})
           </button>
           <button
             onClick={() => setActiveTab('incomplete')}
@@ -750,6 +761,21 @@ export default function VenueApp() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('blacklist')}
+            className={`pb-3 font-bold text-sm tracking-wide border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === 'blacklist' 
+                ? 'border-red-600 text-red-600' 
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Blacklist
+            {blacklistedVenues.length > 0 && (
+              <span className="bg-red-100 text-red-700 text-[11px] font-extrabold px-1.5 py-0.5 rounded-full">
+                {blacklistedVenues.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Loading Spinner */}
@@ -758,16 +784,22 @@ export default function VenueApp() {
             <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
             <p className="text-slate-500 text-sm font-medium">Chargement des lieux de réception...</p>
           </div>
-        ) : filteredVenues.length === 0 ? (
+        ) : listToGroup.length === 0 ? (
           <div className="bg-white rounded-2xl border p-12 text-center shadow-sm max-w-xl mx-auto mt-6">
             <FolderOpen className="w-12 h-12 text-slate-300 mx-auto mb-4" />
             <h3 className="text-lg font-bold text-slate-800">Aucun lieu trouvé</h3>
             <p className="text-slate-500 text-sm mt-1">
-              Modifiez vos critères de recherche ou ajoutez un nouveau lieu de réception pour commencer.
+              {activeTab === 'blacklist' 
+                ? "Il n'y a aucun lieu de réception sur liste noire (blacklisté) pour le moment." 
+                : activeTab === 'incomplete'
+                ? "Tous les lieux de réception ont des fiches complètes !"
+                : "Modifiez vos critères de recherche ou ajoutez un nouveau lieu de réception pour commencer."}
             </p>
-            <Button onClick={() => handleOpenForm()} className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white">
-              Ajouter un lieu
-            </Button>
+            {activeTab === 'list' && (
+              <Button onClick={() => handleOpenForm()} className="mt-6 bg-indigo-600 hover:bg-indigo-700 text-white">
+                Ajouter un lieu
+              </Button>
+            )}
           </div>
         ) : (
           /* Structured Accordions / Sections (Sectorized by Department -> City) */
@@ -792,63 +824,80 @@ export default function VenueApp() {
                         {hallList.map((venue, idx) => {
                           const venueContracts = getVenueContracts(venue);
                           return (
-                            <div key={venue.id} className="pt-2 first:pt-0 flex items-center justify-between gap-4 transition-all">
-                              {/* Left side / Core details */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h4 
-                                    onClick={() => handleOpenForm(venue)}
-                                    className="text-sm font-bold text-slate-900 hover:text-indigo-600 hover:underline cursor-pointer transition-colors"
-                                  >
-                                    {venue.name}
-                                  </h4>
-                                  {!venue.is_complete && (
-                                    <Badge className="bg-rose-100 text-rose-700 border-rose-200 text-[10px] py-0 px-1.5 font-bold">À compléter</Badge>
-                                  )}
-                                  {venue.is_complete && (
-                                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5 font-bold">Fiche complète</Badge>
-                                  )}
-                                  {venue.has_potential_duplicate && (
-                                    <Badge 
-                                      onClick={() => handleOpenMergeModal(venue)}
-                                      className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] py-0 px-1.5 font-bold cursor-pointer hover:bg-amber-200"
+                            <div key={venue.id} className="pt-2 first:pt-0 flex flex-col gap-1.5 transition-all">
+                              <div className="flex items-center justify-between gap-4">
+                                {/* Left side / Core details */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 
+                                      onClick={() => handleOpenForm(venue)}
+                                      className="text-sm font-bold text-slate-900 hover:text-indigo-600 hover:underline cursor-pointer transition-colors"
                                     >
-                                      Doublon potentiel
-                                    </Badge>
-                                  )}
+                                      {venue.name}
+                                    </h4>
+                                    {!venue.is_blacklisted && !venue.is_complete && (
+                                      <Badge className="bg-rose-100 text-rose-700 border-rose-200 text-[10px] py-0 px-1.5 font-bold">À compléter</Badge>
+                                    )}
+                                    {!venue.is_blacklisted && venue.is_complete && (
+                                      <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] py-0 px-1.5 font-bold">Fiche complète</Badge>
+                                    )}
+                                    {venue.is_blacklisted && (
+                                      <Badge className="bg-rose-100 text-rose-700 border-rose-200 text-[10px] py-0 px-1.5 font-bold flex items-center gap-1">
+                                        <AlertTriangle className="w-2.5 h-2.5" /> Blacklisté
+                                      </Badge>
+                                    )}
+                                    {venue.has_potential_duplicate && (
+                                      <Badge 
+                                        onClick={() => handleOpenMergeModal(venue)}
+                                        className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] py-0 px-1.5 font-bold cursor-pointer hover:bg-amber-200"
+                                      >
+                                        Doublon potentiel
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 font-medium">
+                                    <MapPin className="w-3 h-3 text-slate-400" /> {venue.city} ({venue.department})
+                                    {venueContracts.length > 0 && (
+                                      <span className="text-slate-400">
+                                        • {venueContracts.length} Prestation{venueContracts.length > 1 ? 's' : ''}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 font-medium">
-                                  <MapPin className="w-3 h-3 text-slate-400" /> {venue.city} ({venue.department})
-                                  {venueContracts.length > 0 && (
-                                    <span className="text-slate-400">
-                                      • {venueContracts.length} Prestation{venueContracts.length > 1 ? 's' : ''}
-                                    </span>
+
+                                {/* Action buttons */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {!venue.is_blacklisted && !venue.is_complete && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleValidateVenue(venue.id)}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-7 text-[10px] px-2 flex items-center gap-1 rounded-lg"
+                                    >
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      Valider
+                                    </Button>
                                   )}
+                                  <Button 
+                                    onClick={() => handleOpenForm(venue)}
+                                    size="icon" 
+                                    variant="ghost" 
+                                    className="h-7 w-7 text-slate-400 hover:text-indigo-600"
+                                    title="Modifier"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </Button>
                                 </div>
                               </div>
 
-                              {/* Action buttons */}
-                              <div className="flex items-center gap-1 shrink-0">
-                                {!venue.is_complete && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleValidateVenue(venue.id)}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-7 text-[10px] px-2 flex items-center gap-1 rounded-lg"
-                                  >
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    Valider
-                                  </Button>
-                                )}
-                                <Button 
-                                  onClick={() => handleOpenForm(venue)}
-                                  size="icon" 
-                                  variant="ghost" 
-                                  className="h-7 w-7 text-slate-400 hover:text-indigo-600"
-                                  title="Modifier"
-                                >
-                                  <Edit className="w-3.5 h-3.5" />
-                                </Button>
-                              </div>
+                              {/* Blacklist reason display if blacklisted */}
+                              {venue.is_blacklisted && venue.blacklist_reason && (
+                                <div className="text-[11px] text-rose-700 bg-rose-50/50 border border-rose-100/50 rounded-lg p-2 whitespace-pre-wrap leading-relaxed flex items-start gap-1.5 mt-0.5">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                                  <div>
+                                    <strong className="text-rose-950">Motif de la blacklist :</strong> {venue.blacklist_reason}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1141,6 +1190,77 @@ export default function VenueApp() {
                 onChange={(e) => setVenueForm(prev => ({ ...prev, notes_lumiere: e.target.value }))}
                 rows={2}
               />
+            </div>
+
+            {/* History of Prestations associated with this venue */}
+            {editingVenue && (
+              <div className="space-y-2.5 p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5 uppercase tracking-wide">
+                    <Calendar className="w-4 h-4 text-indigo-600" />
+                    Prestations réalisées dans ce lieu ({getVenueContracts(editingVenue).length})
+                  </Label>
+                </div>
+                {getVenueContracts(editingVenue).length > 0 ? (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {getVenueContracts(editingVenue).map((c) => {
+                      const clientName = c.client_info?.name || c.client_name || "Client";
+                      const eventDate = c.client_info?.event_date || "—";
+                      return (
+                        <div key={c.id} className="flex justify-between items-center text-xs bg-white border border-slate-100 p-2.5 rounded-lg shadow-sm">
+                          <span className="font-semibold text-slate-800">{clientName}</span>
+                          <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                            {eventDate}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">Aucune prestation enregistrée pour ce lieu.</p>
+                )}
+              </div>
+            )}
+
+            {/* Blacklist block */}
+            <div className={`p-4 rounded-xl border transition-all ${
+              venueForm.is_blacklisted 
+                ? 'bg-rose-50/70 border-rose-200 shadow-inner' 
+                : 'bg-slate-50/50 border-slate-200'
+            } space-y-3`}>
+              <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-extrabold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={venueForm.is_blacklisted}
+                  onChange={(e) => setVenueForm(prev => ({ 
+                    ...prev, 
+                    is_blacklisted: e.target.checked,
+                    blacklist_reason: e.target.checked ? prev.blacklist_reason : ''
+                  }))}
+                  className="rounded text-rose-600 focus:ring-rose-500 border-slate-300"
+                />
+                <span className="flex items-center gap-1.5 text-rose-950 font-extrabold uppercase tracking-wide text-[10px]">
+                  <AlertTriangle className="w-4 h-4 text-rose-500" />
+                  Mettre ce lieu sur liste noire (Blacklist)
+                </span>
+              </label>
+
+              {venueForm.is_blacklisted && (
+                <div className="space-y-1.5 animate-fadeIn">
+                  <Label htmlFor="venue-blacklist-reason" className="text-[10px] font-extrabold text-rose-900 uppercase tracking-wide">
+                    Motif de la blacklist *
+                  </Label>
+                  <Textarea
+                    id="venue-blacklist-reason"
+                    placeholder="Précisez la raison détaillée de la blacklist de ce lieu..."
+                    value={venueForm.blacklist_reason}
+                    onChange={(e) => setVenueForm(prev => ({ ...prev, blacklist_reason: e.target.value }))}
+                    required={venueForm.is_blacklisted}
+                    rows={2}
+                    className="bg-white border-rose-200 focus-visible:ring-rose-500 text-rose-900 placeholder:text-rose-300 text-xs"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Gallery Uploader */}
