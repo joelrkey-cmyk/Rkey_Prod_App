@@ -3192,12 +3192,14 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     bank_iban: dbSettings.bank_iban || "",
     bank_bic: dbSettings.bank_bic || "",
     bank_titulaire: dbSettings.bank_titulaire || "R'KEY PROD",
+    youtube_tutorial_url: dbSettings.youtube_tutorial_url || "",
   } : {
     company_name: "R'KEY PROD",
     bank_name: "Tiime",
     bank_iban: "FR76 1679 8000 0100 0192 2357 858",
     bank_bic: "TRZOFR21XXX",
     bank_titulaire: "R'KEY PROD",
+    youtube_tutorial_url: "",
   };
 
   if (djEvents.length > 0 || matchedDjProfile) {

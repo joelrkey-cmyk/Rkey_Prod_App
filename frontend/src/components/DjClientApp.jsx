@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -33,6 +33,21 @@ const fixMangledFilenameDisplay = (str) => {
   } catch (e) {
     return str;
   }
+};
+
+const getYoutubeEmbedUrl = (url) => {
+  if (!url) return null;
+  let videoId = null;
+  try {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    if (match && match[2].length === 11) {
+      videoId = match[2];
+    }
+  } catch (e) {
+    console.error("Error parsing youtube URL:", e);
+  }
+  return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
 };
 
 const DjClientApp = ({ isPublic = false }) => {
@@ -390,6 +405,7 @@ function urlBase64ToUint8Array(base64String) {
             bank_iban: data.bank_iban || "",
             bank_bic: data.bank_bic || "",
             bank_titulaire: data.bank_titulaire || "R'KEY PROD",
+            youtube_tutorial_url: data.youtube_tutorial_url || "",
           });
         }
       }
@@ -1163,6 +1179,56 @@ function urlBase64ToUint8Array(base64String) {
             </div>
           </div>
         )}
+
+        <div className="border-t border-gray-100 pt-4 mt-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-red-50 text-red-600 rounded-lg shrink-0 mt-0.5 border border-red-100">
+              <Youtube className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-gray-800">Vidéo d'explication de l'interface (Tutoriel Client)</h4>
+              <p className="text-xs text-gray-500 mt-0.5">Saisissez un lien YouTube pour guider vos clients dans l'utilisation de leur espace.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto md:max-w-md shrink-0">
+            <input
+              type="text"
+              placeholder="Ex: https://www.youtube.com/watch?v=..."
+              value={companySettings.youtube_tutorial_url || ''}
+              onChange={(e) => setCompanySettings(prev => ({ ...prev, youtube_tutorial_url: e.target.value }))}
+              className="flex-1 min-w-[240px] px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 shadow-xs"
+            />
+            <button
+              onClick={async () => {
+                try {
+                  const token = localStorage.getItem('access_token');
+                  const response = await fetch(`${BACKEND_URL}/api/global-settings`, {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                      ...companySettings,
+                      youtube_tutorial_url: companySettings.youtube_tutorial_url
+                    })
+                  });
+                  if (response.ok) {
+                    toast.success("Lien de la vidéo tutoriel enregistré avec succès !");
+                  } else {
+                    toast.error("Erreur lors de l'enregistrement du lien.");
+                  }
+                } catch (err) {
+                  console.error(err);
+                  toast.error("Erreur lors de l'enregistrement du lien.");
+                }
+              }}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition shadow-sm shrink-0 active:scale-95 cursor-pointer"
+            >
+              Enregistrer
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -4179,6 +4245,36 @@ function urlBase64ToUint8Array(base64String) {
       );
     };
 
+    const ClientTutorialVideoSection = () => {
+      if (currentRoute.role !== 'client') return null;
+      
+      const embedUrl = getYoutubeEmbedUrl(companySettings.youtube_tutorial_url);
+      if (!embedUrl) return null;
+
+      return (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in duration-300">
+          <div className="p-6">
+            <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800 mb-4">
+              <Youtube className="w-6 h-6 text-red-600" />
+              Tutoriel d'utilisation de votre espace client
+            </h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Regardez cette courte vidéo pour comprendre en détails comment compléter votre profil, choisir vos options, planifier le déroulement de votre soirée et interagir avec votre DJ.
+            </p>
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-md border border-slate-150">
+              <iframe
+                className="absolute top-0 left-0 w-full h-full"
+                src={embedUrl}
+                title="Tutoriel de l'interface client"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     const OptionsSection = () => {
       const c = ev.rawContractData || {};
       
@@ -5281,21 +5377,21 @@ function urlBase64ToUint8Array(base64String) {
     return (
       <div className="space-y-6">
         {!isClientStandalone && (
-          <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-200">
-            <button onClick={handleBack} className="flex items-center gap-2 text-indigo-700 hover:text-indigo-800 font-bold px-3 py-2 rounded-md hover:bg-indigo-100 transition">
+          <div className={`flex justify-between items-center p-2 rounded-lg border transition-all ${isNightBg ? 'bg-slate-900/60 border-slate-800 backdrop-blur-md' : 'bg-gray-50 border-gray-200'}`}>
+            <button onClick={handleBack} className={`flex items-center gap-2 font-bold px-3 py-2 rounded-md transition ${isNightBg ? 'text-indigo-300 hover:text-indigo-200 hover:bg-indigo-950/40' : 'text-indigo-700 hover:text-indigo-800 hover:bg-indigo-100'}`}>
               <ArrowLeft className="w-5 h-5" /> {isDjStandalone ? "Retour à mes événements" : "Retour à la liste"}
             </button>
             
             {!isPublic && (
               <div className="flex gap-2">
                 {isDashboard && (
-                  <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'admin' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'admin' ? 'bg-indigo-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue Admin</button>
+                  <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'admin' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'admin' ? 'bg-indigo-600 text-white shadow' : (isNightBg ? 'bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700' : 'bg-white text-gray-600 border hover:bg-gray-50')}`}>Vue Admin</button>
                 )}
                 
                 {(isDashboard || isDjStandalone) && (
                   <>
-                    <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'dj' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'dj' ? 'bg-yellow-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue DJ</button>
-                    <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'client' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'client' ? 'bg-green-600 text-white shadow' : 'bg-white text-gray-600 border hover:bg-gray-50'}`}>Vue Client</button>
+                    <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'dj' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'dj' ? 'bg-yellow-600 text-white shadow' : (isNightBg ? 'bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700' : 'bg-white text-gray-600 border hover:bg-gray-50')}`}>Vue DJ</button>
+                    <button onClick={() => setCurrentRoute({ ...currentRoute, role: 'client' })} className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${currentRoute.role === 'client' ? 'bg-green-600 text-white shadow' : (isNightBg ? 'bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700' : 'bg-white text-gray-600 border hover:bg-gray-50')}`}>Vue Client</button>
                   </>
                 )}
               </div>
@@ -5409,6 +5505,7 @@ function urlBase64ToUint8Array(base64String) {
         })()}
 
         {AppointmentBannerSection()}
+        {ClientTutorialVideoSection()}
         {DjInfoSection()}
         {ClientInfoSection()}
         {ChatSection()}
@@ -5621,7 +5718,7 @@ function urlBase64ToUint8Array(base64String) {
                 </div>
             )}
 
-            <h3 className="text-xl font-bold text-gray-800">Vos événements à venir</h3>
+            <h3 className={`text-xl font-bold ${isNightBg ? 'text-slate-100' : 'text-gray-800'}`}>Vos événements à venir</h3>
             {Object.keys(futureByYear).length > 0 ? (
                 <div className="space-y-4">
                     {Object.keys(futureByYear).sort().map(year => (
@@ -5728,7 +5825,7 @@ function urlBase64ToUint8Array(base64String) {
                 <p className="text-gray-500 bg-gray-50 p-4 rounded-xl border border-gray-200">Aucun événement à venir.</p>
             )}
 
-            <h3 className="text-xl font-bold text-gray-800 mt-6">Historique</h3>
+            <h3 className={`text-xl font-bold mt-6 ${isNightBg ? 'text-slate-100' : 'text-gray-800'}`}>Historique</h3>
             {past.length > 0 ? (
                 <div className="bg-white rounded-xl border overflow-hidden shadow-sm">
                     {/* Desktop View */}
@@ -5871,8 +5968,44 @@ function urlBase64ToUint8Array(base64String) {
     );
   }
 
+  const isNightBg = currentRoute.role === 'client' || currentRoute.role === 'dj';
+
+  useEffect(() => {
+    // Dynamically toggle global .App wrapper backgrounds to prevent seams on mobile bounce
+    const appEl = document.querySelector('.App');
+    if (appEl) {
+      if (isNightBg) {
+        appEl.classList.remove('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
+        appEl.classList.add('bg-[#070811]');
+      } else {
+        appEl.classList.remove('bg-[#070811]');
+        appEl.classList.add('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
+      }
+    }
+    return () => {
+      if (appEl) {
+        appEl.classList.remove('bg-[#070811]');
+        appEl.classList.add('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
+      }
+    };
+  }, [isNightBg]);
+
   return (
-    <div className="p-6 max-w-6xl mx-auto pb-24 relative">
+    <div className={`min-h-screen transition-all duration-500 ${isNightBg ? 'bg-[#070811] text-slate-100' : ''} -m-6 p-6 overflow-x-hidden`}>
+      {isNightBg && (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none z-0 bg-[#070811] transition-opacity duration-500">
+          {/* Nightlife party spotlights with high blur */}
+          <div className="absolute top-[-10%] left-[-15%] w-[60%] h-[55%] rounded-full bg-fuchsia-600/10 blur-[140px] animate-pulse duration-[12s]" />
+          <div className="absolute top-[20%] right-[-10%] w-[55%] h-[55%] rounded-full bg-cyan-500/10 blur-[130px]" />
+          <div className="absolute bottom-[-15%] left-[5%] w-[60%] h-[60%] rounded-full bg-indigo-600/15 blur-[150px] animate-pulse duration-[15s]" />
+          <div className="absolute bottom-[20%] right-[10%] w-[50%] h-[50%] rounded-full bg-pink-500/8 blur-[120px]" />
+          <div className="absolute top-[40%] left-[30%] w-[45%] h-[45%] rounded-full bg-purple-500/5 blur-[110px]" />
+          {/* Starry starry night backdrop */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[size:32px_32px]" />
+        </div>
+      )}
+
+      <div className="p-6 max-w-6xl mx-auto pb-24 relative z-10">
       {renderPWABanner()}
       {renderStandalonePushBanner()}
       {renderIOSInstallModal()}
@@ -6024,6 +6157,7 @@ function urlBase64ToUint8Array(base64String) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
+import { isContractDirigeant } from './contracts2/calculations';
 
 const ContractHtmlPreview = () => {
   const { id } = useParams();
@@ -87,6 +88,10 @@ const ContractHtmlPreview = () => {
     const isCompany = !!(contract.client_info?.company && contract.client_info.company.trim().length > 0);
     const ratio = isCompany ? 0.3 : 0.5;
     const deposit = (contract.base_price * ratio) + optionsTotal - (contract.discount_amount || 0);
+    
+    if (isContractDirigeant(contract)) {
+      return Math.max(0, deposit);
+    }
     return Math.max(0, Math.round(deposit / 50) * 50);
   };
 

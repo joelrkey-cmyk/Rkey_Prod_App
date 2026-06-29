@@ -42,6 +42,7 @@ export const defaultCompanySettings = {
   bank_iban: "FR76 1679 8000 0100 0192 2357 858",
   bank_bic: "TRZOFR21XXX",
   bank_titulaire: "R'KEY PROD",
+  youtube_tutorial_url: "",
 };
 
 export const defaultTechnicianContact = {

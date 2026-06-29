@@ -161,6 +161,10 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
     .reduce((sum, option) => sum + option.price, 0);
   const ratio = isCompany ? 0.3 : 0.5;
   const deposit = (basePrice * ratio) + optionsTotal - discountAmount;
+  
+  if (!isFreelance) {
+    return Math.max(0, deposit);
+  }
   return Math.max(0, Math.round(deposit / 50) * 50);
 };
 
@@ -232,6 +236,10 @@ export const calculateContractDepositAmount = (contract) => {
   const isCompany = !!(contract.client_info?.company && contract.client_info.company.trim().length > 0);
   const ratio = isCompany ? 0.3 : 0.5;
   const deposit = (contract.base_price * ratio) + optionsTotal - (contract.discount_amount || 0);
+  
+  if (isContractDirigeant(contract)) {
+    return Math.max(0, deposit);
+  }
   return Math.max(0, Math.round(deposit / 50) * 50);
 };
 
