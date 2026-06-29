@@ -371,7 +371,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             <!-- Paiement standard avec acompte -->
             <div class="payment-amounts clearfix">
               <div class="payment-left" style="${_p.statut_artiste === 'freelance' ? 'border: 1.5px solid #1565c0; border-radius: 6px; padding: 8px; background: #f5f9ff;' : ''}">
-                <strong>Acompte (${acomptePercent}%) :</strong><br>
+                <strong>Acompte :</strong><br>
                 <span class="amount-big">${calculateContractDepositAmount(contract).toFixed(2)} €</span><br>
                 ${contract.deposit_paid ? `
                   <div style="background-color: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; padding: 6px; margin-top: 5px;">
@@ -395,7 +395,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
               </div>
               ${isCompany ? '' : `
               <div class="payment-right" style="${_p.statut_artiste === 'freelance' ? 'border: 1.5px solid #2e7d32; border-radius: 6px; padding: 8px; background: #f5fdf5;' : ''}">
-                <strong>Solde (${soldePercent}%) :</strong><br>
+                <strong>Solde :</strong><br>
                 <span class="amount-big">${calculateContractRemainingBalance(contract).toFixed(2)} €</span><br>
                 <small>À régler lors de l'installation</small>
                 ${_p.statut_artiste === 'freelance' && _p.iban ? `

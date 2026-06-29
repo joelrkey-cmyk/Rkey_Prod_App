@@ -503,12 +503,12 @@ export const generateEntrepriseHTML = (contract, companySettings, resolveProfile
         <div class="compact-payment-box">
           <div class="clearfix" style="display:flex; gap:8pt;">
             <div style="flex:1; border: 1.5px solid #1565c0; border-radius: 6px; padding: 8px; background: #f5f9ff; text-align:center;">
-              <strong>Acompte (${acomptePercent}%)</strong><br>
+              <strong>Acompte</strong><br>
               <span class="amount-big">${acompte30.toFixed(2)} EUR</span><br>
               <small>A regler a la signature</small>
             </div>
             <div style="flex:1; border: 1px solid #ccc; border-radius: 6px; padding: 8px; text-align:center;">
-              <strong>Solde (${soldePercent}%)</strong><br>
+              <strong>Solde</strong><br>
               <span class="amount-big">${solde70.toFixed(2)} EUR</span><br>
               <small>A regler dans la semaine de l'evenement</small>
             </div>
