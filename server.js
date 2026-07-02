@@ -3139,6 +3139,14 @@ api.get('/public/dj-client/:slug', async (req, res) => {
 
   const normalizedRequestedSlug = normalizeString(slug);
 
+  // Fetch DJ profiles to resolve UUIDs or names dynamically
+  const allDjProfiles = await db.collection('dj_profiles').find({}).toArray();
+  const matchedDjProfile = allDjProfiles.find(p => {
+    return normalizeString(p.nom_artistique) === normalizedRequestedSlug ||
+           normalizeString(p.nom_complet) === normalizedRequestedSlug ||
+           normalizeString(p.id) === normalizedRequestedSlug;
+  });
+
   // Fetch only sent, archived, or completed contracts to exclude drafts/tests/simulations!
   const contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0 } }).toArray();
   
@@ -3147,7 +3155,10 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     const clientName = info.name || c.client_name || 'Client inconnu';
     const eventType = info.event_type || 'Événement';
     
-    let djName = c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ";
+    // Dynamically resolve DJ profile matching UUID/ID
+    const matchedProfile = allDjProfiles.find(p => p.id === c.dj_profile || p._id?.toString() === c.dj_profile);
+    
+    let djName = c.dj_profile_data?.nom_artistique || (matchedProfile ? (matchedProfile.nom_artistique || matchedProfile.nom_complet) : null) || c.dj_profile || "DJ";
     const normalizedDjNameLower = djName.toLowerCase();
     if (normalizedDjNameLower === 'joel' || normalizedDjNameLower === 'joël') {
       djName = "Joël R'Key";
@@ -3174,15 +3185,11 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   const djEvents = mappedEvents.filter(e => {
     return normalizeString(e.djLogin) === normalizedRequestedSlug || 
            normalizeString(e.dj_profile) === normalizedRequestedSlug ||
-           (e.dj_profile_data?.nom_artistique && normalizeString(e.dj_profile_data.nom_artistique) === normalizedRequestedSlug);
-  });
-  
-  // Check if the slug matches a DJ profile from db, even if they have 0 events currently
-  const allDjProfiles = await db.collection('dj_profiles').find({}).toArray();
-  const matchedDjProfile = allDjProfiles.find(p => {
-    return normalizeString(p.nom_artistique) === normalizedRequestedSlug ||
-           normalizeString(p.nom_complet) === normalizedRequestedSlug ||
-           normalizeString(p.id) === normalizedRequestedSlug;
+           (e.dj_profile_data?.nom_artistique && normalizeString(e.dj_profile_data.nom_artistique) === normalizedRequestedSlug) ||
+           (matchedDjProfile && (
+             e.dj_profile === matchedDjProfile.id ||
+             e.dj_profile === matchedDjProfile._id?.toString()
+           ));
   });
 
   const dbSettings = await db.collection('global_settings').findOne({ type: 'company' }, { projection: { _id: 0, email_signature_image: 0, smtp_password: 0 } });
@@ -3206,14 +3213,15 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     const djName = matchedDjProfile 
       ? (matchedDjProfile.nom_artistique || matchedDjProfile.nom_complet) 
       : (djEvents[0]?.dj_profile_data?.nom_artistique || djEvents[0]?.dj_profile || "DJ");
-    return res.json({ role: 'dj', events: djEvents, slug, djName, availableOptions: options, companySettings });
+    const signedEvents = await autoSignGcsUrlsInObject(djEvents);
+    return res.json({ role: 'dj', events: signedEvents, slug, djName, availableOptions: options, companySettings });
   }
   
   // Check if it's a Client slug
   const clientEvents = mappedEvents.filter(e => {
     return normalizeString(e.clientSlug) === normalizedRequestedSlug;
   });
-  
+
   if (clientEvents.length > 0) {
     const cleanedClientEvents = clientEvents.map(event => {
       const cloned = { ...event };
@@ -3222,7 +3230,8 @@ api.get('/public/dj-client/:slug', async (req, res) => {
       }
       return cloned;
     });
-    return res.json({ role: 'client', events: cleanedClientEvents, slug, availableOptions: options, companySettings });
+    const signedEvents = await autoSignGcsUrlsInObject(cleanedClientEvents);
+    return res.json({ role: 'client', events: signedEvents, slug, availableOptions: options, companySettings });
   }
   
   return res.status(404).json({ error: 'Not found' });

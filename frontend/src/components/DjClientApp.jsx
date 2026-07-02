@@ -2156,7 +2156,7 @@ function urlBase64ToUint8Array(base64String) {
           tableLineColor: [229, 231, 235],
         });
         
-        y = (doc.lastAutoTable?.finalY || doc.autoTable.previous.finalY || y) + 10;
+        y = (doc.lastAutoTable?.finalY || (doc.autoTable && doc.autoTable.previous ? doc.autoTable.previous.finalY : null) || y) + 10;
       }
       
       doc.setTextColor(0, 0, 0);
@@ -2366,7 +2366,7 @@ function urlBase64ToUint8Array(base64String) {
           tableLineColor: [229, 231, 235],
         });
         
-        y = (doc.lastAutoTable?.finalY || doc.autoTable.previous.finalY || y) + 14;
+        y = (doc.lastAutoTable?.finalY || (doc.autoTable && doc.autoTable.previous ? doc.autoTable.previous.finalY : null) || y) + 14;
       }
       
       if (y > 240) { doc.addPage(); y = 10; }
