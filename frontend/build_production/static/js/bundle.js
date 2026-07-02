@@ -15532,12 +15532,12 @@ const DjClientApp = _ref => {
       const mappedEvents = (allContracts || []).filter(Boolean).map(c => {
         var _c$dj_profile_data;
         const info = c.client_info || {};
-        let clientName = info.name || c.client_name || 'Client inconnu';
+        let clientName = c.clientName || info.name || c.client_name || 'Client inconnu';
         if (typeof clientName !== 'string') {
           clientName = String(clientName || 'Client inconnu');
         }
-        const eventType = info.event_type || 'Événement';
-        let djName = ((_c$dj_profile_data = c.dj_profile_data) === null || _c$dj_profile_data === void 0 ? void 0 : _c$dj_profile_data.nom_artistique) || c.dj_profile || "DJ";
+        const eventType = c.eventType || info.event_type || 'Événement';
+        let djName = c.djName || ((_c$dj_profile_data = c.dj_profile_data) === null || _c$dj_profile_data === void 0 ? void 0 : _c$dj_profile_data.nom_artistique) || c.dj_profile || "DJ";
         if (typeof djName !== 'string') {
           djName = String(djName || "DJ");
         }
@@ -15946,13 +15946,15 @@ const DjClientApp = _ref => {
   };
   const getDjLink = dj => {
     const slug = dj.login || dj.name.toLowerCase().replace(/\s+/g, '-');
-    return "rkeyprodapp.fr/".concat(slug);
+    const host = window.location.host || 'rkeyprodapp.fr';
+    return "".concat(host, "/").concat(slug);
   };
   const getClientLink = ev => {
     var _ev$client, _ev$contractInfo13;
     const type = ev.name ? ev.name.split(' ')[0].toLowerCase().replace(/\s+/g, '-') : 'event';
     const clientName = (((_ev$client = ev.client) === null || _ev$client === void 0 ? void 0 : _ev$client.name) || ((_ev$contractInfo13 = ev.contractInfo) === null || _ev$contractInfo13 === void 0 ? void 0 : _ev$contractInfo13.name) || 'Client').toLowerCase().replace(/\s+/g, '-');
-    return "rkeyprodapp.fr/".concat(type, "-").concat(clientName);
+    const host = window.location.host || 'rkeyprodapp.fr';
+    return "".concat(host, "/").concat(type, "-").concat(clientName);
   };
   const EventTable = _ref2 => {
     let {
@@ -30566,6 +30568,4 @@ const ConfigurationPage = _ref2 => {
           name: newOption.name.trim(),
           price: newOption.price,
           event_categories: newOption.event_categories || [],
-          linked_equipment_id: newOption.linked_equipment_id || null
-        });
-        setSelectedOptions([...selectedOptions, (0,_app_applet_frontend_node_modules_babel_runtime_helpers_esm_objectSpread2_js__WEBPACK_IMPORTED_MO
+          linked_equipment_id: newOption.linked_equipment_id |

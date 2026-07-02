@@ -3181,10 +3181,13 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     const clientSlug = `${typeLower}-${clientNameLower}`;
     
     return {
+      ...c,
       id: c.id || c._id?.toString(),
       djLogin,
       clientSlug,
-      ...c
+      djName,
+      clientName,
+      eventType
     };
   });
 

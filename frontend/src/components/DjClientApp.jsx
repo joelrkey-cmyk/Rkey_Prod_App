@@ -516,13 +516,13 @@ function urlBase64ToUint8Array(base64String) {
       
       const mappedEvents = (allContracts || []).filter(Boolean).map(c => {
          const info = c.client_info || {};
-         let clientName = info.name || c.client_name || 'Client inconnu';
+         let clientName = c.clientName || info.name || c.client_name || 'Client inconnu';
          if (typeof clientName !== 'string') {
              clientName = String(clientName || 'Client inconnu');
          }
-         const eventType = info.event_type || 'Événement';
+         const eventType = c.eventType || info.event_type || 'Événement';
          
-         let djName = c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ";
+         let djName = c.djName || c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ";
          if (typeof djName !== 'string') {
              djName = String(djName || "DJ");
          }
@@ -922,13 +922,15 @@ function urlBase64ToUint8Array(base64String) {
 
   const getDjLink = (dj) => {
     const slug = dj.login || dj.name.toLowerCase().replace(/\s+/g, '-');
-    return `rkeyprodapp.fr/${slug}`;
+    const host = window.location.host || 'rkeyprodapp.fr';
+    return `${host}/${slug}`;
   };
 
   const getClientLink = (ev) => {
     const type = ev.name ? ev.name.split(' ')[0].toLowerCase().replace(/\s+/g, '-') : 'event';
     const clientName = (ev.client?.name || ev.contractInfo?.name || 'Client').toLowerCase().replace(/\s+/g, '-');
-    return `rkeyprodapp.fr/${type}-${clientName}`;
+    const host = window.location.host || 'rkeyprodapp.fr';
+    return `${host}/${type}-${clientName}`;
   };
 
   const EventTable = ({ eventsList }) => {
