@@ -642,18 +642,32 @@ async function getGcsSignedUrl(gcsPath) {
   }
 }
 
-// Recursively processes any response object or list returned by standard API routes, and transforms
-// any GCS reference like "/gcs/folder/file.ext" into a secure GCS direct-access signed URL.
-async function autoSignGcsUrlsInObject(obj) {
-  if (!obj || !getGcsBucket()) return obj;
-  
-  // Check if GCS Direct Mode is enabled in settings
-  let useDirectUrls = false;
+// Helper to fetch GCS settings once per root call
+let cachedGcsSettings = null;
+let lastGcsSettingsFetch = 0;
+
+async function getGcsUseDirectUrls() {
+  const now = Date.now();
+  if (cachedGcsSettings !== null && (now - lastGcsSettingsFetch < 60000)) {
+    return cachedGcsSettings;
+  }
   try {
     const s = await db.collection('location_settings').findOne({ type: 'gcs' });
-    useDirectUrls = s ? !!s.gcs_use_direct_urls : false;
-  } catch (dbErr) {
-    // Ignore db err
+    cachedGcsSettings = s ? !!s.gcs_use_direct_urls : false;
+    lastGcsSettingsFetch = now;
+  } catch (err) {
+    cachedGcsSettings = false;
+  }
+  return cachedGcsSettings;
+}
+
+// Recursively processes any response object or list returned by standard API routes, and transforms
+// any GCS reference like "/gcs/folder/file.ext" into a secure GCS direct-access signed URL.
+async function autoSignGcsUrlsInObject(obj, useDirectUrls = null) {
+  if (!obj || !getGcsBucket()) return obj;
+  
+  if (useDirectUrls === null) {
+    useDirectUrls = await getGcsUseDirectUrls();
   }
   
   if (!useDirectUrls) return obj; // If direct URLs are disabled (standard proxy mode), send clean DB paths
@@ -661,7 +675,7 @@ async function autoSignGcsUrlsInObject(obj) {
   if (Array.isArray(obj)) {
     const signedArray = [];
     for (let item of obj) {
-      signedArray.push(await autoSignGcsUrlsInObject(item));
+      signedArray.push(await autoSignGcsUrlsInObject(item, useDirectUrls));
     }
     return signedArray;
   }
@@ -688,7 +702,7 @@ async function autoSignGcsUrlsInObject(obj) {
           cloned[key] = signedUrl;
         }
       } else if (val && typeof val === 'object' && !(val instanceof Date)) {
-        cloned[key] = await autoSignGcsUrlsInObject(val);
+        cloned[key] = await autoSignGcsUrlsInObject(val, useDirectUrls);
       }
     }
     return cloned;
@@ -1754,21 +1768,16 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+const clientErrors = [];
 app.post('/api/log-client-error', (req, res) => {
   console.log("=== CLIENT REACT ERROR ===", req.body);
-  try {
-    fs.appendFileSync('client_error.log', new Date().toISOString() + ' : ' + JSON.stringify(req.body) + '\n');
-  } catch (err) {}
+  clientErrors.push({ time: new Date().toISOString(), ...req.body });
+  if (clientErrors.length > 50) clientErrors.shift(); // keep last 50
   res.json({ ok: true });
 });
 
 app.get('/api/get-client-error', (req, res) => {
-  try {
-    const data = fs.readFileSync('client_error.log', 'utf8');
-    res.send(data);
-  } catch (err) {
-    res.send('No logs');
-  }
+  res.json(clientErrors);
 });
 
 // ─── MongoDB ───
