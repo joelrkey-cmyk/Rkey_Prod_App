@@ -3131,7 +3131,7 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   
   const normalizeString = (str) => {
     if (!str) return '';
-    return str.toLowerCase()
+    return String(str).toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "") // remove accents
       .replace(/[^a-z0-9]/g, ''); // keep only alpha-numeric characters
@@ -3152,13 +3152,22 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   
   const mappedEvents = contracts.map(c => {
     const info = c.client_info || {};
-    const clientName = info.name || c.client_name || 'Client inconnu';
-    const eventType = info.event_type || 'Événement';
+    let clientName = info.name || c.client_name || 'Client inconnu';
+    if (typeof clientName !== 'string') {
+      clientName = String(clientName || 'Client inconnu');
+    }
+    let eventType = info.event_type || 'Événement';
+    if (typeof eventType !== 'string') {
+      eventType = String(eventType || 'Événement');
+    }
     
     // Dynamically resolve DJ profile matching UUID/ID
     const matchedProfile = allDjProfiles.find(p => p.id === c.dj_profile || p._id?.toString() === c.dj_profile);
     
     let djName = c.dj_profile_data?.nom_artistique || (matchedProfile ? (matchedProfile.nom_artistique || matchedProfile.nom_complet) : null) || c.dj_profile || "DJ";
+    if (typeof djName !== 'string') {
+      djName = String(djName || "DJ");
+    }
     const normalizedDjNameLower = djName.toLowerCase();
     if (normalizedDjNameLower === 'joel' || normalizedDjNameLower === 'joël') {
       djName = "Joël R'Key";
@@ -3172,7 +3181,7 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     const clientSlug = `${typeLower}-${clientNameLower}`;
     
     return {
-      id: c.id,
+      id: c.id || c._id?.toString(),
       djLogin,
       clientSlug,
       ...c

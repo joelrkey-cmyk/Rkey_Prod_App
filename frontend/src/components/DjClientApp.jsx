@@ -226,12 +226,16 @@ function urlBase64ToUint8Array(base64String) {
 
   // Attempt to restore background push notifications automatically if permission previously granted
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready.then((reg) => {
-          subscribeUserToPush(reg);
-        });
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then((reg) => {
+            subscribeUserToPush(reg);
+          }).catch(err => console.warn("SW ready check rejected:", err));
+        }
       }
+    } catch (e) {
+      console.warn("Auto background push check failed or blocked:", e);
     }
   }, [currentRoute.role, currentRoute.eventId]);
 
@@ -321,23 +325,31 @@ function urlBase64ToUint8Array(base64String) {
 
     // Trigger local push notification on new updates
     if (currentUnreadCount > lastNotificationCount) {
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        const msg = `Nouveau message ou modification dans votre portail R'Key Prod !`;
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.ready.then((reg) => {
-            reg.showNotification("✨ Mise à jour R'Key Prod", {
+      try {
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          const msg = `Nouveau message ou modification dans votre portail R'Key Prod !`;
+          let hasServiceWorker = false;
+          try {
+            hasServiceWorker = 'serviceWorker' in navigator;
+          } catch (e) {}
+          if (hasServiceWorker) {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.showNotification("✨ Mise à jour R'Key Prod", {
+                body: msg,
+                icon: '/favicon.svg',
+                badge: '/favicon.svg',
+                vibrate: [100, 50, 100]
+              });
+            }).catch(err => console.warn("SW notification trigger rejected:", err));
+          } else {
+            new Notification("✨ Mise à jour R'Key Prod", {
               body: msg,
-              icon: '/favicon.svg',
-              badge: '/favicon.svg',
-              vibrate: [100, 50, 100]
+              icon: '/favicon.svg'
             });
-          });
-        } else {
-          new Notification("✨ Mise à jour R'Key Prod", {
-            body: msg,
-            icon: '/favicon.svg'
-          });
+          }
         }
+      } catch (e) {
+        console.warn("Failed to trigger local notification in iframe:", e);
       }
     }
     setLastNotificationCount(currentUnreadCount);
@@ -502,12 +514,18 @@ function urlBase64ToUint8Array(base64String) {
           }
       }
       
-      const mappedEvents = allContracts.map(c => {
+      const mappedEvents = (allContracts || []).filter(Boolean).map(c => {
          const info = c.client_info || {};
-         const clientName = info.name || c.client_name || 'Client inconnu';
+         let clientName = info.name || c.client_name || 'Client inconnu';
+         if (typeof clientName !== 'string') {
+             clientName = String(clientName || 'Client inconnu');
+         }
          const eventType = info.event_type || 'Événement';
          
          let djName = c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ";
+         if (typeof djName !== 'string') {
+             djName = String(djName || "DJ");
+         }
          const normalizedDjNameLower = djName.toLowerCase();
          if (normalizedDjNameLower === 'joel' || normalizedDjNameLower === 'joël') {
              djName = "Joël R'Key";
@@ -515,12 +533,24 @@ function urlBase64ToUint8Array(base64String) {
              djName = "Stefan Edison";
          }
 
+         let rawDate = info.event_date || c.event_date || '1970-01-01';
+         if (rawDate instanceof Date) {
+             rawDate = rawDate.toISOString();
+         } else if (typeof rawDate === 'number') {
+             rawDate = new Date(rawDate).toISOString();
+         } else if (typeof rawDate !== 'string') {
+             rawDate = String(rawDate || '1970-01-01');
+         }
+         if (rawDate.includes('T')) {
+             rawDate = rawDate.split('T')[0];
+         }
+
          return {
             id: c.id,
             rawContractData: c,
             eventType: eventType,
             name: `${eventType} - ${clientName}`,
-            date: info.event_date || c.event_date || '1970-01-01',
+            date: rawDate,
             dj: { 
                 name: djName, 
                 login: djName.toLowerCase().replace(/\s+/g, '-')
@@ -5545,7 +5575,7 @@ function urlBase64ToUint8Array(base64String) {
     
     const normalizeString = (str) => {
       if (!str) return '';
-      return str.toLowerCase()
+      return String(str).toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "") // remove accents
         .replace(/[^a-z0-9]/g, ''); // keep only alpha-numeric characters

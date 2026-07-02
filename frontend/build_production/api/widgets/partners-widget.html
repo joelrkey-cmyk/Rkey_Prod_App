@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Partenaires Widget</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { background: transparent; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; width: 100%; height: auto !important; min-height: auto !important; }
+
+#rkey-partners-widget {
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:100%;padding:380px 10px 10px;overflow:visible;user-select:none;-webkit-user-select:none;min-height:auto;
+}
+
+/* === CARD HOLDER === */
+.rkv-crate{position:relative;width:286px;display:flex;flex-direction:column;align-items:center;perspective:1200px;margin-left:auto;margin-right:auto;}
+.rkv-back-wall{position:absolute;bottom:0;width:100%;height:42%;background:linear-gradient(180deg,#3a3633 0%,#2c2926 100%);border-radius:4px 4px 5px 5px;box-shadow:inset 0 2px 15px rgba(0,0,0,.6),0 2px 8px rgba(0,0,0,.2);overflow:hidden;}
+.rkv-back-wall::after{content:'';position:absolute;inset:0;opacity:.06;background:repeating-linear-gradient(90deg,transparent,transparent 10px,rgba(255,255,255,.12) 10px,rgba(255,255,255,.12) 11px);}
+.rkv-stack{position:relative;width:86%;display:flex;align-items:flex-end;justify-content:center;margin-bottom:6px;}
+
+/* === BUSINESS CARD === */
+.rkv-card{position:absolute;width:100%;aspect-ratio:8/5;cursor:pointer;transform-origin:bottom center;transition:transform .4s cubic-bezier(.25,.8,.25,1),z-index 0s;}
+.rkv-card-inner{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform .6s cubic-bezier(.25,.8,.25,1);}
+.rkv-card.flipped .rkv-card-inner{transform:rotateY(180deg);}
+
+.rkv-face{position:absolute;inset:0;backface-visibility:hidden;border-radius:4px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,.12);}
+
+/* === RECTO === */
+.rkv-recto{background:#1c1917;}
+.rkv-recto-photo{width:100%;height:100%;object-fit:cover;display:block;}
+.rkv-recto-fallback{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:rgba(255,255,255,.5);letter-spacing:2px;}
+.rkv-recto-banner{position:absolute;top:0;left:0;right:0;padding:5px 7px;background:linear-gradient(to right,rgba(0,0,0,.88),rgba(0,0,0,.45));}
+.rkv-recto-name{display:block;color:#fff;font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.02em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rkv-recto-company{display:block;color:rgba(255,255,255,.55);font-size:6.5px;font-weight:500;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* === VERSO === */
+.rkv-verso{transform:rotateY(180deg);background:#fafaf9;display:flex;flex-direction:column;padding:10px 12px;border:1px solid #e7e5e4;}
+.rkv-verso-layout{display:flex;gap:8px;height:100%;}
+.rkv-verso-left{flex:1;display:flex;flex-direction:column;min-width:0;}
+.rkv-verso-right{display:flex;align-items:center;flex-shrink:0;}
+.rkv-avatar-lg{width:60px;height:60px;border-radius:50%;overflow:hidden;background:#e7e5e4;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.1);}
+.rkv-avatar-lg img{width:100%;height:100%;object-fit:cover;}
+.rkv-avatar-lg-initials{font-size:18px;font-weight:800;color:#78716c;}
+.rkv-verso-name{font-size:12px;font-weight:700;color:#1c1917;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rkv-verso-company{font-size:8.5px;color:#78716c;font-weight:500;margin-bottom:4px;}
+.rkv-verso-info{flex:1;display:flex;flex-direction:column;gap:3px;}
+.rkv-info-row{font-size:8.5px;color:#57534e;display:flex;align-items:center;gap:4px;}
+.rkv-info-row a{color:inherit;text-decoration:none;}
+.rkv-info-row a:hover{text-decoration:underline;color:#1c1917;}
+.rkv-info-row svg{width:9px;height:9px;flex-shrink:0;color:#a8a29e;}
+.rkv-verso-bottom{margin-top:auto;padding-top:2px;}
+.rkv-freq{display:inline-flex;align-items:center;gap:2px;background:#fff;padding:2px 6px;border-radius:99px;border:1px solid #e7e5e4;font-size:7px;color:#57534e;font-weight:600;}
+.rkv-socials{display:flex;gap:5px;margin-top:3px;}
+.rkv-socials a{display:flex;align-items:center;justify-content:center;}
+.rkv-socials svg{width:10px;height:10px;color:#a8a29e;transition:color .2s;cursor:pointer;}
+.rkv-socials a:hover svg{color:#1c1917;}
+
+/* === VCF === */
+.rkv-vcf{display:none;align-items:center;justify-content:center;gap:6px;cursor:pointer;z-index:101;background:#f97316;border:none;border-radius:12px;padding:10px 20px 10px 16px;transition:background .2s,opacity .3s,transform .2s;margin-top:14px;box-shadow:0 2px 8px rgba(249,115,22,.35);}
+.rkv-vcf:hover{background:#ea580c;transform:scale(1.05);}
+.rkv-vcf svg{width:16px;height:16px;color:#fff;flex-shrink:0;}
+.rkv-vcf span{color:#fff;font-size:11px;white-space:nowrap;font-weight:600;letter-spacing:.02em;}
+.rkv-vcf.visible{display:flex;}
+
+/* === FRONT PANEL === */
+.rkv-front-panel{position:absolute;bottom:0;width:100%;height:20%;background:linear-gradient(180deg,#3a3633 0%,#2c2926 100%);border-radius:0 0 5px 5px;z-index:40;display:flex;align-items:center;justify-content:center;pointer-events:none;box-shadow:0 -4px 12px rgba(0,0,0,.5);}
+.rkv-front-label{background:#fafaf9;padding:2px 8px;border:1px solid #1c1917;box-shadow:0 1px 2px rgba(0,0,0,.08);transform:rotate(-1deg);text-align:center;}
+.rkv-front-label span{color:#1c1917;font-weight:900;text-transform:uppercase;letter-spacing:-.02em;font-size:8px;}
+.rkv-handle{position:absolute;top:50%;transform:translateY(-50%);width:4px;height:18px;background:rgba(28,25,23,.4);border-radius:99px;}
+
+/* === HINT === */
+.rkv-hint{margin-top:16px;color:#a8a29e;font-size:9px;text-align:center;line-height:1.5;}
+.rkv-hint b{color:#78716c;}
+
+/* === NAV ARROWS === */
+.rkv-nav{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:10px;}
+.rkv-nav-btn{width:28px;height:28px;border-radius:50%;border:1px solid #57534e;background:#2c2926;color:#fafaf9;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s,border-color .2s;}
+.rkv-nav-btn:hover{background:#57534e;border-color:#78716c;}
+.rkv-nav-btn svg{width:14px;height:14px;}
+.rkv-nav-counter{color:#a8a29e;font-size:10px;font-weight:600;min-width:30px;text-align:center;}
+
+.rkv-loading{display:flex;align-items:center;justify-content:center;padding:40px;color:#999;font-size:13px;}
+</style>
+</head>
+<body>
+<div id="rkey-partners-widget"><div class="rkv-loading">Chargement...</div></div>
+<script>
+(function(){
+  var params = new URLSearchParams(window.location.search);
+  var category = params.get('category') || '';
+  if (!category) { document.getElementById('rkey-partners-widget').innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Cat\u00e9gorie manquante.</p>'; return; }
+
+  var parsedUrl = new URL(window.location.href);
+  var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
+  var apiBase = BASE_URL + '/api';
+
+  fetch(apiBase + '/partners/public/widget/' + encodeURIComponent(category))
+    .then(function(r){ return r.json(); })
+    .then(function(partners){
+      if (!partners || !partners.length) {
+        document.getElementById('rkey-partners-widget').innerHTML = '<p style="text-align:center;color:#999;padding:40px;">Aucun partenaire.</p>';
+        notifyResize();
+        return;
+      }
+      buildWidget(partners.map(function(p){
+        return {
+          n: ((p.first_name||'') + ' ' + (p.last_name||'')).trim(),
+          c: p.company || '', p: p.phone || '', e: p.email || '',
+          w: p.website || '', a: p.address || '', f: p.frequency || 'occasionnellement',
+          sn: p.social_networks || {},
+          profileImg: p.photo || '',
+          coverImg: p.cover_photo || ''
+        };
+      }), category);
+    })
+    .catch(function(err){
+      document.getElementById('rkey-partners-widget').innerHTML = '<p style="text-align:center;color:#f66;padding:40px;">Erreur de chargement.</p>';
+      console.error(err);
+    });
+
+  function notifyResize(){
+    if (window.parent === window) return;
+    var root = document.getElementById('rkey-partners-widget');
+    if (!root) return;
+    window.parent.postMessage({ type: 'rkey-widget-resize', height: root.scrollHeight + 4 }, '*');
+  }
+
+  function buildWidget(partners, catName) {
+    var freqMap = {regulierement:{icon:"\u{1F91D}",label:"Partenaires fusionnels"},occasionnellement:{icon:"\u{1F44D}",label:"Collaborations r\u00e9guli\u00e8res"},rarement:{icon:"\u2728",label:"Interventions ponctuelles"}};
+    var root = document.getElementById('rkey-partners-widget');
+    var hoveredIdx = -1, flippedIdx = -1, cardEls = [];
+
+    function getInitials(name){return name.split(' ').filter(function(w){return w;}).map(function(w){return w.charAt(0)}).join('').toUpperCase().substring(0,2);}
+    function hashColor(str){var h=0;for(var i=0;i<str.length;i++){h=str.charCodeAt(i)+((h<<5)-h);}return 'hsl('+(Math.abs(h)%360)+',45%,40%)';}
+
+    function generateVCF(p){
+      var names=p.n.split(' ');var ln=names.length>1?names.slice(1).join(' '):p.n;var fn=names.length>1?names[0]:'';
+      var vcf='BEGIN:VCARD\nVERSION:3.0\nN:'+ln+';'+fn+';;;\nFN:'+p.n+'\n';
+      if(p.c)vcf+='ORG:'+p.c+'\n';if(p.p)vcf+='TEL;TYPE=WORK,VOICE:'+p.p+'\n';
+      if(p.e)vcf+='EMAIL:'+p.e+'\n';if(p.w)vcf+='URL:'+p.w+'\n';if(p.a)vcf+='ADR;TYPE=WORK:;;'+p.a+';;;;\n';
+      return vcf+'END:VCARD';
+    }
+    function downloadVCF(idx){
+      var p=partners[idx];var blob=new Blob([generateVCF(p)],{type:'text/vcard'});
+      var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+      a.download=(p.n||'contact').replace(/[^a-zA-Z0-9]/g,'_')+'.vcf';a.click();
+    }
+
+    function svgPhone(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>';}
+    function svgMail(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 7L2 7"/></svg>';}
+    function svgGlobe(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>';}
+    function svgDl(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';}
+    function svgFb(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg>';}
+    function svgIg(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor" stroke="none"/></svg>';}
+    function svgYt(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>';}
+    function svgTk(){return '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1.04-.1z"/></svg>';}
+
+    function render(){
+      var html = '<div class="rkv-crate"><div class="rkv-back-wall"></div><div class="rkv-stack">';
+      partners.forEach(function(p, i){
+        var isFlipped = flippedIdx === i, isHover = hoveredIdx === i;
+        var offset = (partners.length - 1 - i) * 18;
+        var y = isFlipped ? -8 : (isHover ? -offset - 22 : -offset);
+        var rx = isFlipped ? 0 : (isHover ? 0 : 5);
+        var sc = isFlipped ? 1.3 : (isHover ? 1.04 : 1);
+        var z = isFlipped ? 100 : (isHover ? 50 : i);
+        var fr = freqMap[p.f] || freqMap.occasionnellement;
+        var col = hashColor(p.n);
+        var initials = getInitials(p.n);
+
+        html += '<div class="rkv-card'+(isFlipped?' flipped':'')+'" data-idx="'+i+'" style="transform:translateY('+y+'px) rotateX('+rx+'deg) scale('+sc+');z-index:'+z+';">';
+        html += '<div class="rkv-card-inner">';
+
+        // === RECTO (cover_photo or fallback) ===
+        html += '<div class="rkv-face rkv-recto">';
+        var cImgStr = p.coverImg;
+        if(cImgStr && cImgStr.startsWith('/')) cImgStr = BASE_URL + cImgStr;
+        var pImgStr = p.profileImg;
+        if(pImgStr && pImgStr.startsWith('/')) pImgStr = BASE_URL + pImgStr;
+
+        if(cImgStr){
+          html += '<img class="rkv-recto-photo" src="'+cImgStr+'" alt="'+p.n+'">';
+        } else if(pImgStr){
+          html += '<img class="rkv-recto-photo" src="'+pImgStr+'" alt="'+p.n+'" style="filter:blur(1px) brightness(.7);">';
+        } else {
+          html += '<div class="rkv-recto-fallback" style="background:'+col+';">'+initials+'</div>';
+        }
+        html += '<div class="rkv-recto-banner"><span class="rkv-recto-name">'+p.n+'</span>';
+        if(p.c) html += '<span class="rkv-recto-company">'+p.c+'</span>';
+        html += '</div></div>';
+
+        // === VERSO (two-column: info left, photo right) ===
+        html += '<div class="rkv-face rkv-verso">';
+        html += '<div class="rkv-verso-layout">';
+        html += '<div class="rkv-verso-left">';
+        html += '<div class="rkv-verso-name">'+p.n+'</div>';
+        if(p.c) html += '<div class="rkv-verso-company">'+p.c+'</div>';
+
+        html += '<div class="rkv-verso-info">';
+        if(p.p) html += '<div class="rkv-info-row">'+svgPhone()+'<a href="tel:'+p.p+'">'+p.p+'</a></div>';
+        if(p.e) html += '<div class="rkv-info-row">'+svgMail()+'<a href="mailto:'+p.e+'">'+p.e+'</a></div>';
+        if(p.w) html += '<div class="rkv-info-row" style="font-weight:600;">'+svgGlobe()+'<a href="'+(p.w.startsWith('http')?p.w:'https://'+p.w)+'" target="_blank">'+p.w+'</a></div>';
+        html += '</div>';
+
+        html += '<div class="rkv-verso-bottom">';
+        html += '<div class="rkv-freq"><span>'+fr.icon+'</span> Connexion : '+fr.label+'</div>';
+        var sn = p.sn || {};
+        if(sn.facebook||sn.instagram||sn.youtube||sn.tiktok){
+          html += '<div class="rkv-socials">';
+          if(sn.facebook) html += '<a href="'+sn.facebook+'" target="_blank">'+svgFb()+'</a>';
+          if(sn.instagram) html += '<a href="'+sn.instagram+'" target="_blank">'+svgIg()+'</a>';
+          if(sn.youtube) html += '<a href="'+sn.youtube+'" target="_blank">'+svgYt()+'</a>';
+          if(sn.tiktok) html += '<a href="'+sn.tiktok+'" target="_blank">'+svgTk()+'</a>';
+          html += '</div>';
+        }
+        html += '</div></div>';
+
+        html += '<div class="rkv-verso-right"><div class="rkv-avatar-lg">';
+        if(pImgStr){
+          html += '<img src="'+pImgStr+'" alt="'+p.n+'">';
+        } else {
+          html += '<span class="rkv-avatar-lg-initials">'+initials+'</span>';
+        }
+        html += '</div></div>';
+        html += '</div></div>';
+
+        html += '</div>';
+        // VCF button removed from card - now placed below crate
+        html += '</div>';
+      });
+      html += '</div>';
+      html += '<div class="rkv-front-panel"><div class="rkv-front-label"><span>'+catName+'</span></div><div class="rkv-handle" style="left:8px;"></div><div class="rkv-handle" style="right:8px;"></div></div>';
+      html += '</div>';
+      // VCF button below the crate, hidden by default
+      html += '<div class="rkv-vcf" id="rkv-vcf-global">'+svgDl()+'<span>T\u00e9l\u00e9charger la carte de visite</span></div>';
+      if (partners.length > 1) {
+        html += '<div class="rkv-nav">';
+        html += '<div class="rkv-nav-btn" data-dir="-1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></div>';
+        html += '<span class="rkv-nav-counter">1 / '+partners.length+'</span>';
+        html += '<div class="rkv-nav-btn" data-dir="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>';
+        html += '</div>';
+      }
+      html += '<div class="rkv-hint"><b>Cliquez pour retourner la carte</b></div>';
+
+      root.innerHTML = html;
+      cardEls = Array.from(root.querySelectorAll('.rkv-card'));
+
+      cardEls.forEach(function(el){
+        var idx = parseInt(el.getAttribute('data-idx'));
+        el.addEventListener('mouseenter', function(){ if(flippedIdx===-1){hoveredIdx=idx; update();}});
+        el.addEventListener('mouseleave', function(){ if(flippedIdx===-1){hoveredIdx=-1; update();}});
+        el.addEventListener('click', function(e){
+          if(e.target.closest('.rkv-vcf')||e.target.closest('a')) return;
+          e.stopPropagation();
+          if(flippedIdx === idx){flippedIdx=-1;} else {flippedIdx=idx; hoveredIdx=-1;}
+          update();
+        });
+      });
+      root.querySelectorAll('.rkv-vcf').forEach(function(btn){
+        btn.addEventListener('click', function(e){ e.stopPropagation(); if(flippedIdx >= 0) downloadVCF(flippedIdx); });
+      });
+
+      // Nav arrows
+      root.querySelectorAll('.rkv-nav-btn').forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.stopPropagation();
+          if(flippedIdx !== -1) return;
+          var dir = parseInt(btn.getAttribute('data-dir'));
+          var cur = hoveredIdx >= 0 ? hoveredIdx : 0;
+          var next = cur + dir;
+          if(next < 0) next = partners.length - 1;
+          if(next >= partners.length) next = 0;
+          hoveredIdx = next;
+          update();
+        });
+      });
+
+      notifyResize();
+      setTimeout(notifyResize, 500);
+    }
+
+    function updateNavCounter(){
+      var counter = root.querySelector('.rkv-nav-counter');
+      if(counter){
+        var current = hoveredIdx >= 0 ? hoveredIdx + 1 : 1;
+        counter.textContent = current + ' / ' + partners.length;
+      }
+    }
+
+    function update(){
+      cardEls.forEach(function(el){
+        var i = parseInt(el.getAttribute('data-idx'));
+        var isFlipped = flippedIdx === i, isHover = hoveredIdx === i;
+        var offset = (partners.length - 1 - i) * 18;
+        var y = isFlipped ? -8 : (isHover ? -offset - 22 : -offset);
+        var rx = isFlipped ? 0 : (isHover ? 0 : 5);
+        var sc = isFlipped ? 1.3 : (isHover ? 1.04 : 1);
+        var z = isFlipped ? 100 : (isHover ? 50 : i);
+        el.style.transform = 'translateY('+y+'px) rotateX('+rx+'deg) scale('+sc+')';
+        el.style.zIndex = z;
+        if(isFlipped) el.classList.add('flipped'); else el.classList.remove('flipped');
+      });
+      // Show/hide global VCF button
+      var vcfBtn = document.getElementById('rkv-vcf-global');
+      if(vcfBtn){ if(flippedIdx >= 0) vcfBtn.classList.add('visible'); else vcfBtn.classList.remove('visible'); }
+      updateNavCounter();
+      notifyResize();
+    }
+
+    document.addEventListener('click', function(){ if(flippedIdx !== -1){flippedIdx=-1; update();} });
+
+    render();
+  }
+})();
+</script>
+</body>
+</html>

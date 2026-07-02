@@ -27,7 +27,22 @@ class ErrorBoundary extends React.Component {
       errorInfo: errorInfo
     });
 
-    // You could also log the error to an error reporting service here
+    try {
+      fetch('/api/log-client-error', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          error: error ? error.toString() : 'Unknown error',
+          stack: errorInfo ? errorInfo.componentStack : '',
+          url: window.location.href,
+          userAgent: navigator.userAgent
+        })
+      }).catch(err => console.error("Failed to send log-client-error:", err));
+    } catch (e) {
+      console.error("ErrorBoundary log-client-error catch:", e);
+    }
   }
 
   handleRetry = () => {

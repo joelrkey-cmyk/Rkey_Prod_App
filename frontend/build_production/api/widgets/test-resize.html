@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Widget - Simulation rkey-prod.fr</title>
+<style>
+body { margin:0; padding:0; background:#1a0a00; font-family: sans-serif; color:#fff; }
+.section { max-width:1000px; margin:40px auto; padding:20px; }
+h2 { color:#e67e22; text-align:center; margin-bottom:30px; }
+.content-row { display:flex; gap:40px; align-items:flex-start; }
+.text-col { flex:1; }
+.text-col h3 { color:#e67e22; margin-bottom:10px; }
+.text-col p { color:#ccc; font-size:14px; line-height:1.6; }
+.form-col { flex:1; }
+.widget-container { overflow:hidden; position:relative; background: rgba(255,255,255,0.02); border-radius:8px; }
+.widget-container iframe { width:100%; border:none; display:block; }
+.debug-bar { background:#222; color:#0f0; font-family:monospace; padding:10px 15px; font-size:12px; margin-top:5px; border-radius:4px; }
+.footer { background:#111; text-align:center; padding:20px; color:#666; font-size:12px; margin-top:60px; }
+</style>
+</head>
+<body>
+
+<h2 style="margin-top:40px;">Demandez Votre Devis Gratuit</h2>
+<p style="text-align:center;color:#e67e22;font-size:13px;">CONTACTEZ-NOUS</p>
+
+<div class="section">
+  <div class="content-row">
+    <div class="text-col">
+      <h3>Réponse rapide</h3>
+      <p>Nous répondons à toutes les demandes sous 24h maximum. Pour les urgences, appelez-nous directement.</p>
+    </div>
+    <div class="form-col">
+      <div class="widget-container" id="widget-container">
+        <!-- Simulating data-height="800" like on production -->
+        <iframe id="test-iframe" src="/api/widgets/form.html?id=contract-management-4" style="height:800px;" scrolling="no" frameborder="0"></iframe>
+      </div>
+      <div class="debug-bar" id="debug">En attente du resize...</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  Simulation de rkey-prod.fr — Test du widget
+</div>
+
+<script>
+// Same resize logic as rkey-widget.js
+var iframe = document.getElementById('test-iframe');
+var container = document.getElementById('widget-container');
+var debug = document.getElementById('debug');
+var lastAppliedHeight = 0;
+var firstResizeApplied = false;
+var resizeTimer = null;
+
+window.addEventListener('message', function(event) {
+  if (event.data && event.data.type === 'rkey-widget-resize') {
+    var newHeight = event.data.height;
+    if (newHeight < 50) return;
+    if (firstResizeApplied && Math.abs(newHeight - lastAppliedHeight) < 5) return;
+
+    if (!firstResizeApplied) {
+      firstResizeApplied = true;
+      lastAppliedHeight = newHeight;
+      iframe.style.height = newHeight + 'px';
+      container.style.height = newHeight + 'px';
+      debug.textContent = 'PREMIER resize appliqué : ' + newHeight + 'px (était 800px)';
+      debug.style.color = '#0f0';
+    } else {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function() {
+        resizeTimer = null;
+        lastAppliedHeight = newHeight;
+        iframe.style.height = newHeight + 'px';
+        container.style.height = newHeight + 'px';
+        debug.textContent = 'Resize mis à jour : ' + newHeight + 'px';
+      }, 100);
+    }
+  }
+});
+</script>
+</body>
+</html>

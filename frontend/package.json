@@ -76,7 +76,7 @@
   },
   "scripts": {
     "start": "craco start",
-    "build": "DISABLE_ESLINT_PLUGIN=true node node_modules/@craco/craco/dist/bin/craco.js build",
+    "build": "DISABLE_ESLINT_PLUGIN=true FAST_REFRESH=false node node_modules/@craco/craco/dist/bin/craco.js build",
     "test": "craco test",
     "lint": "npx eslint src"
   },

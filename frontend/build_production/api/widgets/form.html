@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { font-family: Montserrat, sans-serif; background: transparent; height: auto !important; overflow: hidden; }
+  .rk-toggle { position:relative; width:52px; height:28px; display:inline-block; }
+  .rk-toggle input { opacity:0; width:0; height:0; }
+  .rk-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#ccc; border-radius:28px; transition:.3s; }
+  .rk-slider:before { position:absolute; content:""; height:22px; width:22px; left:3px; bottom:3px; background:#fff; border-radius:50%; transition:.3s; z-index:1; }
+  .rk-slider:after { content:""; position:absolute; left:6px; top:50%; transform:translateY(-50%); font-size:9px; font-weight:700; opacity:0; transition:.3s; }
+  .rk-toggle input:checked + .rk-slider:before { transform:translateX(24px); }
+  .rk-toggle input:checked + .rk-slider:after { content:"Oui"; opacity:1; }
+  select option { color:#333; background:#fff; }
+  .rk-file-zone { cursor:pointer; transition: border-color 0.2s, background 0.2s; }
+  .rk-file-zone:hover { opacity:0.85; }
+  .rk-file-zone.rk-file-dragover { opacity:0.7; }
+  .rk-file-selected { font-size:12px; margin-top:6px; padding:6px 10px; border-radius:6px; display:flex; align-items:center; gap:6px; }
+</style>
+</head>
+<body>
+<div id="rkey-form-root"></div>
+<script>
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  var FORM_ID = params.get("id");
+  if (!FORM_ID) { document.getElementById("rkey-form-root").textContent = "Formulaire introuvable."; return; }
+
+  var parsedUrl = new URL(window.location.href);
+  var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
+  var API_BASE = BASE_URL + "/api/forms";
+  var uploadedFiles = {}; // {field_id: {file_id, filename, stored_name, content_type}}
+
+  fetch(API_BASE + "/" + FORM_ID + "/public")
+    .then(function(r) { return r.json(); })
+    .then(function(form) {
+      if (!form || !form.fields) { document.getElementById("rkey-form-root").textContent = "Formulaire introuvable."; return; }
+
+      var root = document.getElementById("rkey-form-root");
+      var s = form.styles || {};
+      var btnColor = s.button_color || "#e67e22";
+      var btnTextColor = s.button_text_color || "#ffffff";
+      var btnText = s.button_text || "Envoyer";
+      var borderColor = s.border_color || "#dddddd";
+      var bgColor = s.background_color || "#ffffff";
+      var textColor = s.text_color || "#333333";
+      var radius = s.border_radius || 8;
+      var formBorderColor = s.form_border_color || "transparent";
+      var inputBgColor = s.input_bg_color || "#ffffff";
+      var stepActiveBg = s.step_active_bg || btnColor;
+      var stepActiveText = s.step_active_text || btnTextColor;
+      var stepInactiveBg = s.step_inactive_bg || "#f1f1f1";
+      var stepInactiveText = s.step_inactive_text || "#888888";
+      var stepBorderColor = s.step_border_color || "transparent";
+
+      // Update toggle checked color
+      var styleTag = document.querySelector("style");
+      styleTag.textContent += ".rk-toggle input:checked + .rk-slider { background:" + stepActiveBg + "; }";
+      styleTag.textContent += ".rk-toggle input:checked + .rk-slider:after { color:" + stepActiveText + "; }";
+
+      // Steps
+      var steps = [{ label:"", buttonText:"", fields:[] }];
+      form.fields.forEach(function(f) {
+        if (f.type === "divider") {
+          steps[steps.length-1].buttonText = f.button_text || "Suivant";
+          steps.push({ label: f.label || ("Étape " + (steps.length+1)), buttonText:"", fields:[] });
+        } else {
+          steps[steps.length-1].fields.push(f);
+        }
+      });
+      if (steps.length > 1) {
+        steps[0].label = form.step1_label || steps[0].label || "Étape 1";
+      }
+      var isMultiStep = steps.length > 1;
+
+      var borderStyle = borderColor !== "transparent" ? "border:1px solid " + borderColor : "border:none";
+      var inputStyle = "width:100%;padding:10px 12px;" + borderStyle + ";border-radius:" + Math.max(4, radius-4) + "px;font-size:14px;box-sizing:border-box;outline:none;color:" + textColor + ";background:" + inputBgColor + ";font-family:Montserrat,sans-serif";
+
+      var html = '<form id="rk-form" style="max-width:500px;margin:0 auto;padding:25px;background:' + bgColor + ';border-radius:' + radius + 'px;color:' + textColor + ';' + (formBorderColor !== 'transparent' ? 'border:2px solid ' + formBorderColor : '') + '">';
+
+      if (false) {
+        html += '<p style="margin:0 0 20px;color:#666;font-size:14px">' + form.description + '</p>';
+      }
+
+      if (isMultiStep) {
+        html += '<div style="margin-bottom:24px">';
+        html += '<div id="rk-tabs" style="display:flex;align-items:center;justify-content:center;gap:12px">';
+        steps.forEach(function(step, i) {
+          var active = i === 0;
+          var stepBorder = stepBorderColor !== "transparent" ? "border:1px solid " + stepBorderColor + ";" : "border:none;";
+          html += '<div class="rk-step-tab" data-step="' + i + '" style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:' + (active?stepActiveBg:stepInactiveBg) + ';color:' + (active?stepActiveText:stepInactiveText) + ';' + stepBorder + 'font-size:13px;font-weight:700;cursor:pointer;transition:all .2s">' + (i+1) + '</div>';
+        });
+        html += '</div>';
+        html += '<div id="rk-step-title" style="text-align:center;margin-top:8px;font-size:18px;font-weight:700;color:' + stepActiveBg + '">' + (steps[0].label || "Étape 1") + '</div>';
+        html += '</div>';
+      }
+
+      steps.forEach(function(step, si) {
+        html += '<div class="rk-step" data-step="' + si + '" style="display:' + (si===0?'block':'none') + '">';
+        step.fields.forEach(function(field) {
+          if (field.type === "section") {
+            return;
+          }
+          if (field.type === "note") {
+            html += '<div style="margin-bottom:16px;font-size:13px;line-height:1.5;color:' + textColor + ';white-space:pre-wrap">' + field.label + '</div>';
+            return;
+          }
+          html += '<div style="margin-bottom:16px">';
+          if (field.type === "toggle" || field.type === "radio") {
+            html += '<div style="display:flex;align-items:center;justify-content:space-between">';
+            html += '<label style="font-weight:600;font-size:14px;color:' + textColor + '">' + field.label + (field.required ? ' <span style="color:#e74c3c">*</span>' : '') + '</label>';
+            html += '<label class="rk-toggle"><input type="checkbox" name="' + field.id + '" value="Oui"><span class="rk-slider"></span></label>';
+            html += '</div>';
+          } else if (field.type === "file") {
+            html += '<label style="display:block;margin-bottom:6px;font-weight:600;font-size:14px;color:' + textColor + '">' + field.label + (field.required ? ' <span style="color:#e74c3c">*</span>' : '') + '</label>';
+            var dashedBorder = borderColor !== "transparent" ? "2px dashed " + borderColor : "2px dashed #ccc";
+            html += '<div class="rk-file-zone" data-field="' + field.id + '" style="border:' + dashedBorder + ';border-radius:' + Math.max(4, radius-4) + 'px;padding:20px 16px;text-align:center;background:' + inputBgColor + '">';
+            html += '<div style="font-size:24px;margin-bottom:6px">📎</div>';
+            html += '<div style="font-size:13px;color:' + textColor + ';font-weight:500">Cliquer pour choisir un fichier</div>';
+            html += '<div style="font-size:11px;color:#999;margin-top:4px">JPEG, PNG ou PDF — Max 5 Mo</div>';
+            html += '</div>';
+            html += '<input type="file" name="' + field.id + '" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" style="display:none" data-field="' + field.id + '"' + (field.required ? ' data-required="true"' : '') + '>';
+            html += '<div id="rk-file-info-' + field.id + '"></div>';
+          } else {
+            html += '<label style="display:block;margin-bottom:6px;font-weight:600;font-size:14px;color:' + textColor + '">' + field.label + (field.required ? ' <span style="color:#e74c3c">*</span>' : '') + '</label>';
+            if (field.type === "textarea") {
+              html += '<textarea name="' + field.id + '" placeholder="' + (field.placeholder||'') + '" ' + (field.required?'required':'') + ' rows="4" style="' + inputStyle + ';resize:vertical"></textarea>';
+            } else if (field.type === "select") {
+              html += '<select name="' + field.id + '" ' + (field.required?'required':'') + ' style="' + inputStyle + '">';
+              html += '<option value="">-- Choisir --</option>';
+              (field.options||[]).forEach(function(o) { html += '<option value="' + o + '">' + o + '</option>'; });
+              html += '</select>';
+            } else if (field.type === "checkbox") {
+              (field.options||[]).forEach(function(o) {
+                html += '<label style="display:flex;align-items:center;gap:8px;margin:6px 0;cursor:pointer;font-size:14px"><input type="checkbox" name="' + field.id + '" value="' + o + '" style="width:16px;height:16px;accent-color:' + btnColor + '"> ' + o + '</label>';
+              });
+            } else {
+              html += '<input type="' + field.type + '" name="' + field.id + '" placeholder="' + (field.placeholder||'') + '" ' + (field.required?'required':'') + ' style="' + inputStyle + '">';
+            }
+          }
+          html += '</div>';
+        });
+
+        if (isMultiStep) {
+          html += '<div style="display:flex;gap:10px;margin-top:8px">';
+          if (si > 0) html += '<button type="button" class="rk-prev" style="flex:1;padding:12px;background:#f1f1f1;color:#555;border:none;border-radius:' + radius + 'px;font-size:14px;font-weight:600;cursor:pointer">Précédent</button>';
+          if (si === steps.length-1) {
+            html += '<button type="submit" style="flex:1;padding:12px;background:' + btnColor + ';color:' + btnTextColor + ';border:none;border-radius:' + radius + 'px;font-size:16px;font-weight:600;cursor:pointer">' + btnText + '</button>';
+          } else {
+            html += '<button type="button" class="rk-next" style="flex:1;padding:12px;background:' + btnColor + ';color:' + btnTextColor + ';border:none;border-radius:' + radius + 'px;font-size:14px;font-weight:600;cursor:pointer">' + (step.buttonText||'Suivant') + '</button>';
+          }
+          html += '</div>';
+        } else if (si === steps.length-1) {
+          html += '<button type="submit" style="width:100%;padding:12px;background:' + btnColor + ';color:' + btnTextColor + ';border:none;border-radius:' + radius + 'px;font-size:16px;font-weight:600;cursor:pointer">' + btnText + '</button>';
+        }
+        html += '</div>';
+      });
+
+      html += '<div id="rk-msg" style="display:none;margin-top:15px;padding:12px;border-radius:' + radius + 'px;text-align:center;font-size:14px"></div>';
+      html += '</form>';
+      root.innerHTML = html;
+
+      // File upload zones - click & drag
+      var fileZones = formEl = document.getElementById("rk-form");
+      formEl.querySelectorAll(".rk-file-zone").forEach(function(zone) {
+        var fieldId = zone.getAttribute("data-field");
+        var fileInput = formEl.querySelector('input[type="file"][data-field="' + fieldId + '"]');
+        
+        zone.addEventListener("click", function() { fileInput.click(); });
+        zone.addEventListener("dragover", function(e) { e.preventDefault(); zone.classList.add("rk-file-dragover"); });
+        zone.addEventListener("dragleave", function() { zone.classList.remove("rk-file-dragover"); });
+        zone.addEventListener("drop", function(e) {
+          e.preventDefault();
+          zone.classList.remove("rk-file-dragover");
+          if (e.dataTransfer.files.length > 0) {
+            fileInput.files = e.dataTransfer.files;
+            handleFileSelect(fieldId, e.dataTransfer.files[0], zone);
+          }
+        });
+        
+        fileInput.addEventListener("change", function() {
+          if (fileInput.files.length > 0) {
+            handleFileSelect(fieldId, fileInput.files[0], zone);
+          }
+        });
+      });
+
+      function handleFileSelect(fieldId, file, zone) {
+        var infoDiv = document.getElementById("rk-file-info-" + fieldId);
+        var allowed = ["image/jpeg", "image/png", "application/pdf"];
+        if (allowed.indexOf(file.type) === -1) {
+          infoDiv.innerHTML = '<div class="rk-file-selected" style="background:#f8d7da;color:#721c24">Type non autorisé. Formats : JPEG, PNG, PDF</div>';
+          delete uploadedFiles[fieldId];
+          return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          infoDiv.innerHTML = '<div class="rk-file-selected" style="background:#f8d7da;color:#721c24">Fichier trop volumineux (max 5 Mo)</div>';
+          delete uploadedFiles[fieldId];
+          return;
+        }
+        infoDiv.innerHTML = '<div class="rk-file-selected" style="background:#fff3cd;color:#856404">Envoi en cours...</div>';
+        
+        var fd = new FormData();
+        fd.append("file", file);
+        
+        fetch(API_BASE + "/upload-file", { method: "POST", body: fd })
+          .then(function(r) { return r.json(); })
+          .then(function(result) {
+            if (result.file_id) {
+              uploadedFiles[fieldId] = result;
+              var icon = file.type === "application/pdf" ? "📄" : "🖼️";
+              var sizeMb = (file.size / 1024 / 1024).toFixed(1);
+              infoDiv.innerHTML = '<div class="rk-file-selected" style="background:#d4edda;color:#155724">' + icon + ' ' + file.name + ' (' + sizeMb + ' Mo) ✓</div>';
+              zone.style.borderColor = "#28a745";
+            } else {
+              infoDiv.innerHTML = '<div class="rk-file-selected" style="background:#f8d7da;color:#721c24">Erreur : ' + (result.detail || 'Upload échoué') + '</div>';
+            }
+            notifyResize();
+          })
+          .catch(function() {
+            infoDiv.innerHTML = '<div class="rk-file-selected" style="background:#f8d7da;color:#721c24">Erreur de connexion</div>';
+            notifyResize();
+          });
+      }
+
+      // Multi-step nav
+      var currentStep = 0;
+
+      function showStep(n) {
+        formEl.querySelectorAll(".rk-step").forEach(function(s) { s.style.display = "none"; });
+        var allSteps = formEl.querySelectorAll(".rk-step");
+        if (allSteps[n]) allSteps[n].style.display = "block";
+        formEl.querySelectorAll(".rk-step-tab").forEach(function(t, i) {
+          t.style.background = i===n ? stepActiveBg : stepInactiveBg;
+          t.style.color = i===n ? stepActiveText : stepInactiveText;
+        });
+        var titleEl = formEl.querySelector("#rk-step-title");
+        if (titleEl) titleEl.textContent = steps[n].label || ("Étape " + (n+1));
+        currentStep = n;
+        notifyResize();
+      }
+
+      formEl.addEventListener("click", function(e) {
+        if (e.target.classList.contains("rk-next")) {
+          var stepEl = formEl.querySelectorAll(".rk-step")[currentStep];
+          var invalid = false;
+          stepEl.querySelectorAll("[required]").forEach(function(el) {
+            if (!el.value) { el.style.borderColor="#e74c3c"; invalid=true; } else { el.style.borderColor=borderColor; }
+          });
+          // Check required file fields in current step
+          stepEl.querySelectorAll('input[type="file"][data-required="true"]').forEach(function(el) {
+            var fid = el.getAttribute("data-field");
+            if (!uploadedFiles[fid]) {
+              var zone = stepEl.querySelector('.rk-file-zone[data-field="' + fid + '"]');
+              if (zone) zone.style.borderColor = "#e74c3c";
+              invalid = true;
+            }
+          });
+          if (!invalid) showStep(currentStep+1);
+        } else if (e.target.classList.contains("rk-prev")) {
+          showStep(currentStep-1);
+        } else if (e.target.classList.contains("rk-step-tab")) {
+          var idx = parseInt(e.target.getAttribute("data-step"));
+          if (!isNaN(idx)) showStep(idx);
+        }
+      });
+
+      // Submit
+      formEl.addEventListener("submit", function(e) {
+        e.preventDefault();
+        
+        // Check required file fields
+        var fileInvalid = false;
+        form.fields.forEach(function(field) {
+          if (field.type === "file" && field.required && !uploadedFiles[field.id]) {
+            var zone = formEl.querySelector('.rk-file-zone[data-field="' + field.id + '"]');
+            if (zone) zone.style.borderColor = "#e74c3c";
+            fileInvalid = true;
+          }
+        });
+        if (fileInvalid) return;
+        
+        var btn = formEl.querySelector("button[type=submit]");
+        btn.disabled = true; btn.textContent = "Envoi en cours..."; btn.style.opacity = "0.7";
+
+        var data = {}; var emailField = "";
+        form.fields.forEach(function(field) {
+          if (["section","note","divider","file"].indexOf(field.type) !== -1) return;
+          if (field.type === "checkbox") {
+            var checked = [];
+            formEl.querySelectorAll('input[name="' + field.id + '"]:checked').forEach(function(cb) { checked.push(cb.value); });
+            data[field.id] = checked;
+          } else if (field.type === "toggle" || field.type === "radio") {
+            var cb = formEl.querySelector('input[name="' + field.id + '"]');
+            data[field.id] = cb && cb.checked ? "Oui" : "Non";
+          } else {
+            var el = formEl.querySelector('[name="' + field.id + '"]');
+            data[field.id] = el ? el.value : "";
+          }
+          if (field.type === "email" && data[field.id]) emailField = data[field.id];
+        });
+
+        fetch(API_BASE + "/" + FORM_ID + "/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: data, email: emailField, files: uploadedFiles })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(result) {
+          var msg = document.getElementById("rk-msg");
+          if (result.success) {
+            msg.style.display = "block"; msg.style.background = "#d4edda"; msg.style.color = "#155724";
+            msg.textContent = "Merci ! Votre demande a bien été envoyée.";
+            formEl.reset();
+            uploadedFiles = {};
+            // Clear file info displays
+            formEl.querySelectorAll('[id^="rk-file-info-"]').forEach(function(el) { el.innerHTML = ""; });
+            formEl.querySelectorAll('.rk-file-zone').forEach(function(z) { z.style.borderColor = ""; });
+          } else {
+            msg.style.display = "block"; msg.style.background = "#f8d7da"; msg.style.color = "#721c24";
+            msg.textContent = "Erreur lors de l'envoi. Veuillez réessayer.";
+          }
+          btn.disabled = false; btn.textContent = btnText; btn.style.opacity = "1";
+          notifyResize();
+        })
+        .catch(function() {
+          var msg = document.getElementById("rk-msg");
+          msg.style.display = "block"; msg.style.background = "#f8d7da"; msg.style.color = "#721c24";
+          msg.textContent = "Erreur de connexion. Veuillez réessayer.";
+          btn.disabled = false; btn.textContent = btnText; btn.style.opacity = "1";
+          notifyResize();
+        });
+      });
+
+      // Notify parent iframe of resize — IMMEDIATE on first call, debounced after
+      var _lastH = 0;
+      var _resizeTimer = null;
+      var _firstResizeDone = false;
+      function notifyResize() {
+        if (window.parent === window) return;
+        var root = document.getElementById("rkey-form-root");
+        if (!root) return;
+
+        function send() {
+          var h = root.scrollHeight;
+          var formEl2 = document.getElementById("rk-form");
+          if (formEl2) {
+            var rect = formEl2.getBoundingClientRect();
+            if (rect.height > 0) h = Math.ceil(rect.height) + 2;
+          }
+          if (h < 50) return; // not rendered yet
+          if (Math.abs(h - _lastH) < 3 && _firstResizeDone) return;
+          _lastH = h;
+          _firstResizeDone = true;
+          window.parent.postMessage({ type: "rkey-widget-resize", height: h }, "*");
+        }
+
+        if (!_firstResizeDone) {
+          // First resize: send immediately, no debounce
+          send();
+        } else {
+          if (_resizeTimer) return;
+          _resizeTimer = setTimeout(function() {
+            _resizeTimer = null;
+            send();
+          }, 100);
+        }
+      }
+
+      // Fire resize immediately + after paint + after fonts load
+      notifyResize();
+      requestAnimationFrame(function() {
+        notifyResize();
+        requestAnimationFrame(notifyResize);
+      });
+
+      // ResizeObserver on the root element (not body - body can inherit iframe height)
+      var resizeRoot = document.getElementById("rkey-form-root");
+      if (typeof ResizeObserver !== "undefined" && resizeRoot) {
+        new ResizeObserver(notifyResize).observe(resizeRoot);
+      }
+
+      // Aggressive periodic checks for the first 5 seconds (fonts, layout shifts)
+      var _fc = 0;
+      var _fi = setInterval(function() { notifyResize(); _fc++; if (_fc >= 20) clearInterval(_fi); }, 250);
+    })
+    .catch(function(err) {
+      document.getElementById("rkey-form-root").innerHTML = '<p style="color:#e74c3c;text-align:center;padding:20px">Impossible de charger le formulaire.</p>';
+    });
+})();
+</script>
+</body>
+</html>
