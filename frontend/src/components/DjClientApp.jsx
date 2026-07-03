@@ -962,14 +962,14 @@ function urlBase64ToUint8Array(base64String) {
                 className={`p-4 rounded-xl border transition-all duration-200 bg-white shadow-xs ${
                   isRowHighlit 
                     ? "border-red-300 bg-red-50/10 ring-1 ring-red-100" 
-                    : "border-slate-150 hover:border-slate-300"
+                    : "border-slate-200 hover:border-slate-300"
                 }`}
               >
                 <div className="flex justify-between items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <button 
                       onClick={() => setCurrentRoute({ view: 'detail', role: 'admin', eventId: ev.id, mode: 'dashboard' })}
-                      className="text-sm font-extrabold text-slate-900 hover:text-indigo-605 hover:underline transition-colors text-left leading-tight pr-1"
+                      className="text-sm font-extrabold text-slate-900 hover:text-indigo-600 hover:underline transition-colors text-left leading-tight pr-1"
                     >
                       {ev.name}
                     </button>
@@ -980,7 +980,7 @@ function urlBase64ToUint8Array(base64String) {
                     )}
                     {notifCount > 0 && (
                       <div className="inline-flex items-center gap-1 mt-1.5 text-[10px] font-bold text-red-700 bg-red-50/80 px-2 py-0.5 rounded-md border border-red-100 animate-pulse">
-                        <Bell className="w-3 h-3 text-red-550 shrink-0" />
+                        <Bell className="w-3 h-3 text-red-500 shrink-0" />
                         Changements : {listFr}
                       </div>
                     )}
@@ -1009,7 +1009,7 @@ function urlBase64ToUint8Array(base64String) {
                       </button>
                       <button 
                         onClick={() => setCurrentRoute({ view: 'dj-list', role: 'dj', eventId: null, mode: 'standalone_dj', activeDj: ev.dj })} 
-                        className="p-1 bg-yellow-50 text-yellow-700 hover:bg-yellow-105 rounded border border-yellow-200 transition" 
+                        className="p-1 bg-yellow-50 text-yellow-700 hover:bg-yellow-100 rounded border border-yellow-200 transition" 
                         title="Ouvrir le portail DJ"
                       >
                         <ExternalLink className="w-3 h-3" />
@@ -1033,7 +1033,7 @@ function urlBase64ToUint8Array(base64String) {
                       </button>
                       <button 
                         onClick={() => setCurrentRoute({ view: 'detail', role: 'client', eventId: ev.id, mode: 'standalone_client' })} 
-                        className="p-1 bg-green-50 text-green-705 hover:bg-green-100 rounded border border-green-200 transition" 
+                        className="p-1 bg-green-50 text-green-700 hover:bg-green-100 rounded border border-green-200 transition" 
                         title="Ouvrir le portail Client"
                       >
                         <ExternalLink className="w-3 h-3" />
@@ -1268,7 +1268,7 @@ function urlBase64ToUint8Array(base64String) {
         {/* Événements avec Notifications (Prioritaires) */}
         {priorityEvents.length > 0 && (
           <div className="mb-8 border-2 border-red-200 bg-red-50/20 rounded-2xl p-5 shadow-sm relative overflow-hidden animate-in fade-in duration-300">
-            <h3 className="text-lg font-bold mb-4 flex items-center gap-2.5 text-red-750">
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2.5 text-red-700">
               <span className="flex h-3 w-3 relative">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
@@ -1978,7 +1978,7 @@ function urlBase64ToUint8Array(base64String) {
           </div>
 
           {/* Section d'upload de fichiers audio */}
-          <div className="border rounded-lg p-5 bg-indigo-50/40 border-indigo-150 mt-6" id="section-audio-upload">
+          <div className="border rounded-lg p-5 bg-indigo-50/40 border-indigo-200 mt-6" id="section-audio-upload">
             <h4 className="font-bold text-indigo-800 mb-1 text-base flex items-center gap-2">
               🎵 Dépôt de Fichiers Audio (MP3 / WAV)
             </h4>
@@ -3183,7 +3183,7 @@ function urlBase64ToUint8Array(base64String) {
                         setIsEditingClientInfo(false);
                         toast.success("Informations client sauvegardées !");
                       }}
-                      className="px-4 py-2 bg-indigo-650 hover:bg-indigo-750 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
                     >
                       <Check className="w-4 h-4" /> Enregistrer
                     </button>
@@ -3798,7 +3798,7 @@ function urlBase64ToUint8Array(base64String) {
                         {renderMandat && (
                           <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-150 flex-shrink-0">
+                              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-200 flex-shrink-0">
                                 <FileText className="w-5 h-5 text-indigo-500" />
                               </div>
                               <div className="min-w-0">
@@ -3875,7 +3875,7 @@ function urlBase64ToUint8Array(base64String) {
                         {renderArtiste && (
                           <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-violet-50 border border-violet-150 flex-shrink-0">
+                              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-violet-50 border border-violet-200 flex-shrink-0">
                                 <FileText className="w-5 h-5 text-violet-500" />
                               </div>
                               <div className="min-w-0">
@@ -3958,7 +3958,7 @@ function urlBase64ToUint8Array(base64String) {
                   return (
                     <div className="flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-150 flex-shrink-0">
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-200 flex-shrink-0">
                           <FileText className="w-5 h-5 text-indigo-500" />
                         </div>
                         <div className="min-w-0">
@@ -4229,7 +4229,7 @@ function urlBase64ToUint8Array(base64String) {
                               />
                             </div>
                           )}
-                          <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-150 flex-shrink-0">
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-200 flex-shrink-0">
                             <FileText className="w-5 h-5 text-indigo-500" />
                           </div>
                           <div className="min-w-0">
@@ -4293,7 +4293,7 @@ function urlBase64ToUint8Array(base64String) {
             <p className="text-sm text-slate-600 mb-4">
               Regardez cette courte vidéo pour comprendre en détails comment compléter votre profil, choisir vos options, planifier le déroulement de votre soirée et interagir avec votre DJ.
             </p>
-            <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-md border border-slate-150">
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-md border border-slate-200">
               <iframe
                 className="absolute top-0 left-0 w-full h-full"
                 src={embedUrl}
@@ -4666,7 +4666,7 @@ function urlBase64ToUint8Array(base64String) {
           {/* Tableaux de bord financier simple & esthétique */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200/50">
             {/* Total prestation */}
-            <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Montant Prestation TTC</span>
                 <span className="text-xl font-bold text-slate-800">{totalPrestation.toFixed(2)} €</span>
@@ -4733,7 +4733,7 @@ function urlBase64ToUint8Array(base64String) {
             </div>
 
             {/* Déjà réglé (Acompte / Mandat) */}
-            <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                   {isEntrepriseFreelance ? "Acompte payé à R'Key Prod" : (isMandatMode ? "Frais de mandat & gestion (Réglé)" : "Paiement déjà versé")}
@@ -4781,7 +4781,7 @@ function urlBase64ToUint8Array(base64String) {
             </div>
 
             {/* Solde restant (Cachet) */}
-            <div className="bg-white p-4 rounded-lg border border-slate-150 shadow-sm flex flex-col justify-between">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                   {isEntrepriseFreelance ? "Solde restant à régler à R'Key Prod" : (isMandatMode ? "Cachet Artiste restants" : "Solde restant dû")}
@@ -4791,7 +4791,7 @@ function urlBase64ToUint8Array(base64String) {
                 </span>
                 
                 {additions.length > 0 && (
-                  <div className="mt-2 space-y-1 border-t border-dashed border-slate-150 pt-1.5">
+                  <div className="mt-2 space-y-1 border-t border-dashed border-slate-200 pt-1.5">
                     <div className="flex justify-between items-center text-[11px] text-slate-500">
                       <span>Solde initial :</span>
                       <span>{originalRemainingBalance.toFixed(2)} €</span>
@@ -4858,7 +4858,7 @@ function urlBase64ToUint8Array(base64String) {
                               <button
                                 onClick={() => validateRequestedOption(opt)}
                                 disabled={optionsSubmitting}
-                                className="text-green-650 hover:text-green-800 hover:bg-green-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
+                                className="text-green-600 hover:text-green-800 hover:bg-green-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
                                 title="Valider l'option"
                               >
                                 <Check className="w-4 h-4 text-green-600" />
@@ -4866,7 +4866,7 @@ function urlBase64ToUint8Array(base64String) {
                               <button
                                 onClick={() => cancelRequestedOption(opt)}
                                 disabled={optionsSubmitting}
-                                className="text-red-500 hover:text-red-750 hover:bg-red-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
+                                className="text-red-500 hover:text-red-700 hover:bg-red-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
                                 title="Refuser / Annuler l'option"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -5527,7 +5527,7 @@ function urlBase64ToUint8Array(base64String) {
                   updateContractDb(ev.id, { notifications: updatedNotifs });
                   toast.success("Notifications marquées comme lues !");
                 }}
-                className="px-4 py-2 bg-red-600 hover:bg-red-705 text-white font-bold rounded-lg text-xs shadow-sm transition flex-shrink-0 flex items-center justify-center gap-1.5 self-start sm:self-center"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg text-xs shadow-sm transition flex-shrink-0 flex items-center justify-center gap-1.5 self-start sm:self-center"
               >
                 <Check className="w-4 h-4" />
                 Marquer comme lu
@@ -5658,7 +5658,7 @@ function urlBase64ToUint8Array(base64String) {
         <div className="grid gap-6">
             {priorityDjEvents.length > 0 && (
                 <div className="border-2 border-red-200 bg-red-50/20 rounded-2xl p-5 shadow-sm relative overflow-hidden animate-in fade-in duration-300">
-                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2.5 text-red-750">
+                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2.5 text-red-700">
                       <span className="flex h-3 w-3 relative">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
@@ -5696,12 +5696,12 @@ function urlBase64ToUint8Array(base64String) {
                                             )}
                                         </td>
                                         <td className="p-4 min-w-[125px]">
-                                            <span className="text-xs bg-yellow-105 text-yellow-800 px-2 py-1 rounded font-medium">
+                                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
                                                 {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
                                             </span>
                                         </td>
                                         <td className="p-4 text-right">
-                                            <button className="text-yellow-605 font-bold text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
+                                            <button className="text-yellow-600 font-bold text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
                                                 Ouvrir <ChevronRight className="w-4 h-4"/>
                                             </button>
                                         </td>
@@ -5722,7 +5722,7 @@ function urlBase64ToUint8Array(base64String) {
                                 <div 
                                     key={ev.id} 
                                     onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}
-                                    className="p-4 bg-white rounded-xl border border-red-150 shadow-xs hover:border-red-300 transition-all flex flex-col gap-1.5 cursor-pointer text-left"
+                                    className="p-4 bg-white rounded-xl border border-red-200 shadow-xs hover:border-red-300 transition-all flex flex-col gap-1.5 cursor-pointer text-left"
                                 >
                                     <div className="flex justify-between items-start gap-2">
                                         <div className="min-w-0 flex-1">
@@ -5739,8 +5739,8 @@ function urlBase64ToUint8Array(base64String) {
                                             {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
                                         </span>
                                     </div>
-                                    <div className="flex items-center gap-1.5 text-[11px] text-red-750 bg-red-50/50 py-1 px-2.5 rounded-lg border border-red-100 mt-1">
-                                        <Bell className="w-3.5 h-3.5 text-red-505 animate-pulse flex-shrink-0" />
+                                    <div className="flex items-center gap-1.5 text-[11px] text-red-700 bg-red-50/50 py-1 px-2.5 rounded-lg border border-red-100 mt-1">
+                                        <Bell className="w-3.5 h-3.5 text-red-500 animate-pulse flex-shrink-0" />
                                         <span>Modifié : <span className="font-bold">{listFr}</span></span>
                                     </div>
                                 </div>
@@ -5821,7 +5821,7 @@ function urlBase64ToUint8Array(base64String) {
                                                 <div 
                                                     key={ev.id} 
                                                     onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}
-                                                    className="p-4 bg-white rounded-xl border border-slate-150 hover:border-slate-350 transition-all flex flex-col gap-1.5 cursor-pointer text-left"
+                                                    className="p-4 bg-white rounded-xl border border-slate-200 hover:border-slate-300 transition-all flex flex-col gap-1.5 cursor-pointer text-left"
                                                 >
                                                     <div className="flex justify-between items-start gap-2">
                                                         <div className="min-w-0 flex-1">
@@ -5830,7 +5830,7 @@ function urlBase64ToUint8Array(base64String) {
                                                             </h4>
                                                             {ev.client?.name && (
                                                                 <p className="text-[11px] text-slate-500 mt-0.5">
-                                                                    Client : <span className="font-semibold text-slate-705">{ev.client?.name}</span>
+                                                                    Client : <span className="font-semibold text-slate-700">{ev.client?.name}</span>
                                                                 </p>
                                                             )}
                                                         </div>
@@ -5839,8 +5839,8 @@ function urlBase64ToUint8Array(base64String) {
                                                         </span>
                                                     </div>
                                                     {notifCount > 0 && (
-                                                        <div className="flex items-center gap-1.5 text-[11px] text-red-750 bg-red-50/50 py-1 px-2.5 rounded-lg border border-red-100 mt-1">
-                                                            <Bell className="w-3.5 h-3.5 text-red-505 animate-pulse flex-shrink-0" />
+                                                        <div className="flex items-center gap-1.5 text-[11px] text-red-700 bg-red-50/50 py-1 px-2.5 rounded-lg border border-red-100 mt-1">
+                                                            <Bell className="w-3.5 h-3.5 text-red-500 animate-pulse flex-shrink-0" />
                                                             <span>Notif : <span className="font-bold">{listFr}</span></span>
                                                         </div>
                                                     )}
@@ -5870,7 +5870,7 @@ function urlBase64ToUint8Array(base64String) {
                                 {past.map(ev => (
                                     <tr key={ev.id} className="hover:bg-gray-50 transition cursor-pointer" onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}>
                                         <td className="p-4 font-medium">{ev.name}</td>
-                                        <td className="p-4 text-gray-605 min-w-[125px]">
+                                        <td className="p-4 text-gray-600 min-w-[125px]">
                                             {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
                                         </td>
                                         <td className="p-4 text-right">
@@ -5895,8 +5895,8 @@ function urlBase64ToUint8Array(base64String) {
                                         {ev.name}
                                     </h4>
                                     {ev.client?.name && (
-                                        <p className="text-[11px] text-slate-505 mt-0.5">
-                                            Client : <span className="font-semibold text-slate-650">{ev.client?.name}</span>
+                                        <p className="text-[11px] text-slate-500 mt-0.5">
+                                            Client : <span className="font-semibold text-slate-600">{ev.client?.name}</span>
                                         </p>
                                     )}
                                 </div>
@@ -5952,6 +5952,28 @@ function urlBase64ToUint8Array(base64String) {
       : 'ring-2 ring-red-400 border-red-400 relative';
   };
 
+  const isNightBg = currentRoute.role === 'client' || currentRoute.role === 'dj';
+
+  useEffect(() => {
+    // Dynamically toggle global .App wrapper backgrounds to prevent seams on mobile bounce
+    const appEl = document.querySelector('.App');
+    if (appEl) {
+      if (isNightBg) {
+        appEl.classList.remove('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
+        appEl.classList.add('bg-[#070811]');
+      } else {
+        appEl.classList.remove('bg-[#070811]');
+        appEl.classList.add('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
+      }
+    }
+    return () => {
+      if (appEl) {
+        appEl.classList.remove('bg-[#070811]');
+        appEl.classList.add('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
+      }
+    };
+  }, [isNightBg]);
+
   if (isPublic && isLoadingEvents) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-950 select-none">
@@ -5999,28 +6021,6 @@ function urlBase64ToUint8Array(base64String) {
       </div>
     );
   }
-
-  const isNightBg = currentRoute.role === 'client' || currentRoute.role === 'dj';
-
-  useEffect(() => {
-    // Dynamically toggle global .App wrapper backgrounds to prevent seams on mobile bounce
-    const appEl = document.querySelector('.App');
-    if (appEl) {
-      if (isNightBg) {
-        appEl.classList.remove('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
-        appEl.classList.add('bg-[#070811]');
-      } else {
-        appEl.classList.remove('bg-[#070811]');
-        appEl.classList.add('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
-      }
-    }
-    return () => {
-      if (appEl) {
-        appEl.classList.remove('bg-[#070811]');
-        appEl.classList.add('bg-gradient-to-br', 'from-orange-50', 'via-white', 'to-amber-50');
-      }
-    };
-  }, [isNightBg]);
 
   return (
     <div className={`min-h-screen transition-all duration-500 ${isNightBg ? 'bg-[#070811] text-slate-100' : ''} -m-6 p-6 overflow-x-hidden`}>
