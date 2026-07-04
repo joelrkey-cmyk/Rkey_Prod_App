@@ -5,7 +5,7 @@ import {
   MapPin, Building2, Search, Plus, Edit, Trash2, AlertTriangle, 
   CheckCircle2, Image, Wifi, Smartphone, VolumeX, Flame, 
   ChevronLeft, HelpCircle, Check, Combine, FolderOpen, Info,
-  ExternalLink, Calendar, PlusCircle, CheckSquare, X, ArrowUpRight, Star
+  ExternalLink, Calendar, PlusCircle, CheckSquare, X, ArrowUpRight, Star, Camera
 } from 'lucide-react';
 
 import { Button } from './ui/button';
@@ -515,38 +515,48 @@ export default function VenueApp() {
   };
 
   const handlePhotoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setUploadingPhoto(true);
-    const formData = new FormData();
-    formData.append('file', file);
+    const token = localStorage.getItem('access_token');
+    let successCount = 0;
+    const uploadedPhotos = [];
 
-    try {
-      const token = localStorage.getItem('access_token');
-      const response = await fetch(`${API_BASE_URL}/upload/venue-photo`, {
-        method: 'POST',
-        headers: {
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: formData
-      });
-      const data = await response.json();
-      if (response.ok && data.url) {
-        setVenueForm(prev => ({
-          ...prev,
-          venue_photos: [...prev.venue_photos, { url: data.url, id: Date.now() }]
-        }));
-        toast.success('Photo ajoutée avec succès !');
-      } else {
-        toast.error('Erreur lors de l\'upload de la photo.');
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/upload/venue-photo`, {
+          method: 'POST',
+          headers: {
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: formData
+        });
+        const data = await response.json();
+        if (response.ok && data.url) {
+          uploadedPhotos.push({ url: data.url, id: Date.now() + i });
+          successCount++;
+        }
+      } catch (err) {
+        console.error('Error uploading photo:', file.name, err);
       }
-    } catch (err) {
-      console.error('Error uploading photo:', err);
-      toast.error('Erreur lors de l\'upload.');
-    } finally {
-      setUploadingPhoto(false);
     }
+
+    if (successCount > 0) {
+      setVenueForm(prev => ({
+        ...prev,
+        venue_photos: [...prev.venue_photos, ...uploadedPhotos]
+      }));
+      toast.success(`${successCount} photo(s) ajoutée(s) avec succès !`);
+    } else {
+      toast.error("Erreur lors de l'upload de la/des photo(s).");
+    }
+    setUploadingPhoto(false);
+    e.target.value = '';
   };
 
   const handleRemovePhoto = (photoId) => {
@@ -1282,11 +1292,12 @@ export default function VenueApp() {
                   </div>
                 ))}
                 
-                {/* Upload Trigger card */}
+                {/* Multiple Photos Upload Trigger */}
                 <label className="border-2 border-dashed border-slate-300 rounded-lg aspect-video flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-indigo-400 transition-colors">
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={handlePhotoUpload}
                     disabled={uploadingPhoto}
                     className="hidden"
@@ -1295,8 +1306,28 @@ export default function VenueApp() {
                     <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
                   ) : (
                     <>
-                      <PlusCircle className="w-5 h-5 text-slate-400" />
-                      <span className="text-[10px] text-slate-500 font-bold mt-1">Upload</span>
+                      <PlusCircle className="w-5 h-5 text-indigo-500" />
+                      <span className="text-[10px] text-slate-600 font-bold mt-1">Ajouter des photos</span>
+                    </>
+                  )}
+                </label>
+
+                {/* Direct Camera Capture Trigger */}
+                <label className="border-2 border-dashed border-slate-300 rounded-lg aspect-video flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-emerald-400 transition-colors">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handlePhotoUpload}
+                    disabled={uploadingPhoto}
+                    className="hidden"
+                  />
+                  {uploadingPhoto ? (
+                    <div className="w-5 h-5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <Camera className="w-5 h-5 text-emerald-500" />
+                      <span className="text-[10px] text-slate-600 font-bold mt-1">Prendre une photo</span>
                     </>
                   )}
                 </label>

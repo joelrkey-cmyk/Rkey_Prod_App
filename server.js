@@ -3641,6 +3641,31 @@ async function syncVenueFromContract(contractId, payload) {
     const venueId = payload?.client_info?.venue_id || contract?.client_info?.venue_id;
     if (!venueId) return;
 
+    const existingVenue = await db.collection('reception_venues').findOne({ id: venueId });
+    if (existingVenue) {
+      const contractPhotos = contract.venue_photos || [];
+      const contractNotes = contract.venue_notes || "";
+      
+      const isContractVenueInfoEmpty = contractPhotos.length === 0 && !contractNotes && 
+                                       !contract.has_limiteur_son && !contract.has_detecteur_fumee &&
+                                       !contract.has_no_limiteur_ni_detecteur && !contract.has_wifi && !contract.has_4g_5g;
+
+      if (isContractVenueInfoEmpty) {
+        const initObj = {
+          venue_photos: existingVenue.venue_photos || [],
+          venue_notes: existingVenue.notes || "",
+          has_limiteur_son: !!existingVenue.has_limiteur_son,
+          has_detecteur_fumee: !!existingVenue.has_detecteur_fumee,
+          has_no_limiteur_ni_detecteur: !!existingVenue.has_no_limiteur_ni_detecteur,
+          has_wifi: !!existingVenue.has_wifi,
+          has_4g_5g: !!existingVenue.has_4g_5g
+        };
+        await db.collection('contracts2').updateOne({ id: contractId }, { $set: initObj });
+        console.log(`[Venue Sync] Initialized contract ${contractId} from venue ${venueId}`);
+        return;
+      }
+    }
+
     const updateObj = {};
     const fieldsToSync = [
       'venue_photos',
@@ -3667,7 +3692,6 @@ async function syncVenueFromContract(contractId, payload) {
     if (Object.keys(updateObj).length > 0) {
       updateObj.updated_at = new Date().toISOString();
       // If we are adding photos or notes, let's mark it as complete if it had nothing before
-      const existingVenue = await db.collection('reception_venues').findOne({ id: venueId });
       if (existingVenue) {
         const hasPhotos = (updateObj.venue_photos && updateObj.venue_photos.length > 0) || (existingVenue.venue_photos && existingVenue.venue_photos.length > 0);
         const hasNotes = (updateObj.venue_notes && updateObj.venue_notes.trim().length > 0) || (existingVenue.notes && existingVenue.notes.trim().length > 0);
@@ -3680,6 +3704,31 @@ async function syncVenueFromContract(contractId, payload) {
     }
   } catch (err) {
     console.error('[Venue Sync Error]', err);
+  }
+}
+
+async function syncVenueToContracts(venueId) {
+  try {
+    const venue = await db.collection('reception_venues').findOne({ id: venueId });
+    if (!venue) return;
+
+    const updateObj = {
+      venue_photos: venue.venue_photos || [],
+      venue_notes: venue.notes || "",
+      has_limiteur_son: !!venue.has_limiteur_son,
+      has_detecteur_fumee: !!venue.has_detecteur_fumee,
+      has_no_limiteur_ni_detecteur: !!venue.has_no_limiteur_ni_detecteur,
+      has_wifi: !!venue.has_wifi,
+      has_4g_5g: !!venue.has_4g_5g
+    };
+
+    const result = await db.collection('contracts2').updateMany(
+      { "client_info.venue_id": venueId },
+      { $set: updateObj }
+    );
+    console.log(`[Venue Sync] Synced venue ${venueId} to ${result.modifiedCount} contracts.`);
+  } catch (err) {
+    console.error('[Venue Sync To Contracts Error]', err);
   }
 }
 
@@ -4106,6 +4155,10 @@ api.put('/venues/:id', async (req, res) => {
     
     await db.collection('reception_venues').updateOne({ id }, { $set: updateData });
     const updated = await db.collection('reception_venues').findOne({ id });
+    
+    // Automatically propagate the venue changes (photos, notes, tech constraints) to all linked contracts
+    await syncVenueToContracts(id);
+    
     res.json(clean(updated));
   } catch (err) {
     res.status(500).json({ error: err.message });
