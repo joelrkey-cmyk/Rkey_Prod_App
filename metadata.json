@@ -1,5 +1,8 @@
 {
   "name": "R'KEY PROD",
   "description": "Application de gestion d'événements, location de matériel, CRM et billetterie pour R'Key Prod.",
+  "requestFramePermissions": [
+    "camera"
+  ],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

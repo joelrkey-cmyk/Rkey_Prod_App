@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -11,6 +11,7 @@ import MyDjLogo from './MyDjLogo';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
+import CameraCaptureModal from './CameraCaptureModal';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
@@ -69,6 +70,8 @@ const DjClientApp = ({ isPublic = false }) => {
   const [chatNewMessage, setChatNewMessage] = useState("");
   const chatContainerRef = useRef(null);
   const [venueUploading, setVenueUploading] = useState(false);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [cameraSessionPhotos, setCameraSessionPhotos] = useState([]);
   const [djStandaloneExpandedYears, setDjStandaloneExpandedYears] = useState({});
   const [isEditingClientInfo, setIsEditingClientInfo] = useState(false);
   const [clientInfoEditData, setClientInfoEditData] = useState({});
@@ -922,14 +925,14 @@ function urlBase64ToUint8Array(base64String) {
 
   const getDjLink = (dj) => {
     const slug = dj.login || dj.name.toLowerCase().replace(/\s+/g, '-');
-    const host = window.location.host || 'rkeyprodapp.fr';
+    const host = 'rkeyprodapp.fr';
     return `${host}/${slug}`;
   };
 
   const getClientLink = (ev) => {
     const type = ev.name ? ev.name.split(' ')[0].toLowerCase().replace(/\s+/g, '-') : 'event';
     const clientName = (ev.client?.name || ev.contractInfo?.name || 'Client').toLowerCase().replace(/\s+/g, '-');
-    const host = window.location.host || 'rkeyprodapp.fr';
+    const host = 'rkeyprodapp.fr';
     return `${host}/${type}-${clientName}`;
   };
 
@@ -1263,7 +1266,7 @@ function urlBase64ToUint8Array(base64String) {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border p-6">
+      <div className="bg-white rounded-xl shadow-sm border p-6 text-slate-900">
         
         {/* Événements avec Notifications (Prioritaires) */}
         {priorityEvents.length > 0 && (
@@ -1279,7 +1282,7 @@ function urlBase64ToUint8Array(base64String) {
                 {priorityEvents.length}
               </span>
             </h3>
-            <div className="bg-white rounded-xl border border-red-100 overflow-hidden shadow-xs">
+            <div className="bg-white rounded-xl border border-red-100 overflow-hidden shadow-xs text-slate-900">
               {EventTable({ eventsList: priorityEvents })}
             </div>
           </div>
@@ -1341,7 +1344,7 @@ function urlBase64ToUint8Array(base64String) {
     if (!canEdit && scheduleItems.length === 0 && !notes) return null;
 
     return (
-      <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 ${getSectionHighlightClass('planning')}`}>
+      <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 text-slate-900 ${getSectionHighlightClass('planning')}`}>
         <div className="flex justify-between items-center mb-6">
           <div>
             <h3 className="text-lg font-bold flex items-center gap-2">
@@ -1659,7 +1662,7 @@ function urlBase64ToUint8Array(base64String) {
     };
 
     return (
-      <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 ${getSectionHighlightClass('playlist')}`}>
+      <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 text-slate-900 ${getSectionHighlightClass('playlist')}`}>
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-bold flex items-center gap-2">
             <Music className="w-5 h-5 text-indigo-600" />
@@ -3012,7 +3015,7 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       return (
-        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('client_info')}`} onClick={() => { if (ev.notifications && ev.notifications[currentRoute.role] && ev.notifications[currentRoute.role]['client_info']) toggleSection('client_info'); }}>
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 text-slate-900 ${getSectionHighlightClass('client_info')}`} onClick={() => { if (ev.notifications && ev.notifications[currentRoute.role] && ev.notifications[currentRoute.role]['client_info']) toggleSection('client_info'); }}>
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <User className="w-5 h-5 text-indigo-600" />
@@ -3272,7 +3275,7 @@ function urlBase64ToUint8Array(base64String) {
       const canEditEnd = role === 'admin';
 
       return (
-        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('planning')}`}>
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 text-slate-900 ${getSectionHighlightClass('planning')}`}>
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
             <Clock className="w-5 h-5 text-gray-400" />
             Planning de la prestation
@@ -3737,7 +3740,7 @@ function urlBase64ToUint8Array(base64String) {
       const hasAnyDocs = displayGlobalDocs.length > 0 || visibleEventDocs.length > 0;
 
       return (
-        <div className={`bg-white rounded-xl shadow-lg border p-6 mb-6 mt-6 transition-all ring-1 ring-slate-100 ${getSectionHighlightClass('documents') ? getSectionHighlightClass('documents') : ''}`}>
+        <div className={`bg-white rounded-xl shadow-lg border p-6 mb-6 mt-6 transition-all ring-1 ring-slate-100 text-slate-900 ${getSectionHighlightClass('documents') ? getSectionHighlightClass('documents') : ''}`}>
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-bold flex flex-col sm:flex-row sm:items-center gap-2 text-slate-800">
                <div className="flex items-center gap-2">
@@ -4617,7 +4620,7 @@ function urlBase64ToUint8Array(base64String) {
       // Vue spéciale DJ en mode entreprise : uniquement le cachet DJ (violet) et les options sans prix
       if (role === 'dj' && isEntrepriseFreelance) {
         return (
-          <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('options')}`}>
+          <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 text-slate-900 ${getSectionHighlightClass('options')}`}>
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
               <Plus className="w-5 h-5 text-gray-400" />
               Tarifs et Options de l'Événement
@@ -4657,7 +4660,7 @@ function urlBase64ToUint8Array(base64String) {
 
       // Vue normale pour Admin et pour Client (la vue client n'affiche pas les détails internes)
       return (
-        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 ${getSectionHighlightClass('options')}`}>
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mb-6 text-slate-900 ${getSectionHighlightClass('options')}`}>
           <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
             <Plus className="w-5 h-5 text-gray-400" />
             Tarifs et Options de l'Événement
@@ -5115,7 +5118,7 @@ function urlBase64ToUint8Array(base64String) {
       const isAdmin = currentRoute.role === 'admin';
       
       return (
-        <div className={`bg-white rounded-xl shadow-sm border p-6 mt-6 ${getSectionHighlightClass('catering')}`} id="section-catering">
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mt-6 text-slate-900 ${getSectionHighlightClass('catering')}`} id="section-catering">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <Utensils className="w-5 h-5 text-indigo-600" />
@@ -5261,26 +5264,40 @@ function urlBase64ToUint8Array(base64String) {
       const token = localStorage.getItem('access_token');
       
       const handleFileUpload = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
         setVenueUploading(true);
-        const formData = new FormData();
-        formData.append('file', file);
-        try {
-          const response = await fetch(`${BACKEND_URL}/api/public/upload/photo`, {
-            method: 'POST',
-            body: formData
-          });
-          const data = await response.json();
-          if (response.ok && data.url) {
-            const currentPhotos = ev.venue_photos || [];
-            updateContractDb(currentRoute.eventId, { venue_photos: [...currentPhotos, { url: data.url, id: Date.now() }] });
-            toast.success("Photo ajoutée");
-          } else {
-            toast.error("Erreur upload");
+        
+        let successCount = 0;
+        const uploadedPhotos = [];
+        
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const formData = new FormData();
+          formData.append('file', file);
+          try {
+            const response = await fetch(`${BACKEND_URL}/api/public/upload/photo`, {
+              method: 'POST',
+              body: formData
+            });
+            const data = await response.json();
+            if (response.ok && data.url) {
+              uploadedPhotos.push({ url: data.url, id: Date.now() + i });
+              successCount++;
+            }
+          } catch (err) {
+            console.error("Error uploading file", file.name, err);
           }
-        } catch (err) {
-          toast.error("Erreur serveur");
+        }
+        
+        if (successCount > 0) {
+          const currentPhotos = ev.venue_photos || [];
+          await updateContractDb(currentRoute.eventId, { 
+            venue_photos: [...currentPhotos, ...uploadedPhotos] 
+          });
+          toast.success(`${successCount} photo(s) ajoutée(s)`);
+        } else {
+          toast.error("Erreur upload");
         }
         setVenueUploading(false);
       };
@@ -5292,7 +5309,7 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       return (
-        <div className={`bg-white rounded-xl shadow-sm border p-6 mt-6 ${getSectionHighlightClass('venue')}`} id="section-venue">
+        <div className={`bg-white rounded-xl shadow-sm border p-6 mt-6 text-slate-900 ${getSectionHighlightClass('venue')}`} id="section-venue">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <MapPin className="w-5 h-5 text-indigo-600" />
@@ -5368,19 +5385,34 @@ function urlBase64ToUint8Array(base64String) {
                   ))}
                   
                   {/* Upload button wrapper */}
-                  <label className="h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center relative hover:bg-gray-50 transition cursor-pointer">
+                  <label className="h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center relative hover:bg-gray-50 transition cursor-pointer text-center p-2">
                     {venueUploading ? (
                       <span className="text-gray-500 text-sm flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" /> Upload...
                       </span>
                     ) : (
                       <>
-                        <Upload className="w-6 h-6 text-gray-400 mb-2" />
-                        <span className="text-sm text-gray-500">Ajouter une photo</span>
-                        <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFileUpload} />
+                        <Upload className="w-6 h-6 text-indigo-500 mb-1" />
+                        <span className="text-sm font-semibold text-slate-800">Uploader photo(s)</span>
+                        <span className="text-xs text-slate-400">Sélectionner ou Glisser</span>
+                        <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFileUpload} multiple />
                       </>
                     )}
                   </label>
+
+                  {/* Live Camera Capture Button */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setCameraSessionPhotos([]);
+                      setIsCameraModalOpen(true);
+                    }}
+                    className="h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:bg-gray-50 transition cursor-pointer text-center p-2"
+                  >
+                    <Camera className="w-6 h-6 text-indigo-500 mb-1" />
+                    <span className="text-sm font-semibold text-slate-800">Prendre photo(s)</span>
+                    <span className="text-xs text-slate-400 font-normal">Caméra en direct</span>
+                  </button>
                 </div>
               </div>
 
@@ -5407,7 +5439,7 @@ function urlBase64ToUint8Array(base64String) {
     };
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 text-slate-900">
         {!isClientStandalone && (
           <div className={`flex justify-between items-center p-2 rounded-lg border transition-all ${isNightBg ? 'bg-slate-900/60 border-slate-800 backdrop-blur-md' : 'bg-gray-50 border-gray-200'}`}>
             <button onClick={handleBack} className={`flex items-center gap-2 font-bold px-3 py-2 rounded-md transition ${isNightBg ? 'text-indigo-300 hover:text-indigo-200 hover:bg-indigo-950/40' : 'text-indigo-700 hover:text-indigo-800 hover:bg-indigo-100'}`}>
@@ -5671,7 +5703,7 @@ function urlBase64ToUint8Array(base64String) {
                     </h3>
 
                     {/* Desktop Table View */}
-                    <div className="hidden md:block overflow-x-auto bg-white border border-red-100 rounded-xl shadow-xs">
+                    <div className="hidden md:block overflow-x-auto bg-white border border-red-100 rounded-xl shadow-xs text-slate-900">
                         <table className="w-full text-left">
                             <thead className="bg-gray-50 text-sm text-gray-500 border-b">
                                 <tr>
@@ -5722,7 +5754,7 @@ function urlBase64ToUint8Array(base64String) {
                                 <div 
                                     key={ev.id} 
                                     onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}
-                                    className="p-4 bg-white rounded-xl border border-red-200 shadow-xs hover:border-red-300 transition-all flex flex-col gap-1.5 cursor-pointer text-left"
+                                    className="p-4 bg-white rounded-xl border border-red-200 shadow-xs hover:border-red-300 transition-all flex flex-col gap-1.5 cursor-pointer text-left text-slate-900"
                                 >
                                     <div className="flex justify-between items-start gap-2">
                                         <div className="min-w-0 flex-1">
@@ -5754,7 +5786,7 @@ function urlBase64ToUint8Array(base64String) {
             {Object.keys(futureByYear).length > 0 ? (
                 <div className="space-y-4">
                     {Object.keys(futureByYear).sort().map(year => (
-                        <div key={year} className="bg-white border rounded-xl overflow-hidden shadow-sm">
+                        <div key={year} className="bg-white border rounded-xl overflow-hidden shadow-sm text-slate-900">
                             <button 
                                 onClick={() => toggleYear(year)}
                                 className="flex items-center justify-between w-full p-4 bg-yellow-50 hover:bg-yellow-100 transition-colors text-left font-bold text-yellow-800"
@@ -5812,7 +5844,7 @@ function urlBase64ToUint8Array(base64String) {
                                     </div>
 
                                     {/* Mobile Cards View */}
-                                    <div className="md:hidden p-4 space-y-3 bg-white">
+                                    <div className="md:hidden p-4 space-y-3 bg-white text-slate-900">
                                         {futureByYear[year].map(ev => {
                                             const notifKeys = ev.notifications && ev.notifications[currentRoute.role] ? Object.keys(ev.notifications[currentRoute.role]) : [];
                                             const notifCount = notifKeys.length;
@@ -5821,7 +5853,7 @@ function urlBase64ToUint8Array(base64String) {
                                                 <div 
                                                     key={ev.id} 
                                                     onClick={() => setCurrentRoute({ view: 'detail', role: 'dj', eventId: ev.id, mode: 'standalone_dj', activeDj })}
-                                                    className="p-4 bg-white rounded-xl border border-slate-200 hover:border-slate-300 transition-all flex flex-col gap-1.5 cursor-pointer text-left"
+                                                    className="p-4 bg-white rounded-xl border border-slate-200 hover:border-slate-300 transition-all flex flex-col gap-1.5 cursor-pointer text-left text-slate-900"
                                                 >
                                                     <div className="flex justify-between items-start gap-2">
                                                         <div className="min-w-0 flex-1">
@@ -5859,7 +5891,7 @@ function urlBase64ToUint8Array(base64String) {
 
             <h3 className={`text-xl font-bold mt-6 ${isNightBg ? 'text-slate-100' : 'text-gray-800'}`}>Historique</h3>
             {past.length > 0 ? (
-                <div className="bg-white rounded-xl border overflow-hidden shadow-sm">
+                <div className="bg-white rounded-xl border overflow-hidden shadow-sm text-slate-900">
                     {/* Desktop View */}
                     <div className="hidden md:block overflow-x-auto">
                         <table className="w-full text-left bg-white">
@@ -5883,7 +5915,7 @@ function urlBase64ToUint8Array(base64String) {
                     </div>
 
                     {/* Mobile View */}
-                    <div className="md:hidden divide-y divide-gray-100 bg-white">
+                    <div className="md:hidden divide-y divide-gray-100 bg-white text-slate-900">
                         {past.map(ev => (
                             <div 
                                 key={ev.id} 
@@ -6188,6 +6220,24 @@ function urlBase64ToUint8Array(base64String) {
             </div>
           </div>
         </div>
+      )}
+      {/* Live Camera Capture Modal */}
+      {isCameraModalOpen && (
+        <CameraCaptureModal
+          isOpen={isCameraModalOpen}
+          onClose={() => setIsCameraModalOpen(false)}
+          onPhotosSaved={async (newPhotos) => {
+            const ev = events.find(e => e.id === currentRoute.eventId);
+            if (ev) {
+              const currentPhotos = ev.venue_photos || [];
+              await updateContractDb(currentRoute.eventId, { 
+                venue_photos: [...currentPhotos, ...newPhotos] 
+              });
+              toast.success(`${newPhotos.length} photo(s) ajoutée(s) !`);
+            }
+          }}
+          BACKEND_URL={BACKEND_URL}
+        />
       )}
       </div>
     </div>
