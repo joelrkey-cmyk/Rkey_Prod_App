@@ -5,7 +5,8 @@ import {
   MapPin, Building2, Search, Plus, Edit, Trash2, AlertTriangle, 
   CheckCircle2, Image, Wifi, Smartphone, VolumeX, Flame, 
   ChevronLeft, HelpCircle, Check, Combine, FolderOpen, Info,
-  ExternalLink, Calendar, PlusCircle, CheckSquare, X, ArrowUpRight, Star, Camera
+  ExternalLink, Calendar, PlusCircle, CheckSquare, X, ArrowUpRight, Star, Camera,
+  ChevronRight, Download, Eye
 } from 'lucide-react';
 
 import { Button } from './ui/button';
@@ -103,6 +104,17 @@ export default function VenueApp() {
   // Photos upload state
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [importingFromContracts, setImportingFromContracts] = useState(false);
+
+  // Lightbox / Image Previewer State
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  const handleOpenLightbox = (images, index = 0) => {
+    setLightboxImages(images || []);
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  };
 
   const [departmentCities, setDepartmentCities] = useState([]);
   const [loadingCities, setLoadingCities] = useState(false);
@@ -873,6 +885,22 @@ export default function VenueApp() {
                                       </span>
                                     )}
                                   </div>
+                                  {venue.venue_photos && venue.venue_photos.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 mt-2">
+                                      {venue.venue_photos.map((photo, pIdx) => (
+                                        <div 
+                                          key={photo.id || pIdx} 
+                                          className="relative w-12 h-12 rounded-lg border border-slate-100 overflow-hidden cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all flex-shrink-0 group"
+                                          onClick={() => handleOpenLightbox(venue.venue_photos, pIdx)}
+                                        >
+                                          <img src={photo.url} className="w-full h-full object-cover" alt="Lieu" />
+                                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <Eye className="w-3.5 h-3.5 text-white" />
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Action buttons */}
@@ -1279,16 +1307,27 @@ export default function VenueApp() {
                 <Image className="w-4 h-4 text-slate-500" /> Galerie Photos
               </Label>
               <div className="grid grid-cols-4 gap-3">
-                {venueForm.venue_photos.map(p => (
+                {venueForm.venue_photos.map((p, pIdx) => (
                   <div key={p.id} className="relative aspect-video rounded-lg border overflow-hidden bg-slate-100 group">
                     <img src={p.url} alt="Venue" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => handleRemovePhoto(p.id)}
-                      className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full shadow hover:bg-red-700"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenLightbox(venueForm.venue_photos, pIdx)}
+                        className="bg-indigo-600 text-white p-1 rounded-full shadow hover:bg-indigo-700"
+                        title="Aperçu"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePhoto(p.id)}
+                        className="bg-red-600 text-white p-1 rounded-full shadow hover:bg-red-700"
+                        title="Supprimer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
                 
@@ -1417,6 +1456,86 @@ export default function VenueApp() {
               Confirmer la fusion ({selectedMergeSources.length} Salles)
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox / Photo Preview Dialog */}
+      <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+        <DialogContent className="max-w-4xl p-0 bg-slate-950/95 border-none text-white overflow-hidden flex flex-col items-center justify-center min-h-[50vh] max-h-[90vh]">
+          {lightboxImages.length > 0 && (
+            <div className="relative w-full h-full flex flex-col">
+              {/* Header inside lightbox */}
+              <div className="flex justify-between items-center p-4 bg-slate-900/85 z-10 w-full text-white border-b border-slate-800">
+                <span className="text-xs font-semibold text-slate-300">
+                  Photo {lightboxIndex + 1} / {lightboxImages.length}
+                </span>
+                <div className="flex items-center gap-2">
+                  <a 
+                    href={lightboxImages[lightboxIndex].url} 
+                    download 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="p-1.5 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors"
+                    title="Télécharger la photo"
+                  >
+                    <Download className="w-4 h-4" />
+                  </a>
+                  <button 
+                    onClick={() => setLightboxOpen(false)} 
+                    className="p-1.5 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Image and navigation */}
+              <div className="flex-1 flex items-center justify-between p-6 relative min-h-[350px] max-h-[60vh] overflow-hidden">
+                {lightboxImages.length > 1 && (
+                  <button
+                    onClick={() => setLightboxIndex(prev => (prev === 0 ? lightboxImages.length - 1 : prev - 1))}
+                    className="absolute left-4 z-10 p-2 rounded-full bg-black/60 hover:bg-black/95 text-white transition-colors border border-slate-700"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                )}
+
+                <div className="w-full h-full flex items-center justify-center">
+                  <img 
+                    src={lightboxImages[lightboxIndex].url} 
+                    alt={`Photo ${lightboxIndex + 1}`} 
+                    className="max-w-full max-h-[55vh] object-contain rounded select-none shadow-2xl" 
+                  />
+                </div>
+
+                {lightboxImages.length > 1 && (
+                  <button
+                    onClick={() => setLightboxIndex(prev => (prev === lightboxImages.length - 1 ? 0 : prev + 1))}
+                    className="absolute right-4 z-10 p-2 rounded-full bg-black/60 hover:bg-black/95 text-white transition-colors border border-slate-700"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Thumbnails strip */}
+              {lightboxImages.length > 1 && (
+                <div className="p-4 bg-slate-900/60 border-t border-slate-800 flex gap-2 items-center justify-center overflow-x-auto max-w-full">
+                  {lightboxImages.map((img, idx) => (
+                    <button
+                      key={img.id || idx}
+                      onClick={() => setLightboxIndex(idx)}
+                      className={`relative w-12 h-12 rounded border-2 overflow-hidden flex-shrink-0 transition-all ${
+                        idx === lightboxIndex ? 'border-indigo-500 scale-105' : 'border-transparent opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={img.url} className="w-full h-full object-cover" alt="" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -93,6 +93,17 @@ const DjClientApp = ({ isPublic = false }) => {
   const [pdfNotes, setPdfNotes] = useState([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [companySettings, setCompanySettings] = useState(defaultCompanySettings);
+
+  // Lightbox / Image Previewer State
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  const handleOpenLightbox = (images, index = 0) => {
+    setLightboxImages(images || []);
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  };
 
   // PWA Support States
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -5372,6 +5383,16 @@ function urlBase64ToUint8Array(base64String) {
                     <div key={photo.id} className="relative group rounded-lg overflow-hidden border">
                       <img src={photo.url.startsWith('http') ? photo.url : `${BACKEND_URL}${photo.url}`} alt="Venue" className="w-full h-32 object-cover" crossOrigin="anonymous" />
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button 
+                          onClick={() => handleOpenLightbox((ev.venue_photos || []).map(p => ({
+                            ...p,
+                            url: p.url.startsWith('http') ? p.url : `${BACKEND_URL}${p.url}`
+                          })), (ev.venue_photos || []).findIndex(p => p.id === photo.id))} 
+                          className="bg-indigo-600 text-white p-2 rounded-full hover:bg-indigo-700" 
+                          title="Aperçu"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
                         <button onClick={() => handleDeletePhoto(photo.id)} className="bg-red-500 text-white p-2 rounded-full hover:bg-red-600" title="Supprimer">
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -6238,6 +6259,82 @@ function urlBase64ToUint8Array(base64String) {
           }}
           BACKEND_URL={BACKEND_URL}
         />
+      )}
+
+      {/* Lightbox / Photo Preview Modal */}
+      {lightboxOpen && lightboxImages.length > 0 && (
+        <div className="fixed inset-0 bg-slate-950/95 z-[9999] flex flex-col justify-between text-white select-none">
+          {/* Header */}
+          <div className="flex justify-between items-center p-4 bg-slate-900/80 border-b border-slate-800">
+            <span className="text-xs font-semibold text-slate-300">
+              Photo {lightboxIndex + 1} / {lightboxImages.length}
+            </span>
+            <div className="flex items-center gap-3">
+              <a 
+                href={lightboxImages[lightboxIndex].url} 
+                download 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="p-1.5 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors"
+                title="Télécharger"
+              >
+                <Download className="w-4 h-4" />
+              </a>
+              <button 
+                onClick={() => setLightboxOpen(false)} 
+                className="p-1.5 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Main Stage with navigation */}
+          <div className="flex-1 flex items-center justify-between p-4 relative overflow-hidden">
+            {lightboxImages.length > 1 && (
+              <button
+                onClick={() => setLightboxIndex(prev => (prev === 0 ? lightboxImages.length - 1 : prev - 1))}
+                className="absolute left-4 z-10 p-2.5 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors border border-slate-800"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            <div className="w-full h-full flex items-center justify-center p-4">
+              <img 
+                src={lightboxImages[lightboxIndex].url} 
+                alt={`Photo ${lightboxIndex + 1}`} 
+                className="max-w-full max-h-[70vh] object-contain rounded shadow-2xl" 
+              />
+            </div>
+
+            {lightboxImages.length > 1 && (
+              <button
+                onClick={() => setLightboxIndex(prev => (prev === lightboxImages.length - 1 ? 0 : prev + 1))}
+                className="absolute right-4 z-10 p-2.5 rounded-full bg-black/60 hover:bg-black/90 text-white transition-colors border border-slate-800"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          {/* Thumbnails strip */}
+          {lightboxImages.length > 1 && (
+            <div className="p-4 bg-slate-900/50 border-t border-slate-800 flex gap-2 items-center justify-center overflow-x-auto max-w-full">
+              {lightboxImages.map((img, idx) => (
+                <button
+                  key={img.id || idx}
+                  onClick={() => setLightboxIndex(idx)}
+                  className={`relative w-12 h-12 rounded-lg border-2 overflow-hidden flex-shrink-0 transition-all ${
+                    idx === lightboxIndex ? 'border-indigo-500 scale-105' : 'border-transparent opacity-60 hover:opacity-100'
+                  }`}
+                >
+                  <img src={img.url} className="w-full h-full object-cover" alt="" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       </div>
     </div>

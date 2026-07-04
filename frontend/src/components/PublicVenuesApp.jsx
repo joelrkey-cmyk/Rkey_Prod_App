@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import axios from '../services/axiosConfig';
 import { 
   MapPin, Building2, Search, Wifi, Smartphone, VolumeX, Flame, 
-  Image, Compass, HelpCircle, ArrowUpRight
+  Image, Compass, HelpCircle, ArrowUpRight, ChevronLeft, ChevronRight, Download, X
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from './ui/card';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
+import { Dialog, DialogContent } from './ui/dialog';
 
 const API_BASE_URL = '/api';
 
@@ -16,6 +17,17 @@ export default function PublicVenuesApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCity, setSelectedCity] = useState('');
+  
+  // Lightbox / Image Previewer State
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  const handleOpenLightbox = (images, index = 0) => {
+    setLightboxImages(images || []);
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  };
   
   // Filters
   const [filterWifi, setFilterWifi] = useState(false);
@@ -230,11 +242,19 @@ export default function PublicVenuesApp() {
                                 {venue.venue_photos && venue.venue_photos.length > 0 ? (
                                   <div className="grid grid-cols-3 lg:grid-cols-1 gap-2">
                                     {venue.venue_photos.slice(0, 3).map((photo, index) => (
-                                      <div key={photo.id} className="relative aspect-video lg:aspect-[4/3] rounded-lg overflow-hidden border border-slate-100">
-                                        <img src={photo.url} alt="Salle" className="w-full h-full object-cover hover:scale-105 transition-transform duration-300" />
-                                        {index === 2 && venue.venue_photos.length > 3 && (
-                                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-[10px] font-bold">
+                                      <div 
+                                        key={photo.id} 
+                                        className="relative aspect-video lg:aspect-[4/3] rounded-lg overflow-hidden border border-slate-100 cursor-pointer group"
+                                        onClick={() => handleOpenLightbox(venue.venue_photos, index)}
+                                      >
+                                        <img src={photo.url} alt="Salle" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                        {index === 2 && venue.venue_photos.length > 3 ? (
+                                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-[11px] font-bold">
                                             +{venue.venue_photos.length - 3} Photos
+                                          </div>
+                                        ) : (
+                                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <span className="text-[10px] font-bold text-white bg-slate-900/65 px-2 py-1 rounded">Agrandir</span>
                                           </div>
                                         )}
                                       </div>
@@ -259,6 +279,86 @@ export default function PublicVenuesApp() {
           </div>
         )}
       </div>
+
+      {/* Lightbox / Photo Preview Dialog */}
+      <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+        <DialogContent className="max-w-4xl p-0 bg-slate-950/95 border-none text-white overflow-hidden flex flex-col items-center justify-center min-h-[50vh] max-h-[90vh]">
+          {lightboxImages.length > 0 && (
+            <div className="relative w-full h-full flex flex-col">
+              {/* Header inside lightbox */}
+              <div className="flex justify-between items-center p-4 bg-slate-900/85 z-10 w-full text-white border-b border-slate-800">
+                <span className="text-xs font-semibold text-slate-300">
+                  Photo {lightboxIndex + 1} / {lightboxImages.length}
+                </span>
+                <div className="flex items-center gap-2">
+                  <a 
+                    href={lightboxImages[lightboxIndex].url} 
+                    download 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="p-1.5 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors"
+                    title="Télécharger la photo"
+                  >
+                    <Download className="w-4 h-4" />
+                  </a>
+                  <button 
+                    onClick={() => setLightboxOpen(false)} 
+                    className="p-1.5 hover:bg-slate-800 rounded text-slate-300 hover:text-white transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Image and navigation */}
+              <div className="flex-1 flex items-center justify-between p-6 relative min-h-[350px] max-h-[60vh] overflow-hidden">
+                {lightboxImages.length > 1 && (
+                  <button
+                    onClick={() => setLightboxIndex(prev => (prev === 0 ? lightboxImages.length - 1 : prev - 1))}
+                    className="absolute left-4 z-10 p-2 rounded-full bg-black/60 hover:bg-black/95 text-white transition-colors border border-slate-700"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                )}
+
+                <div className="w-full h-full flex items-center justify-center">
+                  <img 
+                    src={lightboxImages[lightboxIndex].url} 
+                    alt={`Photo ${lightboxIndex + 1}`} 
+                    className="max-w-full max-h-[55vh] object-contain rounded select-none shadow-2xl" 
+                  />
+                </div>
+
+                {lightboxImages.length > 1 && (
+                  <button
+                    onClick={() => setLightboxIndex(prev => (prev === lightboxImages.length - 1 ? 0 : prev + 1))}
+                    className="absolute right-4 z-10 p-2 rounded-full bg-black/60 hover:bg-black/95 text-white transition-colors border border-slate-700"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Thumbnails strip */}
+              {lightboxImages.length > 1 && (
+                <div className="p-4 bg-slate-900/60 border-t border-slate-800 flex gap-2 items-center justify-center overflow-x-auto max-w-full">
+                  {lightboxImages.map((img, idx) => (
+                    <button
+                      key={img.id || idx}
+                      onClick={() => setLightboxIndex(idx)}
+                      className={`relative w-12 h-12 rounded border-2 overflow-hidden flex-shrink-0 transition-all ${
+                        idx === lightboxIndex ? 'border-indigo-500 scale-105' : 'border-transparent opacity-60 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={img.url} className="w-full h-full object-cover" alt="" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
