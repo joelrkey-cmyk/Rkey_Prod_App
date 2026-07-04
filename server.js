@@ -5667,7 +5667,11 @@ api.put('/location/djs/:id', authMiddleware, async (req, res) => {
 // Location Quotes
 api.get('/location/quotes', authMiddleware, async (req, res) => {
   const filter = {};
-  if (req.query.archived === 'false') filter.is_archived = { $ne: true };
+  if (req.query.archived === 'true') {
+    filter.is_archived = true;
+  } else if (req.query.archived === 'false') {
+    filter.is_archived = { $ne: true };
+  }
   res.json(cleanList(await db.collection('location_quotes').find(filter, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/location/quotes/:id', authMiddleware, async (req, res) => {
@@ -5813,7 +5817,20 @@ api.patch('/location/quotes/:id', authMiddleware, async (req, res) => {
   res.json(updatedQuote);
 });
 api.patch('/location/quotes/:id/archive', authMiddleware, async (req, res) => {
-  await db.collection('location_quotes').updateOne({ id: req.params.id }, { $set: { status: 'archived', updated_at: new Date().toISOString() } });
+  const isArchived = req.body.is_archived !== false;
+  const nowIso = new Date().toISOString();
+  
+  await db.collection('location_quotes').updateOne(
+    { id: req.params.id },
+    { $set: { is_archived: isArchived, archived_at: isArchived ? nowIso : null, updated_at: nowIso } }
+  );
+  
+  // Also archive/unarchive the linked reservation if it exists
+  await db.collection('location_reservations').updateOne(
+    { quote_id: req.params.id },
+    { $set: { is_archived: isArchived, archived_at: isArchived ? nowIso : null } }
+  );
+
   res.json({ success: true });
 });
 
@@ -6310,7 +6327,13 @@ api.get('/location/reservations', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Error during GCal sync-back in GET endpoint:', err);
   }
-  res.json(cleanList(await db.collection('location_reservations').find({}, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
+  const filter = {};
+  if (req.query.archived === 'true') {
+    filter.is_archived = true;
+  } else if (req.query.archived === 'false') {
+    filter.is_archived = { $ne: true };
+  }
+  res.json(cleanList(await db.collection('location_reservations').find(filter, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
 api.post('/location/reservations', authMiddleware, async (req, res) => {
   // Empêcher les doublons : si une réservation existe déjà pour ce devis, la retourner
@@ -7067,13 +7090,58 @@ api.patch('/rental/workflows/:id', authMiddleware, async (req, res) => {
   res.json(await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
 });
 api.get('/rental/dossier-by-reservation/:reservationId', authMiddleware, async (req, res) => {
+  const reservation = await db.collection('location_reservations').findOne(
+    { id: req.params.reservationId }, { projection: { _id: 0 } }
+  );
+
+  if (reservation) {
+    let quote = null;
+    if (reservation.quote_id) {
+      quote = await db.collection('location_quotes').findOne({ id: reservation.quote_id });
+    }
+
+    if (quote) {
+      reservation.quote_number = quote.quote_number;
+      reservation.quote_documents = quote.documents || [];
+    } else {
+      reservation.quote_documents = [];
+    }
+
+    let items = reservation.equipment_items || [];
+    if (items.length === 0 && quote && Array.isArray(quote.items)) {
+      items = quote.items;
+    }
+    
+    if (Array.isArray(items) && items.length > 0) {
+      const equipmentIds = items.map(item => item.equipment_id).filter(Boolean);
+      if (equipmentIds.length > 0) {
+        const equipments = await db.collection('location_equipment').find(
+          { id: { $in: equipmentIds } },
+          { projection: { id: 1, name: 1, reference: 1 } }
+        ).toArray();
+        const equipmentMap = {};
+        equipments.forEach(eq => {
+          equipmentMap[eq.id] = eq;
+        });
+        reservation.equipment_items = items.map(item => {
+          const eq = equipmentMap[item.equipment_id];
+          return {
+            ...item,
+            name: item.name || item.equipment_name || (eq ? eq.name : 'Matériel inconnu'),
+            reference: item.reference || (eq ? eq.reference : '')
+          };
+        });
+      }
+    }
+  }
+
   const rentalWfs = await db.collection('rental_workflows').find(
     { reservation_id: req.params.reservationId }, { projection: { _id: 0 } }
   ).toArray();
   const deliveryWfs = await db.collection('delivery_workflows').find(
     { reservation_id: req.params.reservationId }, { projection: { _id: 0 } }
   ).toArray();
-  res.json({ rental_workflows: rentalWfs, delivery_workflows: deliveryWfs });
+  res.json({ reservation, rental_workflows: rentalWfs, delivery_workflows: deliveryWfs });
 });
 api.delete('/rental/workflows/:id/photo/:photoIndex', authMiddleware, async (req, res) => {
   try {

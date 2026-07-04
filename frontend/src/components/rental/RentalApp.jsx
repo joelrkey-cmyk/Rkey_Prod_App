@@ -332,11 +332,13 @@ function RentalApp() {
 
   const filteredWithdrawals = withdrawals.filter((item) =>
     (item.client_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.company_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
     (item.quote_number || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredReturns = returns.filter((item) =>
     (item.client_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.company_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
     (item.quote_number || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -464,11 +466,11 @@ function RentalApp() {
                       <div className="space-y-1.5 flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-bold text-slate-950 text-base truncate">
-                            {item.client_name}
+                            {item.company_name || item.client_name}
                           </h3>
-                          {item.company_name && (
+                          {item.company_name && item.client_name && (
                             <span className="px-2 py-0.5 text-xs bg-slate-100 text-slate-600 rounded-md font-medium">
-                              {item.company_name}
+                              {item.client_name}
                             </span>
                           )}
                         </div>
@@ -488,7 +490,7 @@ function RentalApp() {
                           
                           <div className="flex items-center gap-1.5">
                             <DollarSign className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                            <span>Contrat: {item.total_amount?.toFixed(2)}€ | Caution: {item.deposit_amount?.toFixed(2)}€</span>
+                            <span>Contrat: {item.total_amount?.toFixed(2)}€ | Acompte: {item.deposit_amount?.toFixed(2)}€</span>
                           </div>
                         </div>
 
@@ -538,11 +540,11 @@ function RentalApp() {
                       <div className="space-y-1.5 flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-bold text-slate-950 text-base truncate">
-                            {item.client_name}
+                            {item.company_name || item.client_name}
                           </h3>
-                          {item.company_name && (
+                          {item.company_name && item.client_name && (
                             <span className="px-2 py-0.5 text-xs bg-slate-100 text-slate-600 rounded-md font-medium">
-                              {item.company_name}
+                              {item.client_name}
                             </span>
                           )}
                         </div>

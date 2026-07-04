@@ -8,7 +8,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
-import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck, Mail } from 'lucide-react';
+import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck, Mail, Bold, Italic, Underline, List, Link, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Composant autocomplétion intelligente et de recherche pour l'équipement de location
@@ -154,6 +154,197 @@ const EquipmentSearchSelector = ({ equipmentList, value, onChange, placeholder =
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// Assistant d'édition riche avec boutons de mise en forme et de variables pour les courriels
+export const RichTextHelper = ({ value, onChange, placeholder, rows = 8, disabled = false }) => {
+  const textareaRef = useRef(null);
+  const [showPreview, setShowPreview] = useState(false);
+
+  const insertText = (before, after = '') => {
+    if (disabled) return;
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const selected = text.substring(start, end);
+    
+    const replacement = before + (selected || '') + after;
+    const newValue = text.substring(0, start) + replacement + text.substring(end);
+    
+    onChange(newValue);
+    
+    // Put focus back and restore selection
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + before.length, start + before.length + (selected ? selected.length : 0));
+    }, 50);
+  };
+
+  const insertVariable = (variableName) => {
+    insertText(`{{${variableName}}}`);
+  };
+
+  const variablesList = [
+    { name: 'client_name', label: 'Nom du Client' },
+    { name: 'artist_name', label: 'Nom du Freelance/Artiste' },
+    { name: 'event_date', label: 'Date' },
+    { name: 'event_type', label: 'Type Événement' },
+    { name: 'event_location', label: 'Lieu de Prestation' }
+  ];
+
+  // Process template with sample values for live preview
+  const getPreviewHtml = () => {
+    let html = value || '';
+    
+    // Convert lines into paragraphs or br if they don't contain standard HTML blocks
+    const hasHtmlBlocks = /<p>|<div|<br|<ul|<ol|<h\d/i.test(html);
+    if (!hasHtmlBlocks) {
+      html = html.replace(/\n/g, '<br />');
+    }
+    
+    const sampleValues = {
+      client_name: 'Morgane & Maxence Condemi',
+      artist_name: 'Stéphane JACOBY',
+      event_date: 'Samedi 12 Septembre 2026',
+      event_type: 'Mariage',
+      event_location: 'Château de Thanvillé (67)'
+    };
+
+    Object.keys(sampleValues).forEach(key => {
+      const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
+      html = html.replace(regex, `<span class="inline-block text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-md font-bold text-xs mx-0.5">${sampleValues[key]}</span>`);
+    });
+
+    return html;
+  };
+
+  return (
+    <div className="border border-slate-300 rounded-xl overflow-hidden bg-slate-50 flex flex-col shadow-xs">
+      {/* Toolbar */}
+      <div className="bg-slate-100 border-b border-slate-200 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1">
+          {/* Formatting buttons */}
+          <button
+            type="button"
+            onClick={() => insertText('<b>', '</b>')}
+            disabled={disabled}
+            className="h-8 w-8 rounded flex items-center justify-center hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-bold text-sm transition-colors"
+            title="Mettre en gras"
+          >
+            G
+          </button>
+          <button
+            type="button"
+            onClick={() => insertText('<i>', '</i>')}
+            disabled={disabled}
+            className="h-8 w-8 rounded flex items-center justify-center hover:bg-slate-200 text-slate-700 hover:text-slate-900 italic font-serif text-sm transition-colors"
+            title="Mettre en italique"
+          >
+            I
+          </button>
+          <button
+            type="button"
+            onClick={() => insertText('<u>', '</u>')}
+            disabled={disabled}
+            className="h-8 w-8 rounded flex items-center justify-center hover:bg-slate-200 text-slate-700 hover:text-slate-900 underline text-sm transition-colors"
+            title="Souligner"
+          >
+            S
+          </button>
+          
+          <div className="h-4 w-[1px] bg-slate-300 mx-1" />
+          
+          <button
+            type="button"
+            onClick={() => insertText('<p>', '</p>')}
+            disabled={disabled}
+            className="h-8 px-2 rounded flex items-center justify-center hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold transition-colors"
+            title="Paragraphe"
+          >
+            Paragraphe
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => insertText('<ul>\n  <li>', '</li>\n</ul>')}
+            disabled={disabled}
+            className="h-8 px-2 rounded flex items-center justify-center hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold transition-colors"
+            title="Liste à puces"
+          >
+            • Liste
+          </button>
+
+          <button
+            type="button"
+            onClick={() => insertText('<a href="https://rkeyprodapp.fr" target="_blank">', '</a>')}
+            disabled={disabled}
+            className="h-8 px-2 rounded flex items-center justify-center hover:bg-slate-200 text-slate-600 hover:text-slate-900 text-xs font-semibold transition-colors"
+            title="Lien hypertexte"
+          >
+            Lien
+          </button>
+        </div>
+
+        {/* Live Preview Toggle Button */}
+        <button
+          type="button"
+          onClick={() => setShowPreview(!showPreview)}
+          className={`text-xs px-3 py-1.5 rounded-md font-semibold border transition-all flex items-center gap-1.5 ${
+            showPreview 
+              ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 shadow-xs' 
+              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 shadow-2xs'
+          }`}
+        >
+          {showPreview ? "Modifier" : "Aperçu en direct"}
+        </button>
+      </div>
+
+      {/* Variables insert toolbar */}
+      <div className="bg-slate-50 border-b border-slate-200 px-3 py-2 flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">Variables :</span>
+        {variablesList.map(v => (
+          <button
+            key={v.name}
+            type="button"
+            onClick={() => insertVariable(v.name)}
+            disabled={disabled || showPreview}
+            className={`text-[11px] bg-indigo-50/60 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-semibold transition-all ${
+              showPreview ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'
+            }`}
+            title={`Insérer {{${v.name}}}`}
+          >
+            + {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Editor or Preview */}
+      <div className="bg-white flex-1 relative min-h-[220px]">
+        {showPreview ? (
+          <div className="p-4 overflow-y-auto text-sm text-slate-800 leading-relaxed bg-slate-50 min-h-[220px] max-h-[450px]">
+            <div className="font-semibold text-xs text-slate-400 mb-2 uppercase tracking-wider border-b pb-1">Aperçu du courrier destiné au Freelance :</div>
+            <div 
+              className="prose prose-sm max-w-none text-slate-800"
+              dangerouslySetInnerHTML={{ __html: getPreviewHtml() }}
+            />
+          </div>
+        ) : (
+          <textarea
+            ref={textareaRef}
+            placeholder={placeholder}
+            rows={rows}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            disabled={disabled}
+            className="w-full p-4 text-sm font-mono focus:outline-none border-0 resize-y text-slate-800 focus:ring-0 min-h-[220px] bg-white leading-relaxed"
+          />
+        )}
+      </div>
     </div>
   );
 };
@@ -1075,18 +1266,13 @@ export const ConfigurationPage = ({
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-slate-750 text-xs font-semibold">Contenu du message (Formatage simple ou HTML)</Label>
-                        <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-medium">
-                          Variables : {"{"}{"{"}client_name{"}"}{"}"}, {"{"}{"{"}artist_name{"}"}{"}"}, {"{"}{"{"}event_date{"}"}{"}"}, {"{"}{"{"}event_type{"}"}{"}"}, {"{"}{"{"}event_location{"}"}{"}"}
-                        </span>
-                      </div>
-                      <Textarea 
+                      <Label className="text-slate-750 text-xs font-semibold">Contenu du message (Formatage simple ou HTML)</Label>
+                      <RichTextHelper 
                         placeholder="Bonjour {{artist_name}}, nous avons le plaisir de vous annoncer..." 
-                        rows={8}
+                        rows={10}
                         value={newFreelanceTemplate.body}
-                        onChange={(e) => setNewFreelanceTemplate({...newFreelanceTemplate, body: e.target.value})}
-                        className="border-slate-300 bg-white font-mono text-xs"
+                        onChange={(val) => setNewFreelanceTemplate({...newFreelanceTemplate, body: val})}
+                        disabled={isSaving}
                       />
                     </div>
                     <Button 
@@ -1183,19 +1369,13 @@ export const ConfigurationPage = ({
                   />
                 </div>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="freelance-body" className="text-slate-700 font-medium">Contenu de l'email (Formatage simple ou HTML)</Label>
-                    <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-medium">
-                      Variables : {"{"}{"{"}client_name{"}"}{"}"}, {"{"}{"{"}artist_name{"}"}{"}"}, {"{"}{"{"}event_date{"}"}{"}"}, {"{"}{"{"}event_type{"}"}{"}"}, {"{"}{"{"}event_location{"}"}{"}"}
-                    </span>
-                  </div>
-                  <Textarea 
-                    id="freelance-body" 
-                    value={editingFreelanceTemplate.body || ""} 
-                    onChange={(e) => setEditingFreelanceTemplate({...editingFreelanceTemplate, body: e.target.value})} 
-                    rows={12} 
-                    disabled={isSaving} 
-                    className="font-mono text-xs"
+                  <Label htmlFor="freelance-body" className="text-slate-700 font-medium">Contenu de l'email (Formatage simple ou HTML)</Label>
+                  <RichTextHelper 
+                    placeholder="Bonjour {{artist_name}}, ..." 
+                    rows={12}
+                    value={editingFreelanceTemplate.body || ""}
+                    onChange={(val) => setEditingFreelanceTemplate({...editingFreelanceTemplate, body: val})}
+                    disabled={isSaving}
                   />
                 </div>
               </div>

@@ -105,6 +105,8 @@ const DossierModal = ({ open, onClose, reservationId }) => {
   const [dossier, setDossier] = useState(null);
   const [loading, setLoading] = useState(true);
   const [viewer, setViewer] = useState(null);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+  const [previewPdfFilename, setPreviewPdfFilename] = useState('');
 
   useEffect(() => {
     if (open && reservationId) fetchDossier();
@@ -119,6 +121,39 @@ const DossierModal = ({ open, onClose, reservationId }) => {
       toast.error('Erreur chargement dossier');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePreviewAttachment = async (doc) => {
+    try {
+      const res = await axios.get(`${API}/location/quotes/${dossier?.reservation?.quote_id}/documents/${doc.id}?preview=true`, {
+        responseType: 'blob'
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      setPreviewPdfUrl(url);
+      setPreviewPdfFilename(doc.filename);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'ouverture du document");
+    }
+  };
+
+  const handleDownloadAttachment = async (doc) => {
+    try {
+      const res = await axios.get(`${API}/location/quotes/${dossier?.reservation?.quote_id}/documents/${doc.id}`, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', doc.filename);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur de téléchargement");
     }
   };
 
@@ -173,6 +208,47 @@ const DossierModal = ({ open, onClose, reservationId }) => {
     link.click();
   };
 
+  if (previewPdfUrl) {
+    return (
+      <Dialog open={true} onOpenChange={() => {
+        window.URL.revokeObjectURL(previewPdfUrl);
+        setPreviewPdfUrl(null);
+      }}>
+        <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-4 text-slate-800 bg-white">
+          <div className="flex justify-between items-center pb-2 border-b">
+            <h3 className="flex items-center gap-2 text-indigo-800 font-bold text-sm">
+              <Eye className="w-5 h-5 text-indigo-700" />
+              Aperçu - {previewPdfFilename}
+            </h3>
+            <button onClick={() => {
+              window.URL.revokeObjectURL(previewPdfUrl);
+              setPreviewPdfUrl(null);
+            }} className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-500">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="flex-1 w-full overflow-hidden rounded-lg border bg-gray-100 mt-3">
+            <iframe
+              src={previewPdfUrl}
+              className="w-full h-full rounded"
+              title="Aperçu Document PDF"
+            />
+          </div>
+
+          <div className="flex justify-end pt-3">
+            <Button variant="outline" onClick={() => {
+              window.URL.revokeObjectURL(previewPdfUrl);
+              setPreviewPdfUrl(null);
+            }}>
+              Fermer
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   if (viewer) {
     return (
       <Dialog open={true} onOpenChange={() => setViewer(null)}>
@@ -198,12 +274,129 @@ const DossierModal = ({ open, onClose, reservationId }) => {
 
         {loading ? (
           <div className="py-8 text-center text-slate-400 text-sm">Chargement...</div>
-        ) : !withdrawalWf && !deliveryWf ? (
-          <div className="py-8 text-center text-slate-400 text-sm">Aucun dossier disponible pour cette réservation</div>
         ) : (
           <div className="space-y-3">
-            {/* Checklist matériel */}
-            {withdrawalWf && (
+            {/* Informations de la réservation */}
+            {dossier?.reservation && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-3 space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      {dossier.reservation.company_name || dossier.reservation.client_name}
+                    </h3>
+                    {dossier.reservation.company_name && dossier.reservation.client_name && (
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Contact : {dossier.reservation.client_name}
+                      </p>
+                    )}
+                  </div>
+                  <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800">
+                    Statut : {
+                      {
+                        'pending': 'En attente',
+                        'accepted': 'Acceptée',
+                        'equipment_withdrawn': 'Matériel retiré',
+                        'delivered': 'Livré',
+                        'equipment_returned': 'Matériel rendu',
+                        'returned': 'Retourné',
+                        'dispute': 'Litige',
+                        'completed': 'Terminé',
+                        'cancelled': 'Annulé'
+                      }[dossier.reservation.status] || dossier.reservation.status
+                    }
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
+                  <div>
+                    <span className="font-semibold">Période :</span> du {dossier.reservation.start_date ? new Date(dossier.reservation.start_date).toLocaleDateString('fr-FR') : '-'} au {dossier.reservation.end_date ? new Date(dossier.reservation.end_date).toLocaleDateString('fr-FR') : '-'}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Montant Contrat :</span> {dossier.reservation.total_amount?.toFixed(2)} EUR
+                  </div>
+                  <div>
+                    <span className="font-semibold">Acompte :</span> {dossier.reservation.deposit_amount?.toFixed(2) || '0.00'} EUR
+                  </div>
+                  <div>
+                    <span className="font-semibold">Caution :</span> {dossier.reservation.guarantee_amount?.toFixed(2) || '0.00'} EUR
+                  </div>
+                  {dossier.reservation.delivery_address && (
+                    <div className="col-span-2">
+                      <span className="font-semibold">Adresse de livraison :</span> {dossier.reservation.delivery_address}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Pièces jointes (Documents) */}
+            {dossier?.reservation?.quote_documents && dossier.reservation.quote_documents.length > 0 && (
+              <Section title={`Pièces jointes & Documents (${dossier.reservation.quote_documents.length})`} icon={FileText} defaultOpen={true}>
+                <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto pr-1 p-2 bg-white">
+                  {dossier.reservation.quote_documents.map((doc, idx) => (
+                    <div key={idx} className="flex justify-between items-center py-2 text-sm text-slate-700">
+                      <div className="flex items-center gap-2 truncate pr-2">
+                        <FileText className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                        <span className="truncate font-medium text-slate-800" title={doc.filename}>{doc.filename}</span>
+                        {doc.category && (
+                          <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded flex-shrink-0 font-medium">
+                            {doc.category}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded"
+                          title="Aperçu"
+                          onClick={() => handlePreviewAttachment(doc)}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded"
+                          title="Télécharger"
+                          onClick={() => handleDownloadAttachment(doc)}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {!withdrawalWf && !deliveryWf ? (
+              <>
+                {dossier?.reservation && dossier.reservation.equipment_items && dossier.reservation.equipment_items.length > 0 && (
+                  <Section title="Matériel réservé" icon={FileCheck} defaultOpen={true}>
+                    <div className="divide-y divide-slate-100 max-h-60 overflow-y-auto pr-1">
+                      {dossier.reservation.equipment_items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center py-2 text-sm text-slate-700">
+                          <span>{item.name || item.equipment_name}</span>
+                          <span className="font-medium text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-xs">x{item.quantity}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                )}
+
+                <div className="text-center p-6 bg-slate-50 border border-dashed border-slate-200 rounded-lg">
+                  <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-600 font-medium">Aucun document de suivi pour le moment</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Les bons de retrait, bons de livraison ou photos de l'état du matériel seront visibles ici dès que l'opération aura débuté.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Checklist matériel */}
+                {withdrawalWf && (
               <Section title="Liste du matériel" icon={FileCheck} defaultOpen={true}>
                 <div className="space-y-1.5">
                   {(withdrawalWf.checklist || []).filter(item => !item.isLastMinute).map((item, idx) => (
@@ -419,6 +612,8 @@ const DossierModal = ({ open, onClose, reservationId }) => {
                   )}
                 </div>
               </Section>
+            )}
+              </>
             )}
           </div>
         )}

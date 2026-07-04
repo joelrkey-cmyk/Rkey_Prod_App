@@ -21,7 +21,7 @@ import FormSubmissionsSelector from "./FormSubmissionsSelector";
 import { fallbackPredefinedNotes, musicStyles, eventCategories, defaultHypnosisProgram, defaultCompanySettings } from "./contracts2/constants";
 import { generateContractHTML } from "./contracts2/htmlGenerator";
 import { generatePDFFromHTML as generatePDFFromHTMLImported, printContractWithSignature, generateContractAndGuide, getCompiledGuideBlob, previewContractPdf, getFormattedEventDate } from "./contracts2/pdfGenerator";
-import { ConfigurationPage } from "./contracts2/ConfigurationPage";
+import { ConfigurationPage, RichTextHelper } from "./contracts2/ConfigurationPage";
 import { ContractPreview } from "./contracts2/ContractPreview";
 import { ContractHistory } from "./contracts2/ContractHistory";
 import { SignaturePadModal } from "./contracts2/SignaturePadModal";
@@ -5116,11 +5116,11 @@ function Contracts2App() {
 
             <div className="space-y-1">
               <Label className="text-xs font-bold text-slate-700">Message (Formatage simple ou HTML)</Label>
-              <Textarea 
+              <RichTextHelper 
                 value={notifEmailBody} 
-                onChange={(e) => setNotifEmailBody(e.target.value)}
-                rows={8}
-                className="border-slate-300 shadow-sm font-sans text-sm focus:ring-indigo-500 focus:border-indigo-500"
+                onChange={(val) => setNotifEmailBody(val)}
+                rows={10}
+                disabled={notifIsSending}
               />
             </div>
           </div>
