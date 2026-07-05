@@ -1822,7 +1822,7 @@ async function connectDB() {
       console.error('Error running diagnostic:', diagErr);
     }
 
-    await ensureAdminUser();
+    await ensureAdminUser(client);
 
     // Legacy contracts automation import
     try {
@@ -2146,7 +2146,7 @@ function buildUserResponse(user) {
   };
 }
 
-async function ensureAdminUser() {
+async function ensureAdminUser(client) {
   const adminUser = process.env.ADMIN_USERNAME || 'rkeyprod';
   const adminPass = process.env.ADMIN_PASSWORD || 'agencemarcko';
   const existing = await db.collection('users').findOne({ username: adminUser });
@@ -2169,6 +2169,120 @@ async function ensureAdminUser() {
     } else {
       console.log(`Admin '${adminUser}' exists and password is synchronized`);
     }
+  }
+
+  // Synchronize users and accounts from the default/test database to the active database
+  if (client) {
+    try {
+      const defaultDb = client.db(); // This resolves to 'test' or whichever DB is in connection string URL
+      const currentDbName = db.databaseName || DB_NAME;
+      if (defaultDb.databaseName && defaultDb.databaseName !== currentDbName) {
+        console.log(`Performing cross-database sync from '${defaultDb.databaseName}' to active '${currentDbName}'...`);
+        
+        // 1. Sync from defaultDb.users to activeDb.users
+        try {
+          const defaultUsers = await defaultDb.collection('users').find({}).toArray();
+          for (const tu of defaultUsers) {
+            if (!tu.username) continue;
+            const existingInActive = await db.collection('users').findOne({ username: tu.username });
+            if (!existingInActive) {
+              const newUser = {
+                id: tu.id || uuidv4().substring(0, 8),
+                username: tu.username,
+                full_name: tu.full_name || tu.username,
+                hashed_password: tu.hashed_password || hashPassword('agencemarcko'),
+                role: tu.role || 'admin',
+                allowed_apps: tu.allowed_apps || ALL_APPS,
+                interface_type: tu.interface_type || 'desktop',
+                is_active: tu.is_active !== false,
+                created_at: tu.created_at || tu.createdAt || new Date().toISOString()
+              };
+              await db.collection('users').insertOne(newUser);
+              console.log(`Synced user '${tu.username}' from default DB to active DB`);
+            }
+          }
+        } catch (errUsers) {
+          console.error('Error syncing users from default DB:', errUsers);
+        }
+
+        // 2. Sync from defaultDb.accounts to activeDb.users
+        try {
+          const collections = await defaultDb.listCollections().toArray();
+          if (collections.some(c => c.name === 'accounts')) {
+            const defaultAccounts = await defaultDb.collection('accounts').find({}).toArray();
+            for (const ta of defaultAccounts) {
+              if (!ta.username) continue;
+              const existingInActive = await db.collection('users').findOne({ username: ta.username });
+              if (!existingInActive) {
+                const newUser = {
+                  id: ta.id || uuidv4().substring(0, 8),
+                  username: ta.username,
+                  full_name: ta.dj_name || ta.username,
+                  hashed_password: hashPassword(ta.password || 'admin_password_123'),
+                  role: ta.is_super_admin ? 'admin' : 'custom',
+                  allowed_apps: ALL_APPS,
+                  interface_type: 'desktop',
+                  is_active: true,
+                  created_at: ta.createdAt || new Date().toISOString()
+                };
+                await db.collection('users').insertOne(newUser);
+                console.log(`Synced account '${ta.username}' from default DB to active DB`);
+              } else {
+                if (ta.password && !verifyPassword(ta.password, existingInActive.hashed_password)) {
+                  await db.collection('users').updateOne(
+                    { username: ta.username },
+                    { $set: { hashed_password: hashPassword(ta.password) } }
+                  );
+                  console.log(`Updated synced user '${ta.username}' password in active DB to match accounts`);
+                }
+              }
+            }
+          }
+        } catch (errAccs) {
+          console.error('Error syncing accounts from default DB:', errAccs);
+        }
+      }
+    } catch (syncErr) {
+      console.error('Error during cross-database synchronization:', syncErr);
+    }
+  }
+
+  // Also keep the simple local accounts synchronization as fallback
+  try {
+    const collections = await db.listCollections().toArray();
+    if (collections.some(c => c.name === 'accounts')) {
+      const accounts = await db.collection('accounts').find({}).toArray();
+      for (const acc of accounts) {
+        if (!acc.username) continue;
+        const existingUser = await db.collection('users').findOne({ username: acc.username });
+        const role = acc.is_super_admin ? 'admin' : 'custom';
+        if (!existingUser) {
+          const newUser = {
+            id: acc.id || uuidv4().substring(0, 8),
+            username: acc.username,
+            full_name: acc.dj_name || acc.username,
+            hashed_password: hashPassword(acc.password || 'admin_password_123'),
+            role: role,
+            allowed_apps: ALL_APPS,
+            interface_type: 'desktop',
+            is_active: true,
+            created_at: acc.createdAt || new Date().toISOString()
+          };
+          await db.collection('users').insertOne(newUser);
+          console.log(`Synced local account '${acc.username}' to users collection`);
+        } else {
+          if (acc.password && !verifyPassword(acc.password, existingUser.hashed_password)) {
+            await db.collection('users').updateOne(
+              { username: acc.username },
+              { $set: { hashed_password: hashPassword(acc.password) } }
+            );
+            console.log(`Updated synced local user '${acc.username}' password to match accounts collection`);
+          }
+        }
+      }
+    }
+  } catch (syncErr) {
+    console.error('Error synchronizing local accounts to users:', syncErr);
   }
 }
 
@@ -4248,14 +4362,39 @@ api.post('/venues/merge', async (req, res) => {
   }
 });
 
+const CONTRACTS_LIST_PROJECTION = {
+  _id: 0,
+  id: 1,
+  client_info: 1,
+  dj_profile: 1,
+  dj_profile_data: 1,
+  base_price: 1,
+  frais_mandat: 1,
+  cachet_artiste: 1,
+  pack_sonorisation: 1,
+  pack_lumiere: 1,
+  selected_options: 1,
+  discount_amount: 1,
+  invoice_number: 1,
+  status: 1,
+  cancellation_observation: 1,
+  created_at: 1,
+  updated_at: 1,
+  "event_documents.id": 1,
+  "event_documents.label": 1,
+  "event_documents.filename": 1,
+  "event_documents.hiddenForClient": 1,
+  "event_documents.uploadedAt": 1
+};
+
 api.get('/contracts2', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('contracts2').find({ status: { $nin: ['trash'] } }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
+  res.json(cleanList(await db.collection('contracts2').find({ status: { $nin: ['trash', 'deleted'] } }, { projection: CONTRACTS_LIST_PROJECTION }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/contracts2/trash', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('contracts2').find({ status: 'trash' }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
+  res.json(cleanList(await db.collection('contracts2').find({ status: { $in: ['trash', 'deleted'] } }, { projection: CONTRACTS_LIST_PROJECTION }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/contracts2/archived', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('contracts2').find({ status: { $in: ['archived', 'cancelled'] } }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
+  res.json(cleanList(await db.collection('contracts2').find({ status: { $in: ['archived', 'cancelled'] } }, { projection: CONTRACTS_LIST_PROJECTION }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/contracts2/signatures', authMiddleware, async (req, res) => {
   const contracts = await db.collection('contracts2').find({}, { projection: { _id: 0, id: 1, client_name: 1, signatures: 1, status: 1 } }).toArray();

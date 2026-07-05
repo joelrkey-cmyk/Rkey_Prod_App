@@ -731,8 +731,17 @@ function Contracts2App() {
     catch (error) { toast.error("Erreur lors du chargement des archives"); console.error(error); }
   };
 
-  const handleManageAttachments = (contract) => {
-    setSelectedContractForAttachments(contract);
+  const handleManageAttachments = async (contract) => {
+    let fullContract = contract;
+    if (contract && contract.id && (!contract.cgv_text || !contract.predefined_notes)) {
+      try {
+        const response = await axios.get(`${API}/contracts2/${contract.id}`);
+        fullContract = response.data;
+      } catch (error) {
+        console.error("Error loading full contract:", error);
+      }
+    }
+    setSelectedContractForAttachments(fullContract);
     setShowAttachmentsDialog(true);
   };
 
@@ -2093,7 +2102,17 @@ function Contracts2App() {
     }
   };
 
-  const loadContract = (contract) => {
+  const loadContract = async (contract) => {
+    let fullContract = contract;
+    if (contract && contract.id && (!contract.cgv_text || !contract.predefined_notes)) {
+      try {
+        const response = await axios.get(`${API}/contracts2/${contract.id}`);
+        fullContract = response.data;
+      } catch (error) {
+        console.error("Error loading full contract:", error);
+      }
+    }
+    contract = fullContract;
     setSelectedDjProfile(contract.dj_profile || "");
     setClientInfo({
       name: contract.client_info.name || "", company: contract.client_info.company || "",
@@ -2166,7 +2185,17 @@ function Contracts2App() {
     toast.success("Contrat chargé pour modification");
   };
 
-  const duplicateContract = (contract) => {
+  const duplicateContract = async (contract) => {
+    let fullContract = contract;
+    if (contract && contract.id && (!contract.cgv_text || !contract.predefined_notes)) {
+      try {
+        const response = await axios.get(`${API}/contracts2/${contract.id}`);
+        fullContract = response.data;
+      } catch (error) {
+        console.error("Error loading full contract:", error);
+      }
+    }
+    contract = fullContract;
     setSelectedDjProfile(contract.dj_profile || "");
     setClientInfo({
       name: contract.client_info?.name || "", company: contract.client_info?.company || "",
@@ -2244,11 +2273,30 @@ function Contracts2App() {
   // PDF / EMAIL ACTIONS
   // ═══════════════════════════════════════════════════
 
-  const handlePrintContract = (contract) => {
-    generateContractAndGuide(contract, generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService);
+  const handlePrintContract = async (contract) => {
+    let fullContract = contract;
+    if (contract && contract.id && (!contract.cgv_text || !contract.predefined_notes)) {
+      try {
+        const response = await axios.get(`${API}/contracts2/${contract.id}`);
+        fullContract = response.data;
+      } catch (error) {
+        console.error("Error loading full contract:", error);
+      }
+    }
+    generateContractAndGuide(fullContract, generateContractHTMLLocal, loadSignatureImages, selectedPdfNotes, apiService);
   };
 
-  const handlePreviewContract = (contract) => {
+  const handlePreviewContract = async (contract) => {
+    let fullContract = contract;
+    if (contract && contract.id && (!contract.cgv_text || !contract.predefined_notes)) {
+      try {
+        const response = await axios.get(`${API}/contracts2/${contract.id}`);
+        fullContract = response.data;
+      } catch (error) {
+        console.error("Error loading full contract:", error);
+      }
+    }
+    contract = fullContract;
     const isDir = isContractDirigeant(contract);
     const isMandat = contract.contract_mode === 'mandataire' && !isDir;
     const isEntreprise = contract.contract_mode === 'entreprise' && !isDir;
