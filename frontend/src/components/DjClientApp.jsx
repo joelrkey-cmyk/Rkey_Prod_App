@@ -484,7 +484,7 @@ function urlBase64ToUint8Array(base64String) {
       let allContracts = [];
       
       if (isPublic && slug) {
-         const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${slug}`);
+         const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${encodeURIComponent(slug)}`);
          if (publicRes.ok) {
              const data = await publicRes.json();
              allContracts = data.events || [];
@@ -506,8 +506,8 @@ function urlBase64ToUint8Array(base64String) {
              }
          }
       } else {
-          const [archivedRes, optionsRes] = await Promise.all([
-              fetch(`${BACKEND_URL}/api/contracts2/archived`, { headers }),
+          const [contractsRes, optionsRes] = await Promise.all([
+              fetch(`${BACKEND_URL}/api/dj-client/admin/contracts`, { headers }),
               fetch(`${BACKEND_URL}/api/material-options`, { headers })
           ]);
 
@@ -522,8 +522,8 @@ function urlBase64ToUint8Array(base64String) {
               }
           }
           
-          if (archivedRes.ok) {
-              const data = await archivedRes.json();
+          if (contractsRes.ok) {
+              const data = await contractsRes.json();
               allContracts = [...allContracts, ...data];
           }
       }
@@ -6051,7 +6051,7 @@ function urlBase64ToUint8Array(base64String) {
     );
   }
 
-  if (isPublic && events.length === 0) {
+  if (isPublic && events.length === 0 && currentRoute.role !== 'dj') {
     return (
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-950 select-none">
         <div className="flex flex-col items-center space-y-6 text-center max-w-md bg-slate-900/40 backdrop-blur-md p-8 rounded-3xl border border-slate-900 shadow-2xl relative">

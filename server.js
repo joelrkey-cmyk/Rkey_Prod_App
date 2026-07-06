@@ -623,18 +623,38 @@ try {
   console.error('Failed to initialize Google Cloud Storage at startup:', err);
 }
 
+const signedUrlCache = new Map();
+
 // Generates a GCS signed URL (valid for 12 hours) securely using the service account private key in memory.
 // This allows Hostinger platforms to stream directly from Google CDN without publicizing the bucket (no allUsers needed!).
 async function getGcsSignedUrl(gcsPath) {
   if (!getGcsBucket()) return null;
+  
+  const cacheKey = gcsPath;
+  const cached = signedUrlCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+
   try {
     const file = bucket.file(gcsPath);
-    // V4 signed URL with 12 hour expiration
-    const [url] = await file.getSignedUrl({
+    // V4 signed URL with 12 hour expiration, with a robust 1.2-second timeout safety guard
+    const urlPromise = file.getSignedUrl({
       version: 'v4',
       action: 'read',
       expires: Date.now() + 12 * 60 * 60 * 1000, // 12 hours
     });
+    
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('GCS signing timed out after 1200ms')), 1200)
+    );
+
+    const [url] = await Promise.race([urlPromise, timeoutPromise]);
+    
+    // Cache for 11 hours (safely within 12h expiration)
+    const expiresAt = Date.now() + 11 * 60 * 60 * 1000;
+    signedUrlCache.set(cacheKey, { url, expiresAt });
+    
     return url;
   } catch (err) {
     console.error(`[GCS SIGNED URL ERROR] Failed to sign path "${gcsPath}":`, err.message);
@@ -664,51 +684,62 @@ async function getGcsUseDirectUrls() {
 // Recursively processes any response object or list returned by standard API routes, and transforms
 // any GCS reference like "/gcs/folder/file.ext" into a secure GCS direct-access signed URL.
 async function autoSignGcsUrlsInObject(obj, useDirectUrls = null) {
-  if (!obj || !getGcsBucket()) return obj;
-  
-  if (useDirectUrls === null) {
-    useDirectUrls = await getGcsUseDirectUrls();
-  }
-  
-  if (!useDirectUrls) return obj; // If direct URLs are disabled (standard proxy mode), send clean DB paths
-  
-  if (Array.isArray(obj)) {
-    const signedArray = [];
-    for (let item of obj) {
-      signedArray.push(await autoSignGcsUrlsInObject(item, useDirectUrls));
+  try {
+    if (!obj || !getGcsBucket()) return obj;
+    
+    if (useDirectUrls === null) {
+      useDirectUrls = await getGcsUseDirectUrls();
     }
-    return signedArray;
-  }
-  
-  if (typeof obj === 'object') {
-    const cloned = { ...obj };
-    for (const key of Object.keys(cloned)) {
-      const val = cloned[key];
-      if (typeof val === 'string' && (val.includes('/gcs/') || val.includes('gcs/'))) {
-        let gcsPath = val;
-        if (gcsPath.includes('api/gcs/')) {
-          gcsPath = gcsPath.substring(gcsPath.indexOf('api/gcs/') + 8);
-        } else if (gcsPath.includes('gcs/')) {
-          gcsPath = gcsPath.substring(gcsPath.indexOf('gcs/') + 4);
-        }
-        if (gcsPath.startsWith('/')) {
-          gcsPath = gcsPath.substring(1);
-        }
-        if (gcsPath.includes('?')) {
-          gcsPath = gcsPath.split('?')[0];
-        }
-        const signedUrl = await getGcsSignedUrl(gcsPath);
-        if (signedUrl) {
-          cloned[key] = signedUrl;
-        }
-      } else if (val && typeof val === 'object' && !(val instanceof Date)) {
-        cloned[key] = await autoSignGcsUrlsInObject(val, useDirectUrls);
+    
+    if (!useDirectUrls) return obj; // If direct URLs are disabled (standard proxy mode), send clean DB paths
+    
+    if (Array.isArray(obj)) {
+      return Promise.all(obj.map(item => autoSignGcsUrlsInObject(item, useDirectUrls)));
+    }
+    
+    if (typeof obj === 'object' && !(obj instanceof Date)) {
+      // Guard against non-plain objects like MongoDB ObjectIds, buffers, etc.
+      if (obj.constructor && obj.constructor.name !== 'Object' && obj.constructor.name !== 'Array') {
+        return obj;
       }
+      
+      const cloned = { ...obj };
+      const keys = Object.keys(cloned);
+      const signedValues = await Promise.all(
+        keys.map(async (key) => {
+          const val = cloned[key];
+          if (typeof val === 'string' && (val.includes('/gcs/') || val.includes('gcs/'))) {
+            let gcsPath = val;
+            if (gcsPath.includes('api/gcs/')) {
+              gcsPath = gcsPath.substring(gcsPath.indexOf('api/gcs/') + 8);
+            } else if (gcsPath.includes('gcs/')) {
+              gcsPath = gcsPath.substring(gcsPath.indexOf('gcs/') + 4);
+            }
+            if (gcsPath.startsWith('/')) {
+              gcsPath = gcsPath.substring(1);
+            }
+            if (gcsPath.includes('?')) {
+              gcsPath = gcsPath.split('?')[0];
+            }
+            const signedUrl = await getGcsSignedUrl(gcsPath);
+            return signedUrl || val;
+          } else if (val && typeof val === 'object' && !(val instanceof Date)) {
+            return autoSignGcsUrlsInObject(val, useDirectUrls);
+          }
+          return val;
+        })
+      );
+      for (let i = 0; i < keys.length; i++) {
+        cloned[keys[i]] = signedValues[i];
+      }
+      return cloned;
     }
-    return cloned;
+    
+    return obj;
+  } catch (err) {
+    console.error('Error in autoSignGcsUrlsInObject:', err);
+    return obj;
   }
-  
-  return obj;
 }
 
 async function uploadBase64ToGcs(base64String, folder = 'uploads') {
@@ -2632,6 +2663,19 @@ api.get('/dj-client/pending-alerts', authMiddleware, async (req, res) => {
   }
 });
 
+api.get('/dj-client/admin/contracts', authMiddleware, async (req, res) => {
+  try {
+    const contracts = await db.collection('contracts2').find(
+      { status: { $nin: ['trash', 'deleted', 'draft'] } },
+      { projection: { cgv_text: 0, predefined_notes: 0, _id: 0 } }
+    ).toArray();
+    res.json(cleanList(contracts));
+  } catch (error) {
+    console.error("Error in /dj-client/admin/contracts:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ══════════ GLOBAL SETTINGS ══════════
 api.get('/global-settings', authMiddleware, async (req, res) => {
   const settings = await db.collection('global_settings').findOne({ type: 'company' }, { projection: { _id: 0, email_signature_image: 0 } });
@@ -3249,8 +3293,39 @@ api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
 // END OF CONTRACT TECHNICAL PDF NOTES
 // ═══════════════════════════════════════════════════
 
+// Public DJ-Client Response Cache for extreme speedups
+const djClientResponseCache = new Map();
+
+function clearDjClientResponseCache() {
+  djClientResponseCache.clear();
+  console.log('🧹 Cleared public DJ-Client response cache.');
+}
+
+function makeAccentInsensitivePattern(str) {
+  if (!str) return '';
+  return String(str)
+    .toLowerCase()
+    .replace(/[aàáâäãåæ]/g, '[aàáâäãåæ]')
+    .replace(/[eèéêë]/g, '[eèéêë]')
+    .replace(/[iìíîï]/g, '[iìíîï]')
+    .replace(/[oòóôõöø]/g, '[oòóôõöø]')
+    .replace(/[uùúûü]/g, '[uùúûü]')
+    .replace(/[cç]/g, '[cç]');
+}
+
 api.get('/public/dj-client/:slug', async (req, res) => {
-  const slug = req.params.slug.toLowerCase();
+  let slug = req.params.slug.toLowerCase();
+  try {
+    slug = decodeURIComponent(slug);
+  } catch (e) {
+    console.error("Error decoding slug:", e);
+  }
+  
+  const cacheKey = slug;
+  const cached = djClientResponseCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return res.json(cached.data);
+  }
   
   const normalizeString = (str) => {
     if (!str) return '';
@@ -3270,8 +3345,64 @@ api.get('/public/dj-client/:slug', async (req, res) => {
            normalizeString(p.id) === normalizedRequestedSlug;
   });
 
-  // Fetch only sent, archived, or completed contracts to exclude drafts/tests/simulations!
-  const contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0 } }).toArray();
+  const isDj = !!matchedDjProfile;
+  let contractsQuery = {};
+
+  if (isDj) {
+    // Highly targeted query for DJs to bypass fetching all 100+ documents
+    const orConditions = [];
+    if (matchedDjProfile.id) {
+      orConditions.push({ dj_profile: matchedDjProfile.id });
+    }
+    if (matchedDjProfile._id) {
+      orConditions.push({ dj_profile: matchedDjProfile._id.toString() });
+    }
+    if (matchedDjProfile.nom_artistique) {
+      const pattern = makeAccentInsensitivePattern(matchedDjProfile.nom_artistique);
+      orConditions.push({ 'dj_profile_data.nom_artistique': new RegExp('^' + pattern + '$', 'i') });
+    }
+    // Historical matches
+    if (normalizedRequestedSlug === 'stefanedison' || normalizedRequestedSlug === 'stephane') {
+      orConditions.push({ dj_profile: 'stephane' });
+    } else if (normalizedRequestedSlug === 'joelrkey' || normalizedRequestedSlug === 'joel') {
+      orConditions.push({ dj_profile: 'joel' });
+    }
+    if (orConditions.length > 0) {
+      contractsQuery = { $or: orConditions };
+    }
+  } else {
+    // Highly targeted, accent-insensitive query for Clients
+    const parts = slug.split('-');
+    const clientParts = parts.slice(1).filter(p => p.length >= 3);
+    if (clientParts.length > 0) {
+      const conditions = clientParts.map(part => {
+        const pattern = makeAccentInsensitivePattern(part);
+        const regex = new RegExp(pattern, 'i');
+        return {
+          $or: [
+            { client_name: regex },
+            { 'client_info.name': regex }
+          ]
+        };
+      });
+      contractsQuery = { $and: conditions };
+    }
+  }
+
+  // Filter only active contracts (sent, archived, completed)
+  contractsQuery.status = { $in: ['sent', 'archived', 'completed'] };
+
+  let contracts = [];
+  try {
+    contracts = await db.collection('contracts2').find(contractsQuery, { projection: { _id: 0 } }).toArray();
+  } catch (dbErr) {
+    console.error("Error executing optimized public contract search:", dbErr);
+  }
+
+  // Safe fallback: if nothing is matched by our targeted search, fetch all to prevent 404s
+  if (contracts.length === 0) {
+    contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0 } }).toArray();
+  }
   
   const mappedEvents = contracts.map(c => {
     const info = c.client_info || {};
@@ -3344,29 +3475,40 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     youtube_tutorial_url: "",
   };
 
+  let responseData = null;
+
   if (djEvents.length > 0 || matchedDjProfile) {
     const djName = matchedDjProfile 
       ? (matchedDjProfile.nom_artistique || matchedDjProfile.nom_complet) 
       : (djEvents[0]?.dj_profile_data?.nom_artistique || djEvents[0]?.dj_profile || "DJ");
     const signedEvents = await autoSignGcsUrlsInObject(djEvents);
-    return res.json({ role: 'dj', events: signedEvents, slug, djName, availableOptions: options, companySettings });
-  }
-  
-  // Check if it's a Client slug
-  const clientEvents = mappedEvents.filter(e => {
-    return normalizeString(e.clientSlug) === normalizedRequestedSlug;
-  });
-
-  if (clientEvents.length > 0) {
-    const cleanedClientEvents = clientEvents.map(event => {
-      const cloned = { ...event };
-      if (cloned.event_documents) {
-        cloned.event_documents = cloned.event_documents.filter(d => !d.hiddenForClient);
-      }
-      return cloned;
+    responseData = { role: 'dj', events: signedEvents, slug, djName, availableOptions: options, companySettings };
+  } else {
+    // Check if it's a Client slug
+    const clientEvents = mappedEvents.filter(e => {
+      return normalizeString(e.clientSlug) === normalizedRequestedSlug;
     });
-    const signedEvents = await autoSignGcsUrlsInObject(cleanedClientEvents);
-    return res.json({ role: 'client', events: signedEvents, slug, availableOptions: options, companySettings });
+
+    if (clientEvents.length > 0) {
+      const cleanedClientEvents = clientEvents.map(event => {
+        const cloned = { ...event };
+        if (cloned.event_documents) {
+          cloned.event_documents = cloned.event_documents.filter(d => !d.hiddenForClient);
+        }
+        return cloned;
+      });
+      const signedEvents = await autoSignGcsUrlsInObject(cleanedClientEvents);
+      responseData = { role: 'client', events: signedEvents, slug, availableOptions: options, companySettings };
+    }
+  }
+
+  if (responseData) {
+    // Cache the response object in memory for 30 seconds
+    djClientResponseCache.set(cacheKey, {
+      data: responseData,
+      expiresAt: Date.now() + 30000
+    });
+    return res.json(responseData);
   }
   
   return res.status(404).json({ error: 'Not found' });
@@ -3376,6 +3518,10 @@ api.put('/public/dj-client/:id', async (req, res) => {
   const id = req.params.id;
   await db.collection('contracts2').updateOne({ id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
   await syncVenueFromContract(id, req.body);
+  
+  // Clear the public DJ-Client cache so the client's page updates immediately
+  clearDjClientResponseCache();
+  
   res.json({ success: true });
 });
 
