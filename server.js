@@ -303,7 +303,7 @@ function sanitizePrivateKey(keyString) {
   
   // Inject robust key correction for the known corrupted service account key
   if (clean.includes('BKL5L2nssoiWp8UnwjwiWw=')) {
-    clean = clean.replace('BKL5L2nssoiWp8UnwjwiWw=', 'BKL5L2nssoiWp8UnwjwiWwA=');
+    clean = clean.replace('BKL5L2nssoiWp8UnwjwiWw=', 'BKL5L2nssoiWp8UnwjwiW2w=');
   }
   
   // Extract the exact BEGIN and END markers and the base64 content
@@ -615,6 +615,78 @@ function getGoogleCredentials() {
   return null;
 }
 
+function getGoogleCalendarCredentials() {
+  if (process.env.GOOGLE_CALENDAR_CREDENTIALS_JSON) {
+    let creds = null;
+    let credStr = process.env.GOOGLE_CALENDAR_CREDENTIALS_JSON.trim();
+    
+    if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
+    if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
+    
+    credStr = credStr.trim();
+    if (credStr.includes('\\"')) {
+      credStr = credStr.replace(/\\"/g, '"');
+    }
+
+    try {
+      creds = JSON.parse(credStr);
+    } catch (e) {
+      console.warn('Standard JSON.parse failed for GOOGLE_CALENDAR_CREDENTIALS_JSON, trying Regex fallback:', e.message);
+      try {
+        const fields = {};
+        const regexes = {
+          type: /"type"\s*:\s*"([^"]+)"/,
+          project_id: /"project_id"\s*:\s*"([^"]+)"/,
+          private_key_id: /"private_key_id"\s*:\s*"([^"]+)"/,
+          private_key: /"private_key"\s*:\s*"([\s\S]*?)"/,
+          client_email: /"client_email"\s*:\s*"([^"]+)"/,
+          client_id: /"client_id"\s*:\s*"([^"]+)"/,
+          auth_uri: /"auth_uri"\s*:\s*"([^"]+)"/,
+          token_uri: /"token_uri"\s*:\s*"([^"]+)"/,
+          auth_provider_x509_cert_url: /"auth_provider_x509_cert_url"\s*:\s*"([^"]+)"/,
+          client_x509_cert_url: /"client_x509_cert_url"\s*:\s*"([^"]+)"/
+        };
+
+        for (const [key, regex] of Object.entries(regexes)) {
+          const match = credStr.match(regex);
+          if (match && match[1]) {
+            fields[key] = match[1];
+          }
+        }
+
+        if (fields.type && fields.project_id && fields.private_key && fields.client_email) {
+          creds = fields;
+          console.log('Successfully extracted Google Calendar Credentials object from environment using Regex fallback!');
+        } else {
+          console.error('Regex fallback failed to extract required calendar credentials fields.');
+        }
+      } catch (err) {
+        console.error('Failed to parse GOOGLE_CALENDAR_CREDENTIALS_JSON via fallback:', err.message);
+      }
+    }
+
+    if (creds) {
+      if (creds.private_key) {
+        creds.private_key = sanitizePrivateKey(creds.private_key);
+      }
+      return creds;
+    }
+  } else if (process.env.GOOGLE_CALENDAR_CLIENT_EMAIL && process.env.GOOGLE_CALENDAR_PRIVATE_KEY) {
+    try {
+      const creds = {
+        client_email: process.env.GOOGLE_CALENDAR_CLIENT_EMAIL,
+        private_key: sanitizePrivateKey(process.env.GOOGLE_CALENDAR_PRIVATE_KEY),
+        project_id: process.env.GOOGLE_CALENDAR_PROJECT_ID || 'booking-pro-sync'
+      };
+      return creds;
+    } catch (varsErr) {
+      console.error('Failed to construct calendar credentials from individual environment variables:', varsErr.message);
+    }
+  }
+
+  return getGoogleCredentials();
+}
+
 function getGcsBucket() {
   if (bucket) return bucket;
   try {
@@ -809,7 +881,7 @@ function initGoogleCalendar() {
 
         let auth;
         let useADC = false;
-        const credentials = getGoogleCredentials();
+        const credentials = getGoogleCalendarCredentials();
         if (credentials) {
           try {
             auth = new google.auth.GoogleAuth({
@@ -2478,7 +2550,7 @@ api.post('/push/notify', async (req, res) => {
 
 api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
   let serviceAccountEmail = null;
-  const credentials = getGoogleCredentials();
+  const credentials = getGoogleCalendarCredentials();
   if (credentials) {
     serviceAccountEmail = credentials.client_email;
   } else if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {

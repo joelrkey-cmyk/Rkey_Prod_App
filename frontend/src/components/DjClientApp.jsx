@@ -534,7 +534,10 @@ function urlBase64ToUint8Array(base64String) {
          if (typeof clientName !== 'string') {
              clientName = String(clientName || 'Client inconnu');
          }
-         const eventType = c.eventType || info.event_type || 'Événement';
+         let eventType = c.eventType || info.event_type || 'Événement';
+         if ((eventType === 'custom' || info.event_type === 'custom') && info.custom_event_type) {
+             eventType = info.custom_event_type;
+         }
          
          let djName = c.djName || c.dj_profile_data?.nom_artistique || c.dj_profile || "DJ";
          if (typeof djName !== 'string') {

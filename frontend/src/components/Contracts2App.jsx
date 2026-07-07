@@ -306,6 +306,26 @@ function Contracts2App() {
     return merged;
   };
 
+  const formatEventLocation = (dept, city, name) => {
+    const parts = [];
+    if (dept && dept.trim() && dept.trim().toLowerCase() !== "à préciser") {
+      parts.push(dept.trim());
+    }
+    if (city && city.trim() && city.trim().toLowerCase() !== "à préciser") {
+      parts.push(city.trim());
+    }
+    if (name && name.trim()) {
+      parts.push(name.trim());
+    }
+    return parts.join(" / ") || "À préciser";
+  };
+
+  const cleanLocationString = (locStr) => {
+    if (!locStr) return "";
+    const parts = locStr.split(" / ").map(p => p.trim()).filter(p => p && p.toLowerCase() !== "à préciser");
+    return parts.join(" / ") || "À préciser";
+  };
+
   // Wrapper : appelle le HTML generator importé avec le contexte local
   const generateContractHTMLLocal = (contract, clientSig = null, sigs = null, options = {}) => {
     return generateContractHTML(contract, clientSig, sigs || signatureImages, companySettings, predefinedNotes, resolveProfile, options);
@@ -446,7 +466,7 @@ function Contracts2App() {
       
       setVenues(prev => [...prev, createdVenue]);
       
-      handleClientInfoChange("event_location", `${createdVenue.department} / ${createdVenue.city} / ${createdVenue.name}`);
+      handleClientInfoChange("event_location", formatEventLocation(createdVenue.department, createdVenue.city, createdVenue.name));
       setClientInfo(prev => ({
         ...prev,
         venue_id: createdVenue.id
@@ -601,7 +621,11 @@ function Contracts2App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setClientInfo(parsed.clientInfo || { name: "", company: "", address: "", phone: "", phone2: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, guest_count: "", additional_events: [] });
+        const restoredClientInfo = parsed.clientInfo || { name: "", company: "", address: "", phone: "", phone2: "", email: "", event_date: "", event_location: "", event_type: "", custom_event_type: "", event_note: "", setup_date: "", setup_time: "À définir", start_time: "", end_time: "", unlimited_time: false, guest_count: "", additional_events: [] };
+        if (restoredClientInfo.event_location) {
+          restoredClientInfo.event_location = cleanLocationString(restoredClientInfo.event_location);
+        }
+        setClientInfo(restoredClientInfo);
         setBasePrice(parsed.basePrice || 0);
         setDiscountAmount(parsed.discountAmount || 0);
         setSelectedOptions(parsed.selectedOptions || []);
@@ -2020,7 +2044,7 @@ function Contracts2App() {
       client_info: {
         name: clientInfo.name, email: clientInfo.email, phone: clientInfo.phone,
         address: clientInfo.address, company: clientInfo.company, event_type: clientInfo.event_type,
-        event_date: clientInfo.event_date, event_location: clientInfo.event_location,
+        event_date: clientInfo.event_date, event_location: cleanLocationString(clientInfo.event_location),
         guest_count: clientInfo.guest_count, setup_date: clientInfo.setup_date,
         setup_time: clientInfo.setup_time, start_time: clientInfo.start_time,
         end_time: clientInfo.unlimited_time ? null : clientInfo.end_time,
@@ -2118,7 +2142,7 @@ function Contracts2App() {
       name: contract.client_info.name || "", company: contract.client_info.company || "",
       address: contract.client_info.address || "", phone: contract.client_info.phone || "",
       email: contract.client_info.email || "", event_date: contract.client_info.event_date || "",
-      event_location: contract.client_info.event_location || "", event_type: contract.client_info.event_type || "",
+      event_location: cleanLocationString(contract.client_info.event_location || ""), event_type: contract.client_info.event_type || "",
       custom_event_type: contract.client_info.custom_event_type || "", event_note: contract.client_info.event_note || "",
       setup_date: contract.client_info.setup_date || "", setup_time: contract.client_info.setup_time || "À définir",
       start_time: contract.client_info.start_time || "", end_time: contract.client_info.end_time || "",
@@ -2201,7 +2225,7 @@ function Contracts2App() {
       name: contract.client_info?.name || "", company: contract.client_info?.company || "",
       address: contract.client_info?.address || "", phone: contract.client_info?.phone || "",
       email: contract.client_info?.email || "", event_date: contract.client_info?.event_date || "",
-      event_location: contract.client_info?.event_location || "", event_type: contract.client_info?.event_type || "",
+      event_location: cleanLocationString(contract.client_info?.event_location || ""), event_type: contract.client_info?.event_type || "",
       custom_event_type: contract.client_info?.custom_event_type || "", event_note: contract.client_info?.event_note || "",
       setup_date: contract.client_info?.setup_date || "", setup_time: contract.client_info?.setup_time || "À définir",
       start_time: contract.client_info?.start_time || "", end_time: contract.client_info?.end_time || "",
@@ -2893,7 +2917,7 @@ function Contracts2App() {
                           onClick={() => setIsVenueDropdownOpen(!isVenueDropdownOpen)}
                           className="w-full text-left bg-white border border-slate-300 hover:border-slate-400 rounded-md px-3 py-2 text-sm text-slate-800 flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                          <span className="truncate">{clientInfo.event_location || "Sélectionnez un lieu de réception..."}</span>
+                          <span className="truncate">{cleanLocationString(clientInfo.event_location) || "Sélectionnez un lieu de réception..."}</span>
                           <span className="text-slate-400 text-xs">▼</span>
                         </button>
 
@@ -2949,7 +2973,7 @@ function Contracts2App() {
                                           <div
                                             key={h.id}
                                             onClick={() => {
-                                              handleClientInfoChange("event_location", `${h.department} / ${h.city} / ${h.name}`);
+                                              handleClientInfoChange("event_location", formatEventLocation(h.department, h.city, h.name));
                                               setClientInfo(prev => ({ ...prev, venue_id: h.id }));
                                               setIsVenueDropdownOpen(false);
                                             }}
