@@ -486,7 +486,7 @@ function urlBase64ToUint8Array(base64String) {
       if (isPublic && slug) {
          const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${encodeURIComponent(slug)}`);
          if (publicRes.ok) {
-             const data = await publicRes.json();
+             const data = await publicRes.json().catch(() => ({ events: [] }));
              allContracts = data.events || [];
              if (data.companySettings) {
                  setCompanySettings(data.companySettings);
@@ -512,18 +512,18 @@ function urlBase64ToUint8Array(base64String) {
           ]);
 
           if (optionsRes.ok) {
-              const opts = await optionsRes.json();
+              const opts = await optionsRes.json().catch(() => ([]));
               if (!silent) setAvailableOptions(opts);
           } else {
               const fallbackRes = await fetch(`${BACKEND_URL}/api/contract-options`, { headers });
               if (fallbackRes.ok) {
-                  const fOpts = await fallbackRes.json();
+                  const fOpts = await fallbackRes.json().catch(() => ({ options: [] }));
                   if (!silent) setAvailableOptions(fOpts.options || fOpts || []);
               }
           }
           
           if (contractsRes.ok) {
-              const data = await contractsRes.json();
+              const data = await contractsRes.json().catch(() => ([]));
               allContracts = [...allContracts, ...data];
           }
       }
@@ -3637,7 +3637,7 @@ function urlBase64ToUint8Array(base64String) {
 
           if (!response.ok) throw new Error("Upload failed");
 
-          const result = await response.json();
+          const result = await response.json().catch(() => ({ success: false, error: "Invalid JSON response from server" }));
           if (result.success) {
             toast.success("Document ajouté avec succès.");
             const newDoc = result.document;
@@ -3702,7 +3702,7 @@ function urlBase64ToUint8Array(base64String) {
               throw new Error(errorData.error || "Upload failed");
             }
 
-            const result = await response.json();
+            const result = await response.json().catch(() => ({ success: false, error: "Invalid JSON response from server" }));
             if (result.success) {
               successCount++;
               const newDoc = result.document;

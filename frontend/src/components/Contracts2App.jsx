@@ -782,7 +782,7 @@ function Contracts2App() {
         });
 
         if (response.ok) {
-          const result = await response.json();
+          const result = await response.json().catch(() => ({ success: false }));
           if (result.success) {
             toast.success(`"${file.name}" a été ajouté avec succès !`);
             
@@ -897,7 +897,7 @@ function Contracts2App() {
         });
 
         if (response.ok) {
-          const result = await response.json();
+          const result = await response.json().catch(() => ({ success: false }));
           if (result.success) {
             toast.success(`"${file.name}" a été ajouté avec succès !`);
             
@@ -1834,7 +1834,7 @@ function Contracts2App() {
           });
 
           if (uploadResp.ok) {
-            const uploadResult = await uploadResp.json();
+            const uploadResult = await uploadResp.json().catch(() => ({ success: false }));
             if (uploadResult.success) {
               toast.success(`L'original "${importedFile.name}" a été conservé en pièce jointe !`);
               

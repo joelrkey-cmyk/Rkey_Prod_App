@@ -58,7 +58,15 @@ globalThis.Response = nodeFetch.Response;
 // Robust HTTP/HTTPS client using standard Node.js modules to bypass socket close/undici bugs on Google endpoints
 function robustHttpsRequest(opts) {
   return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(opts.url);
+    let finalUrl = opts.url;
+    if (opts.params) {
+      const querystring = require('querystring');
+      const qs = querystring.stringify(opts.params);
+      if (qs) {
+        finalUrl += (finalUrl.includes('?') ? '&' : '?') + qs;
+      }
+    }
+    const parsedUrl = new URL(finalUrl);
     const method = (opts.method || 'GET').toUpperCase();
     const headers = { ...opts.headers };
     
@@ -68,9 +76,13 @@ function robustHttpsRequest(opts) {
     }
     
     let bodyData = null;
+    let isStream = false;
     if (opts.data || opts.body) {
       const rawData = opts.data || opts.body;
-      if (typeof rawData === 'object' && !(rawData instanceof Buffer)) {
+      if (typeof rawData === 'object' && typeof rawData.pipe === 'function') {
+        isStream = true;
+        bodyData = rawData;
+      } else if (typeof rawData === 'object' && !(rawData instanceof Buffer)) {
         if (normalizedHeaders['content-type'] === 'application/x-www-form-urlencoded') {
           const querystring = require('querystring');
           bodyData = querystring.stringify(rawData);
@@ -85,7 +97,7 @@ function robustHttpsRequest(opts) {
       }
     }
     
-    if (bodyData !== null && bodyData !== undefined) {
+    if (bodyData !== null && bodyData !== undefined && !isStream) {
       headers['Content-Length'] = Buffer.byteLength(bodyData);
     }
     
@@ -155,19 +167,21 @@ function robustHttpsRequest(opts) {
           err.response = responseObj;
           err.config = opts;
           err.data = data;
-          reject(err);
-        }
-      });
+          require("fs").appendFileSync("gaxios_fail.log", "FAILED URL: " + opts.url + " ERR MSG: " + errorMsg + "\n"); reject(err); } });
     });
     
     req.on('error', (err) => {
       reject(err);
     });
     
-    if (bodyData !== null && bodyData !== undefined) {
-      req.write(bodyData);
+    if (isStream) {
+      bodyData.pipe(req);
+    } else {
+      if (bodyData !== null && bodyData !== undefined) {
+        req.write(bodyData);
+      }
+      req.end();
     }
-    req.end();
   });
 }
 
@@ -3612,12 +3626,13 @@ api.post('/public/dj-client/:id/documents/convert-visit-sheet', upload.single('f
     
     res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at, hiddenForClient: newDoc.hiddenForClient || false } });
   } catch (err) {
-    console.error("[ConvertVisitSheet] Error:", err);
+    console.error("[ConvertVisitSheet] Error:", err, "ID:", req.params.id, "DOCID:", docId);
     res.status(500).json({ error: "Erreur lors de la conversion ou de l'upload: " + err.message });
   }
 });
 
 api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, res) => {
+  try {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const category = req.body.category || 'Animations et interventions';
   const docId = uuidv4();
@@ -3653,6 +3668,10 @@ api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, r
     { $push: { event_documents: newDoc } }
   );
   res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at, hiddenForClient: newDoc.hiddenForClient || false } });
+  } catch (err) {
+    console.error("[UPLOAD] Error:", err);
+    res.status(500).json({ error: "Upload failed: " + err.message });
+  }
 });
 
 api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
