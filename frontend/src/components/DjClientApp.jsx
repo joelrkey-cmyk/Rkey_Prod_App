@@ -5733,6 +5733,7 @@ function urlBase64ToUint8Array(base64String) {
                                 <tr>
                                     <th className="p-4 font-semibold">Événement</th>
                                     <th className="p-4 font-semibold">Date</th>
+                                    <th className="p-4 font-semibold">Accès Client</th>
                                     <th className="p-4"></th>
                                 </tr>
                             </thead>
@@ -5755,6 +5756,28 @@ function urlBase64ToUint8Array(base64String) {
                                             <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
                                                 {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
                                             </span>
+                                        </td>
+                                        <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                                            <div className="text-xs font-semibold text-slate-800 truncate mb-1">{ev.client?.name || ev.contractInfo?.name || 'Inconnu'}</div>
+                                            <div className="flex items-center gap-1">
+                                                <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded truncate max-w-[180px]" title={getClientLink(ev)}>
+                                                    {getClientLink(ev)}
+                                                </div>
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
+                                                    className="p-1 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded border border-slate-200 transition" 
+                                                    title="Copier le lien Client"
+                                                >
+                                                    <Copy className="w-3 h-3" />
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); window.open(`https://${getClientLink(ev)}`, '_blank'); }} 
+                                                    className="p-1 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded border border-slate-200 transition" 
+                                                    title="Ouvrir le portail Client"
+                                                >
+                                                    <ExternalLink className="w-3 h-3" />
+                                                </button>
+                                            </div>
                                         </td>
                                         <td className="p-4 text-right">
                                             <button className="text-yellow-600 font-bold text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
@@ -5799,6 +5822,30 @@ function urlBase64ToUint8Array(base64String) {
                                         <Bell className="w-3.5 h-3.5 text-red-500 animate-pulse flex-shrink-0" />
                                         <span>Modifié : <span className="font-bold">{listFr}</span></span>
                                     </div>
+
+                                    {/* Client Access */}
+                                    <div className="bg-green-50/30 p-2 rounded-lg border border-green-100/50 flex items-center justify-between gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                                        <div className="min-w-0">
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Accès Client</span>
+                                            <div className="font-bold text-slate-800 text-xs truncate">{ev.client?.name || ev.contractInfo?.name || 'Inconnu'}</div>
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
+                                                className="p-1 px-2 bg-white text-green-700 hover:bg-green-50 rounded border border-green-200 transition text-[10px] font-bold flex items-center gap-1"
+                                                title="Copier le lien Client"
+                                            >
+                                                <Copy className="w-2.5 h-2.5" /> Copier
+                                            </button>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); window.open(`https://${getClientLink(ev)}`, '_blank'); }} 
+                                                className="p-1 bg-green-50 text-green-700 hover:bg-green-100 rounded border border-green-200 transition" 
+                                                title="Ouvrir le portail Client"
+                                            >
+                                                <ExternalLink className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             );
                         })}
@@ -5832,6 +5879,7 @@ function urlBase64ToUint8Array(base64String) {
                                                 <tr>
                                                     <th className="p-4 font-semibold">Événement</th>
                                                     <th className="p-4 font-semibold">Date</th>
+                                                    <th className="p-4 font-semibold">Accès Client</th>
                                                     <th className="p-4"></th>
                                                 </tr>
                                             </thead>
@@ -5854,6 +5902,28 @@ function urlBase64ToUint8Array(base64String) {
                                                             <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded font-medium">
                                                                 {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}/${ev.date.split('-')[1]}/${ev.date.split('-')[0]}` : ev.date : ''}
                                                             </span>
+                                                        </td>
+                                                        <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                                                            <div className="text-xs font-semibold text-slate-800 truncate mb-1">{ev.client?.name || ev.contractInfo?.name || 'Inconnu'}</div>
+                                                            <div className="flex items-center gap-1">
+                                                                <div className="text-[11px] text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded truncate max-w-[180px]" title={getClientLink(ev)}>
+                                                                    {getClientLink(ev)}
+                                                                </div>
+                                                                <button 
+                                                                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
+                                                                    className="p-1 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded border border-slate-200 transition" 
+                                                                    title="Copier le lien Client"
+                                                                >
+                                                                    <Copy className="w-3 h-3" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={(e) => { e.stopPropagation(); window.open(`https://${getClientLink(ev)}`, '_blank'); }} 
+                                                                    className="p-1 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded border border-slate-200 transition" 
+                                                                    title="Ouvrir le portail Client"
+                                                                >
+                                                                    <ExternalLink className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
                                                         </td>
                                                         <td className="p-4 text-right">
                                                             <button className="text-yellow-600 font-medium text-sm flex items-center justify-end gap-1 w-full group-hover:text-yellow-700">
@@ -5900,6 +5970,30 @@ function urlBase64ToUint8Array(base64String) {
                                                             <span>Notif : <span className="font-bold">{listFr}</span></span>
                                                         </div>
                                                     )}
+
+                                                    {/* Client Access */}
+                                                    <div className="bg-green-50/30 p-2 rounded-lg border border-green-100/50 flex items-center justify-between gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                                                        <div className="min-w-0">
+                                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Accès Client</span>
+                                                            <div className="font-bold text-slate-800 text-xs truncate">{ev.client?.name || ev.contractInfo?.name || 'Inconnu'}</div>
+                                                        </div>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
+                                                                className="p-1 px-2 bg-white text-green-700 hover:bg-green-50 rounded border border-green-200 transition text-[10px] font-bold flex items-center gap-1"
+                                                                title="Copier le lien Client"
+                                                            >
+                                                                <Copy className="w-2.5 h-2.5" /> Copier
+                                                            </button>
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); window.open(`https://${getClientLink(ev)}`, '_blank'); }} 
+                                                                className="p-1 bg-green-50 text-green-700 hover:bg-green-100 rounded border border-green-200 transition" 
+                                                                title="Ouvrir le portail Client"
+                                                            >
+                                                                <ExternalLink className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             );
                                         })}
