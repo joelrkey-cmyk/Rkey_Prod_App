@@ -85,6 +85,14 @@ const getCompanyProvenance = (company) => {
   return "";
 };
 
+const extractEmails = (emailStr) => {
+  if (!emailStr) return [];
+  return emailStr
+    .split(/[\/,;]+/)
+    .map(email => email.trim())
+    .filter(email => email && email.includes("@"));
+};
+
 function CRMApp() {
   const [companies, setCompanies] = useState([]);
   const [relances, setRelances] = useState([]);
@@ -600,12 +608,10 @@ function CRMApp() {
 
   const handleExportEmails = () => {
     const mainEmails = filteredCompanies
-      .map(c => c.email?.trim())
-      .filter(email => email && email.includes("@"));
+      .flatMap(c => extractEmails(c.email));
     
     const contactEmails = filteredCompanies
-      .flatMap(c => (c.contacts || []).map(contact => contact.email?.trim()))
-      .filter(email => email && email.includes("@"));
+      .flatMap(c => (c.contacts || []).flatMap(contact => extractEmails(contact.email)));
 
     const allEmails = Array.from(new Set([...mainEmails, ...contactEmails]));
     
@@ -619,17 +625,20 @@ function CRMApp() {
 
   const handleDownloadCSV = () => {
     const headers = ["Nom du Client", "Type de Client", "Statut", "Email Principal", "Téléphone Principal", "Adresse", "Date de prestation", "Type d'événement", "Année"];
-    const rows = filteredCompanies.map(c => [
-      c.nom || "",
-      c.type_client || "Particulier",
-      c.statut || "prospect",
-      c.email || "",
-      c.telephone || "",
-      c.adresse || "",
-      getCompanyEventDate(c) || "",
-      getCompanyEventType(c) || "",
-      getCompanyYear(c) || ""
-    ]);
+    const rows = filteredCompanies.map(c => {
+      const cleanedEmails = extractEmails(c.email).join(", ");
+      return [
+        c.nom || "",
+        c.type_client || "Particulier",
+        c.statut || "prospect",
+        cleanedEmails,
+        c.telephone || "",
+        c.adresse || "",
+        getCompanyEventDate(c) || "",
+        getCompanyEventType(c) || "",
+        getCompanyYear(c) || ""
+      ];
+    });
 
     const csvContent = [
       headers.join(";"),
@@ -1510,12 +1519,10 @@ function CRMApp() {
 
           {(() => {
             const mainEmails = filteredCompanies
-              .map(c => c.email?.trim())
-              .filter(email => email && email.includes("@"));
+              .flatMap(c => extractEmails(c.email));
             
             const contactEmails = filteredCompanies
-              .flatMap(c => (c.contacts || []).map(contact => contact.email?.trim()))
-              .filter(email => email && email.includes("@"));
+              .flatMap(c => (c.contacts || []).flatMap(contact => extractEmails(contact.email)));
 
             const allEmails = Array.from(new Set([...mainEmails, ...contactEmails]));
             const emailStringList = allEmails.join(", ");

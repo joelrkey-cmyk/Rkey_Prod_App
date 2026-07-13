@@ -51,6 +51,16 @@ const getYoutubeEmbedUrl = (url) => {
   return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
 };
 
+const cleanLocationString = (locStr) => {
+  if (!locStr) return "";
+  const parts = locStr.split(/\s*\/\s*/).map(p => p.trim()).filter(p => {
+    if (!p) return false;
+    const lower = p.toLowerCase();
+    return lower !== "à préciser" && lower !== "a preciser" && lower !== "à preciser" && lower !== "a préciser";
+  });
+  return parts.join(" / ") || "À préciser";
+};
+
 const DjClientApp = ({ isPublic = false }) => {
   const { slug } = useParams();
   
@@ -583,7 +593,7 @@ function urlBase64ToUint8Array(base64String) {
                email: info.email || "Non qualifié",
                phone: info.phone || "Non qualifié",
                phone2: info.phone2 || "",
-               location: info.event_location || "Lieu non défini",
+               location: cleanLocationString(info.event_location) || "Lieu non défini",
                event_type: info.event_type || "",
                setup_date: info.setup_date || "",
                setup_time: info.setup_time || "",
