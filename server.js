@@ -624,44 +624,48 @@ function getGoogleCalendarCredentials() {
     if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
     
     credStr = credStr.trim();
-    if (credStr.includes('\\"')) {
-      credStr = credStr.replace(/\\"/g, '"');
-    }
+    if (!credStr.startsWith('{')) {
+      console.warn('GOOGLE_CALENDAR_CREDENTIALS_JSON is configured but does not appear to be a JSON object string. Skipping JSON parsing.');
+    } else {
+      if (credStr.includes('\\"')) {
+        credStr = credStr.replace(/\\"/g, '"');
+      }
 
-    try {
-      creds = JSON.parse(credStr);
-    } catch (e) {
-      console.warn('Standard JSON.parse failed for GOOGLE_CALENDAR_CREDENTIALS_JSON, trying Regex fallback:', e.message);
       try {
-        const fields = {};
-        const regexes = {
-          type: /"type"\s*:\s*"([^"]+)"/,
-          project_id: /"project_id"\s*:\s*"([^"]+)"/,
-          private_key_id: /"private_key_id"\s*:\s*"([^"]+)"/,
-          private_key: /"private_key"\s*:\s*"([\s\S]*?)"/,
-          client_email: /"client_email"\s*:\s*"([^"]+)"/,
-          client_id: /"client_id"\s*:\s*"([^"]+)"/,
-          auth_uri: /"auth_uri"\s*:\s*"([^"]+)"/,
-          token_uri: /"token_uri"\s*:\s*"([^"]+)"/,
-          auth_provider_x509_cert_url: /"auth_provider_x509_cert_url"\s*:\s*"([^"]+)"/,
-          client_x509_cert_url: /"client_x509_cert_url"\s*:\s*"([^"]+)"/
-        };
+        creds = JSON.parse(credStr);
+      } catch (e) {
+        console.warn('Standard JSON.parse failed for GOOGLE_CALENDAR_CREDENTIALS_JSON, trying Regex fallback:', e.message);
+        try {
+          const fields = {};
+          const regexes = {
+            type: /"type"\s*:\s*"([^"]+)"/,
+            project_id: /"project_id"\s*:\s*"([^"]+)"/,
+            private_key_id: /"private_key_id"\s*:\s*"([^"]+)"/,
+            private_key: /"private_key"\s*:\s*"([\s\S]*?)"/,
+            client_email: /"client_email"\s*:\s*"([^"]+)"/,
+            client_id: /"client_id"\s*:\s*"([^"]+)"/,
+            auth_uri: /"auth_uri"\s*:\s*"([^"]+)"/,
+            token_uri: /"token_uri"\s*:\s*"([^"]+)"/,
+            auth_provider_x509_cert_url: /"auth_provider_x509_cert_url"\s*:\s*"([^"]+)"/,
+            client_x509_cert_url: /"client_x509_cert_url"\s*:\s*"([^"]+)"/
+          };
 
-        for (const [key, regex] of Object.entries(regexes)) {
-          const match = credStr.match(regex);
-          if (match && match[1]) {
-            fields[key] = match[1];
+          for (const [key, regex] of Object.entries(regexes)) {
+            const match = credStr.match(regex);
+            if (match && match[1]) {
+              fields[key] = match[1];
+            }
           }
-        }
 
-        if (fields.type && fields.project_id && fields.private_key && fields.client_email) {
-          creds = fields;
-          console.log('Successfully extracted Google Calendar Credentials object from environment using Regex fallback!');
-        } else {
-          console.error('Regex fallback failed to extract required calendar credentials fields.');
+          if (fields.type && fields.project_id && fields.private_key && fields.client_email) {
+            creds = fields;
+            console.log('Successfully extracted Google Calendar Credentials object from environment using Regex fallback!');
+          } else {
+            console.error('Regex fallback failed to extract required calendar credentials fields.');
+          }
+        } catch (err) {
+          console.error('Failed to parse GOOGLE_CALENDAR_CREDENTIALS_JSON via fallback:', err.message);
         }
-      } catch (err) {
-        console.error('Failed to parse GOOGLE_CALENDAR_CREDENTIALS_JSON via fallback:', err.message);
       }
     }
 
@@ -901,42 +905,46 @@ function getGoogleLocationCalendarCredentials() {
     if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
     
     credStr = credStr.trim();
-    if (credStr.includes('\\"')) {
-      credStr = credStr.replace(/\\"/g, '"');
-    }
+    if (!credStr.startsWith('{')) {
+      console.warn('GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON is configured but does not appear to be a JSON object string. Skipping JSON parsing.');
+    } else {
+      if (credStr.includes('\\"')) {
+        credStr = credStr.replace(/\\"/g, '"');
+      }
 
-    try {
-      creds = JSON.parse(credStr);
-    } catch (e) {
-      console.warn('Standard JSON.parse failed for GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON, trying Regex fallback:', e.message);
       try {
-        const fields = {};
-        const regexes = {
-          type: /"type"\s*:\s*"([^"]+)"/,
-          project_id: /"project_id"\s*:\s*"([^"]+)"/,
-          private_key_id: /"private_key_id"\s*:\s*"([^"]+)"/,
-          private_key: /"private_key"\s*:\s*"([\s\S]*?)"/,
-          client_email: /"client_email"\s*:\s*"([^"]+)"/,
-          client_id: /"client_id"\s*:\s*"([^"]+)"/,
-          auth_uri: /"auth_uri"\s*:\s*"([^"]+)"/,
-          token_uri: /"token_uri"\s*:\s*"([^"]+)"/,
-          auth_provider_x509_cert_url: /"auth_provider_x509_cert_url"\s*:\s*"([^"]+)"/,
-          client_x509_cert_url: /"client_x509_cert_url"\s*:\s*"([^"]+)"/
-        };
+        creds = JSON.parse(credStr);
+      } catch (e) {
+        console.warn('Standard JSON.parse failed for GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON, trying Regex fallback:', e.message);
+        try {
+          const fields = {};
+          const regexes = {
+            type: /"type"\s*:\s*"([^"]+)"/,
+            project_id: /"project_id"\s*:\s*"([^"]+)"/,
+            private_key_id: /"private_key_id"\s*:\s*"([^"]+)"/,
+            private_key: /"private_key"\s*:\s*"([\s\S]*?)"/,
+            client_email: /"client_email"\s*:\s*"([^"]+)"/,
+            client_id: /"client_id"\s*:\s*"([^"]+)"/,
+            auth_uri: /"auth_uri"\s*:\s*"([^"]+)"/,
+            token_uri: /"token_uri"\s*:\s*"([^"]+)"/,
+            auth_provider_x509_cert_url: /"auth_provider_x509_cert_url"\s*:\s*"([^"]+)"/,
+            client_x509_cert_url: /"client_x509_cert_url"\s*:\s*"([^"]+)"/
+          };
 
-        for (const [key, regex] of Object.entries(regexes)) {
-          const match = credStr.match(regex);
-          if (match && match[1]) {
-            fields[key] = match[1];
+          for (const [key, regex] of Object.entries(regexes)) {
+            const match = credStr.match(regex);
+            if (match && match[1]) {
+              fields[key] = match[1];
+            }
           }
-        }
 
-        if (fields.type && fields.project_id && fields.private_key && fields.client_email) {
-          creds = fields;
-          console.log('Successfully extracted Location Google Calendar Credentials object from env using Regex fallback!');
+          if (fields.type && fields.project_id && fields.private_key && fields.client_email) {
+            creds = fields;
+            console.log('Successfully extracted Location Google Calendar Credentials object from env using Regex fallback!');
+          }
+        } catch (err) {
+          console.error('Failed to parse GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON via fallback:', err.message);
         }
-      } catch (err) {
-        console.error('Failed to parse GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON via fallback:', err.message);
       }
     }
 
