@@ -7,7 +7,7 @@ import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { FileText, Send, Package } from 'lucide-react';
+import { FileText, Send, Package, Calendar, Copy, Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { BACKEND_URL, axios } from './helpers';
 
@@ -38,11 +38,68 @@ function ParametresView() {
   const [returnEmailBody, setReturnEmailBody] = useState('');
   const [isSavingReturnEmail, setIsSavingReturnEmail] = useState(false);
 
+  // Google Calendar settings
+  const [gcalStatus, setGcalStatus] = useState(null);
+  const [googleCalendarId, setGoogleCalendarId] = useState('');
+  const [isSavingGcal, setIsSavingGcal] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+
   useEffect(() => {
     fetchCGV();
     fetchWithdrawalEmailTemplate();
     fetchReturnEmailTemplate();
+    fetchGcalSettings();
   }, []);
+
+  const fetchGcalSettings = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/location/settings/google-calendar`);
+      setGcalStatus(response.data);
+      setGoogleCalendarId(response.data.google_calendar_id || '');
+    } catch (error) {
+      console.error('Error fetching google calendar settings:', error);
+    }
+  };
+
+  const saveGcalSettings = async () => {
+    try {
+      setIsSavingGcal(true);
+      const response = await axios.post(`${API_URL}/location/settings/google-calendar`, {
+        google_calendar_id: googleCalendarId,
+      });
+      toast.success('Configuration Google Agenda enregistrée avec succès !');
+      if (response.data && response.data.current_resolved_calendar_id) {
+        setGcalStatus(prev => ({ ...prev, current_resolved_calendar_id: response.data.current_resolved_calendar_id }));
+      }
+    } catch (error) {
+      console.error('Error saving google calendar settings:', error);
+      toast.error("Erreur lors de l'enregistrement de l'identifiant");
+    } finally {
+      setIsSavingGcal(false);
+    }
+  };
+
+  const handleSyncAllGoogle = async () => {
+    try {
+      setIsSyncingAll(true);
+      toast.info('Synchronisation globale en cours...');
+      const response = await axios.post(`${API_URL}/location/sync-all-google`);
+      if (response.data.success) {
+        if (response.data.warning) {
+          toast.warning(`Synchronisation terminée (${response.data.count}) : ${response.data.warning}`);
+        } else {
+          toast.success(`Synchronisation terminée ! ${response.data.count} événements mis à jour.`);
+        }
+      }
+    } catch (error) {
+      console.error('Error syncing all with Google:', error);
+      const errorMsg = error.response?.data?.error || 'Erreur lors de la synchronisation globale';
+      toast.error(errorMsg);
+    } finally {
+      setIsSyncingAll(false);
+    }
+  };
 
   const fetchCGV = async () => {
     try {
@@ -299,6 +356,101 @@ La signature du bon de retrait vaut acceptation des présentes Conditions Géné
             >
               {isSavingReturnEmail ? 'Enregistrement...' : 'Enregistrer le template'}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Google Calendar Configuration Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-indigo-600" />
+            Synchronisation Google Agenda (Location)
+          </CardTitle>
+          <CardDescription>
+            Configurez la synchronisation automatique de vos réservations Location avec Google Calendar
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {gcalStatus && gcalStatus.serviceAccountEmail && (
+            <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-3">
+              <div className="flex items-center gap-2 font-semibold text-indigo-900 text-sm">
+                <span className={`w-2.5 h-2.5 rounded-full ${gcalStatus.initialized ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'} block`}></span>
+                {gcalStatus.initialized ? 'Service Google Calendar connecté' : 'Service Google Calendar non initialisé'}
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Pour synchroniser les réservations de l'application Location, vous devez <strong>partager votre agenda Google</strong> avec cette adresse de service :
+              </p>
+              <div className="flex items-center justify-between gap-2 p-2.5 bg-white border border-indigo-100 rounded-lg shadow-2xs">
+                <code className="font-mono text-xs text-indigo-700 font-semibold select-all break-all pr-2">
+                  {gcalStatus.serviceAccountEmail}
+                </code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(gcalStatus.serviceAccountEmail);
+                    setIsCopied(true);
+                    toast.success('Adresse copiée !');
+                    setTimeout(() => setIsCopied(false), 2000);
+                  }}
+                >
+                  {isCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-tight">
+                Autorisation Google requise pour le partage : <span className="font-semibold text-slate-600">"Modifier les événements" (droit d'écriture)</span>.
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-semibold text-slate-800 flex items-center gap-1">
+                Numéro d'identifiant de l'agenda (ID de l'agenda)
+              </Label>
+              <p className="text-xs text-slate-500 mb-1">
+                Copiez l'identifiant de l'agenda Google à synchroniser (ex: <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-[10px]">votre_agenda@group.calendar.google.com</code> ou votre adresse email personnelle).
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={googleCalendarId}
+                  onChange={(e) => setGoogleCalendarId(e.target.value)}
+                  placeholder="ID de l'agenda Google (laisser vide pour chercher 'LOCATION')"
+                  className="font-mono text-sm"
+                />
+                <Button
+                  onClick={saveGcalSettings}
+                  disabled={isSavingGcal}
+                  className="bg-indigo-600 hover:bg-indigo-700 shrink-0"
+                >
+                  {isSavingGcal ? 'Enregistrement...' : "Enregistrer l'identifiant"}
+                </Button>
+              </div>
+              {gcalStatus && gcalStatus.current_resolved_calendar_id && (
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 p-2 rounded-lg border">
+                  <span className="font-semibold text-slate-600">ID actuellement actif :</span>
+                  <code className="font-mono bg-white px-1 py-0.5 border rounded text-[10px] text-slate-700">{gcalStatus.current_resolved_calendar_id}</code>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <div className="text-sm font-semibold text-slate-800">Synchronisation forcée</div>
+                <div className="text-xs text-slate-500">Mettre à jour tous les événements existants de l'application Location vers l'agenda Google.</div>
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleSyncAllGoogle}
+                disabled={isSyncingAll}
+                className="flex items-center gap-2 text-indigo-600 hover:text-indigo-700 border-indigo-200 hover:bg-indigo-50/50 self-start sm:self-center"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncingAll ? 'animate-spin' : ''}`} />
+                {isSyncingAll ? 'Synchronisation...' : 'Forcer la synchronisation globale'}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

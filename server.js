@@ -859,6 +859,198 @@ let calendar = null;
 let locationCalendarId = null;
 let googleCalendarInitPromise = null;
 
+let locationCalendar = null;
+let locationGoogleCalendarInitPromise = null;
+
+async function resolveLocationCalendarId() {
+  try {
+    if (db) {
+      const s = await db.collection('location_settings').findOne({ type: 'google_calendar' });
+      if (s && s.google_calendar_id) {
+        return s.google_calendar_id.trim();
+      }
+    }
+  } catch (e) {
+    console.error('Error reading google_calendar_id from db settings:', e);
+  }
+
+  if (process.env.GOOGLE_LOCATION_CALENDAR_ID) {
+    return process.env.GOOGLE_LOCATION_CALENDAR_ID.trim();
+  }
+
+  if (process.env.GOOGLE_CALENDAR_ID) {
+    let id = process.env.GOOGLE_CALENDAR_ID.trim();
+    if (id.includes('/ical/')) {
+      const match = id.match(/\/ical\/([^\/]+)/);
+      if (match && match[1]) {
+        id = decodeURIComponent(match[1]);
+      }
+    }
+    return id;
+  }
+
+  return locationCalendarId || 'primary';
+}
+
+function getGoogleLocationCalendarCredentials() {
+  if (process.env.GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON) {
+    let creds = null;
+    let credStr = process.env.GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON.trim();
+    
+    if (credStr.startsWith("'") && credStr.endsWith("'")) credStr = credStr.substring(1, credStr.length - 1);
+    if (credStr.startsWith('"') && credStr.endsWith('"')) credStr = credStr.substring(1, credStr.length - 1);
+    
+    credStr = credStr.trim();
+    if (credStr.includes('\\"')) {
+      credStr = credStr.replace(/\\"/g, '"');
+    }
+
+    try {
+      creds = JSON.parse(credStr);
+    } catch (e) {
+      console.warn('Standard JSON.parse failed for GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON, trying Regex fallback:', e.message);
+      try {
+        const fields = {};
+        const regexes = {
+          type: /"type"\s*:\s*"([^"]+)"/,
+          project_id: /"project_id"\s*:\s*"([^"]+)"/,
+          private_key_id: /"private_key_id"\s*:\s*"([^"]+)"/,
+          private_key: /"private_key"\s*:\s*"([\s\S]*?)"/,
+          client_email: /"client_email"\s*:\s*"([^"]+)"/,
+          client_id: /"client_id"\s*:\s*"([^"]+)"/,
+          auth_uri: /"auth_uri"\s*:\s*"([^"]+)"/,
+          token_uri: /"token_uri"\s*:\s*"([^"]+)"/,
+          auth_provider_x509_cert_url: /"auth_provider_x509_cert_url"\s*:\s*"([^"]+)"/,
+          client_x509_cert_url: /"client_x509_cert_url"\s*:\s*"([^"]+)"/
+        };
+
+        for (const [key, regex] of Object.entries(regexes)) {
+          const match = credStr.match(regex);
+          if (match && match[1]) {
+            fields[key] = match[1];
+          }
+        }
+
+        if (fields.type && fields.project_id && fields.private_key && fields.client_email) {
+          creds = fields;
+          console.log('Successfully extracted Location Google Calendar Credentials object from env using Regex fallback!');
+        }
+      } catch (err) {
+        console.error('Failed to parse GOOGLE_LOCATION_CALENDAR_CREDENTIALS_JSON via fallback:', err.message);
+      }
+    }
+
+    if (creds) {
+      if (creds.private_key) {
+        creds.private_key = sanitizePrivateKey(creds.private_key);
+      }
+      return creds;
+    }
+  } else if (process.env.GOOGLE_LOCATION_CALENDAR_CLIENT_EMAIL && process.env.GOOGLE_LOCATION_CALENDAR_PRIVATE_KEY) {
+    try {
+      const creds = {
+        client_email: process.env.GOOGLE_LOCATION_CALENDAR_CLIENT_EMAIL,
+        private_key: sanitizePrivateKey(process.env.GOOGLE_LOCATION_CALENDAR_PRIVATE_KEY),
+        project_id: process.env.GOOGLE_LOCATION_CALENDAR_PROJECT_ID || 'booking-pro-sync'
+      };
+      return creds;
+    } catch (varsErr) {
+      console.error('Failed to construct location calendar credentials from individual environment variables:', varsErr.message);
+    }
+  }
+
+  return getGoogleCalendarCredentials();
+}
+
+function initLocationGoogleCalendar() {
+  if (!locationGoogleCalendarInitPromise) {
+    locationGoogleCalendarInitPromise = (async () => {
+      try {
+        let auth;
+        let useADC = false;
+        const credentials = getGoogleLocationCalendarCredentials();
+        if (credentials) {
+          try {
+            auth = new google.auth.GoogleAuth({
+              credentials,
+              scopes: ['https://www.googleapis.com/auth/calendar'],
+              clientOptions: {
+                retryConfig: {
+                  retry: 5,
+                  retryDelay: 1000,
+                  statusCodesToRetry: [[100, 199], [429, 429], [500, 599]],
+                  shouldRetry: (err) => {
+                    const errMsg = (err.message || '').toLowerCase();
+                    if (errMsg.includes('premature close') || errMsg.includes('fetch failed') || errMsg.includes('socket hang up') || errMsg.includes('econnreset') || errMsg.includes('timeout')) {
+                      return true;
+                    }
+                    return false;
+                  }
+                }
+              }
+            });
+            const clientObj = await auth.getClient();
+            await clientObj.getAccessToken();
+            console.log('Location Google Calendar integration initialized successfully from credentials.');
+          } catch (authErr) {
+            console.warn('[Location GCal Auth Warning] Initializing with credentials failed. Falling back to ADC:', authErr.message);
+            useADC = true;
+          }
+        } else {
+          console.log('No Location calendar credentials found, using Application Default Credentials (ADC).');
+          useADC = true;
+        }
+
+        if (useADC) {
+          auth = new google.auth.GoogleAuth({
+            scopes: ['https://www.googleapis.com/auth/calendar'],
+            clientOptions: {
+              retryConfig: {
+                retry: 5,
+                retryDelay: 1000,
+                statusCodesToRetry: [[100, 199], [429, 429], [500, 599]],
+                shouldRetry: (err) => {
+                  const errMsg = (err.message || '').toLowerCase();
+                  if (errMsg.includes('premature close') || errMsg.includes('fetch failed') || errMsg.includes('socket hang up') || errMsg.includes('econnreset') || errMsg.includes('timeout')) {
+                    return true;
+                  }
+                  return false;
+                }
+              }
+            }
+          });
+        }
+
+        locationCalendar = google.calendar({ version: 'v3', auth });
+        
+        const resolvedId = await resolveLocationCalendarId();
+        locationCalendarId = resolvedId;
+        
+        if (locationCalendarId === 'primary' || !locationCalendarId) {
+          try {
+            const res = await locationCalendar.calendarList.list();
+            const targetCalendar = res.data.items.find(c => c.summary === 'LOCATION');
+            if (targetCalendar) {
+              locationCalendarId = targetCalendar.id;
+              console.log(`Found LOCATION calendar with ID in location account: ${locationCalendarId}`);
+            } else {
+              locationCalendarId = 'primary';
+              console.warn('Calendar named "LOCATION" not found in location account. Falling back to primary.');
+            }
+          } catch (err) {
+            console.error('Error fetching calendar list for location account:', err);
+            locationCalendarId = 'primary';
+          }
+        }
+      } catch (err) {
+        console.error('Failed to initialize Location Google Calendar integration:', err);
+        locationGoogleCalendarInitPromise = null; // allow retry
+      }
+    })();
+  }
+  return locationGoogleCalendarInitPromise;
+}
+
 function initGoogleCalendar() {
   if (!googleCalendarInitPromise) {
     googleCalendarInitPromise = (async () => {
@@ -1023,12 +1215,12 @@ function resolveDjProfileId(id) {
 }
 
 async function syncReservationToCalendar(reservation) {
-  await initGoogleCalendar();
-  if (!calendar) throw new Error('Google Calendar integration is not initialized (check credentials).');
+  await initLocationGoogleCalendar();
+  if (!locationCalendar) throw new Error('Location Google Calendar integration is not initialized (check credentials).');
   
-  // Wait to make sure the calendar ID is fetched if not ready yet
-  if (!locationCalendarId) {
-    locationCalendarId = 'primary';
+  const currentId = await resolveLocationCalendarId();
+  if (!currentId) {
+    throw new Error('Location Calendar ID could not be resolved.');
   }
 
   const bType = (reservation.booking_type || '').toLowerCase();
@@ -1148,8 +1340,8 @@ async function syncReservationToCalendar(reservation) {
     // we delete that legacy event first to prevent duplicates!
     if (reservation.google_event_id && reservation.google_event_id !== deterministicEventId) {
       try {
-        await calendar.events.delete({
-          calendarId: locationCalendarId,
+        await locationCalendar.events.delete({
+          calendarId: currentId,
           eventId: reservation.google_event_id,
         });
         console.log(`[GCal Sync] Deleted legacy non-deterministic event: ${reservation.google_event_id}`);
@@ -1162,8 +1354,8 @@ async function syncReservationToCalendar(reservation) {
     // Check if the event with deterministic ID already exists on Google Calendar
     let existsOnCalendar = false;
     try {
-      await calendar.events.get({
-        calendarId: locationCalendarId,
+      await locationCalendar.events.get({
+        calendarId: currentId,
         eventId: deterministicEventId,
       });
       existsOnCalendar = true;
@@ -1178,8 +1370,8 @@ async function syncReservationToCalendar(reservation) {
     // Also check if there are other duplicates by title/date or containing the RESERVATION_ID in the description,
     // just in case they were created in the past and don't match our deterministicEventId!
     try {
-      const listRes = await calendar.events.list({
-        calendarId: locationCalendarId,
+      const listRes = await locationCalendar.events.list({
+        calendarId: currentId,
         q: reservation.id,
         singleEvents: true,
       });
@@ -1192,8 +1384,8 @@ async function syncReservationToCalendar(reservation) {
         console.log(`[GCal Sync] Found ${existingLegacyMatches.length} legacy duplicates containing reservation ID ${reservation.id}. Cleaning them up...`);
         for (const legacyEvt of existingLegacyMatches) {
           try {
-            await calendar.events.delete({
-              calendarId: locationCalendarId,
+            await locationCalendar.events.delete({
+              calendarId: currentId,
               eventId: legacyEvt.id,
             });
             console.log(`[GCal Sync] Deleted legacy duplicate event ${legacyEvt.id}`);
@@ -1210,8 +1402,8 @@ async function syncReservationToCalendar(reservation) {
     // We try to update/restore first, then fall back to insert, then update again in case of conflict.
     if (existsOnCalendar) {
       try {
-        response = await calendar.events.update({
-          calendarId: locationCalendarId,
+        response = await locationCalendar.events.update({
+          calendarId: currentId,
           eventId: deterministicEventId,
           resource: event,
         });
@@ -1224,8 +1416,8 @@ async function syncReservationToCalendar(reservation) {
 
     if (!existsOnCalendar) {
       try {
-        response = await calendar.events.insert({
-          calendarId: locationCalendarId,
+        response = await locationCalendar.events.insert({
+          calendarId: currentId,
           resource: event,
         });
         console.log(`[GCal Sync] Event created successfully with deterministic ID: ${response.data.id}`);
@@ -1233,8 +1425,8 @@ async function syncReservationToCalendar(reservation) {
         const insertStatus = insertErr.status || (insertErr.response && insertErr.response.status);
         if (insertStatus === 409) {
           console.log(`[GCal Sync] 409 Conflict on insert. Retrying update/restore from trash...`);
-          response = await calendar.events.update({
-            calendarId: locationCalendarId,
+          response = await locationCalendar.events.update({
+            calendarId: currentId,
             eventId: deterministicEventId,
             resource: event,
           });
@@ -1265,7 +1457,7 @@ async function syncReservationToCalendar(reservation) {
     const msg = error.message || String(error);
     console.error(`Error syncing reservation to Google Calendar (Status ${status}): ${msg}`);
     if (status === 404 || status === 410) {
-      console.error(`Suggestion: The calendar ID '${locationCalendarId}' might be invalid or not shared with the service account.`);
+      console.error(`Suggestion: The calendar ID '${currentId}' might be invalid or not shared with the service account.`);
       throw new Error(`Erreur Google (404) : Événement ou calendrier introuvable. ${msg}`);
     } else if (status === 403) {
       throw new Error(`Erreur Google (403) : Accès refusé. Vérifiez les permissions du compte de service. ${msg}`);
@@ -1275,13 +1467,14 @@ async function syncReservationToCalendar(reservation) {
 }
 
 async function deleteReservationFromGoogleCalendar(eventId) {
-  await initGoogleCalendar();
-  if (!calendar) return; // Do nothing if not initialized
-  if (!locationCalendarId || !eventId) return;
+  await initLocationGoogleCalendar();
+  if (!locationCalendar) return; // Do nothing if not initialized
+  const currentId = await resolveLocationCalendarId();
+  if (!currentId || !eventId) return;
 
   try {
-    await calendar.events.delete({
-      calendarId: locationCalendarId,
+    await locationCalendar.events.delete({
+      calendarId: currentId,
       eventId: eventId,
     });
     console.log(`Event ${eventId} deleted from Google Calendar`);
@@ -1296,116 +1489,9 @@ async function deleteReservationFromGoogleCalendar(eventId) {
 }
 
 async function syncGoogleCalendarChangesBack() {
-  await initGoogleCalendar();
-  if (!calendar || !locationCalendarId) return;
-  try {
-    const listRes = await calendar.events.list({
-      calendarId: locationCalendarId,
-      singleEvents: true,
-      maxResults: 250,
-      showDeleted: false
-    });
-    const gEvents = listRes.data.items || [];
-    
-    const gEventsMap = {};
-    gEvents.forEach(event => {
-      if (event.id) {
-        gEventsMap[event.id] = event;
-      }
-    });
-
-    const reservations = await db.collection('location_reservations').find({
-      google_event_id: { $exists: true, $ne: "" }
-    }).toArray();
-
-    for (const reservation of reservations) {
-      const event = gEventsMap[reservation.google_event_id];
-      
-      if (!event || event.status === 'cancelled') {
-        console.log(`[GCal Sync Back] Event ${reservation.google_event_id} was deleted or not found on Google. Unsetting google_event_id on local reservation ${reservation.id} to avoid losing it.`);
-        await db.collection('location_reservations').updateOne(
-          { id: reservation.id },
-          { $unset: { google_event_id: "" } }
-        );
-        continue;
-      }
-
-      let needsUpdate = false;
-      const updateFields = {};
-
-      const isAllDay = !!event.end.date;
-      const gStart = event.start.date || (event.start.dateTime ? event.start.dateTime.split('T')[0] : null);
-      const gEnd = event.end.date || (event.end.dateTime ? event.end.dateTime.split('T')[0] : null);
-
-      if (gStart && gStart !== reservation.start_date) {
-        updateFields.start_date = gStart;
-        needsUpdate = true;
-      }
-
-      if (gEnd) {
-        let inclusiveEnd = gEnd;
-        if (isAllDay) {
-          try {
-            const parts = gEnd.split('-');
-            if (parts.length === 3) {
-              const year = parseInt(parts[0], 10);
-              const month = parseInt(parts[1], 10) - 1;
-              const day = parseInt(parts[2], 10);
-              const dateObj = new Date(Date.UTC(year, month, day));
-              dateObj.setUTCDate(dateObj.getUTCDate() - 1);
-              inclusiveEnd = dateObj.toISOString().split('T')[0];
-            }
-          } catch (e) {}
-        }
-
-        if (inclusiveEnd !== reservation.end_date) {
-          updateFields.end_date = inclusiveEnd;
-          needsUpdate = true;
-        }
-      }
-
-      if (event.summary) {
-        let updatedClientName = reservation.client_name;
-        const summaryMatch = event.summary.match(/^(?:Loc|Livr|Location):\s*(.*)/i);
-        if (summaryMatch && summaryMatch[1]) {
-          updatedClientName = summaryMatch[1].trim();
-        } else {
-          updatedClientName = event.summary;
-        }
-
-        if (updatedClientName !== reservation.client_name) {
-          updateFields.client_name = updatedClientName;
-          needsUpdate = true;
-        }
-      }
-
-      if (event.description) {
-        let updatedNotes = reservation.notes || "";
-        const notesMatch = event.description.match(/Notes\s*:\s*([\s\S]*)$/i);
-        if (notesMatch && notesMatch[1]) {
-          updatedNotes = notesMatch[1].trim();
-          updatedNotes = updatedNotes.split('-----------------')[0].trim();
-        }
-
-        if (updatedNotes !== reservation.notes) {
-          updateFields.notes = updatedNotes;
-          needsUpdate = true;
-        }
-      }
-
-      if (needsUpdate) {
-        console.log(`[GCal Sync Back] Updating reservation ${reservation.id} based on Google Calendar changes:`, updateFields);
-        await db.collection('location_reservations').updateOne({ id: reservation.id }, { $set: updateFields });
-      }
-    }
-  } catch (err) {
-    const errMsg = err.message || String(err);
-    if (errMsg.includes('Premature close') || errMsg.includes('socket hang up') || errMsg.includes('fetch failed') || errMsg.includes('token')) {
-      console.warn('[GCal Sync Back Warning] Google Calendar sync-back temporarily unavailable (transient network close or token issue):', errMsg);
-    } else {
-      console.error('[GCal Sync Back Error] Failed to sync changes back from Google Calendar:', errMsg);
-    }
-  }
+  // Synchronisation unidirectionnelle uniquement : les modifications faites sur Google Agenda
+  // n'impactent pas l'application principale (Location) pour éviter toute suppression ou modification involontaire.
+  return;
 }
 
 async function deleteGoogleCalendarEvent(calendarId, eventId) {
@@ -2548,9 +2634,9 @@ api.post('/push/notify', async (req, res) => {
   }
 });
 
-api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
+api.get('/location/google-calendar-status', authMiddleware, async (req, res) => {
   let serviceAccountEmail = null;
-  const credentials = getGoogleCalendarCredentials();
+  const credentials = getGoogleLocationCalendarCredentials();
   if (credentials) {
     serviceAccountEmail = credentials.client_email;
   } else if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
@@ -2562,10 +2648,14 @@ api.get('/location/google-calendar-status', authMiddleware, (req, res) => {
     }
   }
   
+  await initLocationGoogleCalendar();
+  const currentId = await resolveLocationCalendarId();
+  
   res.json({
-    initialized: !!calendar,
-    locationCalendarFound: locationCalendarId !== null && locationCalendarId !== 'primary',
-    serviceAccountEmail: serviceAccountEmail
+    initialized: !!locationCalendar,
+    locationCalendarFound: currentId !== null && currentId !== 'primary',
+    serviceAccountEmail: serviceAccountEmail,
+    locationCalendarId: currentId || ''
   });
 });
 
@@ -6619,6 +6709,68 @@ api.post('/location/settings/gcs', authMiddleware, async (req, res) => {
     { upsert: true }
   );
   res.json({ success: true, gcs_use_direct_urls: !!req.body.gcs_use_direct_urls });
+});
+
+// Location Google Calendar settings
+api.get('/location/settings/google-calendar', authMiddleware, async (req, res) => {
+  try {
+    const s = await db.collection('location_settings').findOne({ type: 'google_calendar' });
+    const savedCalendarId = s ? s.google_calendar_id || '' : '';
+    
+    let serviceAccountEmail = null;
+    const credentials = getGoogleLocationCalendarCredentials();
+    if (credentials) {
+      serviceAccountEmail = credentials.client_email;
+    } else if (fs.existsSync(GOOGLE_CREDENTIALS_PATH)) {
+      try {
+        const creds = JSON.parse(fs.readFileSync(GOOGLE_CREDENTIALS_PATH, 'utf8'));
+        serviceAccountEmail = creds.client_email;
+      } catch (e) {
+        console.error('Failed to read default credentials file', e);
+      }
+    }
+    
+    await initLocationGoogleCalendar();
+    const resolvedId = await resolveLocationCalendarId();
+    
+    res.json({
+      success: true,
+      google_calendar_id: savedCalendarId,
+      env_google_calendar_id: process.env.GOOGLE_LOCATION_CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || '',
+      current_resolved_calendar_id: resolvedId,
+      serviceAccountEmail: serviceAccountEmail,
+      initialized: !!locationCalendar
+    });
+  } catch (error) {
+    console.error('Error in GET /location/settings/google-calendar:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+api.post('/location/settings/google-calendar', authMiddleware, async (req, res) => {
+  try {
+    const { google_calendar_id } = req.body;
+    const cleanId = (google_calendar_id || '').trim();
+    
+    await db.collection('location_settings').updateOne(
+      { type: 'google_calendar' },
+      { $set: { type: 'google_calendar', google_calendar_id: cleanId } },
+      { upsert: true }
+    );
+    
+    // Reset initialization to trigger refresh with new calendar ID
+    locationGoogleCalendarInitPromise = null;
+    await initLocationGoogleCalendar();
+    
+    res.json({ 
+      success: true, 
+      google_calendar_id: cleanId,
+      current_resolved_calendar_id: locationCalendarId
+    });
+  } catch (error) {
+    console.error('Error in POST /location/settings/google-calendar:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // GCS Live diagnostic
