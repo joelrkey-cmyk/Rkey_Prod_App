@@ -51,7 +51,7 @@ const Navigation = () => {
       try {
         const token = localStorage.getItem('access_token');
         if (!token) return;
-        const res = await fetch(`${BACKEND_URL}/api/dj-client/pending-alerts`, {
+        const res = await fetch(`/api/dj-client/pending-alerts`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.ok) {
@@ -64,7 +64,7 @@ const Navigation = () => {
           }
         }
       } catch (err) {
-        console.error("Error loading notification count in Nav:", err);
+        console.warn("Note: Temporary issues loading notification count (server may be restarting):", err.message || err);
       }
     };
     fetchNotifsCount();

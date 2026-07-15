@@ -798,7 +798,7 @@ async function autoSignGcsUrlsInObject(obj, useDirectUrls = null) {
       const signedValues = await Promise.all(
         keys.map(async (key) => {
           const val = cloned[key];
-          if (typeof val === 'string' && (val.includes('/gcs/') || val.includes('gcs/'))) {
+          if (typeof val === 'string' && val.length < 512 && !val.startsWith('data:') && (val.includes('/gcs/') || val.includes('gcs/'))) {
             let gcsPath = val;
             if (gcsPath.includes('api/gcs/')) {
               gcsPath = gcsPath.substring(gcsPath.indexOf('api/gcs/') + 8);
@@ -2240,6 +2240,13 @@ async function connectDB() {
       await db.collection('form_files').createIndex({ created_at: 1 }, { expireAfterSeconds: 86400 });
       console.log('TTL index on form_files created (24h)');
     } catch (e) { /* index already exists */ }
+
+    // High-performance indexes for contracts
+    try {
+      await db.collection('contracts2').createIndex({ id: 1 });
+      await db.collection('contracts2').createIndex({ status: 1 });
+      console.log('Indexes on contracts2 created (id, status)');
+    } catch (e) { /* indexes already exist */ }
   } catch (err) {
     if (err.message.includes('authentication failed') || err.message.includes('bad auth')) {
       dbError = "Erreur d'authentification MongoDB: Le nom d'utilisateur ou le mot de passe dans votre secret est incorrect.";
@@ -2813,10 +2820,18 @@ api.delete('/home-notes/:id', authMiddleware, async (req, res) => {
 });
 api.get('/dj-client/pending-alerts', authMiddleware, async (req, res) => {
   try {
-    const contracts = await db.collection('contracts2').find(
-      { status: { $nin: ['trash'] } },
-      { projection: { notifications: 1, dj_profile: 1, dj_profile_data: 1 } }
-    ).toArray();
+    const now = Date.now();
+    let contracts;
+    if (pendingAlertsContractsCache.data && pendingAlertsContractsCache.expiresAt > now) {
+      contracts = pendingAlertsContractsCache.data;
+    } else {
+      contracts = await db.collection('contracts2').find(
+        { status: { $nin: ['trash'] } },
+        { projection: { notifications: 1, dj_profile: 1, dj_profile_data: 1 } }
+      ).toArray();
+      pendingAlertsContractsCache.data = contracts;
+      pendingAlertsContractsCache.expiresAt = now + 10000; // 10 seconds TTL
+    }
     let count = 0;
     const userRole = req.user?.role || 'admin';
     const userName = (req.user?.full_name || req.user?.username || '').toLowerCase();
@@ -2849,11 +2864,18 @@ api.get('/dj-client/pending-alerts', authMiddleware, async (req, res) => {
 
 api.get('/dj-client/admin/contracts', authMiddleware, async (req, res) => {
   try {
+    const now = Date.now();
+    if (adminContractsCache.data && adminContractsCache.expiresAt > now) {
+      return res.json(adminContractsCache.data);
+    }
     const contracts = await db.collection('contracts2').find(
       { status: { $nin: ['trash', 'deleted', 'draft'] } },
       { projection: { cgv_text: 0, predefined_notes: 0, _id: 0 } }
     ).toArray();
-    res.json(cleanList(contracts));
+    const result = cleanList(contracts);
+    adminContractsCache.data = result;
+    adminContractsCache.expiresAt = now + 10000; // 10s TTL
+    res.json(result);
   } catch (error) {
     console.error("Error in /dj-client/admin/contracts:", error);
     res.status(500).json({ error: error.message });
@@ -3382,7 +3404,13 @@ api.post('/contract-pdf-notes/reorder', authMiddleware, async (req, res) => {
 });
 
 api.get('/public/contract-pdf-notes', async (req, res) => {
+  const now = Date.now();
+  if (publicPdfNotesCache.data && publicPdfNotesCache.expiresAt > now) {
+    return res.json(publicPdfNotesCache.data);
+  }
   const notes = await db.collection('contract_technical_pdf_notes').find({}, { projection: { _id: 0, title: 1, id: 1, filename: 1, order: 1 } }).sort({ order: 1 }).toArray();
+  publicPdfNotesCache.data = notes;
+  publicPdfNotesCache.expiresAt = now + 10000; // 10s TTL
   res.json(notes);
 });
 
@@ -3480,9 +3508,52 @@ api.post('/contracts2/compile-guide', authMiddleware, async (req, res) => {
 // Public DJ-Client Response Cache for extreme speedups
 const djClientResponseCache = new Map();
 
+// High-performance caches for DJ client / admin endpoints
+const adminContractsCache = {
+  data: null,
+  expiresAt: 0
+};
+const materialOptionsCache = {
+  data: null,
+  expiresAt: 0
+};
+const publicPdfNotesCache = {
+  data: null,
+  expiresAt: 0
+};
+const djProfilesCache = {
+  data: null,
+  expiresAt: 0
+};
+const pendingAlertsContractsCache = {
+  data: null,
+  expiresAt: 0
+};
+
+async function getCachedDjProfiles() {
+  const now = Date.now();
+  if (djProfilesCache.data && djProfilesCache.expiresAt > now) {
+    return djProfilesCache.data;
+  }
+  const profiles = await db.collection('dj_profiles').find({}).toArray();
+  djProfilesCache.data = profiles;
+  djProfilesCache.expiresAt = now + 60000; // 1 min TTL
+  return profiles;
+}
+
 function clearDjClientResponseCache() {
   djClientResponseCache.clear();
-  console.log('🧹 Cleared public DJ-Client response cache.');
+  adminContractsCache.data = null;
+  adminContractsCache.expiresAt = 0;
+  materialOptionsCache.data = null;
+  materialOptionsCache.expiresAt = 0;
+  publicPdfNotesCache.data = null;
+  publicPdfNotesCache.expiresAt = 0;
+  djProfilesCache.data = null;
+  djProfilesCache.expiresAt = 0;
+  pendingAlertsContractsCache.data = null;
+  pendingAlertsContractsCache.expiresAt = 0;
+  console.log('🧹 Cleared all DJ-Client and Admin response caches.');
 }
 
 function makeAccentInsensitivePattern(str) {
@@ -3522,7 +3593,7 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   const normalizedRequestedSlug = normalizeString(slug);
 
   // Fetch DJ profiles to resolve UUIDs or names dynamically
-  const allDjProfiles = await db.collection('dj_profiles').find({}).toArray();
+  const allDjProfiles = await getCachedDjProfiles();
   const matchedDjProfile = allDjProfiles.find(p => {
     return normalizeString(p.nom_artistique) === normalizedRequestedSlug ||
            normalizeString(p.nom_complet) === normalizedRequestedSlug ||
@@ -3578,14 +3649,14 @@ api.get('/public/dj-client/:slug', async (req, res) => {
 
   let contracts = [];
   try {
-    contracts = await db.collection('contracts2').find(contractsQuery, { projection: { _id: 0 } }).toArray();
+    contracts = await db.collection('contracts2').find(contractsQuery, { projection: { _id: 0, cgv_text: 0, predefined_notes: 0, signatures: 0 } }).toArray();
   } catch (dbErr) {
     console.error("Error executing optimized public contract search:", dbErr);
   }
 
   // Safe fallback: if nothing is matched by our targeted search, fetch all to prevent 404s
   if (contracts.length === 0) {
-    contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0 } }).toArray();
+    contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0, cgv_text: 0, predefined_notes: 0, signatures: 0 } }).toArray();
   }
   
   const mappedEvents = contracts.map(c => {
@@ -3794,6 +3865,7 @@ api.post('/public/dj-client/:id/documents/convert-visit-sheet', upload.single('f
       { $push: { event_documents: newDoc } }
     );
     
+    clearDjClientResponseCache();
     res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at, hiddenForClient: newDoc.hiddenForClient || false } });
   } catch (err) {
     console.error("[ConvertVisitSheet] Error:", err, "ID:", req.params.id, "DOCID:", docId);
@@ -3837,6 +3909,7 @@ api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, r
     { id: req.params.id }, 
     { $push: { event_documents: newDoc } }
   );
+  clearDjClientResponseCache();
   res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at, hiddenForClient: newDoc.hiddenForClient || false } });
   } catch (err) {
     console.error("[UPLOAD] Error:", err);
@@ -3930,6 +4003,7 @@ api.delete('/public/dj-client/:id/documents/:docId', async (req, res) => {
       { id: req.params.id },
       { $pull: { event_documents: { id: req.params.docId } } }
     );
+    clearDjClientResponseCache();
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -4745,6 +4819,7 @@ api.post('/contracts2', authMiddleware, async (req, res) => {
   await db.collection('contracts2').insertOne(contract);
   await syncVenueFromContract(contract.id, req.body);
   await syncContractReservations(contract);
+  clearDjClientResponseCache();
   res.json(clean(contract));
 });
 api.put('/contracts2/:id', authMiddleware, async (req, res) => {
@@ -4752,6 +4827,7 @@ api.put('/contracts2/:id', authMiddleware, async (req, res) => {
   const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
   await syncVenueFromContract(req.params.id, req.body);
   await syncContractReservations(updatedContract);
+  clearDjClientResponseCache();
   res.json(updatedContract);
 });
 api.put('/contracts2/:id/status', authMiddleware, async (req, res) => {
@@ -4762,16 +4838,19 @@ api.put('/contracts2/:id/status', authMiddleware, async (req, res) => {
   await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: updateData });
   const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
   await syncContractReservations(updatedContract);
+  clearDjClientResponseCache();
   res.json(updatedContract);
 });
 api.delete('/contracts2/:id', authMiddleware, async (req, res) => {
   await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { status: 'trash', updated_at: new Date().toISOString() } });
   const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
   await syncContractReservations(updatedContract);
+  clearDjClientResponseCache();
   res.json({ success: true });
 });
 api.delete('/contracts2/:id/permanent', authMiddleware, async (req, res) => {
   await db.collection('contracts2').deleteOne({ id: req.params.id });
+  clearDjClientResponseCache();
   res.json({ success: true });
 });
 
@@ -5731,7 +5810,14 @@ api.put('/technical-notes/reorganize', authMiddleware, async (req, res) => {
 
 // ══════════ MATERIAL OPTIONS ══════════
 api.get('/material-options', authMiddleware, async (req, res) => {
-  res.json(cleanList(await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1, name: 1 }).toArray()));
+  const now = Date.now();
+  if (materialOptionsCache.data && materialOptionsCache.expiresAt > now) {
+    return res.json(materialOptionsCache.data);
+  }
+  const result = cleanList(await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1, name: 1 }).toArray());
+  materialOptionsCache.data = result;
+  materialOptionsCache.expiresAt = now + 10000; // 10s TTL
+  res.json(result);
 });
 api.post('/material-options', authMiddleware, async (req, res) => {
   const opt = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
@@ -5964,6 +6050,7 @@ api.delete('/public/dj-client/:id/playlist-audio/:audioId', async (req, res) => 
       { $pull: { playlist_audio_files: { id: audioId } } }
     );
 
+    clearDjClientResponseCache();
     res.json({ success: true });
   } catch (err) {
     console.error('Error deleting playlist audio file:', err);

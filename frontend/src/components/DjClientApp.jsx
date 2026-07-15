@@ -465,9 +465,12 @@ function urlBase64ToUint8Array(base64String) {
   const fetchDjProfiles = async () => {
     try {
       const token = localStorage.getItem('access_token');
-      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-      let response = await fetch(`${BACKEND_URL}/api/dj-fiches`, { headers });
-      if (!response.ok) {
+      let response;
+      if (token) {
+        const headers = { 'Authorization': `Bearer ${token}` };
+        response = await fetch(`${BACKEND_URL}/api/dj-fiches`, { headers });
+      }
+      if (!response || !response.ok) {
         response = await fetch(`${BACKEND_URL}/api/dj-fiches/public`);
       }
       if (response.ok) {
@@ -649,8 +652,9 @@ function urlBase64ToUint8Array(base64String) {
       mappedEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
       if (silent) {
         setEvents(prev => {
-          if (JSON.stringify(prev.map(e => e.chatMessages)) !== JSON.stringify(mappedEvents.map(e => e.chatMessages)) ||
-              JSON.stringify(prev.map(e => e.notifications)) !== JSON.stringify(mappedEvents.map(e => e.notifications))) {
+          const prevSummary = prev.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
+          const nextSummary = mappedEvents.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
+          if (prevSummary !== nextSummary) {
             return mappedEvents;
           }
           return prev;
@@ -670,10 +674,10 @@ function urlBase64ToUint8Array(base64String) {
     // Only start polling when data is fully loaded and user is authenticated/public
     if (isLoadingEvents) return;
     
-    // Poll every 5 seconds to pull new chat messages & notifications silently
+    // Poll every 12 seconds to pull new chat messages & notifications silently (highly optimized)
     const chatPollInterval = setInterval(() => {
       fetchContractsAsEvents(true); // silent fetch
-    }, 5000);
+    }, 12000);
     
     return () => clearInterval(chatPollInterval);
   }, [isLoadingEvents, isPublic, slug, currentRoute.role]);
