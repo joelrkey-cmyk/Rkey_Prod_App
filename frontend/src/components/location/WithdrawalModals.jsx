@@ -225,7 +225,7 @@ export function WithdrawalSlipModal({
     setWebcamTarget(target);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: target === 'equipment' ? 'environment' : 'user' } 
+        video: { facingMode: { ideal: 'environment' } } 
       });
       setWebcamStream(stream);
       setTimeout(() => {
@@ -419,9 +419,6 @@ export function WithdrawalSlipModal({
   const initialCautionAmount = (() => {
     if (currentReservationForSlip.guarantee_amount !== undefined && currentReservationForSlip.guarantee_amount !== null) {
       return currentReservationForSlip.guarantee_amount;
-    }
-    if (currentReservationForSlip.deposit_amount !== undefined && currentReservationForSlip.deposit_amount !== null) {
-      return currentReservationForSlip.deposit_amount;
     }
     return calculateGuaranteeDeposit(currentReservationForSlip.equipment_items || []);
   })();

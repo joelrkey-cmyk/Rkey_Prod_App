@@ -7706,13 +7706,16 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
       });
     }
 
-    // Get quote for deposit
+    // Get quote for deposit (caution / guarantee)
     let depositAmount = 0;
     if (!quote && reservation.quote_id) {
       quote = await db.collection('location_quotes').findOne({ id: reservation.quote_id }, { projection: { _id: 0 } });
     }
-    if (quote) depositAmount = quote.guarantee_amount || quote.deposit_amount || 0;
-    if (!depositAmount && reservation.deposit_amount) depositAmount = reservation.deposit_amount;
+    if (quote) {
+      depositAmount = (quote.guarantee_amount !== undefined && quote.guarantee_amount !== null) ? quote.guarantee_amount : 0;
+    } else if (reservation) {
+      depositAmount = (reservation.guarantee_amount !== undefined && reservation.guarantee_amount !== null) ? reservation.guarantee_amount : 0;
+    }
 
     const w = {
       id: uuidv4(),
