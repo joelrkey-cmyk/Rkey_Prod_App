@@ -239,6 +239,17 @@ export function WithdrawalSlipModal({
     }
   };
 
+  const triggerFileInput = (target) => {
+    let inputId = '';
+    if (target === 'equipment') inputId = 'file-upload-equipment';
+    else if (target === 'recto') inputId = 'file-upload-recto';
+    else if (target === 'verso') inputId = 'file-upload-verso';
+    
+    if (inputId) {
+      document.getElementById(inputId)?.click();
+    }
+  };
+
   const stopWebcam = () => {
     if (webcamStream) {
       webcamStream.getTracks().forEach(track => track.stop());

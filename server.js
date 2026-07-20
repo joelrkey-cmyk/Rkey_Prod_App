@@ -7667,10 +7667,12 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
 
     // Check if a workflow already exists
     const existing = await db.collection('rental_workflows').findOne(
-      { reservation_id: reservationId, type: wfType, status: { $ne: 'completed' } },
-      { projection: { _id: 0 } }
+      { reservation_id: reservationId, type: wfType, status: { $ne: 'completed' } }
     );
-    if (existing) return res.json(existing);
+    if (existing && wfType !== 'return') {
+      const { _id, ...cleanExisting } = existing;
+      return res.json(cleanExisting);
+    }
 
     // Build checklist from reservation or quote items
     let reservation = await db.collection('location_reservations').findOne({ id: reservationId }, { projection: { _id: 0 } });
@@ -7690,20 +7692,109 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
       };
     }
 
-    const equipmentItems = reservation.equipment_items || [];
     const checklist = [];
-    for (const item of equipmentItems) {
-      let eqName = item.equipment_name || '';
-      if (!eqName && item.equipment_id) {
-        const eq = await db.collection('location_equipment').findOne({ id: item.equipment_id }, { projection: { _id: 0, name: 1 } });
-        eqName = eq ? eq.name : 'Équipement inconnu';
+    if (wfType === 'return') {
+      const withdrawalWf = await db.collection('rental_workflows').findOne(
+        { reservation_id: reservationId, type: 'withdrawal' }
+      );
+
+      const equipmentItems = reservation.equipment_items || [];
+      for (const item of equipmentItems) {
+        const eq = await db.collection('location_equipment').findOne({ id: item.equipment_id });
+        if (eq && eq.is_pack && eq.pack_items && eq.pack_items.length > 0) {
+          for (const subItem of eq.pack_items) {
+            const subEq = await db.collection('location_equipment').findOne({ id: subItem.equipment_id }, { projection: { _id: 0, name: 1 } });
+            const subName = subEq ? subEq.name : `Matériel #${subItem.equipment_id}`;
+            checklist.push({
+              equipment_id: subItem.equipment_id,
+              equipment_name: `${eq.name} - ${subName}`,
+              quantity: (subItem.quantity || 1) * (item.quantity || 1),
+              checked: false,
+              is_sub_item: true,
+              parent_equipment_name: eq.name
+            });
+          }
+        } else {
+          let eqName = item.equipment_name || '';
+          if (!eqName && item.equipment_id) {
+            const eqDetail = eq || await db.collection('location_equipment').findOne({ id: item.equipment_id }, { projection: { _id: 0, name: 1 } });
+            eqName = eqDetail ? eqDetail.name : 'Équipement inconnu';
+          }
+          checklist.push({
+            equipment_id: item.equipment_id || '',
+            equipment_name: eqName || 'Équipement inconnu',
+            quantity: item.quantity || 1,
+            checked: false,
+          });
+        }
       }
-      checklist.push({
-        equipment_id: item.equipment_id || '',
-        equipment_name: eqName || 'Équipement inconnu',
-        quantity: item.quantity || 1,
-        checked: false,
+
+      if (withdrawalWf && withdrawalWf.added_items && withdrawalWf.added_items.length > 0) {
+        for (const item of withdrawalWf.added_items) {
+          if (item.checked !== false) {
+            const eq = await db.collection('location_equipment').findOne({ id: item.equipment_id });
+            if (eq && eq.is_pack && eq.pack_items && eq.pack_items.length > 0) {
+              for (const subItem of eq.pack_items) {
+                const subEq = await db.collection('location_equipment').findOne({ id: subItem.equipment_id }, { projection: { _id: 0, name: 1 } });
+                const subName = subEq ? subEq.name : `Matériel #${subItem.equipment_id}`;
+                checklist.push({
+                  equipment_id: subItem.equipment_id,
+                  equipment_name: `${eq.name} (Ajout Comptoir) - ${subName}`,
+                  quantity: (subItem.quantity || 1) * (item.quantity || 1),
+                  checked: false,
+                  is_sub_item: true,
+                  parent_equipment_name: eq.name
+                });
+              }
+            } else {
+              checklist.push({
+                equipment_id: item.equipment_id || '',
+                equipment_name: `${item.name || item.equipment_name || 'Matériel supplémentaire'} (Ajout Comptoir)`,
+                quantity: item.quantity || 1,
+                checked: false,
+              });
+            }
+          }
+        }
+      }
+    } else {
+      const equipmentItems = reservation.equipment_items || [];
+      for (const item of equipmentItems) {
+        let eqName = item.equipment_name || '';
+        if (!eqName && item.equipment_id) {
+          const eq = await db.collection('location_equipment').findOne({ id: item.equipment_id }, { projection: { _id: 0, name: 1 } });
+          eqName = eq ? eq.name : 'Équipement inconnu';
+        }
+        checklist.push({
+          equipment_id: item.equipment_id || '',
+          equipment_name: eqName || 'Équipement inconnu',
+          quantity: item.quantity || 1,
+          checked: false,
+        });
+      }
+    }
+
+    if (existing && wfType === 'return') {
+      const mergedChecklist = checklist.map(newItem => {
+        const found = existing.checklist?.find(oldItem => 
+          oldItem.equipment_id === newItem.equipment_id && oldItem.equipment_name === newItem.equipment_name
+        );
+        return {
+          ...newItem,
+          checked: found ? !!found.checked : false
+        };
       });
+
+      await db.collection('rental_workflows').updateOne(
+        { id: existing.id },
+        { $set: { checklist: mergedChecklist, return_checklist: mergedChecklist } }
+      );
+
+      const updated = await db.collection('rental_workflows').findOne(
+        { id: existing.id },
+        { projection: { _id: 0 } }
+      );
+      return res.json(updated);
     }
 
     // Get quote for deposit (caution / guarantee)
@@ -8001,9 +8092,67 @@ api.get('/rental/returns', authMiddleware, async (req, res) => {
         { id: r.quote_id }, { projection: { _id: 0, quote_number: 1 } }
       );
       const withdrawalWf = await db.collection('rental_workflows').findOne(
-        { reservation_id: r.id, type: 'withdrawal', status: 'completed' },
-        { projection: { _id: 0, deposit_method: 1, deposit_amount: 1 } }
+        { reservation_id: r.id, type: 'withdrawal' },
+        { projection: { _id: 0, deposit_method: 1, deposit_amount: 1, added_items: 1 } }
       );
+
+      const expandedItems = [];
+      const originalItems = r.equipment_items || [];
+      for (const item of originalItems) {
+        const eq = await db.collection('location_equipment').findOne({ id: item.equipment_id });
+        if (eq && eq.is_pack && eq.pack_items && eq.pack_items.length > 0) {
+          for (const subItem of eq.pack_items) {
+            const subEq = await db.collection('location_equipment').findOne({ id: subItem.equipment_id }, { projection: { _id: 0, name: 1 } });
+            const nameStr = `${eq.name} - ${subEq ? subEq.name : 'Matériel'}`;
+            expandedItems.push({
+              equipment_id: subItem.equipment_id,
+              equipment_name: nameStr,
+              name: nameStr,
+              quantity: (subItem.quantity || 1) * (item.quantity || 1)
+            });
+          }
+        } else {
+          let eqName = item.equipment_name || '';
+          if (!eqName && item.equipment_id) {
+            const eqDetail = eq || await db.collection('location_equipment').findOne({ id: item.equipment_id }, { projection: { _id: 0, name: 1 } });
+            eqName = eqDetail ? eqDetail.name : 'Équipement inconnu';
+          }
+          expandedItems.push({
+            equipment_id: item.equipment_id || '',
+            equipment_name: eqName || 'Équipement inconnu',
+            name: eqName || 'Équipement inconnu',
+            quantity: item.quantity || 1
+          });
+        }
+      }
+
+      if (withdrawalWf && withdrawalWf.added_items && withdrawalWf.added_items.length > 0) {
+        for (const item of withdrawalWf.added_items) {
+          if (item.checked !== false) {
+            const eq = await db.collection('location_equipment').findOne({ id: item.equipment_id });
+            if (eq && eq.is_pack && eq.pack_items && eq.pack_items.length > 0) {
+              for (const subItem of eq.pack_items) {
+                const subEq = await db.collection('location_equipment').findOne({ id: subItem.equipment_id }, { projection: { _id: 0, name: 1 } });
+                const nameStr = `${eq.name} (Ajout) - ${subEq ? subEq.name : 'Matériel'}`;
+                expandedItems.push({
+                  equipment_id: subItem.equipment_id,
+                  equipment_name: nameStr,
+                  name: nameStr,
+                  quantity: (subItem.quantity || 1) * (item.quantity || 1)
+                });
+              }
+            } else {
+              const nameStr = `${item.name || item.equipment_name || 'Matériel supplémentaire'} (Ajout)`;
+              expandedItems.push({
+                equipment_id: item.equipment_id || '',
+                equipment_name: nameStr,
+                name: nameStr,
+                quantity: item.quantity || 1
+              });
+            }
+          }
+        }
+      }
 
       result.push({
         id: r.id,
@@ -8015,7 +8164,7 @@ api.get('/rental/returns', authMiddleware, async (req, res) => {
         start_date: r.start_date || '',
         end_date: r.end_date || '',
         total_amount: r.total_amount || 0,
-        equipment_items: r.equipment_items || [],
+        equipment_items: expandedItems,
         deposit_method: withdrawalWf ? withdrawalWf.deposit_method : null,
         deposit_amount: withdrawalWf ? (withdrawalWf.deposit_amount || 0) : 0,
       });

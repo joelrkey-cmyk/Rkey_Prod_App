@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Package, Handshake, AlertTriangle, RefreshCw, Search, Phone, Mail, Calendar, DollarSign, ChevronRight, Check } from "lucide-react";
+import { Package, Handshake, AlertTriangle, RefreshCw, Search, Phone, Mail, Calendar, Euro, ChevronRight, Check } from "lucide-react";
 import axios from "../../services/axiosConfig";
 import { Toaster } from "../ui/sonner";
 import { toast } from "sonner";
@@ -284,7 +284,7 @@ function RentalApp() {
         equipment_id: checkItem.equipment_id,
         equipment_name: checkItem.equipment_name || checkItem.name || 'Équipement',
         quantity: checkItem.quantity || 1,
-        checked: checkItem.checked !== undefined ? checkItem.checked : true
+        checked: checkItem.checked !== undefined ? checkItem.checked : false
       }));
       
       setReturnChecklist(initialChecklist);
@@ -489,7 +489,7 @@ function RentalApp() {
                           )}
                           
                           <div className="flex items-center gap-1.5">
-                            <DollarSign className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                            <Euro className="w-4 h-4 text-slate-400 flex-shrink-0" />
                             <span>Contrat: {item.total_amount?.toFixed(2)}€ | Acompte: {item.deposit_amount?.toFixed(2)}€</span>
                           </div>
                         </div>
@@ -556,7 +556,7 @@ function RentalApp() {
                           </div>
                           
                           <div className="flex items-center gap-1.5 truncate">
-                            <DollarSign className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                            <Euro className="w-4 h-4 text-slate-400 flex-shrink-0" />
                             <span>Caution prise: {item.deposit_amount?.toFixed(2)}€ ({item.deposit_method || "N/A"})</span>
                           </div>
                         </div>
