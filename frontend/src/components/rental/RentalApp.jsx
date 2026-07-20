@@ -490,19 +490,18 @@ function RentalApp() {
                           
                           <div className="flex items-center gap-1.5">
                             <Euro className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                            <span>Contrat: {item.total_amount?.toFixed(2)}€ | Acompte: {item.deposit_amount?.toFixed(2)}€</span>
+                            <span>Contrat: {item.total_amount?.toFixed(2)}€ | Acompte: {item.deposit_amount?.toFixed(2)}€ | Caution: {item.guarantee_amount?.toFixed(2) || '0.00'}€</span>
                           </div>
                         </div>
 
                         {item.equipment_items && item.equipment_items.length > 0 && (
                           <div className="text-xs text-slate-500 bg-orange-50/50 border border-orange-100/50 rounded-lg p-2.5 mt-2 flex flex-wrap gap-x-3 gap-y-1 max-w-2xl">
                             <strong className="text-orange-900">Matériel lourd :</strong>
-                            {item.equipment_items.slice(0, 4).map((eq, i) => (
+                            {item.equipment_items.map((eq, i) => (
                               <span key={i}>
                                 • {eq.quantity || 1}x {eq.name || eq.equipment_name}
                               </span>
                             ))}
-                            {item.equipment_items.length > 4 && <span>(+ {item.equipment_items.length - 4} autres...)</span>}
                           </div>
                         )}
                       </div>
@@ -564,12 +563,11 @@ function RentalApp() {
                         {item.equipment_items && item.equipment_items.length > 0 && (
                           <div className="text-xs text-slate-500 bg-purple-50/50 border border-purple-100/50 rounded-lg p-2.5 mt-2 flex flex-wrap gap-x-3 gap-y-1 max-w-2xl">
                             <strong className="text-purple-900">Articles à retourner :</strong>
-                            {item.equipment_items.slice(0, 4).map((eq, i) => (
+                            {item.equipment_items.map((eq, i) => (
                               <span key={i}>
                                 • {eq.quantity || 1}x {eq.name || eq.equipment_name}
                               </span>
                             ))}
-                            {item.equipment_items.length > 4 && <span>(+ {item.equipment_items.length - 4} autres...)</span>}
                           </div>
                         )}
                       </div>

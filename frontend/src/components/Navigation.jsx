@@ -40,7 +40,12 @@ const Navigation = () => {
     const token = localStorage.getItem('access_token');
     if (token) {
       fetch(`${BACKEND_URL}/api/auth/users`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json())
+        .then(r => {
+          if (r.ok && r.headers.get("content-type")?.includes("application/json")) {
+            return r.json();
+          }
+          throw new Error("Invalid response");
+        })
         .then(data => { if (Array.isArray(data)) setAvailableUsers(data); })
         .catch(() => {});
     }

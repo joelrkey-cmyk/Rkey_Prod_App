@@ -5591,7 +5591,23 @@ api.post('/forms/:id/submit', async (req, res) => {
         if (form && form.fields) {
           form.fields.forEach(f => {
             if (['section','note','divider','file'].includes(f.type)) return;
-            const val = formData[f.id] || '';
+            let val = formData[f.id] || '';
+            if (f.type === 'date' && typeof val === 'string' && val) {
+              const dateParts = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+              if (dateParts) {
+                val = `${dateParts[3]}-${dateParts[2]}-${dateParts[1]}`;
+              } else {
+                try {
+                  const d = new Date(val);
+                  if (!isNaN(d.getTime())) {
+                    const day = String(d.getDate()).padStart(2, '0');
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const year = d.getFullYear();
+                    val = `${day}-${month}-${year}`;
+                  }
+                } catch (e) {}
+              }
+            }
             const displayVal = Array.isArray(val) ? val.join(', ') : (val || '<em>Non renseigné</em>');
             fieldsHtml += `<tr><td style="padding:10px 15px;border-bottom:1px solid #eee;font-weight:600;color:#555;width:35%">${f.label || f.id}</td><td style="padding:10px 15px;border-bottom:1px solid #eee;color:#333">${displayVal}</td></tr>`;
           });
@@ -7547,7 +7563,7 @@ api.get('/rental/withdrawals', authMiddleware, async (req, res) => {
         );
       }
       const quote = await db.collection('location_quotes').findOne(
-        { id: r.quote_id }, { projection: { _id: 0, quote_number: 1, total_amount: 1 } }
+        { id: r.quote_id }, { projection: { _id: 0, quote_number: 1, total_amount: 1, guarantee_amount: 1 } }
       );
 
       result.push({
@@ -7564,6 +7580,7 @@ api.get('/rental/withdrawals', authMiddleware, async (req, res) => {
         total_amount: r.total_amount || (quote ? quote.total_amount : 0) || 0,
         equipment_items: r.equipment_items || [],
         deposit_amount: r.deposit_amount || 0,
+        guarantee_amount: r.guarantee_amount !== undefined ? r.guarantee_amount : (quote ? (quote.guarantee_amount || 0) : 0),
         delivery_cost: r.delivery_cost || 0,
       });
     }
@@ -7599,6 +7616,7 @@ api.get('/rental/withdrawals', authMiddleware, async (req, res) => {
         total_amount: q.total_amount || 0,
         equipment_items: q.items || [],
         deposit_amount: q.deposit_amount || 0,
+        guarantee_amount: q.guarantee_amount || 0,
         delivery_cost: q.delivery_cost || 0,
       });
     }
@@ -7665,9 +7683,13 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
     const reservationId = req.body.reservation_id;
     const wfType = req.body.type || 'withdrawal';
 
+    const isNumeric = /^\d+$/.test(String(reservationId));
+    const numericResId = isNumeric ? parseInt(reservationId, 10) : null;
+    const resIdQuery = numericResId !== null ? { $in: [reservationId, numericResId] } : reservationId;
+
     // Check if a workflow already exists
     const existing = await db.collection('rental_workflows').findOne(
-      { reservation_id: reservationId, type: wfType, status: { $ne: 'completed' } }
+      { reservation_id: resIdQuery, type: wfType, status: { $ne: 'completed' } }
     );
     if (existing && wfType !== 'return') {
       const { _id, ...cleanExisting } = existing;
@@ -7675,12 +7697,12 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
     }
 
     // Build checklist from reservation or quote items
-    let reservation = await db.collection('location_reservations').findOne({ id: reservationId }, { projection: { _id: 0 } });
+    let reservation = await db.collection('location_reservations').findOne({ id: resIdQuery }, { projection: { _id: 0 } });
     let quote = null;
 
     if (!reservation) {
       // Fallback: ID might be a quote ID
-      quote = await db.collection('location_quotes').findOne({ id: reservationId }, { projection: { _id: 0 } });
+      quote = await db.collection('location_quotes').findOne({ id: resIdQuery }, { projection: { _id: 0 } });
       if (!quote) return res.status(404).json({ detail: 'Réservation ou devis non trouvé' });
       reservation = {
         id: quote.id,
@@ -7695,15 +7717,19 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
     const checklist = [];
     if (wfType === 'return') {
       const withdrawalWf = await db.collection('rental_workflows').findOne(
-        { reservation_id: reservationId, type: 'withdrawal' }
+        { reservation_id: resIdQuery, type: 'withdrawal', status: 'completed' }
+      ) || await db.collection('rental_workflows').findOne(
+        { reservation_id: resIdQuery, type: 'withdrawal' }
       );
 
       const equipmentItems = reservation.equipment_items || [];
       for (const item of equipmentItems) {
-        const eq = await db.collection('location_equipment').findOne({ id: item.equipment_id });
+        const itemEqQuery = item.equipment_id ? ( /^\d+$/.test(String(item.equipment_id)) ? { $in: [item.equipment_id, parseInt(item.equipment_id, 10)] } : item.equipment_id ) : null;
+        const eq = itemEqQuery ? await db.collection('location_equipment').findOne({ id: itemEqQuery }) : null;
         if (eq && eq.is_pack && eq.pack_items && eq.pack_items.length > 0) {
           for (const subItem of eq.pack_items) {
-            const subEq = await db.collection('location_equipment').findOne({ id: subItem.equipment_id }, { projection: { _id: 0, name: 1 } });
+            const subEqQuery = subItem.equipment_id ? ( /^\d+$/.test(String(subItem.equipment_id)) ? { $in: [subItem.equipment_id, parseInt(subItem.equipment_id, 10)] } : subItem.equipment_id ) : null;
+            const subEq = subEqQuery ? await db.collection('location_equipment').findOne({ id: subEqQuery }, { projection: { _id: 0, name: 1 } }) : null;
             const subName = subEq ? subEq.name : `Matériel #${subItem.equipment_id}`;
             checklist.push({
               equipment_id: subItem.equipment_id,
@@ -7717,7 +7743,7 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
         } else {
           let eqName = item.equipment_name || '';
           if (!eqName && item.equipment_id) {
-            const eqDetail = eq || await db.collection('location_equipment').findOne({ id: item.equipment_id }, { projection: { _id: 0, name: 1 } });
+            const eqDetail = eq || await db.collection('location_equipment').findOne({ id: itemEqQuery }, { projection: { _id: 0, name: 1 } });
             eqName = eqDetail ? eqDetail.name : 'Équipement inconnu';
           }
           checklist.push({
@@ -7732,10 +7758,13 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
       if (withdrawalWf && withdrawalWf.added_items && withdrawalWf.added_items.length > 0) {
         for (const item of withdrawalWf.added_items) {
           if (item.checked !== false) {
-            const eq = await db.collection('location_equipment').findOne({ id: item.equipment_id });
+            const addedItemEqId = item.equipment_id || item.id || '';
+            const itemEqQuery = addedItemEqId ? ( /^\d+$/.test(String(addedItemEqId)) ? { $in: [addedItemEqId, parseInt(addedItemEqId, 10)] } : addedItemEqId ) : null;
+            const eq = itemEqQuery ? await db.collection('location_equipment').findOne({ id: itemEqQuery }) : null;
             if (eq && eq.is_pack && eq.pack_items && eq.pack_items.length > 0) {
               for (const subItem of eq.pack_items) {
-                const subEq = await db.collection('location_equipment').findOne({ id: subItem.equipment_id }, { projection: { _id: 0, name: 1 } });
+                const subEqQuery = subItem.equipment_id ? ( /^\d+$/.test(String(subItem.equipment_id)) ? { $in: [subItem.equipment_id, parseInt(subItem.equipment_id, 10)] } : subItem.equipment_id ) : null;
+                const subEq = subEqQuery ? await db.collection('location_equipment').findOne({ id: subEqQuery }, { projection: { _id: 0, name: 1 } }) : null;
                 const subName = subEq ? subEq.name : `Matériel #${subItem.equipment_id}`;
                 checklist.push({
                   equipment_id: subItem.equipment_id,
@@ -7748,7 +7777,7 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
               }
             } else {
               checklist.push({
-                equipment_id: item.equipment_id || '',
+                equipment_id: addedItemEqId,
                 equipment_name: `${item.name || item.equipment_name || 'Matériel supplémentaire'} (Ajout Comptoir)`,
                 quantity: item.quantity || 1,
                 checked: false,
@@ -8091,8 +8120,12 @@ api.get('/rental/returns', authMiddleware, async (req, res) => {
       const quote = await db.collection('location_quotes').findOne(
         { id: r.quote_id }, { projection: { _id: 0, quote_number: 1 } }
       );
+      const isWfNumeric = /^\d+$/.test(String(r.id));
+      const numericWfId = isWfNumeric ? parseInt(r.id, 10) : null;
+      const wfIdQuery = numericWfId !== null ? { $in: [String(r.id), numericWfId] } : r.id;
+
       const withdrawalWf = await db.collection('rental_workflows').findOne(
-        { reservation_id: r.id, type: 'withdrawal' },
+        { reservation_id: wfIdQuery, type: 'withdrawal' },
         { projection: { _id: 0, deposit_method: 1, deposit_amount: 1, added_items: 1 } }
       );
 

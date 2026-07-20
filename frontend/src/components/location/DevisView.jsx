@@ -2280,7 +2280,11 @@ function DevisView({ setCurrentView }) {
                                   onChange={(e) => {
                                     // Simple toggle: coché = forfait weekend, décoché = tarif normal
                                     const newValue = formData.force_weekend === true ? false : true;
-                                    setFormData({...formData, force_weekend: newValue});
+                                    setFormData({
+                                      ...formData,
+                                      force_weekend: newValue,
+                                      manual_coefficient: newValue ? '1' : ''
+                                    });
                                   }}
                                   className="w-3 h-3"
                                 />

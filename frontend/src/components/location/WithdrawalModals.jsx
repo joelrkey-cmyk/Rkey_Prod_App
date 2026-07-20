@@ -46,6 +46,8 @@ export function WithdrawalSlipModal({
   const [webcamStream, setWebcamStream] = useState(null);
   const [webcamTarget, setWebcamTarget] = useState(null); // 'equipment', 'recto', 'verso'
   const videoRef = useRef(null);
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState('');
 
   useEffect(() => {
     if (showWithdrawalSlipModal && currentReservationForSlip) {
@@ -221,18 +223,72 @@ export function WithdrawalSlipModal({
   };
 
   // Webcam Capture Logic
-  const startWebcam = async (target) => {
+  const startWebcam = async (target, overrideCameraId = null) => {
     setWebcamTarget(target);
+    const cameraToUse = overrideCameraId || selectedCameraId;
+    
+    // Stop existing stream first if any
+    if (webcamStream) {
+      webcamStream.getTracks().forEach(track => track.stop());
+    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: { ideal: 'environment' } } 
-      });
+      // Prioritize environment/rear camera on first launch if no override
+      const constraints = {
+        video: cameraToUse 
+          ? { deviceId: { exact: cameraToUse } } 
+          : { facingMode: { ideal: 'environment' } }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       setWebcamStream(stream);
+      
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
       }, 150);
+
+      // List devices and try to auto-select back camera if we haven't selected one yet
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevs = allDevices.filter(d => d.kind === 'videoinput');
+      setVideoDevices(videoDevs);
+
+      // Try to find a rear/back/environment camera automatically if not already set
+      if (videoDevs.length > 0 && !cameraToUse) {
+        // 1. Check if active track has a deviceId
+        const activeTrack = stream.getVideoTracks()[0];
+        let activeId = '';
+        if (activeTrack) {
+          const settings = activeTrack.getSettings();
+          activeId = settings.deviceId || '';
+        }
+
+        // 2. See if there is a camera with label containing rear, back, environment, or arrière
+        const rearCam = videoDevs.find(d => {
+          const label = (d.label || '').toLowerCase();
+          return label.includes('back') || label.includes('rear') || label.includes('environment') || label.includes('arrière');
+        });
+
+        if (rearCam && rearCam.deviceId !== activeId) {
+          // If we found a back camera but it's not the active one, switch to it!
+          setSelectedCameraId(rearCam.deviceId);
+          // Restart webcam with the rear camera id
+          const rearStream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: rearCam.deviceId } }
+          });
+          // Stop the old stream
+          stream.getTracks().forEach(track => track.stop());
+          setWebcamStream(rearStream);
+          setTimeout(() => {
+            if (videoRef.current) {
+              videoRef.current.srcObject = rearStream;
+            }
+          }, 150);
+        } else if (activeId) {
+          setSelectedCameraId(activeId);
+        }
+      }
     } catch (err) {
       console.error(err);
       toast.error("Impossible d'accéder à l'appareil photo/webcam.");
@@ -605,6 +661,27 @@ export function WithdrawalSlipModal({
             {webcamStream && (
               <div className="bg-slate-950 rounded-2xl p-4 text-center border border-slate-800 shadow-xl space-y-3 relative overflow-hidden">
                 <video ref={videoRef} autoPlay playsInline className="w-full max-h-64 object-cover rounded-xl bg-black mx-auto" />
+                
+                {videoDevices.length > 1 && (
+                  <div className="flex items-center justify-center gap-2 max-w-xs mx-auto">
+                    <select
+                      value={selectedCameraId}
+                      onChange={(e) => {
+                        const newId = e.target.value;
+                        setSelectedCameraId(newId);
+                        startWebcam(webcamTarget, newId);
+                      }}
+                      className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 w-full cursor-pointer"
+                    >
+                      {videoDevices.map((device, idx) => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                          {device.label || `Caméra ${idx + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="flex justify-center gap-3">
                   <Button onClick={captureWebcamPhoto} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                     <Camera className="w-4 h-4 mr-1.5" /> Prendre la photo

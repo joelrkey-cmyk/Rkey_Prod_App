@@ -62,10 +62,10 @@ export function getDegressionInfo(startDate, endDate, forceWeekend = false, manu
   
   if (isWeekend) {
     return {
-      coef: 1.5,
+      coef: 1.0,
       isWeekendDetected: true,
       label: 'Forfait Weekend',
-      description: 'Tarif préférentiel weekend (×1.5)'
+      description: 'Tarif préférentiel weekend (×1.0)'
     };
   }
 
