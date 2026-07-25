@@ -548,7 +548,10 @@ function DevisView({ setCurrentView }) {
       const computedInstallation = calculateInstallationCost(formData.installation_hours || 0) + (formData.installation_manual || 0);
 
       // Calculer le total final
-      const computedTotal = computedSubtotal - computedDiscount + finalDeliveryCost + computedInstallation;
+      let computedTotal = computedSubtotal - computedDiscount + finalDeliveryCost + computedInstallation;
+      if (formData.discount_type === 'percent') {
+        computedTotal = Math.round(computedTotal);
+      }
 
       const quoteData = {
         booking_type: formData.booking_type,
@@ -576,7 +579,7 @@ function DevisView({ setCurrentView }) {
         deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote,
         subtotal: Math.round(computedSubtotal * 100) / 100,
-        total_amount: Math.round(computedTotal * 100) / 100,
+        total_amount: formData.discount_type === 'percent' ? computedTotal : Math.round(computedTotal * 100) / 100,
         // Informations de dégressivité
         degression_coefficient: degressionInfo.coef,
         degression_type: degressionInfo.isWeekendDetected ? 'weekend' : degressionInfo.label,
@@ -712,7 +715,10 @@ function DevisView({ setCurrentView }) {
       if (formData.discount_type === 'percent') { computedDiscount = (computedSubtotal * (finalDiscountPercent || 0)) / 100; }
       else { computedDiscount = finalDiscountAmount || 0; }
       const computedInstallation = calculateInstallationCost(formData.installation_hours || 0) + (formData.installation_manual || 0);
-      const computedTotal = computedSubtotal - computedDiscount + finalDeliveryCost + computedInstallation;
+      let computedTotal = computedSubtotal - computedDiscount + finalDeliveryCost + computedInstallation;
+      if (formData.discount_type === 'percent') {
+        computedTotal = Math.round(computedTotal);
+      }
 
       const quoteData = {
         booking_type: formData.booking_type,
@@ -740,7 +746,7 @@ function DevisView({ setCurrentView }) {
         deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote,
         subtotal: Math.round(computedSubtotal * 100) / 100,
-        total_amount: Math.round(computedTotal * 100) / 100,
+        total_amount: formData.discount_type === 'percent' ? computedTotal : Math.round(computedTotal * 100) / 100,
         // Informations de dégressivité
         degression_coefficient: degressionInfo.coef,
         degression_type: degressionInfo.isWeekendDetected ? 'weekend' : degressionInfo.label,
@@ -853,7 +859,10 @@ function DevisView({ setCurrentView }) {
       if (formData.discount_type === 'percent') { computedDiscount = (computedSubtotal * (finalDiscountPercent || 0)) / 100; }
       else { computedDiscount = finalDiscountAmount || 0; }
       const computedInstallation = calculateInstallationCost(formData.installation_hours || 0) + (formData.installation_manual || 0);
-      const computedTotal = computedSubtotal - computedDiscount + finalDeliveryCost + computedInstallation;
+      let computedTotal = computedSubtotal - computedDiscount + finalDeliveryCost + computedInstallation;
+      if (formData.discount_type === 'percent') {
+        computedTotal = Math.round(computedTotal);
+      }
 
       const quoteData = {
         booking_type: formData.booking_type,
@@ -881,7 +890,7 @@ function DevisView({ setCurrentView }) {
         deposit_payment_method: formData.deposit_payment_method || '',
         is_quick_quote: isQuickQuote || (!formData.client_id && !formData.dj_id),
         subtotal: Math.round(computedSubtotal * 100) / 100,
-        total_amount: Math.round(computedTotal * 100) / 100,
+        total_amount: formData.discount_type === 'percent' ? computedTotal : Math.round(computedTotal * 100) / 100,
         degression_coefficient: degressionInfo.coef,
         degression_type: degressionInfo.isWeekendDetected ? 'weekend' : degressionInfo.label,
         force_weekend: formData.force_weekend,
@@ -1160,13 +1169,18 @@ function DevisView({ setCurrentView }) {
   };
 
   const calculateTotal = (quote) => {
+    const hasPercentDiscount = quote.discount_percent && quote.discount_percent > 0;
+    
     // Utiliser total_amount s'il est disponible (calculé par le serveur avec toutes les remises)
     if (quote.total_amount !== undefined && quote.total_amount !== null) {
+      if (hasPercentDiscount) {
+        return Math.round(quote.total_amount).toFixed(0);
+      }
       return quote.total_amount.toFixed(2);
     }
     
     // Sinon recalculer (fallback pour anciens devis)
-    if (!quote.items) return '0.00';
+    if (!quote.items) return '0';
     const subtotal = quote.subtotal || 0;
     
     // Prendre en compte la remise fixe OU le pourcentage
@@ -1179,7 +1193,11 @@ function DevisView({ setCurrentView }) {
     
     const deliveryCost = quote.delivery_cost || 0;
     const installationCost = quote.installation_cost || 0;
-    return (subtotal - discount + deliveryCost + installationCost).toFixed(2);
+    const totalVal = subtotal - discount + deliveryCost + installationCost;
+    if (hasPercentDiscount) {
+      return Math.round(totalVal).toFixed(0);
+    }
+    return totalVal.toFixed(2);
   };
 
   // Calculer le montant total en temps réel (pendant la saisie) avec dégressivité
@@ -1226,7 +1244,9 @@ function DevisView({ setCurrentView }) {
     const autoDeposit = calculateDeposit(subtotal);
     const autoGuarantee = calculateGuarantee(subtotal);
     
+    const isPercentDiscount = formData.discount_type === 'percent';
     const total = subtotal - discountAmount + deliveryCost + installationCost;
+    const finalTotal = isPercentDiscount ? Math.round(total) : total;
 
     return {
       days,
@@ -1243,7 +1263,7 @@ function DevisView({ setCurrentView }) {
       installationCost: installationCost.toFixed(2),
       autoDeposit: autoDeposit.toFixed(2),
       autoGuarantee: autoGuarantee.toFixed(2),
-      total: total.toFixed(2)
+      total: isPercentDiscount ? finalTotal.toFixed(0) : finalTotal.toFixed(2)
     };
   };
 

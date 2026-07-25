@@ -332,7 +332,15 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     yPos += 2;
     
     const discountValue = discountAmountFixed > 0 ? discountAmountFixed : (subtotal * discountPercent / 100);
-    const finalTotal = quoteData.total_amount || (subtotal - discountValue + deliveryCost + installationCost);
+    let finalTotal = quoteData.total_amount !== undefined && quoteData.total_amount !== null 
+      ? quoteData.total_amount 
+      : (subtotal - discountValue + deliveryCost + installationCost);
+    
+    const isPercentDiscount = discountPercent > 0;
+    if (isPercentDiscount) {
+      finalTotal = Math.round(finalTotal);
+    }
+    
     const totalHT = finalTotal / 1.20;
     const tvaAmount = finalTotal - totalHT;
     
@@ -348,7 +356,11 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.text("TOTAL TTC:", labelX, yPos);
-    doc.text(`${finalTotal.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
+    if (isPercentDiscount) {
+      doc.text(`${finalTotal.toFixed(0)}€`, rightAlignX, yPos, { align: 'right' });
+    } else {
+      doc.text(`${finalTotal.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
+    }
     yPos += 8;
 
     if (quoteData.deposit_paid && quoteData.deposit_amount > 0) {
@@ -362,7 +374,12 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
       doc.text("RESTE À PAYER:", labelX, yPos);
-      doc.text(`${(finalTotal - quoteData.deposit_amount).toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
+      const restToPay = finalTotal - quoteData.deposit_amount;
+      if (isPercentDiscount) {
+        doc.text(`${Math.round(restToPay).toFixed(0)}€`, rightAlignX, yPos, { align: 'right' });
+      } else {
+        doc.text(`${restToPay.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
+      }
       yPos += 10;
     } else {
       yPos += 4;
