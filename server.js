@@ -1524,7 +1524,7 @@ async function syncContractToGoogleCalendar(contract) {
   await initGoogleCalendar();
   if (!calendar) {
     console.warn('[GCal Sync Skip] Google Calendar is not initialized.');
-    return;
+    return { success: false, error: 'Google Calendar not initialized' };
   }
 
   const rawDjProfileId = typeof contract.dj_profile === 'string' ? contract.dj_profile : (contract.dj_profile?.id || contract.dj_profile_data?.id);
@@ -1543,9 +1543,10 @@ async function syncContractToGoogleCalendar(contract) {
         console.log(`[GCal Sync] Cleaned up event ${contract.google_event_id} since contract ${contract.id} is draft/deleted/no DJ.`);
       } catch (err) {
         console.error(`[GCal Sync Error] Failed to clean up calendar event for contract ${contract.id}: ${err.message || String(err)}`);
+        return { success: false, calendarId: contract.google_calendar_id, error: err.message || String(err) };
       }
     }
-    return;
+    return { success: true };
   }
 
   // Get DJ Profile
@@ -1558,7 +1559,7 @@ async function syncContractToGoogleCalendar(contract) {
   }
   if (!dj) {
     console.warn(`[GCal Sync Skip] DJ Profile ${djProfileId} not found.`);
-    return;
+    return { success: true };
   }
 
   const targetCalendarId = (dj.google_calendar_id || '').trim();
@@ -1574,9 +1575,10 @@ async function syncContractToGoogleCalendar(contract) {
         );
       } catch (err) {
         console.error(`[GCal Sync Error] Failed to delete event from old calendar for contract ${contract.id}: ${err.message || String(err)}`);
+        return { success: false, calendarId: contract.google_calendar_id, error: err.message || String(err) };
       }
     }
-    return;
+    return { success: true };
   }
 
   // If the calendar ID changed, delete the old event first!
@@ -4849,6 +4851,16 @@ api.delete('/contracts2/:id', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 api.delete('/contracts2/:id/permanent', authMiddleware, async (req, res) => {
+  const contract = await db.collection('contracts2').findOne({ id: req.params.id });
+  if (contract) {
+    if (contract.google_event_id && contract.google_calendar_id) {
+      try {
+        await deleteGoogleCalendarEvent(contract.google_calendar_id, contract.google_event_id);
+      } catch (err) {
+        console.error(`[Permanent Delete GCal Error] Failed to delete event for contract ${contract.id}:`, err);
+      }
+    }
+  }
   await db.collection('contracts2').deleteOne({ id: req.params.id });
   clearDjClientResponseCache();
   res.json({ success: true });
@@ -9079,6 +9091,12 @@ api.put('/agenda-settings', authMiddleware, async (req, res) => {
 });
 
 api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
+  try {
+    await initGoogleCalendar();
+  } catch (initErr) {
+    console.error('Failed to initialize Google Calendar during sync-all-google:', initErr);
+  }
+
   if (!calendar) {
     return res.status(500).json({ error: "Google Calendar n'est pas initialisé. Identifiants manquants." });
   }
@@ -9089,12 +9107,15 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
     const failedCalendars = new Set();
     const failedReasons = {};
 
-    // 1. Sync active contracts
-    const activeContracts = await db.collection('contracts2').find({
-      status: { $nin: ['deleted', 'trash', 'draft'] }
+    // 1. Sync contracts (active or needing deletion cleanup)
+    const contractsToSync = await db.collection('contracts2').find({
+      $or: [
+        { status: { $nin: ['deleted', 'trash', 'draft', 'cancelled'] } },
+        { google_event_id: { $exists: true, $ne: null } }
+      ]
     }).toArray();
 
-    for (const contract of activeContracts) {
+    for (const contract of contractsToSync) {
       const result = await syncContractToGoogleCalendar(contract);
       if (result && result.success === false) {
         failedCalendars.add(result.calendarId || 'unknown');
@@ -9224,9 +9245,19 @@ cron.schedule('* * * * *', async () => {
       }
 
       // Sync Agenda
+      try {
+        await initGoogleCalendar();
+      } catch (initErr) {
+        console.error('[CRON] Failed to initialize Google Calendar during background sync:', initErr);
+      }
       if (calendar) {
-        const activeContracts = await db.collection('contracts2').find({ status: { $nin: ['deleted', 'trash', 'draft'] } }).toArray();
-        for (const contract of activeContracts) {
+        const contractsToSync = await db.collection('contracts2').find({
+          $or: [
+            { status: { $nin: ['deleted', 'trash', 'draft', 'cancelled'] } },
+            { google_event_id: { $exists: true, $ne: null } }
+          ]
+        }).toArray();
+        for (const contract of contractsToSync) {
           await syncContractToGoogleCalendar(contract);
         }
 

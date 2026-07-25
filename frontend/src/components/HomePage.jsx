@@ -19,13 +19,7 @@ const HomePage = () => {
   const navigate = useNavigate();
   const [upcomingRelances, setUpcomingRelances] = useState([]);
   const [companies, setCompanies] = useState([]);
-  const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showNoteDialog, setShowNoteDialog] = useState(false);
-  const [showNoteForm, setShowNoteForm] = useState(false);
-  const [selectedNote, setSelectedNote] = useState(null);
-  const [editingNote, setEditingNote] = useState(null);
-  const [noteForm, setNoteForm] = useState({ title: '', content: '', shared_with_location: false });
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [dashboardStats, setDashboardStats] = useState({ 
     devis_envoi_pending: 0, 
@@ -43,7 +37,6 @@ const HomePage = () => {
 
   useEffect(() => {
     loadRelances();
-    loadNotes();
     loadUnreadNotifications();
     loadDashboardStats();
     loadSubscriptionStats();
@@ -76,69 +69,7 @@ const HomePage = () => {
     }
   };
 
-  const loadNotes = async () => {
-    try {
-      const response = await axios.get(`${API}/home-notes`);
-      setNotes(response.data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
-    } catch (error) {
-      console.error("Error loading notes:", error);
-    }
-  };
 
-  const handleSaveNote = async () => {
-    if (!noteForm.title.trim() || !noteForm.content.trim()) {
-      toast.error("Le titre et le contenu sont requis");
-      return;
-    }
-
-    try {
-      if (editingNote) {
-        await axios.put(`${API}/home-notes/${editingNote.id}`, noteForm);
-        toast.success("Note mise à jour !");
-      } else {
-        await axios.post(`${API}/home-notes`, noteForm);
-        toast.success("Note créée !");
-      }
-      
-      loadNotes();
-      setShowNoteForm(false);
-      setNoteForm({ title: '', content: '', shared_with_location: false });
-      setEditingNote(null);
-    } catch (error) {
-      console.error("Error saving note:", error);
-      toast.error("Erreur lors de la sauvegarde");
-    }
-  };
-
-  const handleDeleteNote = async (noteId) => {
-    if (!window.confirm("Supprimer cette note ?")) return;
-
-    try {
-      await axios.delete(`${API}/home-notes/${noteId}`);
-      toast.success("Note supprimée");
-      loadNotes();
-      setShowNoteDialog(false);
-    } catch (error) {
-      console.error("Error deleting note:", error);
-      toast.error("Erreur lors de la suppression");
-    }
-  };
-
-  const openNoteDialog = (note) => {
-    setSelectedNote(note);
-    setShowNoteDialog(true);
-  };
-
-  const openNoteForm = (note = null) => {
-    if (note) {
-      setEditingNote(note);
-      setNoteForm({ title: note.title, content: note.content, shared_with_location: note.shared_with_location || false });
-    } else {
-      setEditingNote(null);
-      setNoteForm({ title: '', content: '', shared_with_location: false });
-    }
-    setShowNoteForm(true);
-  };
 
   const loadRelances = async () => {
     try {
@@ -208,17 +139,7 @@ const HomePage = () => {
     return "bg-blue-100 border-blue-300 text-blue-800";
   };
   
-  const openNewNote = () => {
-    // Déclencher l'ouverture du formulaire de nouvelle note
-    const event = new CustomEvent('openNewNote');
-    document.dispatchEvent(event);
-    
-    // Optionnel : faire défiler vers la zone des notes
-    const notesElement = document.querySelector('.sticky-notes-container');
-    if (notesElement) {
-      notesElement.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
@@ -303,79 +224,7 @@ const HomePage = () => {
         </div>
       </div>
 
-      {/* Section Notes - Version Compacte */}
-      <div className="max-w-6xl mx-auto px-6 pt-6 pb-2">
-        <Card className="shadow-lg border border-yellow-200 bg-gradient-to-r from-yellow-50 to-amber-50">
-          <CardHeader className="pb-2 pt-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <StickyNote className="w-5 h-5 text-yellow-600" />
-                <CardTitle className="text-lg text-gray-900 flex items-center gap-2">
-                  Notes
-                  <Badge className="bg-yellow-600 hover:bg-yellow-600 text-white text-xs">
-                    {notes.length}
-                  </Badge>
-                </CardTitle>
-              </div>
-              <Button
-                onClick={() => openNoteForm()}
-                size="sm"
-                className="bg-yellow-600 hover:bg-yellow-700 text-white text-xs"
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                Nouvelle note
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-3 pb-4">
-            {notes.length === 0 ? (
-              <div className="text-center py-4 text-gray-500 text-sm">
-                Aucune note pour le moment
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {notes.slice(0, 5).map((note) => (
-                  <div
-                    key={note.id}
-                    className="p-2.5 rounded-md border border-yellow-200 bg-white hover:bg-yellow-50 transition-all hover:shadow cursor-pointer"
-                    onClick={() => openNoteDialog(note)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <div className="font-semibold text-sm text-gray-800 truncate">
-                            {note.title}
-                          </div>
-                          {note.shared_with_location && (
-                            <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded flex-shrink-0">Location</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-600 line-clamp-2 mt-1">
-                          {note.content}
-                        </p>
-                      </div>
-                      <div className="text-xs text-gray-400 flex-shrink-0">
-                        {new Date(note.created_at).toLocaleDateString('fr-FR', { 
-                          day: 'numeric',
-                          month: 'short'
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {notes.length > 5 && (
-              <div className="mt-3 text-center">
-                <p className="text-xs text-gray-500">
-                  +{notes.length - 5} autre(s) note(s)
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+
 
       {/* Section Relances à Venir - Version Compacte */}
       {!loading && upcomingRelances.length > 0 && (
@@ -504,124 +353,6 @@ const HomePage = () => {
         </div>
       </div>
 
-      {/* Dialog pour voir une note complète */}
-      <Dialog open={showNoteDialog} onOpenChange={setShowNoteDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl">{selectedNote?.title}</DialogTitle>
-            <DialogDescription className="text-xs text-gray-500">
-              Créée le {selectedNote && new Date(selectedNote.created_at).toLocaleDateString('fr-FR', { 
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="py-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 whitespace-pre-wrap text-sm">
-              {selectedNote?.content}
-            </div>
-          </div>
-
-          <DialogFooter className="flex justify-between">
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setShowNoteDialog(false);
-                  openNoteForm(selectedNote);
-                }}
-                className="border-yellow-600 text-yellow-600 hover:bg-yellow-50"
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                Modifier
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleDeleteNote(selectedNote.id)}
-                className="border-red-600 text-red-600 hover:bg-red-50"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Supprimer
-              </Button>
-            </div>
-            <Button onClick={() => setShowNoteDialog(false)}>
-              Fermer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog pour créer/éditer une note */}
-      <Dialog open={showNoteForm} onOpenChange={setShowNoteForm}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editingNote ? "Modifier la note" : "Nouvelle note"}
-            </DialogTitle>
-            <DialogDescription>
-              {editingNote ? "Modifiez votre note" : "Créez une nouvelle note rapide"}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="note_title">Titre</Label>
-              <Input
-                id="note_title"
-                value={noteForm.title}
-                onChange={(e) => setNoteForm(prev => ({ ...prev, title: e.target.value }))}
-                placeholder="Ex: Idée pour spectacle, À faire..."
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="note_content">Contenu</Label>
-              <Textarea
-                id="note_content"
-                value={noteForm.content}
-                onChange={(e) => setNoteForm(prev => ({ ...prev, content: e.target.value }))}
-                placeholder="Écrivez votre note ici..."
-                rows={6}
-              />
-            </div>
-
-            <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={noteForm.shared_with_location}
-                onChange={(e) => setNoteForm(prev => ({ ...prev, shared_with_location: e.target.checked }))}
-                className="rounded border-slate-300 w-4 h-4"
-                data-testid="share-with-location"
-              />
-              <span className="text-sm text-slate-700">Partager avec l'utilisateur Location</span>
-            </label>
-          </div>
-
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setShowNoteForm(false);
-                setNoteForm({ title: '', content: '', shared_with_location: false });
-                setEditingNote(null);
-              }}
-            >
-              Annuler
-            </Button>
-            <Button 
-              onClick={handleSaveNote}
-              className="bg-yellow-600 hover:bg-yellow-700"
-            >
-              {editingNote ? "Mettre à jour" : "Créer"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

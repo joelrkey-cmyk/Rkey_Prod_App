@@ -84,7 +84,7 @@ const ContractEmailPage = () => {
       const parts = contractData.client_info.event_date.split('-');
       return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : contractData.client_info.event_date;
     })() : '',
-    type_evenement: contractData.client_info?.event_type || '',
+    type_evenement: (contractData.client_info?.event_type === 'custom' && contractData.client_info?.custom_event_type) ? contractData.client_info.custom_event_type : (contractData.client_info?.event_type || ''),
   } : null;
 
   // Insert variable at cursor in email body (ReactQuill)
