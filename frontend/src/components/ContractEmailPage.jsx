@@ -51,6 +51,27 @@ const quillFormats = [
 
 // Hardcoded signature removed - now loaded from Global Settings via useEmailSignature hook
 
+const hasSignature = (html, signature) => {
+  if (!html || !signature) return false;
+  if (html.includes(signature)) return true;
+  
+  // Extract image source from signature (e.g. data:image/png;base64,...)
+  const srcMatch = signature.match(/src="([^"]+)"/);
+  if (srcMatch && srcMatch[1] && html.includes(srcMatch[1])) {
+    return true;
+  }
+  
+  if (signature.includes('alt="Signature"') && html.includes('alt="Signature"')) {
+    return true;
+  }
+  
+  if (signature.includes("L'équipe R'KEY PROD") && html.includes("L'équipe R'KEY PROD")) {
+    return true;
+  }
+  
+  return false;
+};
+
 const ContractEmailPage = () => {
   const { signatureHtml } = useEmailSignature();
   const location = useLocation();
@@ -159,7 +180,9 @@ const ContractEmailPage = () => {
         const defaultTemplate = response.data.templates?.find(t => t.is_default);
         if (defaultTemplate) {
           setEmailSubject(defaultTemplate.subject);
-          setEmailBody(defaultTemplate.body + signatureHtml);
+          const body = defaultTemplate.body || '';
+          const bodyWithSig = hasSignature(body, signatureHtml) ? body : body + signatureHtml;
+          setEmailBody(bodyWithSig);
         } else {
           setEmailBody(signatureHtml);
         }
@@ -182,7 +205,9 @@ const ContractEmailPage = () => {
 
   const applyTemplate = (template) => {
     setEmailSubject(template.subject);
-    setEmailBody(template.body + emailSignature);
+    const body = template.body || '';
+    const bodyWithSig = hasSignature(body, signatureHtml) ? body : body + signatureHtml;
+    setEmailBody(bodyWithSig);
     toast.success(`Template "${template.name}" appliqué`);
   };
 

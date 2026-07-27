@@ -105,6 +105,27 @@ function VariableMenu({ onInsert, quoteData }) {
   );
 }
 
+const hasSignature = (html, signature) => {
+  if (!html || !signature) return false;
+  if (html.includes(signature)) return true;
+  
+  // Extract image source from signature (e.g. data:image/png;base64,...)
+  const srcMatch = signature.match(/src="([^"]+)"/);
+  if (srcMatch && srcMatch[1] && html.includes(srcMatch[1])) {
+    return true;
+  }
+  
+  if (signature.includes('alt="Signature"') && html.includes('alt="Signature"')) {
+    return true;
+  }
+  
+  if (signature.includes("L'équipe R'KEY PROD") && html.includes("L'équipe R'KEY PROD")) {
+    return true;
+  }
+  
+  return false;
+};
+
 function EnvoiView({ pendingQuoteToSend, setPendingQuoteToSend }) {
   const BACKEND_URL = (window.location.hostname === 'rkeyprodapp.fr' || window.location.hostname === 'www.rkeyprodapp.fr') ? window.location.origin : (process.env.REACT_APP_BACKEND_URL || window.location.origin);
   const API = `${BACKEND_URL}/api/location`;
@@ -249,7 +270,9 @@ function EnvoiView({ pendingQuoteToSend, setPendingQuoteToSend }) {
       const defaultTemplate = response.data.templates?.find(t => t.is_default);
       if (defaultTemplate && (!emailBody || emailBody === signatureHtml)) {
         setEmailSubject(defaultTemplate.subject);
-        setEmailBody((defaultTemplate.body || '') + signatureHtml);
+        const body = defaultTemplate.body || '';
+        const bodyWithSig = hasSignature(body, signatureHtml) ? body : body + signatureHtml;
+        setEmailBody(bodyWithSig);
       }
     } catch (error) {
       console.error('Error fetching templates:', error);
@@ -290,7 +313,9 @@ function EnvoiView({ pendingQuoteToSend, setPendingQuoteToSend }) {
 
   const applyTemplate = (template) => {
     setEmailSubject(template.subject);
-    setEmailBody((template.body || '') + signatureHtml);
+    const body = template.body || '';
+    const bodyWithSig = hasSignature(body, signatureHtml) ? body : body + signatureHtml;
+    setEmailBody(bodyWithSig);
     toast.success(`Template "${template.name}" appliqué`);
   };
 

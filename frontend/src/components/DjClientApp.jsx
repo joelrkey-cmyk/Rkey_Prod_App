@@ -1387,6 +1387,66 @@ function urlBase64ToUint8Array(base64String) {
           </div>
         </div>
 
+        {/* Section Note Importante / Avertissement pour les invités placé juste en dessous de la phrase */}
+        {canEdit ? (
+          <div className="mb-6">
+            <div className={`transition-all duration-300 border rounded-xl p-4 space-y-2 ${
+              showGuestNotice 
+                ? "bg-gradient-to-r from-red-50 to-rose-50 border-red-200 text-red-950 shadow-sm" 
+                : "bg-gray-50 border-gray-200 text-gray-400 opacity-60"
+            }`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-dashed border-gray-200">
+                <div className="flex items-center gap-2 font-bold text-sm">
+                  <AlertTriangle className={`w-5 h-5 flex-shrink-0 ${showGuestNotice ? "text-red-600" : "text-gray-400"}`} />
+                  <span className={showGuestNotice ? "text-red-900" : "text-gray-500"}>
+                    Note importante pour le bon déroulement de la soirée
+                  </span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold bg-white py-1.5 px-3 rounded-full border border-gray-200 hover:bg-gray-50 transition shadow-sm w-fit flex-shrink-0 self-start sm:self-center text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={showGuestNotice}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      if (currentRoute.eventId) {
+                        updateContractDb(currentRoute.eventId, { show_guest_intervention_notice: val });
+                        setEvents(prev => prev.map(x => x.id === currentRoute.eventId ? { ...x, showGuestInterventionNotice: val } : x));
+                      }
+                    }}
+                    className="w-4 h-4 text-red-600 rounded focus:ring-red-500 border-gray-300"
+                  />
+                  {!showGuestNotice ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-green-600" />}
+                  <span>{showGuestNotice ? "Affiché au client" : "Masqué au client"}</span>
+                </label>
+              </div>
+
+              <p className="text-xs sm:text-sm leading-relaxed font-medium">
+                En cas d'intervention de la part des invités (discours, vidéo-projection, animation, chant, etc.), il est <strong>impératif de prévenir l'animateur/DJ avant la date de l'événement</strong>.
+              </p>
+              <p className={`text-xs leading-relaxed font-semibold ${showGuestNotice ? "text-red-800" : "text-gray-400"}`}>
+                👉 Merci de vous référer aux coordonnées de l'animateur/DJ indiquées tout en haut de cette interface.
+              </p>
+            </div>
+          </div>
+        ) : (
+          showGuestNotice && (
+            <div className="mb-6">
+              <div className="bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-xl p-4 text-red-950 space-y-2 shadow-sm">
+                <div className="flex items-center gap-2 font-bold text-red-900 text-sm">
+                  <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                  <span>Note importante pour le bon déroulement de la soirée</span>
+                </div>
+                <p className="text-red-900 text-xs sm:text-sm leading-relaxed">
+                  En cas d'intervention de la part des invités (discours, vidéo-projection, animation, chant, etc.), il est <strong>impératif de prévenir l'animateur/DJ avant la date de l'événement</strong>.
+                </p>
+                <p className="text-red-800 text-xs leading-relaxed font-semibold">
+                  👉 Merci de vous référer aux coordonnées de l'animateur/DJ indiquées tout en haut de cette interface.
+                </p>
+              </div>
+            </div>
+          )
+        )}
+
         {canEdit && (
           <div className="mb-6">
             <h4 className="font-semibold text-gray-800 mb-2 text-sm flex items-center gap-1.5">
@@ -1527,73 +1587,6 @@ function urlBase64ToUint8Array(base64String) {
             </div>
           )}
         </div>
-
-        {/* Section Note Importante / Avertissement pour les invités */}
-        {canEdit ? (
-          <div className="mt-8 pt-6 border-t border-gray-200 space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50/60 p-3.5 rounded-xl border border-amber-200/80">
-              <div className="flex items-center gap-2.5">
-                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                <div>
-                  <h4 className="font-semibold text-amber-950 text-sm">
-                    Avertissement interventions des invités
-                  </h4>
-                  <p className="text-xs text-amber-800/80 mt-0.5">
-                    Rappelle aux invités de prévenir l'animateur/DJ avant l'événement pour tout discours, animation, vidéo, chant, etc.
-                  </p>
-                </div>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700 bg-white py-1.5 px-3 rounded-full border border-gray-200 hover:bg-gray-50 transition shadow-sm w-fit flex-shrink-0 self-start sm:self-center">
-                <input
-                  type="checkbox"
-                  checked={showGuestNotice}
-                  onChange={(e) => {
-                    const val = e.target.checked;
-                    if (currentRoute.eventId) {
-                      updateContractDb(currentRoute.eventId, { show_guest_intervention_notice: val });
-                      setEvents(prev => prev.map(x => x.id === currentRoute.eventId ? { ...x, showGuestInterventionNotice: val } : x));
-                    }
-                  }}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                />
-                {!showGuestNotice ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-green-600" />}
-                <span>{showGuestNotice ? "Affiché au client" : "Masqué au client"}</span>
-              </label>
-            </div>
-
-            {showGuestNotice && (
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 text-amber-950 space-y-2">
-                <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                  <span>Aperçu de la note importante pour les invités :</span>
-                </div>
-                <p className="text-amber-900 text-xs sm:text-sm leading-relaxed">
-                  Pour le bon déroulement de votre soirée, en cas d'intervention de la part des invités (discours, vidéo-projection, animation, chant, etc.), il est <strong>impératif de prévenir l'animateur/DJ avant la date de l'événement</strong>.
-                </p>
-                <p className="text-amber-800 text-xs leading-relaxed font-medium">
-                  👉 Merci de vous référer aux coordonnées de votre animateur indiquées en haut de cette page.
-                </p>
-              </div>
-            )}
-          </div>
-        ) : (
-          showGuestNotice && (
-            <div className="mt-8 pt-6 border-t border-gray-200">
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-xl p-4 text-amber-950 space-y-2 shadow-sm">
-                <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
-                  <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
-                  <span>Note importante pour le bon déroulement de la soirée</span>
-                </div>
-                <p className="text-amber-900 text-xs sm:text-sm leading-relaxed">
-                  En cas d'intervention de la part des invités (discours, vidéo-projection, animation, chant, etc.), il est <strong>impératif de prévenir l'animateur/DJ avant la date de l'événement</strong>.
-                </p>
-                <p className="text-amber-800 text-xs leading-relaxed font-medium">
-                  👉 Merci de vous référer aux coordonnées de l'animateur/DJ indiquées tout en haut de cette interface.
-                </p>
-              </div>
-            </div>
-          )
-        )}
       </div>
     );
   };

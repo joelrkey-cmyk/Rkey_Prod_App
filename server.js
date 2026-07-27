@@ -2572,7 +2572,40 @@ function createTransporter(cfg) {
     auth: { user: cfg.smtp_user, pass: cfg.smtp_password },
   };
   if (encryption === 'tls') opts.requireTLS = true;
-  return nodemailer.createTransport(opts);
+  
+  const originalTransporter = nodemailer.createTransport(opts);
+  
+  return {
+    sendMail: function(mailOptions, callback) {
+      if (mailOptions && mailOptions.html) {
+        try {
+          let html = mailOptions.html;
+          const attachments = mailOptions.attachments || [];
+          let index = Date.now();
+          
+          html = html.replace(/src="data:image\/(png|jpeg|jpg|gif|webp);base64,([^"]+)"/g, (match, type, base64Data) => {
+            const cid = `sig_img_${index++}`;
+            attachments.push({
+              filename: `signature_image.${type}`,
+              content: Buffer.from(base64Data, 'base64'),
+              cid: cid,
+              contentDisposition: 'inline'
+            });
+            return `src="cid:${cid}"`;
+          });
+          
+          mailOptions.html = html;
+          mailOptions.attachments = attachments;
+        } catch (err) {
+          console.error("Error processing inline signature base64 image:", err);
+        }
+      }
+      return originalTransporter.sendMail(mailOptions, callback);
+    },
+    verify: function() {
+      return originalTransporter.verify();
+    }
+  };
 }
 
 // ═══════════════════════════════════════════

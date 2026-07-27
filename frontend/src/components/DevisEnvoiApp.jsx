@@ -32,6 +32,27 @@ import {
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+const hasSignature = (html, signature) => {
+  if (!html || !signature) return false;
+  if (html.includes(signature)) return true;
+  
+  // Extract image source from signature (e.g. data:image/png;base64,...)
+  const srcMatch = signature.match(/src="([^"]+)"/);
+  if (srcMatch && srcMatch[1] && html.includes(srcMatch[1])) {
+    return true;
+  }
+  
+  if (signature.includes('alt="Signature"') && html.includes('alt="Signature"')) {
+    return true;
+  }
+  
+  if (signature.includes("L'équipe R'KEY PROD") && html.includes("L'équipe R'KEY PROD")) {
+    return true;
+  }
+  
+  return false;
+};
+
 const DevisEnvoiApp = () => {
   const { signatureHtml } = useEmailSignature();
   // ═══════════════════════════════════════════
@@ -196,12 +217,20 @@ const DevisEnvoiApp = () => {
   // ═══════════════════════════════════════════
   useEffect(() => { fetchPages(); fetchTemplates(); fetchSentQuotes(); }, []);
 
-  // Initialize email body with signature when loaded
+  // Initialize email body with default template and signature when loaded
   useEffect(() => {
-    if (signatureHtml && !emailBody) {
-      setEmailBody(signatureHtml);
+    if (signatureHtml) {
+      const defaultTemplate = templates?.find(t => t.is_default);
+      if (defaultTemplate && (!emailBody || emailBody === signatureHtml)) {
+        setEmailSubject(defaultTemplate.subject || '');
+        const body = defaultTemplate.body || '';
+        const bodyWithSig = hasSignature(body, signatureHtml) ? body : body + signatureHtml;
+        setEmailBody(bodyWithSig);
+      } else if (!emailBody) {
+        setEmailBody(signatureHtml);
+      }
     }
-  }, [signatureHtml]);
+  }, [signatureHtml, templates]);
 
   const fetchPages = async () => {
     try { setLoadingPages(true); const response = await api.get('/devis2/pages'); setAvailablePages(response.data.pages || []); }
@@ -477,7 +506,13 @@ const DevisEnvoiApp = () => {
     catch (error) { console.error('Error deleting template:', error); toast.error('Erreur lors de la suppression'); }
   };
 
-  const applyTemplate = (template) => { setEmailSubject(template.subject); setEmailBody(template.body); toast.success(`Template "${template.name}" appliqué`); };
+  const applyTemplate = (template) => {
+    setEmailSubject(template.subject || '');
+    const body = template.body || '';
+    const bodyWithSig = hasSignature(body, signatureHtml) ? body : body + (signatureHtml || '');
+    setEmailBody(bodyWithSig);
+    toast.success(`Template "${template.name}" appliqué`);
+  };
 
   // ═══════════════════════════════════════════
   // RENDER
