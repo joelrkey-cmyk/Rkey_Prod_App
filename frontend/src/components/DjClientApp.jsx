@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -645,6 +645,7 @@ function urlBase64ToUint8Array(base64String) {
             has_4g_5g: c.has_4g_5g || false,
             optionsTarifNotes: c.options_tarif_notes || "",
             showOptionsTarifNotesToClient: c.show_options_tarif_notes_to_client !== undefined ? c.show_options_tarif_notes_to_client : false,
+            showGuestInterventionNotice: c.show_guest_intervention_notice !== undefined ? c.show_guest_intervention_notice : true,
             playlistAudioFiles: c.playlist_audio_files || []
          };
       });
@@ -779,7 +780,7 @@ function urlBase64ToUint8Array(base64String) {
           if ('chat_messages' in payload) { section = 'chat'; titleForPush = "Nouveau message"; }
           if ('requested_options' in payload || 'options_tarif_notes' in payload || 'show_options_tarif_notes_to_client' in payload) section = 'options';
           if ('playlist_link' in payload || 'manual_must_play' in payload || 'blacklist' in payload || 'selected_music_styles' in payload || 'background_music_aperitif' in payload || 'playlist_audio_files' in payload || 'dedicaces' in payload) section = 'playlist';
-          if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload || 'entree_maries' in payload || 'entree_maries_notes' in payload || 'ouverture_bal' in payload || 'ouverture_bal_notes' in payload || 'dessert' in payload || 'dessert_notes' in payload || 'custom_wedding_events' in payload) section = 'planning';
+          if ('event_order' in payload || 'dj_notes' in payload || 'client_info' in payload || 'entree_maries' in payload || 'entree_maries_notes' in payload || 'ouverture_bal' in payload || 'ouverture_bal_notes' in payload || 'dessert' in payload || 'dessert_notes' in payload || 'custom_wedding_events' in payload || 'show_guest_intervention_notice' in payload) section = 'planning';
           if ('client_photo' in payload || 'next_appointment_date' in payload || 'next_appointment_time' in payload) section = 'client_info';
           if ('selected_pdf_notes' in payload) section = 'documents';
           if ('venue_photos' in payload || 'venue_notes' in payload || 'has_limiteur_son' in payload || 'has_detecteur_fumee' in payload || 'has_no_limiteur_ni_detecteur' in payload || 'has_wifi' in payload || 'has_4g_5g' in payload) section = 'venue';
@@ -1368,8 +1369,9 @@ function urlBase64ToUint8Array(base64String) {
 
   const ScheduleSection = ({ canEdit }) => {
     const ev = events.find(e => e.id === currentRoute.eventId);
+    const showGuestNotice = ev?.showGuestInterventionNotice !== undefined ? ev.showGuestInterventionNotice : true;
 
-    if (!canEdit && scheduleItems.length === 0 && !notes) return null;
+    if (!canEdit && scheduleItems.length === 0 && !notes && !showGuestNotice) return null;
 
     return (
       <div className={`bg-white rounded-xl shadow-sm border p-6 md:col-span-2 text-slate-900 ${getSectionHighlightClass('planning')}`}>
@@ -1501,7 +1503,7 @@ function urlBase64ToUint8Array(base64String) {
                           checked={item.isSurprise || false}
                           onChange={(e) => {
                             updateScheduleItem(item.key, 'isSurprise', e.target.checked);
-                            handleUpdateScheduleItemBlur(); // We might need to handle this differently, but blur shouldn't be strictly necessary for checkbox.
+                            handleUpdateScheduleItemBlur();
                             if (currentRoute.eventId) {
                                const newItems = scheduleItems.map(i => i.key === item.key ? { ...i, isSurprise: e.target.checked } : i);
                                updateContractDb(currentRoute.eventId, { event_order: newItems });
@@ -1525,6 +1527,73 @@ function urlBase64ToUint8Array(base64String) {
             </div>
           )}
         </div>
+
+        {/* Section Note Importante / Avertissement pour les invités */}
+        {canEdit ? (
+          <div className="mt-8 pt-6 border-t border-gray-200 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-amber-50/60 p-3.5 rounded-xl border border-amber-200/80">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                <div>
+                  <h4 className="font-semibold text-amber-950 text-sm">
+                    Avertissement interventions des invités
+                  </h4>
+                  <p className="text-xs text-amber-800/80 mt-0.5">
+                    Rappelle aux invités de prévenir l'animateur/DJ avant l'événement pour tout discours, animation, vidéo, chant, etc.
+                  </p>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700 bg-white py-1.5 px-3 rounded-full border border-gray-200 hover:bg-gray-50 transition shadow-sm w-fit flex-shrink-0 self-start sm:self-center">
+                <input
+                  type="checkbox"
+                  checked={showGuestNotice}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    if (currentRoute.eventId) {
+                      updateContractDb(currentRoute.eventId, { show_guest_intervention_notice: val });
+                      setEvents(prev => prev.map(x => x.id === currentRoute.eventId ? { ...x, showGuestInterventionNotice: val } : x));
+                    }
+                  }}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                />
+                {!showGuestNotice ? <EyeOff className="w-4 h-4 text-gray-500" /> : <Eye className="w-4 h-4 text-green-600" />}
+                <span>{showGuestNotice ? "Affiché au client" : "Masqué au client"}</span>
+              </label>
+            </div>
+
+            {showGuestNotice && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 text-amber-950 space-y-2">
+                <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span>Aperçu de la note importante pour les invités :</span>
+                </div>
+                <p className="text-amber-900 text-xs sm:text-sm leading-relaxed">
+                  Pour le bon déroulement de votre soirée, en cas d'intervention de la part des invités (discours, vidéo-projection, animation, chant, etc.), il est <strong>impératif de prévenir l'animateur/DJ avant la date de l'événement</strong>.
+                </p>
+                <p className="text-amber-800 text-xs leading-relaxed font-medium">
+                  👉 Merci de vous référer aux coordonnées de votre animateur indiquées en haut de cette page.
+                </p>
+              </div>
+            )}
+          </div>
+        ) : (
+          showGuestNotice && (
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-xl p-4 text-amber-950 space-y-2 shadow-sm">
+                <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  <span>Note importante pour le bon déroulement de la soirée</span>
+                </div>
+                <p className="text-amber-900 text-xs sm:text-sm leading-relaxed">
+                  En cas d'intervention de la part des invités (discours, vidéo-projection, animation, chant, etc.), il est <strong>impératif de prévenir l'animateur/DJ avant la date de l'événement</strong>.
+                </p>
+                <p className="text-amber-800 text-xs leading-relaxed font-medium">
+                  👉 Merci de vous référer aux coordonnées de l'animateur/DJ indiquées tout en haut de cette interface.
+                </p>
+              </div>
+            </div>
+          )
+        )}
       </div>
     );
   };
