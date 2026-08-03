@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -767,9 +767,30 @@ function urlBase64ToUint8Array(base64String) {
     }
   }, [currentRoute.eventId, events]);
 
+  const isClientLockedByJ2 = (eventDateStr) => {
+    if (!eventDateStr || eventDateStr === '1970-01-01') return false;
+    const rawDate = String(eventDateStr).split('T')[0];
+    const parts = rawDate.split('-').map(Number);
+    if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) return false;
+    
+    const eventDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    const diffTime = eventDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return diffDays <= 2;
+  };
+
   const updateContractDb = async (eventId, payload) => {
     try {
       const ev = events.find(e => e.id === eventId);
+      const isClientView = isPublic || currentRoute.role === 'client';
+      if (isClientView && ev && isClientLockedByJ2(ev.date)) {
+        toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+        return;
+      }
       const finalPayload = { ...payload };
 
       let section = null;
@@ -831,6 +852,11 @@ function urlBase64ToUint8Array(base64String) {
   };
 
   const handleAddCustomWeddingEvent = () => {
+    const ev = events.find(e => e.id === currentRoute.eventId);
+    if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+      toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+      return;
+    }
     const newItem = {
       id: "cw-" + Date.now(),
       title: "",
@@ -845,6 +871,10 @@ function urlBase64ToUint8Array(base64String) {
   };
 
   const handleUpdateCustomWeddingEvent = (id, field, value) => {
+    const ev = events.find(e => e.id === currentRoute.eventId);
+    if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+      return;
+    }
     const updated = customWeddingEvents.map(item => {
       if (item.id === id) {
         return { ...item, [field]: value };
@@ -855,12 +885,22 @@ function urlBase64ToUint8Array(base64String) {
   };
 
   const handleSaveCustomWeddingEvents = () => {
+    const ev = events.find(e => e.id === currentRoute.eventId);
+    if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+      toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+      return;
+    }
     if (currentRoute.eventId) {
       updateContractDb(currentRoute.eventId, { custom_wedding_events: customWeddingEvents });
     }
   };
 
   const handleDeleteCustomWeddingEvent = (id) => {
+    const ev = events.find(e => e.id === currentRoute.eventId);
+    if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+      toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+      return;
+    }
     const updated = customWeddingEvents.filter(item => item.id !== id);
     setCustomWeddingEvents(updated);
     if (currentRoute.eventId) {
@@ -1610,6 +1650,10 @@ function urlBase64ToUint8Array(base64String) {
     const audioFiles = isClient ? allAudioFiles.filter(a => !a.isSurprise) : allAudioFiles;
 
     const handleUploadAudio = async (file) => {
+      if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+        toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+        return;
+      }
       const isAudio = file.type === 'audio/mpeg' || file.type === 'audio/mp3' || file.type === 'audio/wav' || file.type === 'audio/x-wav' || file.name.endsWith('.mp3') || file.name.endsWith('.wav');
       if (!isAudio) {
         toast.error("Format non supporté (MP3 ou WAV uniquement)");
@@ -1674,6 +1718,10 @@ function urlBase64ToUint8Array(base64String) {
     };
 
     const handleDeleteAudio = async (audioId) => {
+      if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+        toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+        return;
+      }
       if (!window.confirm("Voulez-vous vraiment supprimer ce fichier ?")) return;
       
       try {
@@ -3076,6 +3124,10 @@ function urlBase64ToUint8Array(base64String) {
       if (!info) return null;
       
       const handleFileUpload = async (e) => {
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+          toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+          return;
+        }
         const file = e.target.files[0];
         if (!file) return;
         setClientPhotoUploading(true);
@@ -3100,6 +3152,10 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       const handleDeletePhoto = () => {
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+          toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+          return;
+        }
         if (!window.confirm("Supprimer cette photo ?")) return;
         updateContractDb(currentRoute.eventId, { client_photo: null });
       };
@@ -3650,6 +3706,10 @@ function urlBase64ToUint8Array(base64String) {
       };
       
       const handleDeleteEventDoc = async (docId) => {
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+          toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+          return;
+        }
         if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce document ?")) return;
         try {
           const endpoint = `/api/public/dj-client/${currentRoute.eventId}/documents/${docId}`;
@@ -3696,6 +3756,10 @@ function urlBase64ToUint8Array(base64String) {
       };
       
       const handleFileUpload = async (event) => {
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+          toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+          return;
+        }
         const file = event.target.files[0];
         if (!file) return;
         if (file.type !== "application/pdf") {
@@ -3740,6 +3804,10 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       const handleVisitSheetUpload = async (event) => {
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+          toast.error("Les modifications ne me sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+          return;
+        }
         const files = Array.from(event.target.files);
         if (files.length === 0) return;
         
@@ -5620,6 +5688,18 @@ function urlBase64ToUint8Array(base64String) {
             </div>
             <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
               <Users className="w-48 h-48" />
+            </div>
+          </div>
+        )}
+
+        {(isPublic || currentRoute.role === 'client') && isClientLockedByJ2(ev.date) && (
+          <div className="bg-amber-50 border border-amber-300 text-amber-900 p-4 rounded-xl shadow-sm flex items-center gap-3 animate-in fade-in duration-300">
+            <Lock className="w-6 h-6 shrink-0 text-amber-600" />
+            <div>
+              <h4 className="font-bold text-amber-900 text-sm md:text-base">Espace client verrouillé (J-2)</h4>
+              <p className="text-xs md:text-sm text-amber-800 mt-0.5">
+                Votre événement ayant lieu dans moins de 2 jours (ou étant passé), les modifications en ligne ne sont plus autorisées. Pour toute mise à jour de dernière minute, veuillez contacter directement votre DJ.
+              </p>
             </div>
           </div>
         )}

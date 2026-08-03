@@ -3804,8 +3804,32 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   return res.status(404).json({ error: 'Not found' });
 });
 
+function isContractLockedByJ2(contract) {
+  if (!contract) return false;
+  const info = contract.client_info || {};
+  const eventDateStr = info.event_date || contract.event_date;
+  if (!eventDateStr || eventDateStr === '1970-01-01') return false;
+  
+  const dateOnly = String(eventDateStr).split('T')[0];
+  const parts = dateOnly.split('-').map(Number);
+  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) return false;
+  
+  const eventDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  const diffTime = eventDate.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return diffDays <= 2;
+}
+
 api.put('/public/dj-client/:id', async (req, res) => {
   const id = req.params.id;
+  const contract = await db.collection('contracts2').findOne({ id });
+  if (contract && isContractLockedByJ2(contract)) {
+    return res.status(403).json({ error: "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)." });
+  }
   await db.collection('contracts2').updateOne({ id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
   await syncVenueFromContract(id, req.body);
   
@@ -3871,6 +3895,10 @@ async function convertToPdfBuffer(fileBuffer, originalName, mimeType) {
 
 api.post('/public/dj-client/:id/documents/convert-visit-sheet', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
+  const contract = await db.collection('contracts2').findOne({ id: req.params.id });
+  if (contract && isContractLockedByJ2(contract)) {
+    return res.status(403).json({ error: "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)." });
+  }
   const category = req.body.category || 'Animations et interventions';
   const docId = uuidv4();
   const decodedOriginalname = decodeMulterFilename(req.file.originalname);
@@ -3911,6 +3939,10 @@ api.post('/public/dj-client/:id/documents/convert-visit-sheet', upload.single('f
 api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, res) => {
   try {
   if (!req.file) return res.status(400).json({ error: 'No file' });
+  const contract = await db.collection('contracts2').findOne({ id: req.params.id });
+  if (contract && isContractLockedByJ2(contract)) {
+    return res.status(403).json({ error: "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)." });
+  }
   const category = req.body.category || 'Animations et interventions';
   const docId = uuidv4();
   const decodedFilename = decodeMulterFilename(req.file.originalname);
@@ -4021,6 +4053,9 @@ api.delete('/public/dj-client/:id/documents/:docId', async (req, res) => {
   try {
     const contract = await db.collection('contracts2').findOne({ id: req.params.id });
     if (!contract || !contract.event_documents) return res.status(404).json({ error: 'Not found' });
+    if (isContractLockedByJ2(contract)) {
+      return res.status(403).json({ error: "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)." });
+    }
     
     // Find the document to potentially delete from GCS
     const docToDelete = contract.event_documents.find(d => d.id === req.params.docId);
@@ -6075,6 +6110,9 @@ api.delete('/public/dj-client/:id/playlist-audio/:audioId', async (req, res) => 
     const contract = await db.collection('contracts2').findOne({ id });
     if (!contract || !contract.playlist_audio_files) {
       return res.status(404).json({ error: 'Contrat ou fichiers audio non trouvés' });
+    }
+    if (isContractLockedByJ2(contract)) {
+      return res.status(403).json({ error: "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)." });
     }
     
     const audioToDelete = contract.playlist_audio_files.find(a => a.id === audioId);
