@@ -117,8 +117,8 @@ const DjProfilesApp = () => {
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
       const response = await fetch(`${BACKEND_URL}/api/dj-fiches`, { headers });
       if (response.ok) {
-        const data = await response.json();
-        setProfiles(data);
+        const data = await response.json().catch(() => ([]));
+        setProfiles(data || []);
       }
     } catch (error) {
       console.error("Error fetching profiles:", error);

@@ -29,6 +29,7 @@ import DjClientApp from "./components/DjClientApp";
 import AgendaPrestationApp from "./components/AgendaPrestationApp";
 import VenueApp from "./components/VenueApp";
 import PublicVenuesApp from "./components/PublicVenuesApp";
+import VisitingSheetApp from "./components/VisitingSheetApp";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -149,6 +150,17 @@ function App() {
                     <Navigation />
                     <ErrorBoundary>
                       <DjClientApp />
+                    </ErrorBoundary>
+                  </>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/fiche-visite" element={
+                <ProtectedRoute>
+                  <>
+                    <Navigation />
+                    <ErrorBoundary>
+                      <VisitingSheetApp />
                     </ErrorBoundary>
                   </>
                 </ProtectedRoute>

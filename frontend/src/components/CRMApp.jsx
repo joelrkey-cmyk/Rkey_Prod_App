@@ -337,7 +337,7 @@ function CRMApp() {
     try {
       toast.info("Recherche SIRENE en cours...");
       const response = await fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${companyForm.siret}`);
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       
       if (data && data.results && data.results.length > 0) {
         const result = data.results[0];

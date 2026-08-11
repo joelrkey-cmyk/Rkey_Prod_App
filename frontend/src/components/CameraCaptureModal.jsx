@@ -116,7 +116,7 @@ const CameraCaptureModal = ({ isOpen, onClose, onPhotosSaved, BACKEND_URL }) => 
         });
         
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
           if (data.url) {
             uploaded.push({ url: data.url, id: Date.now() + i });
           }

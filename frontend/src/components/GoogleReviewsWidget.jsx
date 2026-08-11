@@ -391,7 +391,7 @@ const GoogleReviewsWidget = ({
         throw new Error('Erreur lors de la génération de la réponse');
       }
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       setGeneratedResponse(data.response_text);
     } catch (error) {
       console.error('Erreur:', error);
@@ -439,7 +439,7 @@ const GoogleReviewsWidget = ({
             // It's a Place ID - use it directly
             const response = await fetch(`${BACKEND_URL}/api/reviews/${businessId}`, { headers });
             if (response.ok) {
-              const data = await response.json();
+              const data = await response.json().catch(() => ({}));
               setBusinessData(data.data);
             } else {
               throw new Error('API call failed');
@@ -448,7 +448,7 @@ const GoogleReviewsWidget = ({
             // It's a business name - search for it
             const response = await fetch(`${BACKEND_URL}/api/reviews/search/${encodeURIComponent(businessId)}`, { headers });
             if (response.ok) {
-              const data = await response.json();
+              const data = await response.json().catch(() => ({}));
               setBusinessData(data.data);
             } else {
               throw new Error('API call failed');
@@ -458,7 +458,7 @@ const GoogleReviewsWidget = ({
           // Use default business name for R'Key Prod
           const response = await fetch(`${BACKEND_URL}/api/reviews/search/${encodeURIComponent("R'Key Prod")}`, { headers });
           if (response.ok) {
-            const data = await response.json();
+            const data = await response.json().catch(() => ({}));
             setBusinessData(data.data);
           } else {
             throw new Error('API call failed');

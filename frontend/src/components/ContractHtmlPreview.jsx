@@ -22,7 +22,7 @@ const ContractHtmlPreview = () => {
       if (!response.ok) {
         throw new Error('Contrat non trouvé');
       }
-      const contractData = await response.json();
+      const contractData = await response.json().catch(() => null);
       setContract(contractData);
     } catch (error) {
       console.error('Failed to load contract:', error);

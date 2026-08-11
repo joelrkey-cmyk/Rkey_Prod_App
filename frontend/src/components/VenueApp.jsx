@@ -548,7 +548,7 @@ export default function VenueApp() {
           },
           body: formData
         });
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (response.ok && data.url) {
           uploadedPhotos.push({ url: data.url, id: Date.now() + i });
           successCount++;

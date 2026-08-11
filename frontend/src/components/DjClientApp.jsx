@@ -189,7 +189,8 @@ function urlBase64ToUint8Array(base64String) {
   const subscribeUserToPush = async (reg) => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/push/vapid-public-key`);
-      const { publicKey } = await res.json();
+      const { publicKey } = await res.json().catch(() => ({}));
+      if (!publicKey) return;
       const applicationServerKey = urlBase64ToUint8Array(publicKey);
 
       const subscription = await reg.pushManager.subscribe({
@@ -434,7 +435,7 @@ function urlBase64ToUint8Array(base64String) {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (response.ok) {
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
           setCompanySettings({
             company_name: data.company_name || "R'KEY PROD",
             bank_name: data.bank_name || "Tiime",
@@ -454,7 +455,7 @@ function urlBase64ToUint8Array(base64String) {
     try {
       const res = await fetch(`${BACKEND_URL}/api/public/contract-pdf-notes`);
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ([]));
         setPdfNotes(data || []);
       }
     } catch (e) {
@@ -474,8 +475,8 @@ function urlBase64ToUint8Array(base64String) {
         response = await fetch(`${BACKEND_URL}/api/dj-fiches/public`);
       }
       if (response.ok) {
-        const data = await response.json();
-        const normalizedData = data.map(dj => {
+        const data = await response.json().catch(() => ([]));
+        const normalizedData = (data || []).map(dj => {
           const djNameLower = (dj.nom_artistique || '').toLowerCase();
           if (djNameLower === 'joel' || djNameLower === 'joël') return { ...dj, nom_artistique: "Joël R'Key" };
           if (djNameLower === 'stephane' || djNameLower === 'stéphane') return { ...dj, nom_artistique: "Stefan Edison" };
@@ -1669,7 +1670,7 @@ function urlBase64ToUint8Array(base64String) {
           method: 'POST',
           body: formData
         });
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (response.ok && data.url) {
           const newAudioFile = {
             id: 'audio-' + Date.now(),
@@ -2528,6 +2529,7 @@ function urlBase64ToUint8Array(base64String) {
           head: [["Type", "Horaire", "Descriptif"]],
           body: tableBody,
           theme: 'grid',
+          styles: { cellPadding: 1.5, fontSize: 9.5 },
           headStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], lineWidth: 0.1, lineColor: [200, 200, 200], fontStyle: 'bold' },
           bodyStyles: { textColor: [75, 85, 99], lineWidth: 0.1, lineColor: [229, 231, 235] },
           columnStyles: {
@@ -2539,7 +2541,7 @@ function urlBase64ToUint8Array(base64String) {
           tableLineColor: [229, 231, 235],
         });
         
-        y = (doc.lastAutoTable?.finalY || (doc.autoTable && doc.autoTable.previous ? doc.autoTable.previous.finalY : null) || y) + 14;
+        y = (doc.lastAutoTable?.finalY || (doc.autoTable && doc.autoTable.previous ? doc.autoTable.previous.finalY : null) || y) + 8;
       }
       
       if (y > 240) { doc.addPage(); y = 10; }
@@ -2714,9 +2716,13 @@ function urlBase64ToUint8Array(base64String) {
         y += 3;
       }
 
-      // --- NEXT PAGE (Page suivante) for Tarifs & Options and Caractéristiques de la salle ---
-      doc.addPage();
-      const startColY = 10;
+      // --- Tarifs & Options and Caractéristiques de la salle ---
+      y += 8;
+      if (y > 210) {
+        doc.addPage();
+        y = 12;
+      }
+      const startColY = y;
       leftY = startColY;
       rightY = startColY;
       const leftColX = 15;
@@ -2727,38 +2733,38 @@ function urlBase64ToUint8Array(base64String) {
       const contractOptions = ev.selectedOptions || [];
       const requestedOptions = ev.requestedOptions || [];
       
-      doc.setFontSize(16); doc.setTextColor(0, 0, 0);
+      doc.setFontSize(14); doc.setTextColor(0, 0, 0);
       doc.text("Tarifs & Options", leftColX, leftY); leftY += 8;
       
       if (contractOptions.length > 0 || requestedOptions.length > 0 || ev.optionsTarifNotes) {
         if (contractOptions.length > 0) {
-          doc.setFontSize(12); doc.setTextColor(0, 0, 0);
-          doc.text("Options validées:", leftColX, leftY); leftY += 6;
+          doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+          doc.text("Options validées:", leftColX, leftY); leftY += 5;
           doc.setFontSize(10); doc.setTextColor(75, 85, 99);
           contractOptions.forEach(opt => {
              const splitOpt = doc.splitTextToSize(`- ${opt.name} (${opt.price}€)`, colWidth);
              doc.text(splitOpt, leftColX, leftY); leftY += splitOpt.length * 5;
           });
-          leftY += 4;
+          leftY += 3;
         }
         
         if (requestedOptions.length > 0) {
-          doc.setFontSize(12); doc.setTextColor(0, 0, 0);
-          doc.text("Options en attente:", leftColX, leftY); leftY += 6;
+          doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+          doc.text("Options en attente:", leftColX, leftY); leftY += 5;
           doc.setFontSize(10); doc.setTextColor(75, 85, 99);
           requestedOptions.forEach(opt => {
              const splitOpt = doc.splitTextToSize(`- ${opt.name} (${opt.price}€)`, colWidth);
              doc.text(splitOpt, leftColX, leftY); leftY += splitOpt.length * 5;
           });
-          leftY += 4;
+          leftY += 3;
         }
 
         if (ev.optionsTarifNotes) {
-          doc.setFontSize(12); doc.setTextColor(0, 0, 0);
-          doc.text("Notes sur les tarifs:", leftColX, leftY); leftY += 6;
+          doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+          doc.text("Notes sur les tarifs:", leftColX, leftY); leftY += 5;
           doc.setFontSize(10); doc.setTextColor(75, 85, 99);
           const splitNotes = doc.splitTextToSize(ev.optionsTarifNotes, colWidth);
-          doc.text(splitNotes, leftColX, leftY); leftY += splitNotes.length * 5 + 5;
+          doc.text(splitNotes, leftColX, leftY); leftY += splitNotes.length * 5 + 3;
         }
       } else {
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
@@ -2768,7 +2774,7 @@ function urlBase64ToUint8Array(base64String) {
       // Right Column: Caractéristiques de la salle
       const hasVenueFeatures = ev.has_limiteur_son || ev.has_detecteur_fumee || ev.has_wifi || ev.has_4g_5g;
       
-      doc.setFontSize(16); doc.setTextColor(0, 0, 0);
+      doc.setFontSize(14); doc.setTextColor(0, 0, 0);
       doc.text("Caractéristiques de la salle", rightColX, rightY); rightY += 8;
       
       if (hasVenueFeatures || ev.venue_notes) {
@@ -2779,27 +2785,31 @@ function urlBase64ToUint8Array(base64String) {
         if (ev.has_4g_5g) { doc.text("- Réseau 4G/5G accessible", rightColX, rightY); rightY += 5; }
         
         if (ev.venue_notes) {
-          rightY += 4;
-          doc.setFontSize(12); doc.setTextColor(0, 0, 0);
-          doc.text("Observations sur la salle:", rightColX, rightY); rightY += 6;
+          rightY += 3;
+          doc.setFontSize(11); doc.setTextColor(0, 0, 0);
+          doc.text("Observations sur la salle:", rightColX, rightY); rightY += 5;
           doc.setFontSize(10); doc.setTextColor(75, 85, 99);
           const splitText = doc.splitTextToSize(ev.venue_notes, colWidth);
-          doc.text(splitText, rightColX, rightY); rightY += splitText.length * 5 + 5;
+          doc.text(splitText, rightColX, rightY); rightY += splitText.length * 5 + 3;
         }
       } else {
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
         doc.text("Aucune caractéristique spécifique renseignée.", rightColX, rightY); rightY += 6;
       }
 
-      y = Math.max(leftY, rightY) + 12;
+      y = Math.max(leftY, rightY) + 8;
 
       if (notes) {
-        if (y > 275) { doc.addPage(); y = 10; }
+        if (y > 260) { doc.addPage(); y = 12; }
         doc.setFontSize(14); doc.setTextColor(0, 0, 0);
         doc.text("Notes DJ:", 15, y); y += 6;
         doc.setFontSize(10); doc.setTextColor(75, 85, 99);
         const splitText = doc.splitTextToSize(notes, 180);
-        doc.text(splitText, 15, y);
+        splitText.forEach(line => {
+          if (y > 280) { doc.addPage(); y = 12; }
+          doc.text(line, 15, y);
+          y += 5;
+        });
       }
 
       if (shouldPreview) {
@@ -3138,7 +3148,7 @@ function urlBase64ToUint8Array(base64String) {
             method: 'POST',
             body: formData
           });
-          const data = await response.json();
+          const data = await response.json().catch(() => ({}));
           if (response.ok && data.url) {
             updateContractDb(currentRoute.eventId, { client_photo: data.url });
             toast.success("Photo mise à jour");
@@ -5438,7 +5448,7 @@ function urlBase64ToUint8Array(base64String) {
               method: 'POST',
               body: formData
             });
-            const data = await response.json();
+            const data = await response.json().catch(() => ({}));
             if (response.ok && data.url) {
               uploadedPhotos.push({ url: data.url, id: Date.now() + i });
               successCount++;

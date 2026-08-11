@@ -99,8 +99,13 @@ export default function AgendaPrestationApp() {
       });
       if (response.data?.success) {
         if (response.data.failedCalendars && response.data.failedCalendars.length > 0) {
+          const failedDjsList = response.data.failedCalendars.map(calId => {
+            const foundDj = djs.find(d => d.google_calendar_id && d.google_calendar_id.trim() === calId.trim());
+            return foundDj ? foundDj.name : calId;
+          });
+          const failedDjsStr = failedDjsList.join(', ');
           toast.warning(
-            `Synchronisé, mais ${response.data.failedCalendars.length} agenda(s) non accessible(s). Veuillez vérifier que vous avez partagé les agendas des DJs avec le compte : ${gcalStatus?.serviceAccountEmail || "de service associé"}.`,
+            `Synchronisé, mais ${response.data.failedCalendars.length} agenda(s) non accessible(s) (DJs concernés : ${failedDjsStr}). Veuillez vérifier que vous avez partagé les agendas de ces DJs avec le compte : ${gcalStatus?.serviceAccountEmail || "de service associé"}.`,
             { duration: 12000 }
           );
         } else {

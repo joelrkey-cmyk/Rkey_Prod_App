@@ -61,7 +61,7 @@ const GlobalSettingsApp = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error('Erreur chargement');
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       setFormData({
         company_name: data.company_name || '',
         company_address: data.company_address || '',
@@ -144,7 +144,7 @@ const GlobalSettingsApp = () => {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ recipient: testEmailAddress }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || 'Erreur');
       toast.success(data.message || 'Email de test envoyé !');
     } catch (error) {
@@ -161,7 +161,7 @@ const GlobalSettingsApp = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         if (data.email_signature_image) {
           const imgData = data.email_signature_image;
           const prefix = imgData.startsWith('data:') ? '' : 'data:image/png;base64,';

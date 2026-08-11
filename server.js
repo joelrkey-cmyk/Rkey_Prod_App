@@ -5753,6 +5753,142 @@ api.delete('/form-submissions/:id', authMiddleware, async (req, res) => {
   } catch (e) { res.status(500).json({ detail: e.message }); }
 });
 
+// ══════════ FICHES DE VISITE ══════════
+api.get('/visiting-sheets', authMiddleware, async (req, res) => {
+  try {
+    const list = await db.collection('visiting_sheets').find({}, { projection: { _id: 0 } }).sort({ updated_at: -1, created_at: -1 }).toArray();
+    res.json(cleanList(list));
+  } catch (e) { res.status(500).json({ detail: e.message }); }
+});
+
+api.get('/visiting-sheets/:id', authMiddleware, async (req, res) => {
+  try {
+    const sheet = await db.collection('visiting_sheets').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    if (!sheet) return res.status(404).json({ detail: 'Fiche non trouvée' });
+    res.json(clean(sheet));
+  } catch (e) { res.status(500).json({ detail: e.message }); }
+});
+
+api.post('/visiting-sheets', authMiddleware, async (req, res) => {
+  try {
+    const sheet = {
+      id: uuidv4(),
+      title: req.body.title || `Fiche de visite - ${req.body.client_name || 'Nouveau client'}`,
+      client_name: req.body.client_name || '',
+      client_email: req.body.client_email || '',
+      client_phone: req.body.client_phone || '',
+      client_address: req.body.client_address || '',
+      event_date: req.body.event_date || '',
+      event_type: req.body.event_type || 'Mariage',
+      location_name: req.body.location_name || '',
+      submission_id: req.body.submission_id || null,
+      
+      // Planning / Timing
+      heure_installation: req.body.heure_installation || '',
+      heure_debut_prestation: req.body.heure_debut_prestation || '',
+      heure_fin_prestation: req.body.heure_fin_prestation || '',
+      deroulement: req.body.deroulement || [],
+      
+      // Musique / Ambiance
+      styles_musicaux: req.body.styles_musicaux || [],
+      titres_phares: req.body.titres_phares || '',
+      playlist_link: req.body.playlist_link || '',
+      blacklist: req.body.blacklist || '',
+      dedicaces: req.body.dedicaces || '',
+      
+      // Options & Tarifs
+      selectedOptions: req.body.selectedOptions || [],
+      optionsTarifNotes: req.body.optionsTarifNotes || '',
+      
+      // Lieu & Salle
+      has_limiteur_son: req.body.has_limiteur_son || false,
+      has_detecteur_fumee: req.body.has_detecteur_fumee || false,
+      has_wifi: req.body.has_wifi || false,
+      has_4g_5g: req.body.has_4g_5g || false,
+      venue_notes: req.body.venue_notes || '',
+      
+      // Notes DJ / Organisateur
+      dj_notes: req.body.dj_notes || '',
+      status: req.body.status || 'brouillon',
+      
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    await db.collection('visiting_sheets').insertOne(sheet);
+    res.json(clean(sheet));
+  } catch (e) { res.status(500).json({ detail: e.message }); }
+});
+
+api.put('/visiting-sheets/:id', authMiddleware, async (req, res) => {
+  try {
+    const updateData = { ...req.body, updated_at: new Date().toISOString() };
+    delete updateData._id;
+    await db.collection('visiting_sheets').updateOne({ id: req.params.id }, { $set: updateData });
+    const updated = await db.collection('visiting_sheets').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    res.json(clean(updated));
+  } catch (e) { res.status(500).json({ detail: e.message }); }
+});
+
+api.delete('/visiting-sheets/:id', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('visiting_sheets').deleteOne({ id: req.params.id });
+    res.json({ success: true, message: 'Fiche de visite supprimée' });
+  } catch (e) { res.status(500).json({ detail: e.message }); }
+});
+
+api.post('/visiting-sheets/:id/convert-to-contract', authMiddleware, async (req, res) => {
+  try {
+    const sheet = await db.collection('visiting_sheets').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    if (!sheet) return res.status(404).json({ detail: 'Fiche de visite non trouvée' });
+
+    // Generate contract payload from visiting sheet
+    const contract = {
+      id: uuidv4(),
+      client_name: sheet.client_name || '',
+      client_email: sheet.client_email || '',
+      client_phone: sheet.client_phone || '',
+      client_address: sheet.client_address || '',
+      event_date: sheet.event_date || '',
+      event_type: sheet.event_type || 'Mariage',
+      location_name: sheet.location_name || '',
+      
+      heure_installation: sheet.heure_installation || '',
+      heure_debut_prestation: sheet.heure_debut_prestation || '',
+      heure_fin_prestation: sheet.heure_fin_prestation || '',
+      deroulement: sheet.deroulement || [],
+      
+      styles_musicaux: sheet.styles_musicaux || [],
+      titres_phares: sheet.titres_phares || '',
+      playlist_link: sheet.playlist_link || '',
+      blacklist: sheet.blacklist || '',
+      dedicaces: sheet.dedicaces || '',
+      
+      selectedOptions: sheet.selectedOptions || [],
+      optionsTarifNotes: sheet.optionsTarifNotes || '',
+      
+      has_limiteur_son: sheet.has_limiteur_son || false,
+      has_detecteur_fumee: sheet.has_detecteur_fumee || false,
+      has_wifi: sheet.has_wifi || false,
+      has_4g_5g: sheet.has_4g_5g || false,
+      venue_notes: sheet.venue_notes || '',
+      
+      dj_notes: sheet.dj_notes || '',
+      visiting_sheet_id: sheet.id,
+      
+      status: 'draft',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await db.collection('contracts2').insertOne(contract);
+    
+    // Mark visiting sheet as converted
+    await db.collection('visiting_sheets').updateOne({ id: sheet.id }, { $set: { status: 'convertie', contract_id: contract.id, updated_at: new Date().toISOString() } });
+
+    res.json({ success: true, contract: clean(contract) });
+  } catch (e) { res.status(500).json({ detail: e.message }); }
+});
+
 // ══════════ CRM ══════════
 api.get('/crm/companies', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('crm_companies').find({}, { projection: { _id: 0 } }).sort({ name: 1 }).toArray()));
