@@ -72,7 +72,16 @@ const apiService = {
     const res = await axios.get("/contract-pdf-notes");
     return res.data;
   },
-  createContractPdfNote: async (formData) => {
+  createContractPdfNote: async (titleOrFormData, order, file) => {
+    let formData;
+    if (titleOrFormData instanceof FormData) {
+      formData = titleOrFormData;
+    } else {
+      formData = new FormData();
+      if (titleOrFormData) formData.append("title", titleOrFormData);
+      if (order !== undefined && order !== null) formData.append("order", order);
+      if (file) formData.append("file", file);
+    }
     const res = await axios.post("/contract-pdf-notes", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });

@@ -1676,7 +1676,7 @@ function urlBase64ToUint8Array(base64String) {
             id: 'audio-' + Date.now(),
             name: data.originalName || file.name,
             url: data.url,
-            isSurprise: true,
+            isSurprise: false,
             note: '',
             uploadedAt: new Date().toISOString()
           };
@@ -2401,20 +2401,26 @@ function urlBase64ToUint8Array(base64String) {
 
       if (dedicaces) {
         if (y > 270) { doc.addPage(); y = 20; }
-        doc.setFontSize(12); doc.setTextColor(29, 78, 216); // blue-700
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12); doc.setTextColor(22, 163, 74); // green-600
         doc.text("Dédicaces dans la soirée:", 15, y); y += 6;
-        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10); doc.setTextColor(22, 163, 74);
         const splitText = doc.splitTextToSize(dedicaces, 180);
         doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        doc.setFont("helvetica", "normal");
       }
 
       if (blacklist) {
         if (y > 270) { doc.addPage(); y = 20; }
-        doc.setFontSize(12); doc.setTextColor(185, 28, 28); // red-700
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12); doc.setTextColor(220, 38, 38); // red-600
         doc.text("À éviter (Blacklist):", 15, y); y += 6;
-        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10); doc.setTextColor(220, 38, 38);
         const splitText = doc.splitTextToSize(blacklist, 180);
         doc.text(splitText, 15, y); y += splitText.length * 5 + 5;
+        doc.setFont("helvetica", "normal");
       }
 
       const contractOptions = ev.selectedOptions || [];
@@ -2688,31 +2694,41 @@ function urlBase64ToUint8Array(base64String) {
 
       if (dedicaces) {
         if (y > 280) { doc.addPage(); y = 10; }
-        doc.setFontSize(11); doc.setTextColor(29, 78, 216);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(22, 163, 74);
         doc.text("Dédicaces dans la soirée:", 105, y, { align: 'center' });
         y += 6;
-        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        doc.setTextColor(22, 163, 74);
         const splitText = doc.splitTextToSize(dedicaces, 180);
         splitText.forEach(line => {
           if (y > 285) { doc.addPage(); y = 10; }
           doc.text(line, 105, y, { align: 'center' });
           y += 5;
         });
+        doc.setFont("helvetica", "normal");
         y += 3;
       }
 
       if (blacklist) {
         if (y > 280) { doc.addPage(); y = 10; }
-        doc.setFontSize(11); doc.setTextColor(185, 28, 28);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(220, 38, 38);
         doc.text("À éviter (Blacklist):", 105, y, { align: 'center' });
         y += 6;
-        doc.setFontSize(10); doc.setTextColor(75, 85, 99);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        doc.setTextColor(220, 38, 38);
         const splitText = doc.splitTextToSize(blacklist, 180);
         splitText.forEach(line => {
           if (y > 285) { doc.addPage(); y = 10; }
           doc.text(line, 105, y, { align: 'center' });
           y += 5;
         });
+        doc.setFont("helvetica", "normal");
         y += 3;
       }
 
