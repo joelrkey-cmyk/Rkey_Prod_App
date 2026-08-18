@@ -30,7 +30,8 @@ const DEFAULT_OPTIONS = [
 
 const TIMELINE_PRESETS = [
   "Apéritif", "Entrée des mariés", "Entrée", "Blind test", "Plat",
-  "Quiz interactif", "Musique de repas", "Fromage", "Chasse au trésor",
+  "Quiz interactif", "Musique", "Musique de repas", "Fromage", "Chasse aux trésors",
+  "Discours des mariés", "Discours organisateur(trice)",
   "Dessert", "Ouverture de bal", "Soirée dansante"
 ];
 

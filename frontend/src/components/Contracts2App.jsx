@@ -18,7 +18,7 @@ import apiService from "../services/api";
 import FormSubmissionsSelector from "./FormSubmissionsSelector";
 
 // Modules extraits pour la maintenabilité
-import { fallbackPredefinedNotes, musicStyles, eventCategories, defaultHypnosisProgram, defaultCompanySettings, GRAND_EST_DEPARTMENTS, GRAND_EST_DEPARTMENTS_CODES } from "./contracts2/constants";
+import { fallbackPredefinedNotes, musicStyles, eventCategories, defaultHypnosisProgram, defaultCompanySettings, FRENCH_DEPARTMENTS, FRENCH_DEPARTMENTS_CODES } from "./contracts2/constants";
 import { generateContractHTML } from "./contracts2/htmlGenerator";
 import { generatePDFFromHTML as generatePDFFromHTMLImported, printContractWithSignature, generateContractAndGuide, getCompiledGuideBlob, previewContractPdf, getFormattedEventDate } from "./contracts2/pdfGenerator";
 import { ConfigurationPage, RichTextHelper } from "./contracts2/ConfigurationPage";
@@ -119,9 +119,9 @@ function Contracts2App() {
   const [venues, setVenues] = useState([]);
   const [venueSearch, setVenueSearch] = useState("");
   const [isNewVenueDialogOpen, setIsNewVenueDialogOpen] = useState(false);
-  const [newVenueForm, setNewVenueForm] = useState({ name: "", department: "Bas-Rhin (67)", city: "" });
-  const [grandEstCities, setGrandEstCities] = useState([]);
-  const [loadingGrandEstCities, setLoadingGrandEstCities] = useState(false);
+  const [newVenueForm, setNewVenueForm] = useState({ name: "", department: "67 - Bas-Rhin", city: "" });
+  const [frenchCities, setFrenchCities] = useState([]);
+  const [loadingFrenchCities, setLoadingFrenchCities] = useState(false);
   const [citySearchFilter, setCitySearchFilter] = useState("");
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
   const [isCustomCityInput, setIsCustomCityInput] = useState(false);
@@ -468,34 +468,34 @@ function Contracts2App() {
     }
   };
 
-  // Chargement dynamique des communes du Grand Est selon le département sélectionné
+  // Chargement dynamique des communes de France selon le département sélectionné
   useEffect(() => {
-    const fetchGrandEstCities = async () => {
+    const fetchFrenchCities = async () => {
       if (!newVenueForm.department || newVenueForm.department === 'Autre département') {
-        setGrandEstCities([]);
+        setFrenchCities([]);
         return;
       }
-      const deptCode = GRAND_EST_DEPARTMENTS_CODES[newVenueForm.department];
+      const deptCode = FRENCH_DEPARTMENTS_CODES[newVenueForm.department];
       if (!deptCode) {
-        setGrandEstCities([]);
+        setFrenchCities([]);
         return;
       }
       try {
-        setLoadingGrandEstCities(true);
+        setLoadingFrenchCities(true);
         const res = await axios.get(`https://geo.api.gouv.fr/departements/${deptCode}/communes`);
         if (res.data) {
           const sorted = res.data.map(c => c.nom || c.name || '').filter(Boolean).sort((a, b) => a.localeCompare(b, 'fr'));
-          setGrandEstCities(sorted);
+          setFrenchCities(sorted);
         }
       } catch (err) {
-        console.error('Erreur de chargement des communes du Grand Est:', err);
-        setGrandEstCities([]);
+        console.error('Erreur de chargement des communes de France:', err);
+        setFrenchCities([]);
       } finally {
-        setLoadingGrandEstCities(false);
+        setLoadingFrenchCities(false);
       }
     };
 
-    fetchGrandEstCities();
+    fetchFrenchCities();
   }, [newVenueForm.department]);
 
   const handleQuickCreateVenue = async () => {
@@ -504,9 +504,10 @@ function Contracts2App() {
       return;
     }
     try {
+      const cleanDept = newVenueForm.department.includes(' - ') ? newVenueForm.department.split(' - ')[1] : newVenueForm.department;
       const response = await axios.post(`${API}/venues`, {
         name: newVenueForm.name.trim(),
-        department: newVenueForm.department.trim(),
+        department: cleanDept.trim(),
         city: newVenueForm.city.trim(),
         is_complete: false
       });
@@ -522,7 +523,7 @@ function Contracts2App() {
       }));
       
       setIsNewVenueDialogOpen(false);
-      setNewVenueForm({ name: "", department: "Bas-Rhin (67)", city: "" });
+      setNewVenueForm({ name: "", department: "67 - Bas-Rhin", city: "" });
       setCitySearchFilter("");
       setIsCityDropdownOpen(false);
       setIsCustomCityInput(false);
@@ -1691,8 +1692,8 @@ function Contracts2App() {
 
         // Standard timeline matching definitions
         const standardRepas = ["Apéritif", "Entrée", "Plat", "Fromage", "Dessert"];
-        const standardMusique = ["Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"];
-        const standardAnimations = ["Blind test", "Chasse au trésor", "Quiz interactif", "Confessionnal"];
+        const standardMusique = ["Musique", "Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"];
+        const standardAnimations = ["Blind test", "Chasse aux trésors", "Quiz interactif", "Confessionnal", "Discours des mariés", "Discours organisateur(trice)"];
 
         const t = titleClean.toLowerCase();
 
@@ -1715,7 +1716,9 @@ function Contracts2App() {
           return t === el ||
                  (t.includes("blind") && t.includes("test") && el === "blind test") ||
                  ((t.includes("quiz") || t.includes("quizz")) && el === "quiz interactif") ||
-                 (t.includes("chasse") && t.includes("trésor") && el === "chasse au trésor");
+                 (t.includes("chasse") && t.includes("trésor") && el === "chasse aux trésors") ||
+                 (t.includes("discours") && t.includes("marié") && el === "discours des mariés") ||
+                 (t.includes("discours") && (t.includes("organisat") || t.includes("orga")) && el === "discours organisateur(trice)");
         });
 
         let key = "";
@@ -4728,10 +4731,10 @@ function Contracts2App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Département Grand Est */}
+                {/* Département de France */}
                 <div className="space-y-1">
                   <Label htmlFor="quick-venue-dept" className="text-xs font-bold text-slate-700">
-                    Département (Grand Est) *
+                    Département (France) *
                   </Label>
                   <select
                     id="quick-venue-dept"
@@ -4744,7 +4747,8 @@ function Contracts2App() {
                     }}
                     className="w-full h-10 border border-slate-300 rounded-md px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium"
                   >
-                    {GRAND_EST_DEPARTMENTS.map(d => (
+                    <option value="">-- Choisir un département (France) --</option>
+                    {FRENCH_DEPARTMENTS.map(d => (
                       <option key={d.name} value={d.name}>
                         {d.name}
                       </option>
@@ -4780,7 +4784,7 @@ function Contracts2App() {
                   {isCustomCityInput || newVenueForm.department === 'Autre département' ? (
                     <Input
                       id="quick-venue-city"
-                      placeholder="Ex: Mussig, Sélestat..."
+                      placeholder="Ex: Strasbourg, Lyon, Paris..."
                       value={newVenueForm.city}
                       onChange={(e) => setNewVenueForm(prev => ({ ...prev, city: e.target.value }))}
                       className="text-xs h-10"
@@ -4790,7 +4794,7 @@ function Contracts2App() {
                       <div className="relative">
                         <Input
                           id="quick-venue-city"
-                          placeholder={loadingGrandEstCities ? "Chargement des villes..." : (newVenueForm.city || "Rechercher une ville...")}
+                          placeholder={loadingFrenchCities ? "Chargement des villes..." : (newVenueForm.city || "Rechercher une ville...")}
                           value={citySearchFilter !== "" ? citySearchFilter : (newVenueForm.city || "")}
                           onChange={(e) => {
                             setCitySearchFilter(e.target.value);
@@ -4799,9 +4803,9 @@ function Contracts2App() {
                           }}
                           onFocus={() => setIsCityDropdownOpen(true)}
                           className="text-xs h-10 pr-7"
-                          disabled={loadingGrandEstCities}
+                          disabled={loadingFrenchCities}
                         />
-                        {loadingGrandEstCities && (
+                        {loadingFrenchCities && (
                           <div className="absolute right-2.5 top-2.5">
                             <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
                           </div>
@@ -4809,10 +4813,10 @@ function Contracts2App() {
                       </div>
 
                       {/* Dropdown des villes filtrées */}
-                      {isCityDropdownOpen && grandEstCities.length > 0 && (
+                      {isCityDropdownOpen && frenchCities.length > 0 && (
                         <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-300 rounded-md shadow-xl z-[80] max-h-48 overflow-y-auto">
                           <div className="p-1.5 bg-slate-50 border-b text-[11px] text-slate-500 flex justify-between items-center">
-                            <span>{grandEstCities.filter(c => !citySearchFilter || c.toLowerCase().includes(citySearchFilter.toLowerCase())).length} villes trouvées</span>
+                            <span>{frenchCities.filter(c => !citySearchFilter || c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(citySearchFilter.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""))).length} villes trouvées</span>
                             <button
                               type="button"
                               onClick={() => setIsCityDropdownOpen(false)}
@@ -4821,8 +4825,8 @@ function Contracts2App() {
                               ✕
                             </button>
                           </div>
-                          {grandEstCities
-                            .filter(c => !citySearchFilter || c.toLowerCase().includes(citySearchFilter.toLowerCase()))
+                          {frenchCities
+                            .filter(c => !citySearchFilter || c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(citySearchFilter.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")))
                             .slice(0, 100)
                             .map((cityName) => (
                               <div

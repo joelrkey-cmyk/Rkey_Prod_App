@@ -16,35 +16,30 @@ import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from './ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from './ui/dialog';
+import { FRENCH_DEPARTMENTS, FRENCH_DEPARTMENTS_CODES } from './contracts2/constants';
 
 const API_BASE_URL = '/api';
 
-const GRAND_EST_DEPARTMENTS_CODES = {
-  "Bas-Rhin (67)": "67",
-  "Haut-Rhin (68)": "68",
-  "Marne (51)": "51",
-  "Moselle (57)": "57",
-  "Meurthe-et-Moselle (54)": "54",
-  "Vosges (88)": "88",
-  "Meuse (55)": "55",
-  "Haute-Marne (52)": "52",
-  "Ardennes (08)": "08",
-  "Aube (10)": "10"
-};
-
 const detectDeptKey = (deptString) => {
   if (!deptString) return '';
-  const clean = deptString.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (clean.includes('basrhin') || clean.includes('67')) return 'Bas-Rhin (67)';
-  if (clean.includes('hautrhin') || clean.includes('68')) return 'Haut-Rhin (68)';
-  if (clean.includes('marne') && !clean.includes('hautemarne')) return 'Marne (51)';
-  if (clean.includes('moselle') && !clean.includes('meurthe')) return 'Moselle (57)';
-  if (clean.includes('meurthe') || clean.includes('54')) return 'Meurthe-et-Moselle (54)';
-  if (clean.includes('vosges') || clean.includes('88')) return 'Vosges (88)';
-  if (clean.includes('meuse') && !clean.includes('meurthe')) return 'Meuse (55)';
-  if (clean.includes('hautemarne') || clean.includes('52')) return 'Haute-Marne (52)';
-  if (clean.includes('ardennes') || clean.includes('08')) return 'Ardennes (08)';
-  if (clean.includes('aube') || clean.includes('10')) return 'Aube (10)';
+  const clean = deptString.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+  
+  for (const dept of FRENCH_DEPARTMENTS) {
+    if (!dept.code) continue;
+    const cleanName = dept.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+    const cleanLabel = dept.label.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+    const cleanCode = dept.code.toLowerCase();
+
+    if (clean === cleanName || clean === cleanLabel || clean === cleanCode) {
+      return dept.name;
+    }
+    if (clean.includes(`(${cleanCode})`) || clean.endsWith(cleanCode) || clean.startsWith(cleanCode)) {
+      return dept.name;
+    }
+    if (clean.includes(cleanLabel) && cleanLabel.length > 3) {
+      return dept.name;
+    }
+  }
   return 'Autre';
 };
 
@@ -141,7 +136,7 @@ export default function VenueApp() {
         return;
       }
       
-      const deptCode = GRAND_EST_DEPARTMENTS_CODES[formDeptKey];
+      const deptCode = FRENCH_DEPARTMENTS_CODES[formDeptKey];
       if (!deptCode) {
         setDepartmentCities([]);
         return;
@@ -378,7 +373,7 @@ export default function VenueApp() {
   };
 
   const handleSearchAI = async () => {
-    const finalDept = formDeptKey === 'Autre' ? manualDept : (formDeptKey ? formDeptKey.split(' (')[0] : '');
+    const finalDept = formDeptKey === 'Autre' ? manualDept : (formDeptKey ? (formDeptKey.includes(' - ') ? formDeptKey.split(' - ')[1] : formDeptKey.split(' (')[0]) : '');
     const finalCity = (formDeptKey !== 'Autre' && formCityKey !== 'Autre') ? formCityKey : manualCity;
 
     if (!venueForm.name) {
@@ -443,7 +438,7 @@ export default function VenueApp() {
 
   const handleSaveVenue = async (e) => {
     e.preventDefault();
-    const finalDept = formDeptKey === 'Autre' ? manualDept : (formDeptKey ? formDeptKey.split(' (')[0] : '');
+    const finalDept = formDeptKey === 'Autre' ? manualDept : (formDeptKey ? (formDeptKey.includes(' - ') ? formDeptKey.split(' - ')[1] : formDeptKey.split(' (')[0]) : '');
     const finalCity = (formDeptKey !== 'Autre' && formCityKey !== 'Autre') ? formCityKey : manualCity;
 
     if (!venueForm.name || !finalDept || !finalCity) {
@@ -963,10 +958,10 @@ export default function VenueApp() {
           </DialogHeader>
 
           <form onSubmit={handleSaveVenue} className="space-y-6 py-4">
-            {/* 1. Département Selection (Grand Est / Autre) */}
+            {/* 1. Département Selection (Tous départements de France / Autre) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="form-dept-select" className="text-xs font-bold text-slate-700">Département *</Label>
+                <Label htmlFor="form-dept-select" className="text-xs font-bold text-slate-700">Département (France) *</Label>
                 <select
                   id="form-dept-select"
                   value={formDeptKey}
@@ -984,11 +979,11 @@ export default function VenueApp() {
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 h-10 font-medium text-slate-700 cursor-pointer"
                   required
                 >
-                  <option value="">-- Choisir un département (Grand Est) --</option>
-                  {Object.keys(GRAND_EST_DEPARTMENTS_CODES).map(d => (
-                    <option key={d} value={d}>{d}</option>
+                  <option value="">-- Choisir un département (France) --</option>
+                  {FRENCH_DEPARTMENTS.filter(d => d.code).map(d => (
+                    <option key={d.name} value={d.name}>{d.name}</option>
                   ))}
-                  <option value="Autre">Autre (Saisie manuelle)...</option>
+                  <option value="Autre">Autre département (Saisie manuelle)...</option>
                 </select>
               </div>
 

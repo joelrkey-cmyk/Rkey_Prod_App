@@ -88,8 +88,8 @@ const DjClientApp = ({ isPublic = false }) => {
   
   const SCHEDULE_CATEGORIES = [
     { title: "Événements du Repas", type: 'repas', options: ["Apéritif", "Entrée", "Plat", "Fromage", "Dessert"] },
-    { title: "Musique", type: 'musique', options: ["Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"] },
-    { title: "Animations", type: 'animations', options: ["Blind test", "Chasse au trésor", "Quiz interactif", "Show hypnose", "Confessionnal"] }
+    { title: "Musique", type: 'musique', options: ["Musique", "Entrée des mariés", "Ouverture de bal", "Danse de couple", "Musique de 80 à début 2000", "Musique de 80 à aujourd'hui"] },
+    { title: "Animations", type: 'animations', options: ["Blind test", "Chasse aux trésors", "Quiz interactif", "Show hypnose", "Confessionnal", "Discours des mariés", "Discours organisateur(trice)"] }
   ];
 
   const [currentRoute, setCurrentRoute] = useState({ view: 'list', role: 'admin', eventId: null, mode: 'dashboard' });
