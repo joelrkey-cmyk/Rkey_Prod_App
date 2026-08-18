@@ -103,6 +103,8 @@ const DjClientApp = ({ isPublic = false }) => {
   const [pdfNotes, setPdfNotes] = useState([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [companySettings, setCompanySettings] = useState(defaultCompanySettings);
+  const [isUploadingFicheVisite, setIsUploadingFicheVisite] = useState(false);
+  const ficheVisiteFileInputRef = useRef(null);
 
   // Lightbox / Image Previewer State
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -443,11 +445,139 @@ function urlBase64ToUint8Array(base64String) {
             bank_bic: data.bank_bic || "",
             bank_titulaire: data.bank_titulaire || "R'KEY PROD",
             youtube_tutorial_url: data.youtube_tutorial_url || "",
+            fiche_visite_pdf_url: data.fiche_visite_pdf_url || "",
+            fiche_visite_pdf_name: data.fiche_visite_pdf_name || "Fiche_de_visite.pdf",
+            fiche_visite_pdf_uploaded_at: data.fiche_visite_pdf_uploaded_at || null,
           });
         }
       }
     } catch (e) {
       console.error("Error fetching admin global settings", e);
+    }
+  };
+
+  const handleUploadFicheVisitePdf = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      toast.error("Veuillez sélectionner un fichier au format PDF.");
+      return;
+    }
+
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      toast.error("Session expirée. Veuillez vous reconnecter.");
+      return;
+    }
+
+    setIsUploadingFicheVisite(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/dj-client/admin/fiche-visite-pdf`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCompanySettings(prev => ({
+          ...prev,
+          fiche_visite_pdf_url: data.url,
+          fiche_visite_pdf_name: data.name,
+          fiche_visite_pdf_uploaded_at: data.uploaded_at
+        }));
+        toast.success("Modèle de fiche de visite téléversé avec succès sur Google Cloud Storage !");
+      } else {
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.error || "Erreur lors du téléversement du PDF.");
+      }
+    } catch (err) {
+      console.error("Error uploading fiche de visite PDF:", err);
+      toast.error("Erreur de connexion lors du téléversement du PDF.");
+    } finally {
+      setIsUploadingFicheVisite(false);
+      if (ficheVisiteFileInputRef.current) {
+        ficheVisiteFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDeleteFicheVisitePdf = async () => {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer le modèle de fiche de visite actuel ?")) return;
+
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/dj-client/admin/fiche-visite-pdf`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        setCompanySettings(prev => ({
+          ...prev,
+          fiche_visite_pdf_url: '',
+          fiche_visite_pdf_name: 'Fiche_de_visite.pdf',
+          fiche_visite_pdf_uploaded_at: null
+        }));
+        toast.success("Modèle de fiche de visite supprimé avec succès.");
+      } else {
+        toast.error("Erreur lors de la suppression du fichier.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de la suppression.");
+    }
+  };
+
+  const handleDownloadFicheVisite = async () => {
+    try {
+      let pdfUrl = companySettings.fiche_visite_pdf_url;
+      let pdfName = companySettings.fiche_visite_pdf_name || "Fiche_de_visite.pdf";
+
+      if (!pdfUrl) {
+        const res = await fetch(`${BACKEND_URL}/api/public/dj-client/fiche-visite-template`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.url) {
+            pdfUrl = data.url;
+            pdfName = data.filename || pdfName;
+            setCompanySettings(prev => ({
+              ...prev,
+              fiche_visite_pdf_url: data.url,
+              fiche_visite_pdf_name: data.filename || prev.fiche_visite_pdf_name,
+              fiche_visite_pdf_uploaded_at: data.uploaded_at || prev.fiche_visite_pdf_uploaded_at
+            }));
+          }
+        }
+      }
+
+      if (!pdfUrl) {
+        toast.info("Le modèle PDF de la fiche de visite n'a pas encore été configuré par l'administrateur.");
+        return;
+      }
+
+      const fullUrl = pdfUrl.startsWith('http') ? pdfUrl : `${BACKEND_URL}${pdfUrl}`;
+      const link = document.createElement('a');
+      link.href = fullUrl;
+      link.target = '_blank';
+      link.download = pdfName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("Téléchargement de la fiche de visite lancé !");
+    } catch (err) {
+      console.error("Error downloading fiche de visite:", err);
+      toast.error("Erreur lors du téléchargement de la fiche de visite.");
     }
   };
 
@@ -497,7 +627,11 @@ function urlBase64ToUint8Array(base64String) {
       
       let allContracts = [];
       
-      if (isPublic && slug) {
+      if (isPublic) {
+         if (!slug) {
+           if (!silent) setIsLoadingEvents(false);
+           return;
+         }
          const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${encodeURIComponent(slug)}`);
          if (publicRes.ok) {
              const data = await publicRes.json().catch(() => ({ events: [] }));
@@ -520,6 +654,10 @@ function urlBase64ToUint8Array(base64String) {
              }
          }
       } else {
+          if (!token) {
+              if (!silent) setIsLoadingEvents(false);
+              return;
+          }
           const [contractsRes, optionsRes] = await Promise.all([
               fetch(`${BACKEND_URL}/api/dj-client/admin/contracts`, { headers }),
               fetch(`${BACKEND_URL}/api/material-options`, { headers })
@@ -538,7 +676,7 @@ function urlBase64ToUint8Array(base64String) {
           
           if (contractsRes.ok) {
               const data = await contractsRes.json().catch(() => ([]));
-              allContracts = [...allContracts, ...data];
+              allContracts = [...allContracts, ...(Array.isArray(data) ? data : [])];
           }
       }
       
@@ -665,8 +803,10 @@ function urlBase64ToUint8Array(base64String) {
         setEvents(mappedEvents);
       }
     } catch (error) {
-      console.error("Error fetching contracts as events:", error, "URL used:", BACKEND_URL);
-      if (!silent) toast.error("Erreur lors du chargement des événements. Veuillez réessayer ou vérifier la connexion réseau.");
+      if (!silent) {
+        console.warn("Could not fetch contracts as events:", error.message || error);
+        toast.error("Erreur lors du chargement des événements. Veuillez réessayer ou vérifier la connexion réseau.");
+      }
     } finally {
       if (!silent) setIsLoadingEvents(false);
     }
@@ -1332,6 +1472,100 @@ function urlBase64ToUint8Array(base64String) {
             >
               Enregistrer
             </button>
+          </div>
+        </div>
+
+        {/* Modèle Fiche de Visite PDF (Espace DJ) */}
+        <div className="border-t border-gray-100 pt-4 mt-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-amber-50 text-amber-700 rounded-lg shrink-0 mt-0.5 border border-amber-200">
+              <FileText className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-bold text-gray-800">Modèle Fiche de Visite (Espace DJ)</h4>
+                {companySettings.fiche_visite_pdf_url ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <CheckCircle className="w-3 h-3" /> Fichier actif
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
+                    Aucun fichier
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Fichier PDF mis à disposition de tous les DJ en haut de leur sommaire d'événements.
+              </p>
+              {companySettings.fiche_visite_pdf_url && (
+                <div className="mt-1 flex items-center gap-2 text-xs text-slate-600">
+                  <span className="font-medium text-slate-700 truncate max-w-[280px]">
+                    📄 {companySettings.fiche_visite_pdf_name || 'Fiche_de_visite.pdf'}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center flex-wrap gap-2 shrink-0">
+            <input
+              type="file"
+              ref={ficheVisiteFileInputRef}
+              onChange={handleUploadFicheVisitePdf}
+              accept=".pdf,application/pdf"
+              className="hidden"
+            />
+            {companySettings.fiche_visite_pdf_url ? (
+              <>
+                <a
+                  href={companySettings.fiche_visite_pdf_url.startsWith('http') ? companySettings.fiche_visite_pdf_url : `${BACKEND_URL}${companySettings.fiche_visite_pdf_url}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={companySettings.fiche_visite_pdf_name || "Fiche_de_visite.pdf"}
+                  className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-sm font-medium transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  title="Télécharger ou consulter la fiche de visite actuelle"
+                >
+                  <Download className="w-4 h-4 text-emerald-700" />
+                  <span>Télécharger / Voir</span>
+                </a>
+                <button
+                  onClick={() => ficheVisiteFileInputRef.current?.click()}
+                  disabled={isUploadingFicheVisite}
+                  className="px-3 py-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 rounded-lg text-sm font-medium transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  {isUploadingFicheVisite ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 text-gray-500" />
+                  )}
+                  <span>Remplacer</span>
+                </button>
+                <button
+                  onClick={handleDeleteFicheVisitePdf}
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition border border-transparent hover:border-red-200 cursor-pointer"
+                  title="Supprimer la fiche de visite"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => ficheVisiteFileInputRef.current?.click()}
+                disabled={isUploadingFicheVisite}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold transition shadow-sm flex items-center gap-2 active:scale-95 cursor-pointer"
+              >
+                {isUploadingFicheVisite ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Téléversement...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    <span>Téléverser le PDF</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -5879,18 +6113,29 @@ function urlBase64ToUint8Array(base64String) {
               </h2>
               <p className="mt-2 text-yellow-100">Retrouvez ci-dessous l'ensemble de vos prestations.</p>
             </div>
-            {!isPublic && (
+            <div className="flex items-center flex-wrap gap-2.5">
               <button 
-                onClick={() => setCurrentRoute({ view: 'list', role: 'admin', eventId: null, mode: 'dashboard' })} 
-                className="px-4 py-2 bg-yellow-700 hover:bg-yellow-800 rounded-lg text-sm transition-colors shadow flex items-center gap-2 w-fit"
+                onClick={handleDownloadFicheVisite}
+                className="px-4 py-2.5 bg-white text-yellow-900 hover:bg-yellow-50 font-bold rounded-xl text-sm transition-all shadow-md flex items-center gap-2 active:scale-95 cursor-pointer border border-yellow-200 hover:shadow-lg"
+                title="Télécharger le modèle / exemple de fiche de visite PDF"
               >
-                <Eye className="w-4 h-4" /> Fermer l'aperçu
+                <FileText className="w-4 h-4 text-red-600" />
+                <span>Fiche de visite</span>
+                <Download className="w-4 h-4 text-yellow-700 ml-0.5" />
               </button>
-            )}
-           </div>
-           <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
-             <Headphones className="w-48 h-48" />
-           </div>
+              {!isPublic && (
+                <button 
+                  onClick={() => setCurrentRoute({ view: 'list', role: 'admin', eventId: null, mode: 'dashboard' })} 
+                  className="px-4 py-2.5 bg-yellow-700/90 hover:bg-yellow-800 rounded-xl text-sm font-medium transition-colors shadow flex items-center gap-2 w-fit border border-yellow-500/30 cursor-pointer"
+                >
+                  <Eye className="w-4 h-4" /> Fermer l'aperçu
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
+            <Headphones className="w-48 h-48" />
+          </div>
         </div>
 
         <div className="grid gap-6">

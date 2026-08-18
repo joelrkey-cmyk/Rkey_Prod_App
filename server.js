@@ -2926,7 +2926,104 @@ api.get('/global-settings', authMiddleware, async (req, res) => {
     settings.smtp_password = '';
     return res.json(settings);
   }
-  res.json({ type: 'company', company_name: '', company_address: '', company_siret: '', company_tva: '', company_email: '', bank_name: '', bank_iban: '', bank_bic: '', bank_titulaire: '', smtp_server: '', smtp_port: '587', smtp_encryption: 'auto', smtp_user: '', smtp_password: '', smtp_from: '', smtp_from_name: '', has_email_signature: false, smtp_password_set: false });
+  res.json({ type: 'company', company_name: '', company_address: '', company_siret: '', company_tva: '', company_email: '', bank_name: '', bank_iban: '', bank_bic: '', bank_titulaire: '', smtp_server: '', smtp_port: '587', smtp_encryption: 'auto', smtp_user: '', smtp_password: '', smtp_from: '', smtp_from_name: '', has_email_signature: false, smtp_password_set: false, fiche_visite_pdf_url: '', fiche_visite_pdf_name: 'Fiche_de_visite.pdf', fiche_visite_pdf_uploaded_at: null });
+});
+
+// ══════════ FICHE DE VISITE PDF TEMPLATE (DJ-CLIENT) ══════════
+api.post('/dj-client/admin/fiche-visite-pdf', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Aucun fichier fourni' });
+
+  const b = getGcsBucket();
+  if (!b) {
+    return res.status(500).json({ error: "Le stockage Google Cloud Storage n'est pas disponible ou configuré sur ce serveur." });
+  }
+
+  try {
+    const decodedName = decodeMulterFilename(req.file.originalname);
+    const ext = path.extname(decodedName) || '.pdf';
+    const fileId = uuidv4();
+    const gcsPath = `fiches-visite/${fileId}${ext}`;
+    const file = b.file(gcsPath);
+
+    await file.save(req.file.buffer, {
+      metadata: { contentType: req.file.mimetype || 'application/pdf' }
+    });
+
+    const fileUrl = `/api/gcs/${gcsPath}`;
+    const updateData = {
+      fiche_visite_pdf_url: fileUrl,
+      fiche_visite_pdf_name: decodedName,
+      fiche_visite_pdf_uploaded_at: new Date().toISOString()
+    };
+
+    await db.collection('global_settings').updateOne(
+      { type: 'company' },
+      { $set: updateData },
+      { upsert: true }
+    );
+
+    clearDjClientResponseCache();
+
+    return res.json({
+      success: true,
+      url: fileUrl,
+      name: decodedName,
+      uploaded_at: updateData.fiche_visite_pdf_uploaded_at
+    });
+  } catch (error) {
+    console.error('Error uploading Fiche de Visite PDF template to GCS:', error);
+    res.status(500).json({ error: "Erreur lors du téléversement vers Google Cloud Storage: " + error.message });
+  }
+});
+
+api.delete('/dj-client/admin/fiche-visite-pdf', authMiddleware, async (req, res) => {
+  try {
+    const settings = await db.collection('global_settings').findOne({ type: 'company' });
+    if (settings && settings.fiche_visite_pdf_url) {
+      let gcsPath = settings.fiche_visite_pdf_url;
+      if (gcsPath.includes('/api/gcs/')) {
+        gcsPath = gcsPath.substring(gcsPath.indexOf('/api/gcs/') + 9);
+      } else if (gcsPath.includes('gcs/')) {
+        gcsPath = gcsPath.substring(gcsPath.indexOf('gcs/') + 4);
+      }
+      if (gcsPath.startsWith('/')) gcsPath = gcsPath.substring(1);
+
+      const b = getGcsBucket();
+      if (b && gcsPath) {
+        try {
+          const file = b.file(gcsPath);
+          const [exists] = await file.exists();
+          if (exists) await file.delete();
+        } catch (e) {
+          console.warn("Could not delete previous Fiche de Visite PDF from GCS:", e.message);
+        }
+      }
+    }
+
+    await db.collection('global_settings').updateOne(
+      { type: 'company' },
+      { $set: { fiche_visite_pdf_url: '', fiche_visite_pdf_name: '', fiche_visite_pdf_uploaded_at: null } }
+    );
+
+    clearDjClientResponseCache();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting Fiche de Visite PDF:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+api.get('/public/dj-client/fiche-visite-template', async (req, res) => {
+  try {
+    const settings = await db.collection('global_settings').findOne({ type: 'company' }, { projection: { fiche_visite_pdf_url: 1, fiche_visite_pdf_name: 1, fiche_visite_pdf_uploaded_at: 1 } });
+    res.json({
+      url: settings?.fiche_visite_pdf_url || '',
+      filename: settings?.fiche_visite_pdf_name || 'Fiche_de_visite.pdf',
+      uploaded_at: settings?.fiche_visite_pdf_uploaded_at || null
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 api.put('/global-settings', authMiddleware, async (req, res) => {
@@ -3756,6 +3853,9 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     bank_bic: dbSettings.bank_bic || "",
     bank_titulaire: dbSettings.bank_titulaire || "R'KEY PROD",
     youtube_tutorial_url: dbSettings.youtube_tutorial_url || "",
+    fiche_visite_pdf_url: dbSettings.fiche_visite_pdf_url || "",
+    fiche_visite_pdf_name: dbSettings.fiche_visite_pdf_name || "Fiche_de_visite.pdf",
+    fiche_visite_pdf_uploaded_at: dbSettings.fiche_visite_pdf_uploaded_at || null,
   } : {
     company_name: "R'KEY PROD",
     bank_name: "Tiime",
@@ -3763,6 +3863,9 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     bank_bic: "TRZOFR21XXX",
     bank_titulaire: "R'KEY PROD",
     youtube_tutorial_url: "",
+    fiche_visite_pdf_url: "",
+    fiche_visite_pdf_name: "Fiche_de_visite.pdf",
+    fiche_visite_pdf_uploaded_at: null,
   };
 
   let responseData = null;

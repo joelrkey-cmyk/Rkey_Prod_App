@@ -43,6 +43,9 @@ export const defaultCompanySettings = {
   bank_bic: "TRZOFR21XXX",
   bank_titulaire: "R'KEY PROD",
   youtube_tutorial_url: "",
+  fiche_visite_pdf_url: "",
+  fiche_visite_pdf_name: "Fiche_de_visite.pdf",
+  fiche_visite_pdf_uploaded_at: null,
 };
 
 export const defaultTechnicianContact = {
@@ -205,3 +208,52 @@ export const eventToCgvMapping = {
   'Show Hypnose': 'show_hypnose',
   'Intervention hypnose': 'intervention_hypnose'
 };
+
+// Départements du Grand Est et codes INSEE
+export const GRAND_EST_DEPARTMENTS = [
+  { name: "Bas-Rhin (67)", code: "67", label: "Bas-Rhin" },
+  { name: "Haut-Rhin (68)", code: "68", label: "Haut-Rhin" },
+  { name: "Moselle (57)", code: "57", label: "Moselle" },
+  { name: "Meurthe-et-Moselle (54)", code: "54", label: "Meurthe-et-Moselle" },
+  { name: "Vosges (88)", code: "88", label: "Vosges" },
+  { name: "Marne (51)", code: "51", label: "Marne" },
+  { name: "Aube (10)", code: "10", label: "Aube" },
+  { name: "Haute-Marne (52)", code: "52", label: "Haute-Marne" },
+  { name: "Meuse (55)", code: "55", label: "Meuse" },
+  { name: "Ardennes (08)", code: "08", label: "Ardennes" },
+  { name: "Autre département", code: "", label: "Autre département" }
+];
+
+export const GRAND_EST_DEPARTMENTS_CODES = {
+  "Bas-Rhin (67)": "67",
+  "Bas-Rhin": "67",
+  "67": "67",
+  "Haut-Rhin (68)": "68",
+  "Haut-Rhin": "68",
+  "68": "68",
+  "Moselle (57)": "57",
+  "Moselle": "57",
+  "57": "57",
+  "Meurthe-et-Moselle (54)": "54",
+  "Meurthe-et-Moselle": "54",
+  "54": "54",
+  "Vosges (88)": "88",
+  "Vosges": "88",
+  "88": "88",
+  "Marne (51)": "51",
+  "Marne": "51",
+  "51": "51",
+  "Aube (10)": "10",
+  "Aube": "10",
+  "10": "10",
+  "Haute-Marne (52)": "52",
+  "Haute-Marne": "52",
+  "52": "52",
+  "Meuse (55)": "55",
+  "Meuse": "55",
+  "55": "55",
+  "Ardennes (08)": "08",
+  "Ardennes": "08",
+  "08": "08"
+};
+

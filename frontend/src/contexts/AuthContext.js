@@ -11,7 +11,6 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       const token = localStorage.getItem("access_token");
-      const savedUser = localStorage.getItem("user");
 
       if (token) {
         try {
@@ -30,18 +29,12 @@ export const AuthProvider = ({ children }) => {
             logoutClean();
           }
         } catch (error) {
-          console.error("Auth initialization error:", error);
-          if (savedUser) {
-            try {
-              setUser(JSON.parse(savedUser));
-              setIsAuthenticated(true);
-            } catch (e) {
-              logoutClean();
-            }
-          } else {
-            logoutClean();
-          }
+          // If server fails or network error occurs, do not authenticate with an unverified token
+          console.warn("Auth initialization check:", error.message || error);
+          logoutClean();
         }
+      } else {
+        logoutClean();
       }
       setIsLoading(false);
     };

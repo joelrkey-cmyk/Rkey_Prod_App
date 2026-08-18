@@ -1,6 +1,18 @@
 import { DEFAULT_STYLES } from './constants';
 
 /**
+ * Retourne l'URL publique directe du formulaire.
+ */
+export const getFormDirectLink = (formId) => {
+  if (!formId) return '';
+  let baseUrl = window.location.origin;
+  if (baseUrl.includes('ais-dev')) {
+    baseUrl = baseUrl.replace('ais-dev', 'ais-pre');
+  }
+  return `${baseUrl}/formulaire/${formId}`;
+};
+
+/**
  * Génère le code HTML d'intégration pour un formulaire donné.
  * Iframe autonome avec auto-resize via postMessage.
  */

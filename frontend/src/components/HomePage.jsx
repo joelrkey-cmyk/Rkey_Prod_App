@@ -47,7 +47,9 @@ const HomePage = () => {
       const response = await axios.get(`${API}/home/dashboard`);
       setDashboardStats(response.data);
     } catch (error) {
-      console.error("Error loading dashboard stats:", error);
+      if (error?.response?.status !== 401) {
+        console.error("Error loading dashboard stats:", error);
+      }
     }
   };
 
@@ -56,7 +58,9 @@ const HomePage = () => {
       const response = await axios.get(`${API}/subscriptions/stats`);
       setSubscriptionStats(response.data);
     } catch (error) {
-      console.error("Error loading subscription stats:", error);
+      if (error?.response?.status !== 401) {
+        console.error("Error loading subscription stats:", error);
+      }
     }
   };
 
@@ -65,7 +69,9 @@ const HomePage = () => {
       const response = await axios.get(`${API}/dj-client/pending-alerts`);
       setUnreadNotifications(response.data.count || 0);
     } catch (error) {
-      console.error("Error loading notifications:", error);
+      if (error?.response?.status !== 401) {
+        console.error("Error loading notifications:", error);
+      }
     }
   };
 
@@ -81,8 +87,8 @@ const HomePage = () => {
         axios.get(`${API}/crm/companies`)
       ]);
       
-      const allRelances = relancesRes.data;
-      const allCompanies = companiesRes.data;
+      const allRelances = relancesRes.data || [];
+      const allCompanies = companiesRes.data || [];
       
       // Filtrer les relances actives et à venir (jusqu'à 30 jours)
       const today = new Date();
@@ -102,7 +108,9 @@ const HomePage = () => {
       setCompanies(allCompanies);
       setLoading(false);
     } catch (error) {
-      console.error("Error loading relances:", error);
+      if (error?.response?.status !== 401) {
+        console.error("Error loading relances:", error);
+      }
       setLoading(false);
     }
   };

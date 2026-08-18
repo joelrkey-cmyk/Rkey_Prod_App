@@ -30,6 +30,7 @@ import AgendaPrestationApp from "./components/AgendaPrestationApp";
 import VenueApp from "./components/VenueApp";
 import PublicVenuesApp from "./components/PublicVenuesApp";
 import VisitingSheetApp from "./components/VisitingSheetApp";
+import PublicFormView from "./components/forms/PublicFormView";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -268,6 +269,18 @@ function App() {
               <Route path="/lieux-reception" element={
                 <ErrorBoundary>
                   <PublicVenuesApp />
+                </ErrorBoundary>
+              } />
+
+              <Route path="/formulaire/:formId" element={
+                <ErrorBoundary>
+                  <PublicFormView />
+                </ErrorBoundary>
+              } />
+
+              <Route path="/form/:formId" element={
+                <ErrorBoundary>
+                  <PublicFormView />
                 </ErrorBoundary>
               } />
 

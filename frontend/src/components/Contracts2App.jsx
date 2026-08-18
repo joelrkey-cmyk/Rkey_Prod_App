@@ -18,7 +18,7 @@ import apiService from "../services/api";
 import FormSubmissionsSelector from "./FormSubmissionsSelector";
 
 // Modules extraits pour la maintenabilité
-import { fallbackPredefinedNotes, musicStyles, eventCategories, defaultHypnosisProgram, defaultCompanySettings } from "./contracts2/constants";
+import { fallbackPredefinedNotes, musicStyles, eventCategories, defaultHypnosisProgram, defaultCompanySettings, GRAND_EST_DEPARTMENTS, GRAND_EST_DEPARTMENTS_CODES } from "./contracts2/constants";
 import { generateContractHTML } from "./contracts2/htmlGenerator";
 import { generatePDFFromHTML as generatePDFFromHTMLImported, printContractWithSignature, generateContractAndGuide, getCompiledGuideBlob, previewContractPdf, getFormattedEventDate } from "./contracts2/pdfGenerator";
 import { ConfigurationPage, RichTextHelper } from "./contracts2/ConfigurationPage";
@@ -119,7 +119,12 @@ function Contracts2App() {
   const [venues, setVenues] = useState([]);
   const [venueSearch, setVenueSearch] = useState("");
   const [isNewVenueDialogOpen, setIsNewVenueDialogOpen] = useState(false);
-  const [newVenueForm, setNewVenueForm] = useState({ name: "", department: "", city: "" });
+  const [newVenueForm, setNewVenueForm] = useState({ name: "", department: "Bas-Rhin (67)", city: "" });
+  const [grandEstCities, setGrandEstCities] = useState([]);
+  const [loadingGrandEstCities, setLoadingGrandEstCities] = useState(false);
+  const [citySearchFilter, setCitySearchFilter] = useState("");
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
+  const [isCustomCityInput, setIsCustomCityInput] = useState(false);
   const [isVenueDropdownOpen, setIsVenueDropdownOpen] = useState(false);
 
   const [availableOptions, setAvailableOptions] = useState([]);
@@ -246,18 +251,30 @@ function Contracts2App() {
     if (fields.telephone) updates.phone = fields.telephone;
     if (fields.entreprise) updates.company = fields.entreprise;
     if (fields.date_evenement) {
-      const raw = fields.date_evenement;
+      const raw = String(fields.date_evenement).trim();
       // Try to parse to YYYY-MM-DD for the date input
       let iso = null;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) { iso = raw; }
-      else {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) { 
+        iso = raw; 
+      } else {
         const m = raw.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
-        if (m) iso = `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-        else { const d = new Date(raw); if (!isNaN(d.getTime())) iso = d.toISOString().split('T')[0]; }
+        if (m) {
+          iso = `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+        } else { 
+          const d = new Date(raw); 
+          if (!isNaN(d.getTime())) iso = d.toISOString().split('T')[0]; 
+        }
       }
-      if (iso) updates.event_date = iso;
+      if (iso) {
+        updates.event_date = iso;
+        updates.setup_date = calculateSetupDate(iso);
+      }
     }
     if (fields.type_evenement) updates.event_type = fields.type_evenement;
+    if (fields.lieu) updates.event_location = fields.lieu;
+    if (fields.message) updates.event_note = fields.message;
+    if (fields.nombre_personnes) updates.guest_count = fields.nombre_personnes;
+
     setClientInfo(prev => ({ ...prev, ...updates }));
     setSelectedSubmission(fields);
   };
@@ -451,18 +468,50 @@ function Contracts2App() {
     }
   };
 
+  // Chargement dynamique des communes du Grand Est selon le département sélectionné
+  useEffect(() => {
+    const fetchGrandEstCities = async () => {
+      if (!newVenueForm.department || newVenueForm.department === 'Autre département') {
+        setGrandEstCities([]);
+        return;
+      }
+      const deptCode = GRAND_EST_DEPARTMENTS_CODES[newVenueForm.department];
+      if (!deptCode) {
+        setGrandEstCities([]);
+        return;
+      }
+      try {
+        setLoadingGrandEstCities(true);
+        const res = await axios.get(`https://geo.api.gouv.fr/departements/${deptCode}/communes`);
+        if (res.data) {
+          const sorted = res.data.map(c => c.nom || c.name || '').filter(Boolean).sort((a, b) => a.localeCompare(b, 'fr'));
+          setGrandEstCities(sorted);
+        }
+      } catch (err) {
+        console.error('Erreur de chargement des communes du Grand Est:', err);
+        setGrandEstCities([]);
+      } finally {
+        setLoadingGrandEstCities(false);
+      }
+    };
+
+    fetchGrandEstCities();
+  }, [newVenueForm.department]);
+
   const handleQuickCreateVenue = async () => {
-    if (!newVenueForm.name || !newVenueForm.department || !newVenueForm.city) {
-      toast.error("Veuillez remplir tous les champs obligatoires.");
+    if (!newVenueForm.name.trim() || !newVenueForm.department.trim() || !newVenueForm.city.trim()) {
+      toast.error("Veuillez renseigner le nom de la salle, le département et la ville.");
       return;
     }
     try {
       const response = await axios.post(`${API}/venues`, {
-        ...newVenueForm,
+        name: newVenueForm.name.trim(),
+        department: newVenueForm.department.trim(),
+        city: newVenueForm.city.trim(),
         is_complete: false
       });
       const createdVenue = response.data;
-      toast.success("Lieu de réception créé !");
+      toast.success("Lieu de réception créé et sélectionné !");
       
       setVenues(prev => [...prev, createdVenue]);
       
@@ -473,11 +522,14 @@ function Contracts2App() {
       }));
       
       setIsNewVenueDialogOpen(false);
-      setNewVenueForm({ name: "", department: "", city: "" });
+      setNewVenueForm({ name: "", department: "Bas-Rhin (67)", city: "" });
+      setCitySearchFilter("");
+      setIsCityDropdownOpen(false);
+      setIsCustomCityInput(false);
       setIsVenueDropdownOpen(false);
     } catch (err) {
       console.error("Error quick creating venue:", err);
-      toast.error("Erreur lors de la création.");
+      toast.error("Erreur lors de la création du lieu.");
     }
   };
 
@@ -1999,8 +2051,11 @@ function Contracts2App() {
   // ═══════════════════════════════════════════════════
 
   const saveContractDraft = async (switchToPreview = true) => {
-    if (!clientInfo.name || !clientInfo.email) {
-      toast.error("Nom du client et email sont requis pour sauvegarder un brouillon.");
+    const clientName = clientInfo.name?.trim() || (switchToPreview ? "" : `Brouillon du ${new Date().toLocaleDateString('fr-FR')}`);
+    const clientEmail = clientInfo.email?.trim() || "";
+
+    if (switchToPreview && !clientInfo.name) {
+      toast.error("Veuillez renseigner au moins le nom du client pour afficher l'aperçu.");
       return;
     }
 
@@ -2011,7 +2066,7 @@ function Contracts2App() {
     const needsMandat = !activeInvoiceNumber;
     const needsArtiste = contractMode === 'mandataire' && !activeArtisteInvoiceNumber;
 
-    if (needsMandat || needsArtiste) {
+    if ((needsMandat || needsArtiste) && switchToPreview) {
       try {
         let typeToIncrement = 'both';
         if (needsMandat && !needsArtiste) {
@@ -2042,14 +2097,23 @@ function Contracts2App() {
 
     const contract = {
       client_info: {
-        name: clientInfo.name, email: clientInfo.email, phone: clientInfo.phone,
-        address: clientInfo.address, company: clientInfo.company, event_type: clientInfo.event_type,
-        event_date: clientInfo.event_date, event_location: cleanLocationString(clientInfo.event_location),
-        guest_count: clientInfo.guest_count, setup_date: clientInfo.setup_date,
-        setup_time: clientInfo.setup_time, start_time: clientInfo.start_time,
-        end_time: clientInfo.unlimited_time ? null : clientInfo.end_time,
-        unlimited_time: clientInfo.unlimited_time, phone2: clientInfo.phone2,
-        custom_event_type: clientInfo.custom_event_type, event_note: clientInfo.event_note,
+        name: clientName, 
+        email: clientEmail, 
+        phone: clientInfo.phone || "",
+        address: clientInfo.address || "", 
+        company: clientInfo.company || "", 
+        event_type: clientInfo.event_type || "",
+        event_date: clientInfo.event_date || "", 
+        event_location: cleanLocationString(clientInfo.event_location) || "",
+        guest_count: clientInfo.guest_count || "", 
+        setup_date: clientInfo.setup_date || "",
+        setup_time: clientInfo.setup_time || "À définir", 
+        start_time: clientInfo.start_time || "",
+        end_time: clientInfo.unlimited_time ? null : (clientInfo.end_time || ""),
+        unlimited_time: clientInfo.unlimited_time, 
+        phone2: clientInfo.phone2 || "",
+        custom_event_type: clientInfo.custom_event_type || "", 
+        event_note: clientInfo.event_note || "",
         additional_events: clientInfo.additional_events || []
       },
       dj_profile: selectedDjProfile,
@@ -2109,16 +2173,24 @@ function Contracts2App() {
         const updatedContract = response.data;
         setGeneratedContract(updatedContract);
         setContracts(prev => prev.map(c => c.id === editingContract.id ? updatedContract : c));
-        toast.success("Brouillon de contrat mis à jour avec succès !");
-        if (switchToPreview === true) setActiveTab("preview");
+        if (switchToPreview === true) {
+          toast.success("Brouillon de contrat mis à jour !");
+          setActiveTab("preview");
+        } else {
+          toast.success("Brouillon enregistré avec succès ! Vous pouvez y revenir à tout moment.");
+        }
       } else {
         const response = await axios.post(`${API}/contracts2`, contract);
         const newContract = response.data;
         setGeneratedContract(newContract);
         setContracts(prev => [newContract, ...prev]);
         setEditingContract(newContract);
-        toast.success("Brouillon de contrat sauvegardé avec succès !");
-        if (switchToPreview === true) setActiveTab("preview");
+        if (switchToPreview === true) {
+          toast.success("Contrat sauvegardé !");
+          setActiveTab("preview");
+        } else {
+          toast.success("Brouillon enregistré avec succès ! Vous pouvez y revenir à tout moment.");
+        }
       }
     } catch (error) {
       console.error('Error saving contract draft:', error);
@@ -2733,15 +2805,24 @@ function Contracts2App() {
               </div>
 
               {/* Boutons d'action rapides en haut */}
-              <div className="lg:col-span-2 flex justify-center gap-4 p-4 bg-slate-50/50 border border-slate-150 rounded-xl mb-2">
-                <Button onClick={() => saveContractDraft(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 text-base font-semibold shadow-sm" disabled={!clientInfo.name || !clientInfo.email}>
-                  <FileText className="h-5 w-5 mr-2" />Aperçu du contrat
+              <div className="lg:col-span-2 flex flex-wrap justify-center gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl mb-2 shadow-xs">
+                <Button 
+                  type="button"
+                  onClick={() => saveContractDraft(false)} 
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-2.5 text-base font-semibold shadow-sm transition active:scale-95"
+                >
+                  <Save className="h-5 w-5 mr-2" />
+                  {editingContract ? "Mettre à jour le brouillon" : "Enregistrer comme brouillon"}
                 </Button>
-                {editingContract && (
-                  <Button onClick={() => saveContractDraft(false)} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 text-base font-semibold shadow-sm" disabled={!clientInfo.name || !clientInfo.email}>
-                    <Save className="h-5 w-5 mr-2" />Mettre à jour
-                  </Button>
-                )}
+                <Button 
+                  type="button"
+                  onClick={() => saveContractDraft(true)} 
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 text-base font-semibold shadow-sm transition active:scale-95" 
+                  disabled={!clientInfo.name}
+                >
+                  <FileText className="h-5 w-5 mr-2" />
+                  Aperçu du contrat
+                </Button>
               </div>
 
               {/* Client Information */}
@@ -4158,15 +4239,24 @@ function Contracts2App() {
 
 
               {/* Bouton d'action */}
-              <div className="lg:col-span-2 flex justify-center gap-4 mb-6">
-                <Button onClick={() => saveContractDraft(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg" disabled={!clientInfo.name || !clientInfo.email}>
-                  <FileText className="h-5 w-5 mr-2" />Aperçu du contrat
+              <div className="lg:col-span-2 flex flex-wrap justify-center gap-4 mb-6">
+                <Button 
+                  type="button"
+                  onClick={() => saveContractDraft(false)} 
+                  className="bg-amber-600 hover:bg-amber-700 text-white px-7 py-3 text-base md:text-lg font-semibold shadow-sm transition active:scale-95"
+                >
+                  <Save className="h-5 w-5 mr-2" />
+                  {editingContract ? "Mettre à jour le brouillon" : "Enregistrer comme brouillon"}
                 </Button>
-                {editingContract && (
-                  <Button onClick={() => saveContractDraft(false)} className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-lg" disabled={!clientInfo.name || !clientInfo.email}>
-                    <Save className="h-5 w-5 mr-2" />Mettre à jour
-                  </Button>
-                )}
+                <Button 
+                  type="button"
+                  onClick={() => saveContractDraft(true)} 
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-base md:text-lg font-semibold shadow-sm transition active:scale-95" 
+                  disabled={!clientInfo.name}
+                >
+                  <FileText className="h-5 w-5 mr-2" />
+                  Aperçu du contrat
+                </Button>
               </div>
 
               {/* CGV Section */}
@@ -4607,16 +4697,20 @@ function Contracts2App() {
       {/* Modal d'ajout rapide de lieu de réception */}
       {isNewVenueDialogOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/65 backdrop-blur-xs p-4 text-slate-800">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border p-6 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border p-6 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <MapPin className="h-5 w-5 text-indigo-600" />
-                Ajouter un nouveau lieu
+                Ajouter un nouveau lieu de réception
               </h3>
               <button 
                 type="button" 
-                onClick={() => setIsNewVenueDialogOpen(false)} 
-                className="text-slate-400 hover:text-slate-600 font-bold"
+                onClick={() => {
+                  setIsNewVenueDialogOpen(false);
+                  setIsCustomCityInput(false);
+                  setCitySearchFilter("");
+                }} 
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-md"
               >
                 ✕
               </button>
@@ -4624,34 +4718,144 @@ function Contracts2App() {
 
             <div className="space-y-4">
               <div className="space-y-1">
-                <Label htmlFor="quick-venue-name" className="text-xs font-bold text-slate-700">Nom de la salle *</Label>
+                <Label htmlFor="quick-venue-name" className="text-xs font-bold text-slate-700">Nom de la salle / lieu *</Label>
                 <Input
                   id="quick-venue-name"
-                  placeholder="Ex: Salle des fêtes, Château..."
+                  placeholder="Ex: Salle des Fêtes, Château de Thanvillé, Domaine de..."
                   value={newVenueForm.name}
                   onChange={(e) => setNewVenueForm(prev => ({ ...prev, name: e.target.value }))}
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Département Grand Est */}
                 <div className="space-y-1">
-                  <Label htmlFor="quick-venue-dept" className="text-xs font-bold text-slate-700">Département *</Label>
-                  <Input
+                  <Label htmlFor="quick-venue-dept" className="text-xs font-bold text-slate-700">
+                    Département (Grand Est) *
+                  </Label>
+                  <select
                     id="quick-venue-dept"
-                    placeholder="Ex: Bas-Rhin, 67"
                     value={newVenueForm.department}
-                    onChange={(e) => setNewVenueForm(prev => ({ ...prev, department: e.target.value }))}
-                  />
+                    onChange={(e) => {
+                      const dept = e.target.value;
+                      setNewVenueForm(prev => ({ ...prev, department: dept, city: "" }));
+                      setCitySearchFilter("");
+                      setIsCustomCityInput(false);
+                    }}
+                    className="w-full h-10 border border-slate-300 rounded-md px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium"
+                  >
+                    {GRAND_EST_DEPARTMENTS.map(d => (
+                      <option key={d.name} value={d.name}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                  {newVenueForm.department === 'Autre département' && (
+                    <Input
+                      placeholder="Nom du département..."
+                      className="mt-1 text-xs"
+                      value={newVenueForm.custom_department || ""}
+                      onChange={(e) => setNewVenueForm(prev => ({ ...prev, custom_department: e.target.value, department: e.target.value }))}
+                    />
+                  )}
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="quick-venue-city" className="text-xs font-bold text-slate-700">Ville *</Label>
-                  <Input
-                    id="quick-venue-city"
-                    placeholder="Ex: Mussig"
-                    value={newVenueForm.city}
-                    onChange={(e) => setNewVenueForm(prev => ({ ...prev, city: e.target.value }))}
-                  />
+
+                {/* Ville du département */}
+                <div className="space-y-1 relative">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="quick-venue-city" className="text-xs font-bold text-slate-700">
+                      Ville *
+                    </Label>
+                    {newVenueForm.department !== 'Autre département' && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomCityInput(!isCustomCityInput)}
+                        className="text-[11px] text-indigo-600 hover:text-indigo-800 underline font-medium"
+                      >
+                        {isCustomCityInput ? "Choisir dans la liste" : "Saisie libre"}
+                      </button>
+                    )}
+                  </div>
+
+                  {isCustomCityInput || newVenueForm.department === 'Autre département' ? (
+                    <Input
+                      id="quick-venue-city"
+                      placeholder="Ex: Mussig, Sélestat..."
+                      value={newVenueForm.city}
+                      onChange={(e) => setNewVenueForm(prev => ({ ...prev, city: e.target.value }))}
+                      className="text-xs h-10"
+                    />
+                  ) : (
+                    <div className="relative">
+                      <div className="relative">
+                        <Input
+                          id="quick-venue-city"
+                          placeholder={loadingGrandEstCities ? "Chargement des villes..." : (newVenueForm.city || "Rechercher une ville...")}
+                          value={citySearchFilter !== "" ? citySearchFilter : (newVenueForm.city || "")}
+                          onChange={(e) => {
+                            setCitySearchFilter(e.target.value);
+                            setIsCityDropdownOpen(true);
+                            setNewVenueForm(prev => ({ ...prev, city: e.target.value }));
+                          }}
+                          onFocus={() => setIsCityDropdownOpen(true)}
+                          className="text-xs h-10 pr-7"
+                          disabled={loadingGrandEstCities}
+                        />
+                        {loadingGrandEstCities && (
+                          <div className="absolute right-2.5 top-2.5">
+                            <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Dropdown des villes filtrées */}
+                      {isCityDropdownOpen && grandEstCities.length > 0 && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-300 rounded-md shadow-xl z-[80] max-h-48 overflow-y-auto">
+                          <div className="p-1.5 bg-slate-50 border-b text-[11px] text-slate-500 flex justify-between items-center">
+                            <span>{grandEstCities.filter(c => !citySearchFilter || c.toLowerCase().includes(citySearchFilter.toLowerCase())).length} villes trouvées</span>
+                            <button
+                              type="button"
+                              onClick={() => setIsCityDropdownOpen(false)}
+                              className="text-slate-400 hover:text-slate-700 font-bold"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          {grandEstCities
+                            .filter(c => !citySearchFilter || c.toLowerCase().includes(citySearchFilter.toLowerCase()))
+                            .slice(0, 100)
+                            .map((cityName) => (
+                              <div
+                                key={cityName}
+                                onClick={() => {
+                                  setNewVenueForm(prev => ({ ...prev, city: cityName }));
+                                  setCitySearchFilter("");
+                                  setIsCityDropdownOpen(false);
+                                }}
+                                className={`px-3 py-1.5 text-xs cursor-pointer hover:bg-indigo-50 hover:text-indigo-900 flex items-center justify-between ${
+                                  newVenueForm.city === cityName ? 'bg-indigo-100/70 font-bold text-indigo-900' : 'text-slate-700'
+                                }`}
+                              >
+                                <span>{cityName}</span>
+                                {newVenueForm.city === cityName && <span className="text-indigo-600 text-xs">✓</span>}
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Aperçu du lieu formaté */}
+              {(newVenueForm.department || newVenueForm.city || newVenueForm.name) && (
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
+                  <span className="text-slate-500 font-medium">Aperçu : </span>
+                  <span className="font-semibold text-slate-800">
+                    {[newVenueForm.department, newVenueForm.city, newVenueForm.name].filter(Boolean).join(" - ") || "—"}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-3 border-t">
@@ -4659,7 +4863,11 @@ function Contracts2App() {
                 type="button" 
                 variant="outline" 
                 size="sm" 
-                onClick={() => setIsNewVenueDialogOpen(false)}
+                onClick={() => {
+                  setIsNewVenueDialogOpen(false);
+                  setIsCustomCityInput(false);
+                  setCitySearchFilter("");
+                }}
               >
                 Annuler
               </Button>
@@ -4669,7 +4877,7 @@ function Contracts2App() {
                 onClick={handleQuickCreateVenue}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
               >
-                Créer la salle
+                Créer & Sélectionner la salle
               </Button>
             </div>
           </div>

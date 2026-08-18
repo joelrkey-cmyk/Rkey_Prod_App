@@ -35,23 +35,63 @@ const FormSubmissionsSelector = ({ onSelect, buttonLabel = 'Soumissions', button
   const extractFields = (sub) => {
     const data = sub.data || {};
     const keys = Object.keys(data);
+
+    // Normalize string helper for fuzzy key matching
+    const norm = (str) => String(str || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+
     const findField = (patterns) => {
       for (const p of patterns) {
-        const key = keys.find(k => k.toLowerCase().includes(p));
-        if (key && data[key]) return data[key];
+        const normP = norm(p);
+        const key = keys.find(k => {
+          const normK = norm(k);
+          return normK === normP || normK.includes(normP) || normP.includes(normK);
+        });
+        if (key && data[key] !== undefined && data[key] !== null && String(data[key]).trim() !== '') {
+          return String(data[key]).trim();
+        }
       }
       return '';
     };
 
+    // Phone detection: check keys first, then top-level properties, then value regex search
+    let phoneVal = findField(['telephone', 'telephone portable', 'tel', 'phone', 'portable', 'mobile', 'gsm', 'cellulaire', 'contact', 'numero de telephone', 'num telephone', 'joindre', 'appeler', 'coordonnees']) 
+      || sub.submitter_phone || sub.phone || sub.telephone || '';
+    
+    if (!phoneVal) {
+      for (const key of keys) {
+        const val = String(data[key] || '').trim();
+        const cleanDigits = val.replace(/[^\d+]/g, '');
+        if (cleanDigits.length >= 9 && cleanDigits.length <= 15 && (/^(?:\+?\d{1,3}[\s.-]?)?0?[1-9](?:[\s.-]*\d{2}){4}$/.test(val) || /^0[1-9]\d{8}$/.test(cleanDigits) || /^\+33[1-9]\d{8}$/.test(cleanDigits))) {
+          phoneVal = val;
+          break;
+        }
+      }
+    }
+
+    // Date detection: check keys first, then top-level properties, then value regex search
+    let dateVal = findField(['date de levenement', 'date evenement', 'date de la prestation', 'date de votre evenement', 'date du mariage', 'date mariage', 'date soiree', 'date souhaitee', 'date', 'jour', 'quand', 'event date']) 
+      || sub.date_evenement || sub.event_date || '';
+
+    if (!dateVal) {
+      for (const key of keys) {
+        const val = String(data[key] || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(val) || /^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{4}$/.test(val)) {
+          dateVal = val;
+          break;
+        }
+      }
+    }
+
     return {
-      nom: findField(['nom complet', 'nom', 'name', 'prenom', 'prénom']) || '',
-      email: findField(['email', 'mail', 'e-mail', 'adresse email']) || sub.submitter_email || '',
-      telephone: findField(['telephone', 'téléphone', 'tel', 'phone', 'portable', 'mobile']) || '',
-      entreprise: findField(['entreprise', 'association', 'société', 'societe', 'company', 'organization']) || '',
-      date_evenement: findField(['date', 'date_evenement', 'date événement', 'event_date']) || '',
-      message: findField(['message', 'commentaire', 'description', 'details', 'détails', 'votre événement']) || '',
-      nombre_personnes: findField(['nombre', 'personnes', 'invités', 'guests', 'participants']) || '',
-      type_evenement: findField(['type', 'liste déroulante', 'catégorie', 'category']) || '',
+      nom: findField(['nom complet', 'nom de famille', 'nom', 'name', 'prenom', 'client', 'identite']) || sub.submitter_name || '',
+      email: findField(['email', 'mail', 'e-mail', 'courriel', 'adresse email', 'adresse mail']) || sub.submitter_email || '',
+      telephone: phoneVal,
+      entreprise: findField(['entreprise', 'association', 'societe', 'company', 'organization', 'organisme']) || '',
+      date_evenement: dateVal,
+      lieu: findField(['lieu', 'location', 'ville', 'adresse', 'salle', 'domaine', 'chateau', 'lieu de reception']) || '',
+      message: findField(['message', 'commentaire', 'description', 'details', 'remarques', 'votre projet']) || '',
+      nombre_personnes: findField(['nombre', 'personnes', 'invites', 'guests', 'participants', 'nombre dinvites']) || '',
+      type_evenement: findField(['type', 'type devenement', 'categorie', 'formule', 'prestation']) || '',
     };
   };
 
