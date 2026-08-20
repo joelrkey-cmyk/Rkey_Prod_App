@@ -8,7 +8,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
-import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck, Mail, Bold, Italic, Underline, List, Link, Eye, EyeOff } from 'lucide-react';
+import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck, Mail, Bold, Italic, Underline, List, Link, Eye, EyeOff, Image as ImageIcon, Info, X, Upload, Maximize2, ZoomIn, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Composant autocomplétion intelligente et de recherche pour l'équipement de location
@@ -373,7 +373,11 @@ export const ConfigurationPage = ({
 }) => {
   const [activeConfigTab, setActiveConfigTab] = useState("options");
   const [editingOptionIndex, setEditingOptionIndex] = useState(null);
-  const [newOption, setNewOption] = useState({ name: "", price: 0, event_categories: [], linked_equipment_id: "" });
+  const [newOption, setNewOption] = useState({ name: "", price: 0, event_categories: [], linked_equipment_id: "", image_url: "", description: "" });
+  const [isUploadingOptionImage, setIsUploadingOptionImage] = useState(false);
+  const [previewOptionImageModal, setPreviewOptionImageModal] = useState({ open: false, title: "", imageUrl: "", price: null, description: "" });
+  const newOptionFileInputRef = useRef(null);
+  const editOptionFileInputRef = useRef(null);
 
   const [newNote, setNewNote] = useState({ key: "", title: "", content: "" });
   const [isSaving, setIsSaving] = useState(false);
@@ -443,6 +447,42 @@ export const ConfigurationPage = ({
   }, [apiService]);
 
   // --- Options Matériel ---
+  const handleUploadImageForNewOption = async (file) => {
+    if (!file) return;
+    try {
+      setIsUploadingOptionImage(true);
+      const res = await apiService.uploadMaterialOptionImage(file);
+      if (res && res.url) {
+        setNewOption(prev => ({ ...prev, image_url: res.url }));
+        toast.success("Infographie / Image téléchargée avec succès !");
+      }
+    } catch (error) {
+      console.error("Error uploading image for new option:", error);
+      toast.error("Erreur lors du téléchargement de l'image.");
+    } finally {
+      setIsUploadingOptionImage(false);
+    }
+  };
+
+  const handleUploadImageForEditOption = async (file, index) => {
+    if (!file) return;
+    try {
+      setIsUploadingOptionImage(true);
+      const res = await apiService.uploadMaterialOptionImage(file);
+      if (res && res.url) {
+        const updated = [...selectedOptions];
+        updated[index] = { ...updated[index], image_url: res.url };
+        setSelectedOptions(updated);
+        toast.success("Infographie / Image mise à jour pour cette option !");
+      }
+    } catch (error) {
+      console.error("Error uploading image for edited option:", error);
+      toast.error("Erreur lors du téléchargement de l'image.");
+    } finally {
+      setIsUploadingOptionImage(false);
+    }
+  };
+
   const addNewOption = async () => {
     if (newOption.name.trim() && newOption.price >= 0) {
       try {
@@ -450,11 +490,14 @@ export const ConfigurationPage = ({
         const savedOption = await apiService.createMaterialOption({
           name: newOption.name.trim(),
           price: newOption.price,
+          description: newOption.description || "",
           event_categories: newOption.event_categories || [],
-          linked_equipment_id: newOption.linked_equipment_id || null
+          linked_equipment_id: newOption.linked_equipment_id || null,
+          image_url: newOption.image_url || null
         });
         setSelectedOptions([...selectedOptions, { ...savedOption, selected: false }]);
-        setNewOption({ name: "", price: 0, event_categories: [], linked_equipment_id: "" });
+        setNewOption({ name: "", price: 0, description: "", event_categories: [], linked_equipment_id: "", image_url: "" });
+        if (newOptionFileInputRef.current) newOptionFileInputRef.current.value = "";
         toast.success("Option matériel ajoutée et sauvegardée définitivement !");
       } catch (error) {
         console.error("Error adding option:", error);
@@ -487,8 +530,10 @@ export const ConfigurationPage = ({
       await apiService.updateMaterialOption(option.id, { 
         name: option.name, 
         price: option.price,
+        description: option.description || "",
         event_categories: option.event_categories || [],
-        linked_equipment_id: option.linked_equipment_id || null
+        linked_equipment_id: option.linked_equipment_id || null,
+        image_url: option.image_url || null
       });
       setEditingOptionIndex(null);
       toast.success("Option modifiée et sauvegardée !");
@@ -853,19 +898,118 @@ export const ConfigurationPage = ({
             <Card>
               <CardHeader>
                 <CardTitle>Gestion des Options Matériel</CardTitle>
-                <CardDescription>Ajoutez, modifiez ou supprimez les options d'équipement disponibles</CardDescription>
+                <CardDescription>Ajoutez, modifiez ou supprimez les options d'équipement et leurs infographies associées</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 mb-6">
                   {selectedOptions.map((option, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 border rounded-lg bg-white">
+                    <div key={index} className="flex flex-col md:flex-row md:items-center justify-between p-4 border rounded-xl bg-white shadow-sm hover:border-slate-300 transition-colors gap-4">
                       <div className="flex-1">
                         {editingOptionIndex === index ? (
-                          <div className="flex flex-col space-y-3 flex-1 mr-4">
-                            <div className="flex items-center space-x-4">
-                              <Input value={option.name} onChange={(e) => { const updated = [...selectedOptions]; updated[index].name = e.target.value; setSelectedOptions(updated); }} className="flex-1" />
-                              <Input type="number" value={option.price} onChange={(e) => { const updated = [...selectedOptions]; updated[index].price = parseFloat(e.target.value) || 0; setSelectedOptions(updated); }} className="w-24" />
+                          <div className="flex flex-col space-y-3 flex-1">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                              <div className="flex-1 w-full">
+                                <Label className="text-xs text-slate-500 mb-1 block">Nom de l'option</Label>
+                                <Input value={option.name} onChange={(e) => { const updated = [...selectedOptions]; updated[index].name = e.target.value; setSelectedOptions(updated); }} className="w-full" />
+                              </div>
+                              <div className="w-full sm:w-28">
+                                <Label className="text-xs text-slate-500 mb-1 block">Tarif (€)</Label>
+                                <Input type="number" value={option.price} onChange={(e) => { const updated = [...selectedOptions]; updated[index].price = parseFloat(e.target.value) || 0; setSelectedOptions(updated); }} className="w-full" />
+                              </div>
                             </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs text-slate-500">Description / Détails (optionnel) :</Label>
+                              <Input 
+                                placeholder="Description succincte de l'option..." 
+                                value={option.description || ""} 
+                                onChange={(e) => {
+                                  const updated = [...selectedOptions];
+                                  updated[index].description = e.target.value;
+                                  setSelectedOptions(updated);
+                                }} 
+                                className="w-full text-sm"
+                              />
+                            </div>
+
+                            {/* Image / Infographie pour l'édition */}
+                            <div className="p-3 bg-slate-50 border rounded-lg space-y-2">
+                              <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                                <ImageIcon className="w-4 h-4 text-indigo-600" />
+                                Infographie / Visuel de l'option (PNG, JPG, WebP)
+                              </Label>
+                              {option.image_url ? (
+                                <div className="flex items-center gap-3 bg-white p-2 border rounded-md">
+                                  <img 
+                                    src={option.image_url} 
+                                    alt={option.name} 
+                                    className="w-16 h-16 object-cover rounded border cursor-pointer hover:opacity-80 transition"
+                                    onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-medium text-slate-800 truncate">Infographie associée</p>
+                                    <div className="flex items-center gap-2 mt-1.5">
+                                      <Button 
+                                        type="button" 
+                                        size="sm" 
+                                        variant="outline" 
+                                        className="h-7 text-xs flex items-center gap-1 text-indigo-600"
+                                        onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })}
+                                      >
+                                        <Eye className="w-3.5 h-3.5" /> Voir
+                                      </Button>
+                                      <label className="cursor-pointer">
+                                        <input 
+                                          type="file" 
+                                          accept="image/png,image/jpeg,image/jpg,image/webp" 
+                                          className="hidden" 
+                                          disabled={isUploadingOptionImage}
+                                          onChange={(e) => {
+                                            if (e.target.files?.[0]) handleUploadImageForEditOption(e.target.files[0], index);
+                                          }} 
+                                        />
+                                        <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border transition">
+                                          {isUploadingOptionImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                                          Remplacer
+                                        </span>
+                                      </label>
+                                      <Button 
+                                        type="button" 
+                                        size="sm" 
+                                        variant="ghost" 
+                                        className="h-7 text-xs text-rose-600 hover:bg-rose-50 p-1"
+                                        onClick={() => {
+                                          const updated = [...selectedOptions];
+                                          updated[index].image_url = null;
+                                          setSelectedOptions(updated);
+                                        }}
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div>
+                                  <label className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-lg cursor-pointer bg-white transition-colors">
+                                    <input 
+                                      type="file" 
+                                      accept="image/png,image/jpeg,image/jpg,image/webp" 
+                                      className="hidden" 
+                                      disabled={isUploadingOptionImage}
+                                      onChange={(e) => {
+                                        if (e.target.files?.[0]) handleUploadImageForEditOption(e.target.files[0], index);
+                                      }} 
+                                    />
+                                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                                      {isUploadingOptionImage ? <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> : <UploadCloud className="w-4 h-4 text-indigo-600" />}
+                                      <span>{isUploadingOptionImage ? "Téléchargement..." : "Cliquer pour ajouter une infographie PNG"}</span>
+                                    </div>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+
                             <div className="space-y-1">
                               <Label className="text-xs text-slate-500">Afficher pour (vide = tous) :</Label>
                               <div className="flex flex-wrap gap-2">
@@ -894,67 +1038,224 @@ export const ConfigurationPage = ({
                                 }}
                               />
                             </div>
-                            <div>
-                              <Button onClick={() => saveEditedOption(index)} size="sm" variant="outline" disabled={isSaving}>{isSaving ? "..." : "Valider"}</Button>
+                            <div className="flex items-center gap-2 pt-2">
+                              <Button onClick={() => saveEditedOption(index)} size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" disabled={isSaving}>
+                                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Save className="w-3.5 h-3.5 mr-1" />}
+                                Enregistrer
+                              </Button>
+                              <Button onClick={() => setEditingOptionIndex(null)} size="sm" variant="outline">
+                                Annuler
+                              </Button>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <h3 className="font-medium">{option.name}</h3>
-                              <p className="text-sm text-slate-600">{option.price}€</p>
-                              {(option.event_categories && option.event_categories.length > 0) && (
-                                <p className="text-xs text-blue-600 mt-1">Limité à : {option.event_categories.join(', ')}</p>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                              {option.image_url ? (
+                                <div 
+                                  className="relative group shrink-0 cursor-pointer"
+                                  onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })}
+                                  title="Cliquez pour agrandir l'infographie"
+                                >
+                                  <img 
+                                    src={option.image_url} 
+                                    alt={option.name} 
+                                    className="w-14 h-14 object-cover rounded-lg border border-slate-200 group-hover:scale-105 transition-transform"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <ZoomIn className="w-4 h-4 text-white" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex flex-col items-center justify-center text-slate-400 shrink-0">
+                                  <ImageIcon className="w-5 h-5" />
+                                  <span className="text-[9px] mt-0.5">Sans visuel</span>
+                                </div>
                               )}
-                              {option.linked_equipment_id && (() => {
-                                const eq = equipmentList.find(eq => eq.id === option.linked_equipment_id);
-                                if (!eq) return <p className="text-xs text-rose-500 mt-1">Équipement lié introuvable</p>;
-                                return (
-                                  <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1.5 flex-wrap">
-                                    <Music className="w-3.5 h-3.5 shrink-0" /> 
-                                    <span>Lié à :</span>
-                                    {eq.category && (
-                                      <span className="text-[9px] font-bold uppercase bg-slate-100 text-slate-600 px-1 py-0.5 rounded">
-                                        {eq.category}
-                                      </span>
-                                    )}
-                                    {eq.reference && (
-                                      <span className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded">
-                                        {eq.reference}
-                                      </span>
-                                    )}
-                                    <span className="font-semibold text-slate-700">{eq.name}</span>
-                                  </p>
-                                );
-                              })()}
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="font-semibold text-slate-900">{option.name}</h3>
+                                  <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-bold">
+                                    {option.price} €
+                                  </Badge>
+                                  {option.image_url && (
+                                    <Badge 
+                                      className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] cursor-pointer hover:bg-emerald-100 flex items-center gap-1"
+                                      onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })}
+                                    >
+                                      <Info className="w-3 h-3" /> Infographie active
+                                    </Badge>
+                                  )}
+                                </div>
+
+                                {option.description && (
+                                  <p className="text-xs text-slate-600 mt-1">{option.description}</p>
+                                )}
+
+                                {(option.event_categories && option.event_categories.length > 0) && (
+                                  <p className="text-xs text-blue-600 mt-1">Limité à : {option.event_categories.join(', ')}</p>
+                                )}
+                                {option.linked_equipment_id && (() => {
+                                  const eq = equipmentList.find(eq => eq.id === option.linked_equipment_id);
+                                  if (!eq) return <p className="text-xs text-rose-500 mt-1">Équipement lié introuvable</p>;
+                                  return (
+                                    <p className="text-xs text-indigo-600 mt-1 flex items-center gap-1.5 flex-wrap">
+                                      <Music className="w-3.5 h-3.5 shrink-0" /> 
+                                      <span>Lié à :</span>
+                                      {eq.category && (
+                                        <span className="text-[9px] font-bold uppercase bg-slate-100 text-slate-600 px-1 py-0.5 rounded">
+                                          {eq.category}
+                                        </span>
+                                      )}
+                                      {eq.reference && (
+                                        <span className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-1 py-0.5 rounded">
+                                          {eq.reference}
+                                        </span>
+                                      )}
+                                      <span className="font-semibold text-slate-700">{eq.name}</span>
+                                    </p>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center space-x-2 self-start mt-2">
-                        <Button onClick={() => moveOption(index, 'up')} disabled={index === 0 || isSaving} size="sm" variant="ghost"><ChevronUp className="h-4 w-4" /></Button>
-                        <Button onClick={() => moveOption(index, 'down')} disabled={index === selectedOptions.length - 1 || isSaving} size="sm" variant="ghost"><ChevronDown className="h-4 w-4" /></Button>
-                        <Button onClick={() => setEditingOptionIndex(editingOptionIndex === index ? null : index)} size="sm" variant="outline" disabled={isSaving}><Edit className="h-4 w-4" /></Button>
-                        <Button onClick={() => deleteOption(index)} size="sm" variant="destructive" disabled={isSaving}><Trash2 className="h-4 w-4" /></Button>
+                      <div className="flex items-center space-x-1.5 self-end md:self-center shrink-0">
+                        {option.image_url && editingOptionIndex !== index && (
+                          <Button 
+                            onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })} 
+                            size="sm" 
+                            variant="ghost" 
+                            className="text-indigo-600 hover:bg-indigo-50"
+                            title="Voir l'infographie en plein écran"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button onClick={() => moveOption(index, 'up')} disabled={index === 0 || isSaving} size="sm" variant="ghost" title="Monter"><ChevronUp className="h-4 w-4" /></Button>
+                        <Button onClick={() => moveOption(index, 'down')} disabled={index === selectedOptions.length - 1 || isSaving} size="sm" variant="ghost" title="Descendre"><ChevronDown className="h-4 w-4" /></Button>
+                        <Button onClick={() => setEditingOptionIndex(editingOptionIndex === index ? null : index)} size="sm" variant="outline" disabled={isSaving} title="Modifier"><Edit className="h-4 w-4" /></Button>
+                        <Button onClick={() => deleteOption(index)} size="sm" variant="destructive" disabled={isSaving} title="Supprimer"><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div className="border-t pt-4">
-                  <h3 className="font-medium mb-4">Ajouter une nouvelle option</h3>
-                  <p className="text-sm text-green-600 mb-3">Les options ajoutées sont sauvegardées définitivement</p>
+                <div className="border-t pt-5 bg-slate-50/50 p-4 rounded-xl border">
+                  <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-indigo-600" />
+                    Ajouter une nouvelle option
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4">Les options ajoutées sont immédiatement disponibles dans les contrats et l'application DJ Client.</p>
+                  
                   <div className="flex flex-col space-y-4">
-                    <div className="flex items-center space-x-4">
-                      <Input placeholder="Nom de l'option" value={newOption.name} onChange={(e) => setNewOption({...newOption, name: e.target.value})} className="flex-1" disabled={isSaving} />
-                      <Input type="number" placeholder="Prix" value={newOption.price} onChange={(e) => setNewOption({...newOption, price: parseFloat(e.target.value) || 0})} className="w-24" disabled={isSaving} />
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                      <div className="flex-1 w-full">
+                        <Label className="text-xs font-medium text-slate-700 mb-1 block">Nom de l'option *</Label>
+                        <Input placeholder="Ex: Machine à fumée lourde, Éclairage d'ambiance..." value={newOption.name} onChange={(e) => setNewOption({...newOption, name: e.target.value})} className="w-full bg-white" disabled={isSaving} />
+                      </div>
+                      <div className="w-full sm:w-32">
+                        <Label className="text-xs font-medium text-slate-700 mb-1 block">Tarif TTC (€) *</Label>
+                        <Input type="number" placeholder="0" value={newOption.price} onChange={(e) => setNewOption({...newOption, price: parseFloat(e.target.value) || 0})} className="w-full bg-white" disabled={isSaving} />
+                      </div>
                     </div>
+
+                    <div>
+                      <Label className="text-xs font-medium text-slate-700 mb-1 block">Description / Détails (optionnel)</Label>
+                      <Input 
+                        placeholder="Description succincte de ce que comprend l'option..." 
+                        value={newOption.description || ""} 
+                        onChange={(e) => setNewOption({...newOption, description: e.target.value})} 
+                        className="w-full bg-white text-sm" 
+                        disabled={isSaving} 
+                      />
+                    </div>
+
+                    {/* Section Image Infographie pour la nouvelle option */}
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
+                        <ImageIcon className="w-4 h-4 text-indigo-600" />
+                        Infographie de l'option (PNG, JPG, WebP)
+                      </Label>
+                      <p className="text-[11px] text-slate-500">
+                        Cette infographie sera affichée en plein écran au client lorsqu'il cliquera sur l'icône <Info className="w-3 h-3 inline text-indigo-600" /> dans son espace DJ Client.
+                      </p>
+
+                      {newOption.image_url ? (
+                        <div className="flex items-center gap-3 bg-white p-3 border rounded-lg">
+                          <img 
+                            src={newOption.image_url} 
+                            alt="Infographie aperçu" 
+                            className="w-16 h-16 object-cover rounded-md border cursor-pointer hover:opacity-80 transition"
+                            onClick={() => setPreviewOptionImageModal({ open: true, title: newOption.name || "Aperçu Option", imageUrl: newOption.image_url, price: newOption.price, description: newOption.description })}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                              <FileCheck className="w-3.5 h-3.5" /> Infographie téléchargée avec succès
+                            </p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <Button 
+                                type="button" 
+                                size="sm" 
+                                variant="outline" 
+                                className="h-7 text-xs flex items-center gap-1"
+                                onClick={() => setPreviewOptionImageModal({ open: true, title: newOption.name || "Aperçu Option", imageUrl: newOption.image_url, price: newOption.price, description: newOption.description })}
+                              >
+                                <Eye className="w-3 h-3" /> Voir
+                              </Button>
+                              <Button 
+                                type="button" 
+                                size="sm" 
+                                variant="ghost" 
+                                className="h-7 text-xs text-rose-600 hover:bg-rose-50"
+                                onClick={() => {
+                                  setNewOption(prev => ({ ...prev, image_url: "" }));
+                                  if (newOptionFileInputRef.current) newOptionFileInputRef.current.value = "";
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3 mr-1" /> Supprimer
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-white p-4 border border-dashed rounded-lg flex flex-col sm:flex-row items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                              <UploadCloud className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-slate-800">Ajouter l'infographie PNG / JPG</p>
+                              <p className="text-[11px] text-slate-400">Formats acceptés : PNG, JPG, JPEG, WebP</p>
+                            </div>
+                          </div>
+                          <label className="cursor-pointer shrink-0">
+                            <input 
+                              ref={newOptionFileInputRef}
+                              type="file" 
+                              accept="image/png,image/jpeg,image/jpg,image/webp" 
+                              className="hidden" 
+                              disabled={isUploadingOptionImage || isSaving}
+                              onChange={(e) => {
+                                if (e.target.files?.[0]) handleUploadImageForNewOption(e.target.files[0]);
+                              }} 
+                            />
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-medium transition">
+                              {isUploadingOptionImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                              {isUploadingOptionImage ? "Téléchargement..." : "Sélectionner une image"}
+                            </span>
+                          </label>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="space-y-2">
-                      <Label className="text-sm text-slate-700 font-medium">Afficher pour l'événement : (Laisser vide pour tous)</Label>
+                      <Label className="text-xs font-medium text-slate-700">Afficher pour l'événement : (Laisser vide pour tous)</Label>
                       <div className="flex flex-wrap gap-2">
                         {EVENT_CATEGORIES.map(cat => (
-                          <label key={cat} className="flex items-center space-x-1 border px-2 py-1 rounded bg-slate-50 cursor-pointer">
-                            <input type="checkbox" className="w-3 h-3 text-blue-600" checked={(newOption.event_categories || []).includes(cat)} onChange={(e) => {
+                          <label key={cat} className="flex items-center space-x-1 border px-2 py-1 rounded bg-white hover:bg-slate-50 cursor-pointer text-xs">
+                            <input type="checkbox" className="w-3 h-3 text-indigo-600 rounded" checked={(newOption.event_categories || []).includes(cat)} onChange={(e) => {
                               let cats = [...(newOption.event_categories || [])];
                               if (e.target.checked) cats.push(cat); else cats = cats.filter(c => c !== cat);
                               setNewOption({...newOption, event_categories: cats});
@@ -964,19 +1265,23 @@ export const ConfigurationPage = ({
                         ))}
                       </div>
                     </div>
+
                     <div className="space-y-2">
+                      <Label className="text-xs font-medium text-slate-700">Liaison avec le parc matériel (Optionnel) :</Label>
                       <EquipmentSearchSelector 
                         equipmentList={equipmentList}
                         value={newOption.linked_equipment_id || ""}
                         onChange={(val) => setNewOption({...newOption, linked_equipment_id: val})}
                       />
-                      <p className="text-xs text-slate-500">
+                      <p className="text-[11px] text-slate-500">
                         Si un équipement est lié, une réservation sera automatiquement créée lorsque le contrat comportant cette option sera signé.
                       </p>
                     </div>
-                    <div>
-                      <Button onClick={addNewOption} disabled={!newOption.name.trim() || isSaving}>
-                        <Plus className="h-4 w-4 mr-2" />{isSaving ? "Ajout..." : "Ajouter"}
+
+                    <div className="pt-2">
+                      <Button onClick={addNewOption} disabled={!newOption.name.trim() || isSaving || isUploadingOptionImage} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                        {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                        {isSaving ? "Ajout en cours..." : "Ajouter l'option matériel"}
                       </Button>
                     </div>
                   </div>
@@ -1386,6 +1691,76 @@ export const ConfigurationPage = ({
                 <Save className="h-4 w-4 mr-2" />{isSaving ? "Enregistrement..." : "Enregistrer"}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Modal d'aperçu d'infographie plein écran pour Option Matériel */}
+        <Dialog open={previewOptionImageModal.open} onOpenChange={(open) => setPreviewOptionImageModal(prev => ({ ...prev, open }))}>
+          <DialogContent className="max-w-4xl max-h-[95vh] p-0 overflow-hidden bg-slate-950 border-slate-800 text-white">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                  <Info className="w-4 h-4" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+                    {previewOptionImageModal.title}
+                    {previewOptionImageModal.price !== null && previewOptionImageModal.price !== undefined && (
+                      <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-500/30 text-xs">
+                        {previewOptionImageModal.price} €
+                      </Badge>
+                    )}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-slate-400">
+                    Infographie et détails de l'option matériel
+                  </DialogDescription>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 flex flex-col items-center justify-center overflow-y-auto max-h-[75vh] bg-slate-950/50">
+              {previewOptionImageModal.imageUrl ? (
+                <div className="relative group max-w-full">
+                  <img 
+                    src={previewOptionImageModal.imageUrl} 
+                    alt={previewOptionImageModal.title} 
+                    className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-2xl border border-slate-800"
+                  />
+                </div>
+              ) : (
+                <div className="py-12 text-slate-500 text-center">
+                  <ImageIcon className="w-12 h-12 mx-auto mb-2 opacity-40" />
+                  <p>Aucune infographie disponible pour cette option.</p>
+                </div>
+              )}
+
+              {previewOptionImageModal.description && (
+                <div className="mt-4 p-3 bg-slate-900/80 border border-slate-800 rounded-lg text-xs text-slate-300 max-w-xl text-center">
+                  {previewOptionImageModal.description}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-800 bg-slate-900/80 flex justify-between items-center">
+              {previewOptionImageModal.imageUrl && (
+                <a 
+                  href={previewOptionImageModal.imageUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" /> Ouvrir l'image originale
+                </a>
+              )}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setPreviewOptionImageModal(prev => ({ ...prev, open: false }))}
+                className="bg-slate-800 hover:bg-slate-700 text-white border-slate-700 ml-auto"
+              >
+                Fermer
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

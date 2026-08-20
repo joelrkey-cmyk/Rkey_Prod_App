@@ -111,6 +111,9 @@ const DjClientApp = ({ isPublic = false }) => {
   const [lightboxImages, setLightboxImages] = useState([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
+  // Option Material Infographic Preview Modal
+  const [optionInfographicModal, setOptionInfographicModal] = useState({ open: false, title: "", price: null, imageUrl: "", description: "" });
+
   const handleOpenLightbox = (images, index = 0) => {
     setLightboxImages(images || []);
     setLightboxIndex(index);
@@ -5058,14 +5061,38 @@ function urlBase64ToUint8Array(base64String) {
                 <h4 className="font-semibold text-gray-800 mb-3">Options d'animation de l'événement</h4>
                 {contractOptions.length > 0 ? (
                   <ul className="space-y-2">
-                    {contractOptions.map((opt, idx) => (
-                      <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-                        <div className="flex items-center gap-2 font-medium">
-                          <Check className="w-4 h-4 text-green-500" />
-                          {opt.name}
-                        </div>
-                      </li>
-                    ))}
+                    {contractOptions.map((opt, idx) => {
+                      const visual = opt.image_url 
+                        ? { image_url: opt.image_url, description: opt.description }
+                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      return (
+                        <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                          <div className="flex items-center gap-2 font-medium">
+                            <Check className="w-4 h-4 text-green-500 shrink-0" />
+                            <span>{opt.name}</span>
+                            {visual.image_url && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOptionInfographicModal({
+                                    open: true,
+                                    title: opt.name,
+                                    price: opt.price,
+                                    imageUrl: visual.image_url,
+                                    description: visual.description || opt.description || ""
+                                  });
+                                }}
+                                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white transition-colors border border-indigo-200 hover:border-indigo-600 focus:outline-none shrink-0"
+                                title="Voir l'infographie de l'option"
+                              >
+                                <Info className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p className="text-sm text-gray-500 italic">Aucune option validée sur ce contrat.</p>
@@ -5217,22 +5244,48 @@ function urlBase64ToUint8Array(base64String) {
                       <span>Solde initial :</span>
                       <span>{originalRemainingBalance.toFixed(2)} €</span>
                     </div>
-                    {additions.map((opt, index) => (
-                      <div key={index} className="flex justify-between items-center text-[11px] text-slate-600 font-medium">
-                        <span className="truncate max-w-[140px] text-amber-600" title={opt.name}>+ {opt.name}</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-amber-600">+{Number(opt.price).toFixed(2)} €</span>
-                          <button
-                            onClick={() => removePostSignatureOption(opt)}
-                            disabled={optionsSubmitting}
-                            title="Supprimer cette option"
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-0.5 rounded transition-colors focus:outline-none"
-                          >
-                            <X className="w-3 h-3 stroke-[3]" />
-                          </button>
+                    {additions.map((opt, index) => {
+                      const visual = opt.image_url 
+                        ? { image_url: opt.image_url, description: opt.description }
+                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      return (
+                        <div key={index} className="flex justify-between items-center text-[11px] text-slate-600 font-medium">
+                          <div className="flex items-center gap-1.5 truncate max-w-[140px]">
+                            <span className="truncate text-amber-600" title={opt.name}>+ {opt.name}</span>
+                            {visual.image_url && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOptionInfographicModal({
+                                    open: true,
+                                    title: opt.name,
+                                    price: opt.price,
+                                    imageUrl: visual.image_url,
+                                    description: visual.description || opt.description || ""
+                                  });
+                                }}
+                                className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white transition-colors border border-indigo-200 shrink-0"
+                                title="Voir l'infographie"
+                              >
+                                <Info className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-amber-600">+{Number(opt.price).toFixed(2)} €</span>
+                            <button
+                              onClick={() => removePostSignatureOption(opt)}
+                              disabled={optionsSubmitting}
+                              title="Supprimer cette option"
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-0.5 rounded transition-colors focus:outline-none"
+                            >
+                              <X className="w-3 h-3 stroke-[3]" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -5245,15 +5298,39 @@ function urlBase64ToUint8Array(base64String) {
                 <h4 className="font-semibold text-gray-800 mb-3">Options Validées au Contrat</h4>
                 {contractOptions.length > 0 ? (
                   <ul className="space-y-2">
-                    {contractOptions.map((opt, idx) => (
-                      <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border">
-                        <div className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-green-500" />
-                          {opt.name}
-                        </div>
-                        <span className="font-semibold">{opt.price} €</span>
-                      </li>
-                    ))}
+                    {contractOptions.map((opt, idx) => {
+                      const visual = opt.image_url 
+                        ? { image_url: opt.image_url, description: opt.description }
+                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      return (
+                        <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border hover:bg-slate-100/60 transition-colors">
+                          <div className="flex items-center gap-2">
+                            <Check className="w-4 h-4 text-green-500 shrink-0" />
+                            <span className="font-medium">{opt.name}</span>
+                            {visual.image_url && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOptionInfographicModal({
+                                    open: true,
+                                    title: opt.name,
+                                    price: opt.price,
+                                    imageUrl: visual.image_url,
+                                    description: visual.description || opt.description || ""
+                                  });
+                                }}
+                                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white transition-all shadow-xs border border-indigo-200 hover:border-indigo-600 focus:outline-none shrink-0"
+                                title="Voir l'infographie de l'option"
+                              >
+                                <Info className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                          <span className="font-semibold">{opt.price} €</span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p className="text-sm text-gray-500 italic">Aucune option validée sur ce contrat.</p>
@@ -5267,36 +5344,60 @@ function urlBase64ToUint8Array(base64String) {
                     En attente de validation
                   </h4>
                   <ul className="space-y-2">
-                    {requestedOptions.map((opt, idx) => (
-                      <li key={idx} className="flex items-center justify-between text-orange-800 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200 shadow-sm">
-                        <div className="flex items-center gap-2">
-                          {opt.name}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-semibold">{opt.price} €</span>
-                          {(role === 'dj' || role === 'admin') && (
-                            <div className="flex items-center gap-1">
+                    {requestedOptions.map((opt, idx) => {
+                      const visual = opt.image_url 
+                        ? { image_url: opt.image_url, description: opt.description }
+                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      return (
+                        <li key={idx} className="flex items-center justify-between text-orange-800 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200 shadow-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{opt.name}</span>
+                            {visual.image_url && (
                               <button
-                                onClick={() => validateRequestedOption(opt)}
-                                disabled={optionsSubmitting}
-                                className="text-green-600 hover:text-green-800 hover:bg-green-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
-                                title="Valider l'option"
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOptionInfographicModal({
+                                    open: true,
+                                    title: opt.name,
+                                    price: opt.price,
+                                    imageUrl: visual.image_url,
+                                    description: visual.description || opt.description || ""
+                                  });
+                                }}
+                                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-100 hover:bg-orange-600 text-orange-700 hover:text-white transition-colors border border-orange-300 shrink-0"
+                                title="Voir l'infographie de l'option"
                               >
-                                <Check className="w-4 h-4 text-green-600" />
+                                <Info className="w-3 h-3" />
                               </button>
-                              <button
-                                onClick={() => cancelRequestedOption(opt)}
-                                disabled={optionsSubmitting}
-                                className="text-red-500 hover:text-red-700 hover:bg-red-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
-                                title="Refuser / Annuler l'option"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </li>
-                    ))}
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold">{opt.price} €</span>
+                            {(role === 'dj' || role === 'admin') && (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => validateRequestedOption(opt)}
+                                  disabled={optionsSubmitting}
+                                  className="text-green-600 hover:text-green-800 hover:bg-green-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
+                                  title="Valider l'option"
+                                >
+                                  <Check className="w-4 h-4 text-green-600" />
+                                </button>
+                                <button
+                                  onClick={() => cancelRequestedOption(opt)}
+                                  disabled={optionsSubmitting}
+                                  className="text-red-500 hover:text-red-700 hover:bg-red-100/50 p-1.5 rounded transition-colors disabled:opacity-50"
+                                  title="Refuser / Annuler l'option"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -5311,7 +5412,7 @@ function urlBase64ToUint8Array(base64String) {
               )}
               {role === 'client' && (
                 <p className="text-sm text-indigo-700 bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-200 mb-3">
-                  Ce que vous voyez dans cette section sont les options supplémentaires possibles pour votre événement. Vous souhaitez en ajouter une ? Cochez-la ci-dessous et validez !
+                  Ce que vous voyez dans cette section sont les options supplémentaires possibles pour votre événement. Vous souhaitez en ajouter une ? Cochez-la ci-dessous et validez ! Cliquez sur l'icône <Info className="w-3.5 h-3.5 inline text-indigo-600" /> pour voir les détails et l'infographie.
                 </p>
               )}
               {nonSelectedOptions.length > 0 ? (
@@ -5319,27 +5420,52 @@ function urlBase64ToUint8Array(base64String) {
                   <ul className="space-y-2">
                     {nonSelectedOptions.map((opt, idx) => {
                       const isSelected = optionsBasket.some(o => o.id === opt.id);
+                      const visual = opt.image_url 
+                        ? { image_url: opt.image_url, description: opt.description }
+                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
                       return (
                         <li 
                           key={idx} 
                           onClick={() => role === 'client' && toggleBasket(opt)}
-                          className={`flex flex-col text-sm bg-white px-3 py-2 rounded-lg border shadow-sm transition-colors ${role === 'client' ? 'cursor-pointer hover:border-indigo-300' : ''} ${isSelected ? 'border-indigo-500 bg-indigo-50' : 'border-gray-100'}`}
+                          className={`flex flex-col text-sm bg-white px-3 py-2.5 rounded-lg border shadow-sm transition-colors ${role === 'client' ? 'cursor-pointer hover:border-indigo-300' : ''} ${isSelected ? 'border-indigo-500 bg-indigo-50/70' : 'border-gray-200 hover:border-gray-300'}`}
                         >
-                          <div className="flex justify-between items-start">
-                            <div className="flex items-center gap-2">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
                               {role === 'client' && (
                                 <input 
                                   type="checkbox" 
                                   readOnly 
                                   checked={isSelected} 
-                                  className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                  className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 shrink-0 pointer-events-none"
                                 />
                               )}
-                              <span className={`font-medium ${isSelected ? 'text-indigo-800' : 'text-gray-800'}`}>{opt.name}</span>
+                              <span className={`font-medium truncate ${isSelected ? 'text-indigo-900' : 'text-gray-800'}`}>{opt.name}</span>
+                              
+                              {/* Bouton Info pour voir l'infographie de l'option */}
+                              {visual.image_url && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOptionInfographicModal({
+                                      open: true,
+                                      title: opt.name,
+                                      price: opt.price,
+                                      imageUrl: visual.image_url,
+                                      description: visual.description || opt.description || ""
+                                    });
+                                  }}
+                                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white transition-all shadow-xs border border-indigo-200 hover:border-indigo-600 focus:outline-none shrink-0"
+                                  title="Cliquez pour voir l'infographie et les détails"
+                                  aria-label={`Voir l'infographie de ${opt.name}`}
+                                >
+                                  <Info className="w-3 h-3" />
+                                </button>
+                              )}
                             </div>
                             <span className="font-semibold whitespace-nowrap ml-2 text-indigo-600">{opt.price} €</span>
                           </div>
-                          {opt.description && <span className={`mt-1 ${role === 'client' ? 'pl-6' : ''} ${isSelected ? 'text-indigo-600' : 'text-gray-500'}`}>{opt.description}</span>}
+                          {opt.description && <span className={`mt-1 text-xs ${role === 'client' ? 'pl-6' : ''} ${isSelected ? 'text-indigo-700' : 'text-gray-500'}`}>{opt.description}</span>}
                         </li>
                       );
                     })}
@@ -6858,6 +6984,93 @@ function urlBase64ToUint8Array(base64String) {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Material Option Infographic Fullscreen Modal */}
+      {optionInfographicModal.open && (
+        <div 
+          className="fixed inset-0 z-[10000] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/85 backdrop-blur-md animate-fade-in"
+          onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", description: "" })}
+        >
+          <div 
+            className="relative bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl text-white animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/70 shrink-0">
+              <div className="flex items-center gap-3 min-w-0 pr-2">
+                <div className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                  <Info className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base sm:text-lg font-bold text-white truncate">
+                      {optionInfographicModal.title}
+                    </h3>
+                    {optionInfographicModal.price !== null && optionInfographicModal.price !== undefined && (
+                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        {optionInfographicModal.price} €
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400">Infographie et détails de l'option matériel</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", description: "" })}
+                className="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-600/90 text-slate-300 hover:text-white transition flex items-center justify-center shrink-0 border border-slate-700 focus:outline-none"
+                title="Fermer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content / Image Preview */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-slate-950/50 min-h-[300px]">
+              {optionInfographicModal.imageUrl ? (
+                <div className="relative max-w-full flex items-center justify-center">
+                  <img 
+                    src={optionInfographicModal.imageUrl} 
+                    alt={optionInfographicModal.title} 
+                    className="max-w-full max-h-[62vh] object-contain rounded-xl shadow-2xl border border-slate-800/80"
+                  />
+                </div>
+              ) : (
+                <div className="text-center py-12 text-slate-400">
+                  <Info className="w-12 h-12 mx-auto mb-2 opacity-40" />
+                  <p>Aucune infographie disponible pour cette option.</p>
+                </div>
+              )}
+
+              {optionInfographicModal.description && (
+                <div className="mt-4 p-4 bg-slate-800/80 border border-slate-700/60 rounded-xl text-xs sm:text-sm text-slate-200 max-w-2xl text-center leading-relaxed shadow-sm">
+                  {optionInfographicModal.description}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between shrink-0">
+              {optionInfographicModal.imageUrl ? (
+                <a
+                  href={optionInfographicModal.imageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 transition font-medium"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Ouvrir l'image en plein écran</span>
+                </a>
+              ) : <div />}
+              <button
+                onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", description: "" })}
+                className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition focus:outline-none"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
         </div>
       )}
       </div>

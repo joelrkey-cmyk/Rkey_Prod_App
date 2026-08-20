@@ -3832,7 +3832,8 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     };
   });
 
-  const options = await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1, name: 1 }).toArray();
+  const rawOptions = cleanList(await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1, name: 1 }).toArray());
+  const options = await autoSignGcsUrlsInObject(rawOptions);
 
   // Check if it's a DJ slug using robust string normalization
   const djEvents = mappedEvents.filter(e => {
@@ -6043,13 +6044,17 @@ api.post('/crm/companies/batch', authMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 20), async (req, res) => {
+api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 150), async (req, res) => {
   if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: "Veuillez sélectionner au moins un fichier de contrat (PDF ou image)." });
+    return res.status(400).json({ error: "Veuillez sélectionner au moins un fichier ou dossier (PDF, Word, Excel, Images, Zip)." });
   }
 
   try {
+    const AdmZip = require('adm-zip');
+    const mammoth = require('mammoth');
+    const XLSX = require('xlsx');
     const { GoogleGenAI, Type } = require('@google/genai');
+
     const ai = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
       httpOptions: {
@@ -6060,26 +6065,90 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
     });
 
     const activeBucket = getGcsBucket();
+
+    // 1. Expand all files, unpacking any .zip files encountered
+    const expandedFiles = [];
+
+    const getMimeFromExt = (ext) => {
+      switch (ext) {
+        case 'pdf': return 'application/pdf';
+        case 'png': return 'image/png';
+        case 'jpg':
+        case 'jpeg': return 'image/jpeg';
+        case 'webp': return 'image/webp';
+        case 'docx': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        case 'doc': return 'application/msword';
+        case 'xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        case 'xls': return 'application/vnd.ms-excel';
+        case 'csv': return 'text/csv';
+        case 'txt': return 'text/plain';
+        case 'rtf': return 'application/rtf';
+        default: return 'application/octet-stream';
+      }
+    };
+
+    for (const rawFile of req.files) {
+      const decodedName = decodeMulterFilename(rawFile.originalname) || rawFile.originalname || 'document';
+      const fileExt = decodedName.split('.').pop().toLowerCase();
+
+      if (fileExt === 'zip' || rawFile.mimetype === 'application/zip' || rawFile.mimetype === 'application/x-zip-compressed') {
+        try {
+          const zip = new AdmZip(rawFile.buffer);
+          const zipEntries = zip.getEntries();
+          console.log(`[CRM Zip Unpack] Extracting ${zipEntries.length} entries from ${decodedName}`);
+          for (const entry of zipEntries) {
+            if (entry.isDirectory) continue;
+            const entryName = entry.entryName;
+            // Ignore system/hidden files
+            if (entryName.includes('__MACOSX') || entryName.includes('.DS_Store') || entryName.startsWith('.') || entryName.includes('/.')) {
+              continue;
+            }
+            const entryExt = entryName.split('.').pop().toLowerCase();
+            const allowedExts = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'docx', 'doc', 'xlsx', 'xls', 'csv', 'txt', 'rtf', 'odt'];
+            if (allowedExts.includes(entryExt)) {
+              expandedFiles.push({
+                originalname: entryName,
+                buffer: entry.getData(),
+                size: entry.header.size,
+                mimetype: getMimeFromExt(entryExt)
+              });
+            }
+          }
+        } catch (zipErr) {
+          console.error(`[CRM Zip Unpack Error] Failed to extract ${decodedName}:`, zipErr.message);
+          // If zip reading fails, keep the file as is
+          expandedFiles.push(rawFile);
+        }
+      } else {
+        expandedFiles.push({
+          originalname: decodedName,
+          buffer: rawFile.buffer,
+          size: rawFile.size,
+          mimetype: rawFile.mimetype || getMimeFromExt(fileExt)
+        });
+      }
+    }
+
+    if (expandedFiles.length === 0) {
+      return res.status(400).json({ error: "Aucun document valide (PDF, Word, Excel, Image, Texte) n'a été trouvé dans votre sélection." });
+    }
+
     const uploadedDocs = [];
     const inlineParts = [];
+    const textDocumentsContent = [];
 
-    for (const file of req.files) {
-      const decodedOriginalName = decodeMulterFilename(file.originalname) || file.originalname || 'document.pdf';
+    for (const file of expandedFiles) {
+      const decodedOriginalName = decodeMulterFilename(file.originalname) || file.originalname || 'document';
       const fileExt = decodedOriginalName.split('.').pop().toLowerCase();
-      let mimeType = file.mimetype;
-      if (!mimeType || mimeType === 'application/octet-stream') {
-        if (fileExt === 'pdf') mimeType = 'application/pdf';
-        else if (fileExt === 'png') mimeType = 'image/png';
-        else if (fileExt === 'jpg' || fileExt === 'jpeg') mimeType = 'image/jpeg';
-        else if (fileExt === 'webp') mimeType = 'image/webp';
-        else mimeType = 'application/pdf';
-      }
+      let mimeType = file.mimetype || getMimeFromExt(fileExt);
 
       let gcsPath = null;
       let gcsUrl = null;
 
+      // Save file to GCS
       if (activeBucket) {
-        const safeName = `${Date.now()}_${uuidv4().slice(0, 8)}_${decodedOriginalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const cleanBaseName = decodedOriginalName.replace(/[\\/]/g, '_').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const safeName = `${Date.now()}_${uuidv4().slice(0, 8)}_${cleanBaseName}`;
         gcsPath = `crm-imported-contracts/${safeName}`;
         try {
           const gcsFile = activeBucket.file(gcsPath);
@@ -6098,19 +6167,77 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
         gcs_url: gcsUrl
       });
 
-      inlineParts.push({
-        inlineData: {
-          mimeType: mimeType,
-          data: file.buffer.toString('base64')
+      // Process content based on document type
+      if (['pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(fileExt)) {
+        // Multimodal image or PDF
+        inlineParts.push({
+          inlineData: {
+            mimeType: mimeType.startsWith('image/') || mimeType === 'application/pdf' ? mimeType : (fileExt === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+            data: file.buffer.toString('base64')
+          }
+        });
+      } else if (fileExt === 'docx') {
+        try {
+          const docxResult = await mammoth.extractRawText({ buffer: file.buffer });
+          const textContent = (docxResult && docxResult.value) ? docxResult.value.trim() : "";
+          if (textContent) {
+            textDocumentsContent.push(`=== DOCUMENT WORD (.docx) : "${decodedOriginalName}" ===\n${textContent}\n`);
+          }
+        } catch (mErr) {
+          console.warn(`[CRM Mammoth Parse Warning for ${decodedOriginalName}]:`, mErr.message);
         }
-      });
+      } else if (fileExt === 'doc') {
+        try {
+          // Attempt mammoth fallback or text extract
+          const docxResult = await mammoth.extractRawText({ buffer: file.buffer }).catch(() => null);
+          let textContent = (docxResult && docxResult.value) ? docxResult.value.trim() : "";
+          if (!textContent) {
+            textContent = file.buffer.toString('latin1').replace(/[^\x20-\x7E\xC0-\xFF\n\r\t]/g, ' ').replace(/\s{2,}/g, ' ');
+          }
+          if (textContent && textContent.length > 20) {
+            textDocumentsContent.push(`=== DOCUMENT WORD (.doc) : "${decodedOriginalName}" ===\n${textContent}\n`);
+          }
+        } catch (docErr) {
+          console.warn(`[CRM DOC Parse Warning for ${decodedOriginalName}]:`, docErr.message);
+        }
+      } else if (['xlsx', 'xls', 'csv'].includes(fileExt)) {
+        try {
+          const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+          const sheetsOutput = [];
+          for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            if (!sheet) continue;
+            const csv = XLSX.utils.sheet_to_csv(sheet);
+            if (csv && csv.trim()) {
+              sheetsOutput.push(`[Feuille: "${sheetName}"]\n${csv.trim()}`);
+            }
+          }
+          if (sheetsOutput.length > 0) {
+            textDocumentsContent.push(`=== TABLEAU EXCEL / HISTORIQUE (${fileExt.toUpperCase()}) : "${decodedOriginalName}" ===\n${sheetsOutput.join('\n\n')}\n`);
+          }
+        } catch (xlErr) {
+          console.warn(`[CRM Excel Parse Warning for ${decodedOriginalName}]:`, xlErr.message);
+        }
+      } else if (['txt', 'rtf', 'odt'].includes(fileExt)) {
+        try {
+          const textContent = file.buffer.toString('utf8').trim();
+          if (textContent) {
+            textDocumentsContent.push(`=== DOCUMENT TEXTE : "${decodedOriginalName}" ===\n${textContent}\n`);
+          }
+        } catch (tErr) {
+          console.warn(`[CRM Text Parse Warning for ${decodedOriginalName}]:`, tErr.message);
+        }
+      }
     }
 
-    const promptText = `Tu es un assistant expert en gestion administrative et analyse de contrats pour une entreprise d'événementiel, sonorisation, DJ et spectacle (R'KEY PROD).
-Voici ${req.files.length} document(s) / contrat(s) / page(s) téléversé(s).
-Analyse minutieusement chaque document et page pour extraire TOUS les clients ou dossiers de prestation identifiés.
+    const promptText = `Tu es un assistant expert en gestion administrative, CRM et analyse de contrats, devis, fiches techniques et listings clients (PDF, Word, Excel, CSV, scans, images) pour une entreprise d'événementiel, sonorisation, DJ et spectacle (R'KEY PROD).
 
-Pour chaque client trouvé :
+Voici ${expandedFiles.length} document(s) / contrat(s) / tableau(x) téléversé(s).
+Analyse minutieusement chaque document, tableau et page pour extraire TOUS les clients ou dossiers de prestation identifiés.
+
+${textDocumentsContent.length > 0 ? `\n--- CONTENU TEXTUEL, WORD & TABLEAUX EXCEL EXTRAITS ---\n${textDocumentsContent.join('\n----------------------------------------\n')}\n` : ''}
+
+Pour chaque client ou dossier trouvé (ou pour chaque ligne d'un tableau Excel/CSV représentant un client/événement) :
 - "nom": Le nom complet du client (ex: "Thomas & Émilie DUPONT", "Alexandre MARTIN") ou le nom de l'entreprise / collectivité / association (ex: "Mairie de Strasbourg", "Société ABC").
 - "type_client": "Particulier", "Entreprise", ou "Association" selon le profil détecté.
 - "telephone": Numéro de téléphone portable ou fixe (ex: "06 12 34 56 78").
@@ -6122,7 +6249,7 @@ Pour chaque client trouvé :
 - "annee_prestation": Année de l'événement (ex: "2025", "2026").
 - "type_evenement": Type d'événement (ex: "Mariage", "Anniversaire", "Soirée d'entreprise", "Cocktail", "Baptême", "Gala", "Prestation DJ", "Autre").
 - "lieu_evenement": Nom du lieu ou salle de réception et ville de l'événement.
-- "notes": Synthèse claire des prestations, formules choisies, options (sonorisation, éclairage, vin d'honneur, borne photo, etc.), numéro de contrat s'il y en a un, montant total TTC ou acompte, horaires, et toute remarque importante.
+- "notes": Synthèse claire des prestations, formules choisies, options (sonorisation, éclairage, vin d'honneur, borne photo, etc.), numéro de contrat ou devis, montant total TTC ou acompte, horaires, et toute remarque importante.
 - "source_file": Le nom exact du fichier d'origine parmi ceux fournis.
 
 Réponds obligatoirement par un objet JSON strict avec la propriété 'clients' contenant le tableau de tous les clients extraits.`;
@@ -6204,7 +6331,7 @@ Réponds obligatoirement par un objet JSON strict avec la propriété 'clients' 
         type_evenement: client.type_evenement || "",
         lieu_evenement: client.lieu_evenement || "",
         notes: client.notes || "",
-        source_file: client.source_file || matchedDoc.filename || "Contrat importé",
+        source_file: client.source_file || matchedDoc.filename || "Document importé",
         gcs_url: matchedDoc.gcs_url || "",
         gcs_path: matchedDoc.gcs_path || ""
       };
@@ -6212,7 +6339,7 @@ Réponds obligatoirement par un objet JSON strict avec la propriété 'clients' 
 
     res.json({
       success: true,
-      filesCount: req.files.length,
+      filesCount: expandedFiles.length,
       extractedCount: formattedClients.length,
       clients: formattedClients,
       documents: uploadedDocs
@@ -6220,7 +6347,7 @@ Réponds obligatoirement par un objet JSON strict avec la propriété 'clients' 
 
   } catch (err) {
     console.error("[CRM Extract Contracts Error]:", err);
-    res.status(500).json({ error: "Erreur lors de l'analyse des contrats : " + (err.message || String(err)) });
+    res.status(500).json({ error: "Erreur lors de l'analyse des documents : " + (err.message || String(err)) });
   }
 });
 api.post('/crm/companies/merge', authMiddleware, async (req, res) => {
@@ -6405,26 +6532,74 @@ api.get('/material-options', authMiddleware, async (req, res) => {
     return res.json(materialOptionsCache.data);
   }
   const result = cleanList(await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1, name: 1 }).toArray());
-  materialOptionsCache.data = result;
+  const signed = await autoSignGcsUrlsInObject(result);
+  materialOptionsCache.data = signed;
   materialOptionsCache.expiresAt = now + 10000; // 10s TTL
-  res.json(result);
+  res.json(signed);
 });
 api.post('/material-options', authMiddleware, async (req, res) => {
   const opt = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
   await db.collection('material_options').insertOne(opt);
+  materialOptionsCache.data = null;
+  if (typeof djClientResponseCache !== 'undefined' && djClientResponseCache.clear) {
+    djClientResponseCache.clear();
+  }
   res.json(clean(opt));
 });
 api.put('/material-options/:id', authMiddleware, async (req, res) => {
   await db.collection('material_options').updateOne({ id: req.params.id }, { $set: req.body });
+  materialOptionsCache.data = null;
+  if (typeof djClientResponseCache !== 'undefined' && djClientResponseCache.clear) {
+    djClientResponseCache.clear();
+  }
   res.json(await db.collection('material_options').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
 });
 api.delete('/material-options/:id', authMiddleware, async (req, res) => {
   await db.collection('material_options').deleteOne({ id: req.params.id });
+  materialOptionsCache.data = null;
+  if (typeof djClientResponseCache !== 'undefined' && djClientResponseCache.clear) {
+    djClientResponseCache.clear();
+  }
   res.json({ success: true });
 });
 api.put('/material-options/reorder', authMiddleware, async (req, res) => {
   for (const item of (req.body.options || [])) await db.collection('material_options').updateOne({ id: item.id }, { $set: { sort_order: item.sort_order } });
+  materialOptionsCache.data = null;
+  if (typeof djClientResponseCache !== 'undefined' && djClientResponseCache.clear) {
+    djClientResponseCache.clear();
+  }
   res.json({ success: true });
+});
+
+api.post('/upload/material-option-image', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ detail: 'Aucune image reçue' });
+  
+  try {
+    if (bucket) {
+      const ext = path.extname(req.file.originalname) || '.png';
+      const imageId = uuidv4();
+      const gcsPath = `material-options-images/${imageId}${ext}`;
+      const file = bucket.file(gcsPath);
+      
+      try {
+        await file.save(req.file.buffer, {
+          metadata: { contentType: req.file.mimetype }
+        });
+        return res.json({ url: `/api/gcs/${gcsPath}` });
+      } catch (gcsErr) {
+        console.warn('GCS Upload Failed for /upload/material-option-image, falling back to MongoDB database:', gcsErr.message);
+      }
+    }
+    
+    const imageId = uuidv4();
+    const b64 = req.file.buffer.toString('base64');
+    const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
+    await db.collection('event_uploads').insertOne(doc);
+    return res.json({ url: `/api/uploads/events/${imageId}` });
+  } catch (error) {
+    console.error('Error uploading material option image:', error);
+    res.status(500).json({ detail: 'Erreur lors de l\'upload de l\'image d\'infographie' });
+  }
 });
 
 // ══════════ LOCATION (Equipment, Categories, Clients, DJs, Quotes, Reservations) ══════════

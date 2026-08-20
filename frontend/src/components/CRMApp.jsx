@@ -8,7 +8,7 @@ import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle } from "lucide-react";
+import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FolderArchive, FileSpreadsheet, Folder } from "lucide-react";
 import { toast } from "sonner";
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -536,15 +536,71 @@ function CRMApp() {
     }
   };
 
-  // ══════════ HANDLERS IMPORTATION CONTRATS (IA) ══════════
+  // ══════════ HANDLERS IMPORTATION CONTRATS, WORD, EXCEL, DOSSIERS & ZIP (IA) ══════════
+  const scanEntry = (entry, path = "") => {
+    return new Promise((resolve) => {
+      if (!entry) return resolve([]);
+      if (entry.isFile) {
+        entry.file((file) => {
+          file.relativePath = path ? `${path}/${file.name}` : file.name;
+          resolve([file]);
+        }, () => resolve([]));
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const allFiles = [];
+        const readEntries = () => {
+          reader.readEntries(async (entries) => {
+            if (!entries || entries.length === 0) {
+              resolve(allFiles);
+            } else {
+              const promises = entries.map(e => scanEntry(e, path ? `${path}/${entry.name}` : entry.name));
+              const results = await Promise.all(promises);
+              allFiles.push(...results.flat());
+              readEntries();
+            }
+          }, () => resolve(allFiles));
+        };
+        readEntries();
+      } else {
+        resolve([]);
+      }
+    });
+  };
+
   const handleFilesSelected = (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+    // Keep relative path if available from webkitRelativePath
+    files.forEach(f => {
+      if (f.webkitRelativePath) f.relativePath = f.webkitRelativePath;
+    });
     setContractFiles(prev => [...prev, ...files]);
+    // Reset file input value to allow selecting same files/folder again
+    if (e.target) e.target.value = '';
   };
 
-  const handleDropFiles = (e) => {
+  const handleDropFiles = async (e) => {
     e.preventDefault();
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0) {
+      const scanPromises = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.webkitGetAsEntry) {
+          const entry = item.webkitGetAsEntry();
+          if (entry) {
+            scanPromises.push(scanEntry(entry));
+          }
+        }
+      }
+      if (scanPromises.length > 0) {
+        const scannedFiles = (await Promise.all(scanPromises)).flat();
+        if (scannedFiles.length > 0) {
+          setContractFiles(prev => [...prev, ...scannedFiles]);
+          return;
+        }
+      }
+    }
     const files = Array.from(e.dataTransfer.files || []);
     if (files.length === 0) return;
     setContractFiles(prev => [...prev, ...files]);
@@ -554,18 +610,35 @@ function CRMApp() {
     setContractFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const getFileBadgeInfo = (file) => {
+    const name = file.relativePath || file.name || "";
+    const ext = name.split('.').pop().toLowerCase();
+    if (ext === 'pdf') {
+      return { icon: '📄', label: 'PDF', bg: 'bg-red-50 text-red-700 border-red-200' };
+    } else if (['docx', 'doc'].includes(ext)) {
+      return { icon: '📝', label: 'Word (DOCX/DOC)', bg: 'bg-blue-50 text-blue-700 border-blue-200' };
+    } else if (['xlsx', 'xls', 'csv'].includes(ext)) {
+      return { icon: '📊', label: 'Excel (XLSX/CSV)', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    } else if (ext === 'zip') {
+      return { icon: '🗜️', label: 'Archive ZIP (Dossiers inclus)', bg: 'bg-amber-50 text-amber-700 border-amber-200' };
+    } else if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+      return { icon: '🖼️', label: 'Image / Scan', bg: 'bg-purple-50 text-purple-700 border-purple-200' };
+    }
+    return { icon: '📄', label: 'Document', bg: 'bg-slate-50 text-slate-700 border-slate-200' };
+  };
+
   const handleStartAnalysis = async () => {
     if (contractFiles.length === 0) {
-      toast.error("Veuillez sélectionner au moins un contrat ou document.");
+      toast.error("Veuillez sélectionner au moins un contrat, document, tableau Excel ou dossier.");
       return;
     }
 
     setIsAnalyzingContracts(true);
-    setAnalysisProgress("Envoi des documents et analyse IA des coordonnées...");
+    setAnalysisProgress("Envoi des documents et analyse IA des coordonnées en cours...");
     try {
       const formData = new FormData();
       contractFiles.forEach(file => {
-        formData.append('files', file);
+        formData.append('files', file, file.relativePath || file.name);
       });
 
       const response = await axios.post(`${API}/crm/extract-contract-clients`, formData, {
@@ -576,7 +649,7 @@ function CRMApp() {
         setExtractedClients(response.data.clients);
         setSelectedExtractedIds(new Set(response.data.clients.map(c => c.id)));
         setContractModalStep('review');
-        toast.success(`✨ ${response.data.extractedCount} client(s) extrait(s) des documents !`);
+        toast.success(`✨ ${response.data.extractedCount} client(s) extrait(s) des ${response.data.filesCount} document(s) analysé(s) !`);
       } else {
         toast.warning("Aucun client n'a pu être extrait des documents fournis.");
       }
@@ -2068,22 +2141,22 @@ function CRMApp() {
       }}>
         <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
           {/* Header */}
-          <div className="px-6 py-4 bg-gradient-to-r from-emerald-700 to-teal-800 text-white flex items-center justify-between shrink-0">
+          <div className="px-6 py-4 bg-gradient-to-r from-emerald-700 via-teal-800 to-emerald-900 text-white flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
                 <FileSignature className="h-6 w-6 text-emerald-200" />
               </div>
               <div>
                 <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
-                  {contractModalStep === 'upload' ? "Importer des contrats / scans" : "Validation des coordonnées clients"}
+                  {contractModalStep === 'upload' ? "Importer contrats, Word, Excel ou dossiers" : "Validation des coordonnées clients"}
                   <Badge className="bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 text-[11px] font-normal">
-                    Analyse IA
+                    Analyse IA Multi-Formats
                   </Badge>
                 </DialogTitle>
                 <DialogDescription className="text-emerald-100/90 text-xs mt-0.5">
                   {contractModalStep === 'upload' 
-                    ? "Importez un ou plusieurs contrats (PDF, photos ou scans). L'IA extrait automatiquement les coordonnées des clients." 
-                    : "Vérifiez, corrigez et validez les coordonnées trouvées avant de créer les dossiers clients."}
+                    ? "Importez des contrats PDF, documents Word (.docx/.doc), tableaux Excel (.xlsx/.xls/.csv), photos/scans, ou même un dossier entier ou fichier .ZIP." 
+                    : "Vérifiez, ajustez et validez les coordonnées extraites avant de créer les fiches clients."}
                 </DialogDescription>
               </div>
             </div>
@@ -2108,37 +2181,101 @@ function CRMApp() {
                 <div 
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDropFiles}
-                  className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all rounded-2xl p-8 text-center flex flex-col items-center justify-center gap-3 cursor-pointer relative"
-                  onClick={() => document.getElementById('contract-file-input')?.click()}
+                  className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all rounded-2xl p-6 text-center flex flex-col items-center justify-center gap-3 relative shadow-sm"
                 >
+                  {/* Hidden file inputs */}
                   <input 
                     id="contract-file-input"
                     type="file" 
                     multiple 
-                    accept=".pdf,image/png,image/jpeg,image/jpg,image/webp" 
+                    accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.zip,image/png,image/jpeg,image/jpg,image/webp,text/plain" 
                     onChange={handleFilesSelected} 
                     className="hidden" 
                   />
+                  <input 
+                    id="contract-folder-input"
+                    type="file" 
+                    webkitdirectory="" 
+                    directory="" 
+                    multiple 
+                    onChange={handleFilesSelected} 
+                    className="hidden" 
+                  />
+                  <input 
+                    id="contract-zip-input"
+                    type="file" 
+                    accept=".zip" 
+                    onChange={handleFilesSelected} 
+                    className="hidden" 
+                  />
+
                   <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shadow-inner">
                     <FileUp className="h-8 w-8" />
                   </div>
                   <div>
                     <h3 className="font-semibold text-slate-800 text-base">
-                      Glissez vos contrats, devis ou scans ici
+                      Glissez vos contrats, devis, fichiers Excel, Word ou dossiers complets ici
                     </h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      ou <span className="text-emerald-700 font-semibold underline">parcourez vos fichiers</span> depuis votre ordinateur
+                      L'intelligence artificielle analyse tous les fichiers, sous-dossiers et archives .zip pour en extraire les coordonnées.
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
-                    <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-[11px]">
-                      📄 PDF (mono ou multi-pages)
+
+                  {/* Actions buttons */}
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => { e.stopPropagation(); document.getElementById('contract-file-input')?.click(); }}
+                      className="bg-white border-emerald-300 text-emerald-800 hover:bg-emerald-50 text-xs font-semibold gap-1.5 shadow-sm"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-emerald-600" />
+                      Parcourir des fichiers (PDF, Word, Excel...)
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => { e.stopPropagation(); document.getElementById('contract-folder-input')?.click(); }}
+                      className="bg-white border-teal-300 text-teal-800 hover:bg-teal-50 text-xs font-semibold gap-1.5 shadow-sm"
+                    >
+                      <FolderUp className="h-3.5 w-3.5 text-teal-600" />
+                      Sélectionner un dossier complet
+                    </Button>
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => { e.stopPropagation(); document.getElementById('contract-zip-input')?.click(); }}
+                      className="bg-white border-amber-300 text-amber-800 hover:bg-amber-50 text-xs font-semibold gap-1.5 shadow-sm"
+                    >
+                      <FolderArchive className="h-3.5 w-3.5 text-amber-600" />
+                      Archive .ZIP
+                    </Button>
+                  </div>
+
+                  {/* Formats Badges */}
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-2 pt-2 border-t border-emerald-200/60 w-full">
+                    <Badge variant="outline" className="bg-white text-slate-700 border-slate-200 text-[11px] gap-1 shadow-2xs">
+                      📄 PDF (mono / multi-pages)
                     </Badge>
-                    <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-[11px]">
-                      🖼️ Photos / Scans (JPG, PNG, WebP)
+                    <Badge variant="outline" className="bg-blue-50/80 text-blue-800 border-blue-200 text-[11px] gap-1 shadow-2xs">
+                      📝 Word (.docx, .doc)
                     </Badge>
-                    <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-[11px]">
-                      📚 Plusieurs documents simultanés
+                    <Badge variant="outline" className="bg-emerald-50/80 text-emerald-800 border-emerald-200 text-[11px] gap-1 shadow-2xs">
+                      📊 Excel & CSV (.xlsx, .xls, .csv)
+                    </Badge>
+                    <Badge variant="outline" className="bg-amber-50/80 text-amber-800 border-amber-200 text-[11px] gap-1 shadow-2xs">
+                      🗜️ Archive .ZIP (arborescence complète)
+                    </Badge>
+                    <Badge variant="outline" className="bg-teal-50/80 text-teal-800 border-teal-200 text-[11px] gap-1 shadow-2xs">
+                      📁 Dossiers complets
+                    </Badge>
+                    <Badge variant="outline" className="bg-purple-50/80 text-purple-800 border-purple-200 text-[11px] gap-1 shadow-2xs">
+                      🖼️ Photos & Scans (JPG, PNG, WebP)
                     </Badge>
                   </div>
                 </div>
@@ -2149,7 +2286,7 @@ function CRMApp() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                         <Paperclip className="h-3.5 w-3.5 text-slate-500" />
-                        Fichiers sélectionnés ({contractFiles.length})
+                        Fichiers / Documents prêts pour l'analyse ({contractFiles.length})
                       </span>
                       <Button 
                         size="sm" 
@@ -2161,26 +2298,35 @@ function CRMApp() {
                       </Button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
-                      {contractFiles.map((file, idx) => (
-                        <div key={idx} className="flex items-center justify-between bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm text-xs">
-                          <div className="flex items-center gap-2 overflow-hidden">
-                            <span className="text-base">{file.name.endsWith('.pdf') ? '📄' : '🖼️'}</span>
-                            <div className="truncate">
-                              <p className="font-medium text-slate-800 truncate">{file.name}</p>
-                              <p className="text-[10px] text-slate-400">{(file.size / 1024).toFixed(0)} Ko</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                      {contractFiles.map((file, idx) => {
+                        const badgeInfo = getFileBadgeInfo(file);
+                        const displayName = file.relativePath || file.name;
+                        return (
+                          <div key={idx} className="flex items-center justify-between bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm text-xs gap-2">
+                            <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+                              <span className="text-lg shrink-0">{badgeInfo.icon}</span>
+                              <div className="truncate flex-1 min-w-0">
+                                <p className="font-medium text-slate-800 truncate" title={displayName}>{displayName}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className={`text-[10px] px-1.5 py-0.2 rounded border font-medium ${badgeInfo.bg}`}>
+                                    {badgeInfo.label}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">{(file.size / 1024).toFixed(0)} Ko</span>
+                                </div>
+                              </div>
                             </div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={(e) => { e.stopPropagation(); handleRemoveFile(idx); }}
+                              className="h-6 w-6 text-slate-400 hover:text-red-600 shrink-0"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
                           </div>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={(e) => { e.stopPropagation(); handleRemoveFile(idx); }}
-                            className="h-6 w-6 text-slate-400 hover:text-red-600 shrink-0"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2189,10 +2335,10 @@ function CRMApp() {
                 <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-4 text-xs text-blue-900 space-y-1.5">
                   <div className="font-semibold flex items-center gap-1.5 text-blue-800">
                     <Sparkles className="h-4 w-4 text-blue-600" />
-                    Comment fonctionne l'analyse automatique ?
+                    Comment fonctionne l'analyse intelligente des documents et archives ?
                   </div>
                   <p className="text-blue-700 leading-relaxed">
-                    L'intelligence artificielle lit les documents fournis, identifie le nom du client ou de l'entreprise, les coordonnées (téléphone, email, adresse), la date de prestation, le type d'événement, le lieu ainsi que les détails du contrat. Une fenêtre de confirmation s'ouvrira ensuite pour vous permettre de vérifier et ajuster chaque coordonnée avant de créer les dossiers clients.
+                    L'IA inspecte chaque fichier fourni (contrats PDF, fiches Word, devis, lignes de tableaux Excel, images de contrats ou archives .zip décompressées automatiquement). Elle détecte chaque client ou prestation (nom, entreprise, type de structure, téléphones, emails, adresses, SIRET, date d'événement, type de prestation, salle et synthèse des prestations). Vous pourrez ensuite vérifier et corriger chaque fiche avant de l'enregistrer dans votre base client.
                   </p>
                 </div>
               </div>
