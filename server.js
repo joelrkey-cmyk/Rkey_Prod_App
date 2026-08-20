@@ -6001,6 +6001,261 @@ api.post('/crm/companies', authMiddleware, async (req, res) => {
   await db.collection('crm_companies').insertOne(c);
   res.json(clean(c));
 });
+api.post('/crm/companies/batch', authMiddleware, async (req, res) => {
+  try {
+    const { clients } = req.body;
+    if (!Array.isArray(clients) || clients.length === 0) {
+      return res.status(400).json({ error: "Aucun client fourni pour l'enregistrement" });
+    }
+
+    const inserted = [];
+    for (const c of clients) {
+      if (!c.nom || !c.nom.trim()) continue;
+      const newCompany = {
+        id: uuidv4(),
+        nom: c.nom.trim(),
+        type_client: c.type_client || "Particulier",
+        siret: c.siret || "",
+        secteur: c.secteur || "",
+        adresse: c.adresse || "",
+        telephone: c.telephone || "",
+        email: c.email || "",
+        statut: c.statut || "client",
+        contacts: Array.isArray(c.contacts) ? c.contacts : [],
+        notes: c.notes || "",
+        blacklist_tags: c.blacklist_tags || "",
+        annee_prestation: c.annee_prestation ? String(c.annee_prestation) : "",
+        type_evenement: c.type_evenement || "",
+        date_evenement: c.date_evenement || "",
+        lieu_evenement: c.lieu_evenement || "",
+        source_contrat: c.source_file || "",
+        gcs_url: c.gcs_url || "",
+        created_at: new Date().toISOString()
+      };
+
+      await db.collection('crm_companies').insertOne(newCompany);
+      inserted.push(clean(newCompany));
+    }
+
+    res.json({ success: true, count: inserted.length, companies: inserted });
+  } catch (err) {
+    console.error("[CRM Batch Companies Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 20), async (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: "Veuillez sélectionner au moins un fichier de contrat (PDF ou image)." });
+  }
+
+  try {
+    const { GoogleGenAI, Type } = require('@google/genai');
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    const activeBucket = getGcsBucket();
+    const uploadedDocs = [];
+    const inlineParts = [];
+
+    for (const file of req.files) {
+      const decodedOriginalName = decodeMulterFilename(file.originalname) || file.originalname || 'document.pdf';
+      const fileExt = decodedOriginalName.split('.').pop().toLowerCase();
+      let mimeType = file.mimetype;
+      if (!mimeType || mimeType === 'application/octet-stream') {
+        if (fileExt === 'pdf') mimeType = 'application/pdf';
+        else if (fileExt === 'png') mimeType = 'image/png';
+        else if (fileExt === 'jpg' || fileExt === 'jpeg') mimeType = 'image/jpeg';
+        else if (fileExt === 'webp') mimeType = 'image/webp';
+        else mimeType = 'application/pdf';
+      }
+
+      let gcsPath = null;
+      let gcsUrl = null;
+
+      if (activeBucket) {
+        const safeName = `${Date.now()}_${uuidv4().slice(0, 8)}_${decodedOriginalName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        gcsPath = `crm-imported-contracts/${safeName}`;
+        try {
+          const gcsFile = activeBucket.file(gcsPath);
+          await gcsFile.save(file.buffer, { metadata: { contentType: mimeType } });
+          gcsUrl = `/api/gcs/${gcsPath}`;
+        } catch (gcsErr) {
+          console.warn("[CRM GCS Save Warning]:", gcsErr.message);
+        }
+      }
+
+      uploadedDocs.push({
+        filename: decodedOriginalName,
+        mimetype: mimeType,
+        size: file.size,
+        gcs_path: gcsPath,
+        gcs_url: gcsUrl
+      });
+
+      inlineParts.push({
+        inlineData: {
+          mimeType: mimeType,
+          data: file.buffer.toString('base64')
+        }
+      });
+    }
+
+    const promptText = `Tu es un assistant expert en gestion administrative et analyse de contrats pour une entreprise d'événementiel, sonorisation, DJ et spectacle (R'KEY PROD).
+Voici ${req.files.length} document(s) / contrat(s) / page(s) téléversé(s).
+Analyse minutieusement chaque document et page pour extraire TOUS les clients ou dossiers de prestation identifiés.
+
+Pour chaque client trouvé :
+- "nom": Le nom complet du client (ex: "Thomas & Émilie DUPONT", "Alexandre MARTIN") ou le nom de l'entreprise / collectivité / association (ex: "Mairie de Strasbourg", "Société ABC").
+- "type_client": "Particulier", "Entreprise", ou "Association" selon le profil détecté.
+- "telephone": Numéro de téléphone portable ou fixe (ex: "06 12 34 56 78").
+- "email": Adresse email valide.
+- "adresse": Adresse postale complète du client (numéro, rue, code postal, ville).
+- "siret": Numéro SIRET si entreprise ou professionnel, sinon "".
+- "secteur": Secteur d'activité si entreprise, sinon "".
+- "date_evenement": Date de la prestation/événement au format ISO AAAA-MM-JJ (ex: "2025-06-21") si identifiée, sinon date lisible ou "".
+- "annee_prestation": Année de l'événement (ex: "2025", "2026").
+- "type_evenement": Type d'événement (ex: "Mariage", "Anniversaire", "Soirée d'entreprise", "Cocktail", "Baptême", "Gala", "Prestation DJ", "Autre").
+- "lieu_evenement": Nom du lieu ou salle de réception et ville de l'événement.
+- "notes": Synthèse claire des prestations, formules choisies, options (sonorisation, éclairage, vin d'honneur, borne photo, etc.), numéro de contrat s'il y en a un, montant total TTC ou acompte, horaires, et toute remarque importante.
+- "source_file": Le nom exact du fichier d'origine parmi ceux fournis.
+
+Réponds obligatoirement par un objet JSON strict avec la propriété 'clients' contenant le tableau de tous les clients extraits.`;
+
+    const contents = [
+      ...inlineParts,
+      promptText
+    ];
+
+    const response = await generateContentWithRetry(ai, {
+      contents,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            clients: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  nom: { type: Type.STRING },
+                  type_client: { type: Type.STRING },
+                  telephone: { type: Type.STRING },
+                  email: { type: Type.STRING },
+                  adresse: { type: Type.STRING },
+                  siret: { type: Type.STRING },
+                  secteur: { type: Type.STRING },
+                  date_evenement: { type: Type.STRING },
+                  annee_prestation: { type: Type.STRING },
+                  type_evenement: { type: Type.STRING },
+                  lieu_evenement: { type: Type.STRING },
+                  notes: { type: Type.STRING },
+                  source_file: { type: Type.STRING }
+                },
+                required: ["nom", "type_client"]
+              }
+            }
+          },
+          required: ["clients"]
+        }
+      }
+    }, ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"]);
+
+    let extractedClients = [];
+    if (response && response.text) {
+      try {
+        let rawText = response.text.trim();
+        if (rawText.startsWith('```json')) {
+          rawText = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (rawText.startsWith('```')) {
+          rawText = rawText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+        const parsed = JSON.parse(rawText);
+        if (Array.isArray(parsed.clients)) {
+          extractedClients = parsed.clients;
+        } else if (Array.isArray(parsed)) {
+          extractedClients = parsed;
+        }
+      } catch (parseErr) {
+        console.error("[CRM Contract Extraction JSON Parse Error]:", parseErr, response.text);
+      }
+    }
+
+    const formattedClients = extractedClients.map((client, index) => {
+      const matchedDoc = uploadedDocs.find(d => d.filename === client.source_file) || uploadedDocs[0] || {};
+      return {
+        id: `extracted_${Date.now()}_${index}`,
+        nom: client.nom || "Client extrait",
+        type_client: ["Entreprise", "Association"].includes(client.type_client) ? client.type_client : "Particulier",
+        telephone: client.telephone || "",
+        email: client.email || "",
+        adresse: client.adresse || "",
+        siret: client.siret || "",
+        secteur: client.secteur || "",
+        statut: "client",
+        date_evenement: client.date_evenement || "",
+        annee_prestation: client.annee_prestation || (client.date_evenement ? client.date_evenement.split('-')[0] : ""),
+        type_evenement: client.type_evenement || "",
+        lieu_evenement: client.lieu_evenement || "",
+        notes: client.notes || "",
+        source_file: client.source_file || matchedDoc.filename || "Contrat importé",
+        gcs_url: matchedDoc.gcs_url || "",
+        gcs_path: matchedDoc.gcs_path || ""
+      };
+    });
+
+    res.json({
+      success: true,
+      filesCount: req.files.length,
+      extractedCount: formattedClients.length,
+      clients: formattedClients,
+      documents: uploadedDocs
+    });
+
+  } catch (err) {
+    console.error("[CRM Extract Contracts Error]:", err);
+    res.status(500).json({ error: "Erreur lors de l'analyse des contrats : " + (err.message || String(err)) });
+  }
+});
+api.post('/crm/companies/merge', authMiddleware, async (req, res) => {
+  try {
+    const { primaryId, secondaryId, mergedData } = req.body;
+    if (!primaryId || !secondaryId) {
+      return res.status(400).json({ error: "Les identifiants primaryId et secondaryId sont requis." });
+    }
+
+    // 1. Update primary company with merged data
+    if (mergedData && typeof mergedData === 'object') {
+      const updatePayload = { ...mergedData };
+      delete updatePayload.id;
+      delete updatePayload._id;
+      updatePayload.updated_at = new Date().toISOString();
+      await db.collection('crm_companies').updateOne({ id: primaryId }, { $set: updatePayload });
+    }
+
+    // 2. Re-assign any relances from secondary to primary
+    await db.collection('crm_relances').updateMany(
+      { company_id: secondaryId },
+      { $set: { company_id: primaryId } }
+    );
+
+    // 3. Delete secondary company
+    await db.collection('crm_companies').deleteOne({ id: secondaryId });
+
+    // 4. Return updated primary company
+    const updated = await db.collection('crm_companies').findOne({ id: primaryId }, { projection: { _id: 0 } });
+    res.json({ success: true, company: clean(updated) });
+  } catch (err) {
+    console.error("[CRM Merge Error]:", err);
+    res.status(500).json({ error: "Erreur lors de la fusion : " + err.message });
+  }
+});
 api.put('/crm/companies/:id', authMiddleware, async (req, res) => {
   await db.collection('crm_companies').updateOne({ id: req.params.id }, { $set: req.body });
   res.json(await db.collection('crm_companies').findOne({ id: req.params.id }, { projection: { _id: 0 } }));

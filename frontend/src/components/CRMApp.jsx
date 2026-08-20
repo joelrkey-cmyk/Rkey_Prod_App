@@ -8,7 +8,7 @@ import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus } from "lucide-react";
+import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -129,6 +129,26 @@ function CRMApp() {
 
   const [typeFilter, setTypeFilter] = useState("all");
   const [isImporting, setIsImporting] = useState(false);
+
+  // ══════════ ÉTAT IMPORTATION CONTRATS (IA) ══════════
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [contractFiles, setContractFiles] = useState([]);
+  const [isAnalyzingContracts, setIsAnalyzingContracts] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState("");
+  const [extractedClients, setExtractedClients] = useState([]);
+  const [selectedExtractedIds, setSelectedExtractedIds] = useState(new Set());
+  const [isSavingBatch, setIsSavingBatch] = useState(false);
+  const [contractModalStep, setContractModalStep] = useState('upload'); // 'upload' | 'review'
+
+  // ══════════ ÉTAT GESTION DES DOUBLONS ══════════
+  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
+  const [duplicatePairs, setDuplicatePairs] = useState([]);
+  const [currentPairIndex, setCurrentPairIndex] = useState(0);
+  const [isSearchingDuplicates, setIsSearchingDuplicates] = useState(false);
+  const [isMergingOrDeleting, setIsMergingOrDeleting] = useState(false);
+  const [editMergeDraft, setEditMergeDraft] = useState(null);
+  const [isCustomizingMerge, setIsCustomizingMerge] = useState(false);
+  const [dismissedPairKeys, setDismissedPairKeys] = useState(new Set());
 
   const [newContact, setNewContact] = useState({
     nom: "",
@@ -516,6 +536,435 @@ function CRMApp() {
     }
   };
 
+  // ══════════ HANDLERS IMPORTATION CONTRATS (IA) ══════════
+  const handleFilesSelected = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setContractFiles(prev => [...prev, ...files]);
+  };
+
+  const handleDropFiles = (e) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length === 0) return;
+    setContractFiles(prev => [...prev, ...files]);
+  };
+
+  const handleRemoveFile = (index) => {
+    setContractFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleStartAnalysis = async () => {
+    if (contractFiles.length === 0) {
+      toast.error("Veuillez sélectionner au moins un contrat ou document.");
+      return;
+    }
+
+    setIsAnalyzingContracts(true);
+    setAnalysisProgress("Envoi des documents et analyse IA des coordonnées...");
+    try {
+      const formData = new FormData();
+      contractFiles.forEach(file => {
+        formData.append('files', file);
+      });
+
+      const response = await axios.post(`${API}/crm/extract-contract-clients`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (response.data.success && response.data.clients && response.data.clients.length > 0) {
+        setExtractedClients(response.data.clients);
+        setSelectedExtractedIds(new Set(response.data.clients.map(c => c.id)));
+        setContractModalStep('review');
+        toast.success(`✨ ${response.data.extractedCount} client(s) extrait(s) des documents !`);
+      } else {
+        toast.warning("Aucun client n'a pu être extrait des documents fournis.");
+      }
+    } catch (err) {
+      console.error("Contract extraction error:", err);
+      toast.error("Erreur lors de l'analyse IA : " + (err.response?.data?.error || err.message));
+    } finally {
+      setIsAnalyzingContracts(false);
+      setAnalysisProgress("");
+    }
+  };
+
+  const handleToggleExtractedClient = (id) => {
+    setSelectedExtractedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllExtracted = (selectAll) => {
+    if (selectAll) {
+      setSelectedExtractedIds(new Set(extractedClients.map(c => c.id)));
+    } else {
+      setSelectedExtractedIds(new Set());
+    }
+  };
+
+  const handleUpdateExtractedField = (id, field, value) => {
+    setExtractedClients(prev => prev.map(client => {
+      if (client.id === id) {
+        return { ...client, [field]: value };
+      }
+      return client;
+    }));
+  };
+
+  const handleDeleteExtractedClient = (id) => {
+    setExtractedClients(prev => prev.filter(c => c.id !== id));
+    setSelectedExtractedIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const handleSaveValidatedClients = async () => {
+    const clientsToSave = extractedClients.filter(c => selectedExtractedIds.has(c.id));
+    if (clientsToSave.length === 0) {
+      toast.error("Veuillez sélectionner au moins un client à valider et importer.");
+      return;
+    }
+
+    setIsSavingBatch(true);
+    try {
+      const res = await axios.post(`${API}/crm/companies/batch`, { clients: clientsToSave });
+      if (res.data.success) {
+        toast.success(`🎉 ${res.data.count} client(s) importé(s) dans le Fichier Client !`);
+        setShowContractModal(false);
+        setContractFiles([]);
+        setExtractedClients([]);
+        setSelectedExtractedIds(new Set());
+        setContractModalStep('upload');
+        loadCompanies();
+      }
+    } catch (err) {
+      console.error("Batch save error:", err);
+      toast.error("Erreur lors de l'enregistrement : " + (err.response?.data?.error || err.message));
+    } finally {
+      setIsSavingBatch(false);
+    }
+  };
+
+  const checkExistingDuplicate = (client) => {
+    const clientEmail = (client.email || "").toLowerCase().trim();
+    const clientNom = (client.nom || "").toLowerCase().trim();
+    if (!clientEmail && !clientNom) return null;
+
+    return companies.find(c => {
+      const cEmail = (c.email || "").toLowerCase().trim();
+      const cNom = (c.nom || "").toLowerCase().trim();
+      return (clientEmail && cEmail.includes(clientEmail)) || (clientNom && cNom === clientNom);
+    });
+  };
+
+  // ══════════ MOTEUR D'ANALYSE & GESTION DES DOUBLONS ══════════
+  const normalizeText = (str) => {
+    if (!str) return "";
+    return str
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+  };
+
+  const cleanPhoneDigits = (phone) => {
+    if (!phone) return "";
+    const digits = phone.replace(/[^0-9]/g, "");
+    if (digits.length >= 9) {
+      return digits.slice(-9);
+    }
+    return digits;
+  };
+
+  const detectDuplicates = (list, ignoredSet = new Set()) => {
+    const pairs = [];
+    const visited = new Set();
+
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i];
+        const b = list[j];
+        if (!a || !b || !a.id || !b.id || a.id === b.id) continue;
+
+        const pairKey = [a.id, b.id].sort().join('___');
+        if (visited.has(pairKey) || ignoredSet.has(pairKey)) continue;
+
+        const reasons = [];
+        let score = 0;
+
+        // 1. Email matching
+        const emailA = (a.email || "").trim().toLowerCase();
+        const emailB = (b.email || "").trim().toLowerCase();
+        if (emailA && emailB && emailA === emailB) {
+          reasons.push(`Adresse email identique (${emailA})`);
+          score += 60;
+        }
+
+        // 2. Phone matching
+        const phoneA = cleanPhoneDigits(a.telephone);
+        const phoneB = cleanPhoneDigits(b.telephone);
+        if (phoneA && phoneB && phoneA.length >= 9 && phoneA === phoneB) {
+          reasons.push(`Numéro de téléphone identique (${a.telephone || b.telephone})`);
+          score += 50;
+        }
+
+        // 3. SIRET matching
+        const siretA = (a.siret || "").replace(/[^0-9]/g, "");
+        const siretB = (b.siret || "").replace(/[^0-9]/g, "");
+        if (siretA && siretB && siretA.length >= 9 && siretA === siretB) {
+          reasons.push(`Numéro SIRET identique (${siretA})`);
+          score += 70;
+        }
+
+        // 4. Name matching
+        const normA = normalizeText(a.nom);
+        const normB = normalizeText(b.nom);
+        if (normA && normB) {
+          if (normA === normB) {
+            reasons.push(`Nom identique ("${a.nom}")`);
+            score += 50;
+          } else if (normA.length > 5 && normB.length > 5 && (normA.includes(normB) || normB.includes(normA))) {
+            reasons.push(`Noms très similaires ("${a.nom}" et "${b.nom}")`);
+            score += 35;
+          } else {
+            const wordsA = (a.nom || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[\s,&+]+/).filter(w => w.length > 2);
+            const wordsB = (b.nom || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[\s,&+]+/).filter(w => w.length > 2);
+            const commonWords = wordsA.filter(w => wordsB.includes(w));
+            if (commonWords.length >= 2 || (wordsA.length === 1 && wordsB.length === 1 && commonWords.length === 1)) {
+              reasons.push(`Noms partageant des mots-clés ("${commonWords.join(' ')}")`);
+              score += 25;
+            }
+          }
+        }
+
+        if (score >= 40 || (reasons.length > 0 && (emailA === emailB || (phoneA && phoneA === phoneB) || normA === normB))) {
+          visited.add(pairKey);
+
+          const pickLonger = (valA, valB) => {
+            if (!valA && valB) return valB;
+            if (!valB && valA) return valA;
+            if (valA && valB) {
+              return String(valA).length >= String(valB).length ? valA : valB;
+            }
+            return "";
+          };
+
+          const notesParts = [];
+          if (a.notes && a.notes.trim()) notesParts.push(a.notes.trim());
+          if (b.notes && b.notes.trim() && (!a.notes || !a.notes.includes(b.notes.trim()))) {
+            notesParts.push(b.notes.trim());
+          }
+
+          const mergedContacts = [...(Array.isArray(a.contacts) ? a.contacts : []), ...(Array.isArray(b.contacts) ? b.contacts : [])];
+          const uniqueContacts = [];
+          const contactSeen = new Set();
+          for (const c of mergedContacts) {
+            const cKey = `${c.nom || ''}_${c.email || ''}_${c.telephone || ''}`;
+            if (!contactSeen.has(cKey)) {
+              contactSeen.add(cKey);
+              uniqueContacts.push(c);
+            }
+          }
+
+          const mergedDraft = {
+            nom: pickLonger(a.nom, b.nom),
+            type_client: a.type_client || b.type_client || "Particulier",
+            siret: pickLonger(a.siret, b.siret),
+            secteur: pickLonger(a.secteur, b.secteur),
+            adresse: pickLonger(a.adresse, b.adresse),
+            telephone: pickLonger(a.telephone, b.telephone),
+            email: pickLonger(a.email, b.email),
+            statut: a.statut || b.statut || "client",
+            contacts: uniqueContacts,
+            date_evenement: pickLonger(a.date_evenement, b.date_evenement),
+            annee_prestation: pickLonger(a.annee_prestation, b.annee_prestation),
+            type_evenement: pickLonger(a.type_evenement, b.type_evenement),
+            lieu_evenement: pickLonger(a.lieu_evenement, b.lieu_evenement),
+            notes: notesParts.join("\n---\n"),
+            blacklist_tags: pickLonger(a.blacklist_tags, b.blacklist_tags),
+            source_contrat: pickLonger(a.source_contrat, b.source_contrat),
+            gcs_url: a.gcs_url || b.gcs_url || ""
+          };
+
+          pairs.push({
+            id: pairKey,
+            companyA: a,
+            companyB: b,
+            reasons,
+            score,
+            mergedDraft
+          });
+        }
+      }
+    }
+
+    return pairs.sort((p1, p2) => p2.score - p1.score);
+  };
+
+  const handleSearchDuplicates = () => {
+    setIsSearchingDuplicates(true);
+    const found = detectDuplicates(companies, dismissedPairKeys);
+    setIsSearchingDuplicates(false);
+
+    if (found.length === 0) {
+      toast.success("✅ Aucun doublon détecté parmi vos clients !");
+    } else {
+      setDuplicatePairs(found);
+      setCurrentPairIndex(0);
+      setEditMergeDraft({ ...found[0].mergedDraft });
+      setIsCustomizingMerge(false);
+      setShowDuplicatesModal(true);
+      toast.info(`🔍 ${found.length} doublon(s) potentiel(s) détecté(s).`);
+    }
+  };
+
+  const handleApplyMerge = async () => {
+    const pair = duplicatePairs[currentPairIndex];
+    if (!pair || !editMergeDraft) return;
+
+    setIsMergingOrDeleting(true);
+    try {
+      const res = await axios.post(`${API}/crm/companies/merge`, {
+        primaryId: pair.companyA.id,
+        secondaryId: pair.companyB.id,
+        mergedData: editMergeDraft
+      });
+
+      if (res.data.success) {
+        toast.success(`✨ Fusion réussie pour "${editMergeDraft.nom}" !`);
+        
+        // Update local companies list
+        setCompanies(prev => prev.map(c => c.id === pair.companyA.id ? res.data.company : c).filter(c => c.id !== pair.companyB.id));
+
+        // Filter out handled pair and any other pairs referencing either company
+        const remaining = duplicatePairs.filter(p => 
+          p.id !== pair.id && 
+          p.companyA.id !== pair.companyA.id && 
+          p.companyB.id !== pair.companyA.id &&
+          p.companyA.id !== pair.companyB.id && 
+          p.companyB.id !== pair.companyB.id
+        );
+
+        setDuplicatePairs(remaining);
+        if (remaining.length > 0) {
+          const nextIndex = Math.min(currentPairIndex, remaining.length - 1);
+          setCurrentPairIndex(nextIndex);
+          setEditMergeDraft({ ...remaining[nextIndex].mergedDraft });
+          setIsCustomizingMerge(false);
+        } else {
+          setShowDuplicatesModal(false);
+          toast.success("🎉 Tous les doublons ont été traités !");
+        }
+      }
+    } catch (err) {
+      console.error("Merge error:", err);
+      toast.error("Erreur lors de la fusion : " + (err.response?.data?.error || err.message));
+    } finally {
+      setIsMergingOrDeleting(false);
+    }
+  };
+
+  const handleDeleteOneDuplicate = async (companyToDelete, companyToKeep) => {
+    const pair = duplicatePairs[currentPairIndex];
+    if (!pair) return;
+
+    setIsMergingOrDeleting(true);
+    try {
+      await axios.delete(`${API}/crm/companies/${companyToDelete.id}`);
+      toast.success(`🗑️ Dossier "${companyToDelete.nom}" supprimé. Dossier "${companyToKeep.nom}" conservé.`);
+
+      // Update companies list
+      setCompanies(prev => prev.filter(c => c.id !== companyToDelete.id));
+
+      // Remove handled pairs referencing the deleted company
+      const remaining = duplicatePairs.filter(p => 
+        p.companyA.id !== companyToDelete.id && 
+        p.companyB.id !== companyToDelete.id
+      );
+
+      setDuplicatePairs(remaining);
+      if (remaining.length > 0) {
+        const nextIndex = Math.min(currentPairIndex, remaining.length - 1);
+        setCurrentPairIndex(nextIndex);
+        setEditMergeDraft({ ...remaining[nextIndex].mergedDraft });
+        setIsCustomizingMerge(false);
+      } else {
+        setShowDuplicatesModal(false);
+        toast.success("🎉 Tous les doublons ont été traités !");
+      }
+    } catch (err) {
+      console.error("Delete duplicate error:", err);
+      toast.error("Erreur lors de la suppression : " + (err.response?.data?.error || err.message));
+    } finally {
+      setIsMergingOrDeleting(false);
+    }
+  };
+
+  const handleDismissPair = () => {
+    const pair = duplicatePairs[currentPairIndex];
+    if (!pair) return;
+
+    setDismissedPairKeys(prev => new Set(prev).add(pair.id));
+    const remaining = duplicatePairs.filter(p => p.id !== pair.id);
+    setDuplicatePairs(remaining);
+    
+    if (remaining.length > 0) {
+      const nextIndex = Math.min(currentPairIndex, remaining.length - 1);
+      setCurrentPairIndex(nextIndex);
+      setEditMergeDraft({ ...remaining[nextIndex].mergedDraft });
+      setIsCustomizingMerge(false);
+      toast.info("Doublon ignoré.");
+    } else {
+      setShowDuplicatesModal(false);
+      toast.info("Fin de l'analyse des doublons.");
+    }
+  };
+
+  const handleMergeAllRemaining = async () => {
+    if (duplicatePairs.length === 0) return;
+    setIsMergingOrDeleting(true);
+
+    let count = 0;
+    try {
+      let currentCompanies = [...companies];
+      for (const pair of duplicatePairs) {
+        const aExists = currentCompanies.some(c => c.id === pair.companyA.id);
+        const bExists = currentCompanies.some(c => c.id === pair.companyB.id);
+        if (!aExists || !bExists) continue;
+
+        const res = await axios.post(`${API}/crm/companies/merge`, {
+          primaryId: pair.companyA.id,
+          secondaryId: pair.companyB.id,
+          mergedData: pair.mergedDraft
+        });
+
+        if (res.data.success) {
+          currentCompanies = currentCompanies.map(c => c.id === pair.companyA.id ? res.data.company : c).filter(c => c.id !== pair.companyB.id);
+          count++;
+        }
+      }
+
+      setCompanies(currentCompanies);
+      setDuplicatePairs([]);
+      setShowDuplicatesModal(false);
+      toast.success(`🎉 ${count} doublon(s) fusionné(s) automatiquement avec succès !`);
+    } catch (err) {
+      console.error("Merge all error:", err);
+      toast.error("Erreur lors de la fusion groupée : " + (err.response?.data?.error || err.message));
+    } finally {
+      setIsMergingOrDeleting(false);
+    }
+  };
+
   const getCompanyRelances = (companyId) => {
     return relances.filter(r => r.company_id === companyId);
   };
@@ -666,14 +1115,39 @@ function CRMApp() {
             </h1>
             <p className="text-gray-600">Base de données globale : particuliers, entreprises et associations</p>
           </div>
-          <Button 
-            onClick={handleImportContacts}
-            disabled={isImporting}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <UserPlus className="mr-2 h-4 w-4" />
-            {isImporting ? "Importation..." : "Importer depuis contacts"}
-          </Button>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button 
+              onClick={handleSearchDuplicates}
+              disabled={isSearchingDuplicates}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-semibold flex items-center gap-2"
+            >
+              {isSearchingDuplicates ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <GitMerge className="h-4 w-4 text-indigo-200" />
+              )}
+              <span>Rechercher les doublons</span>
+            </Button>
+            <Button 
+              onClick={() => {
+                setContractModalStep('upload');
+                setShowContractModal(true);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-semibold flex items-center gap-2"
+            >
+              <Sparkles className="h-4 w-4 text-emerald-200" />
+              <span>Importer des contrats (IA)</span>
+            </Button>
+            <Button 
+              onClick={handleImportContacts}
+              disabled={isImporting}
+              variant="outline"
+              className="bg-white border-blue-300 text-blue-700 hover:bg-blue-50"
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              {isImporting ? "Importation..." : "Importer depuis contacts"}
+            </Button>
+          </div>
         </div>
 
         {/* Statistiques (en lignes compactes) */}
@@ -1576,6 +2050,982 @@ function CRMApp() {
                   </Button>
                 </div>
               </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════ DIALOG IMPORTATION ET VALIDATION DE CONTRATS (IA) ══════════ */}
+      <Dialog open={showContractModal} onOpenChange={(open) => {
+        if (!open && isAnalyzingContracts) return;
+        setShowContractModal(open);
+        if (!open) {
+          setContractFiles([]);
+          setExtractedClients([]);
+          setSelectedExtractedIds(new Set());
+          setContractModalStep('upload');
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
+          {/* Header */}
+          <div className="px-6 py-4 bg-gradient-to-r from-emerald-700 to-teal-800 text-white flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/10 rounded-lg backdrop-blur-sm">
+                <FileSignature className="h-6 w-6 text-emerald-200" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+                  {contractModalStep === 'upload' ? "Importer des contrats / scans" : "Validation des coordonnées clients"}
+                  <Badge className="bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 text-[11px] font-normal">
+                    Analyse IA
+                  </Badge>
+                </DialogTitle>
+                <DialogDescription className="text-emerald-100/90 text-xs mt-0.5">
+                  {contractModalStep === 'upload' 
+                    ? "Importez un ou plusieurs contrats (PDF, photos ou scans). L'IA extrait automatiquement les coordonnées des clients." 
+                    : "Vérifiez, corrigez et validez les coordonnées trouvées avant de créer les dossiers clients."}
+                </DialogDescription>
+              </div>
+            </div>
+            {contractModalStep === 'review' && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setContractModalStep('upload')}
+                className="text-white hover:bg-white/20 text-xs gap-1.5"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Ajouter d'autres fichiers
+              </Button>
+            )}
+          </div>
+
+          {/* Body Content */}
+          <div className="p-6 overflow-y-auto flex-1 space-y-6">
+            {contractModalStep === 'upload' ? (
+              <div className="space-y-6">
+                {/* Drag and Drop Zone */}
+                <div 
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDropFiles}
+                  className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all rounded-2xl p-8 text-center flex flex-col items-center justify-center gap-3 cursor-pointer relative"
+                  onClick={() => document.getElementById('contract-file-input')?.click()}
+                >
+                  <input 
+                    id="contract-file-input"
+                    type="file" 
+                    multiple 
+                    accept=".pdf,image/png,image/jpeg,image/jpg,image/webp" 
+                    onChange={handleFilesSelected} 
+                    className="hidden" 
+                  />
+                  <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shadow-inner">
+                    <FileUp className="h-8 w-8" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-800 text-base">
+                      Glissez vos contrats, devis ou scans ici
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      ou <span className="text-emerald-700 font-semibold underline">parcourez vos fichiers</span> depuis votre ordinateur
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+                    <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-[11px]">
+                      📄 PDF (mono ou multi-pages)
+                    </Badge>
+                    <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-[11px]">
+                      🖼️ Photos / Scans (JPG, PNG, WebP)
+                    </Badge>
+                    <Badge variant="outline" className="bg-white text-slate-600 border-slate-200 text-[11px]">
+                      📚 Plusieurs documents simultanés
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Selected Files List */}
+                {contractFiles.length > 0 && (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <Paperclip className="h-3.5 w-3.5 text-slate-500" />
+                        Fichiers sélectionnés ({contractFiles.length})
+                      </span>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => setContractFiles([])}
+                        className="text-xs text-red-600 hover:text-red-700 h-7"
+                      >
+                        Tout retirer
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                      {contractFiles.map((file, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm text-xs">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <span className="text-base">{file.name.endsWith('.pdf') ? '📄' : '🖼️'}</span>
+                            <div className="truncate">
+                              <p className="font-medium text-slate-800 truncate">{file.name}</p>
+                              <p className="text-[10px] text-slate-400">{(file.size / 1024).toFixed(0)} Ko</p>
+                            </div>
+                          </div>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveFile(idx); }}
+                            className="h-6 w-6 text-slate-400 hover:text-red-600 shrink-0"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Info Guide */}
+                <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-4 text-xs text-blue-900 space-y-1.5">
+                  <div className="font-semibold flex items-center gap-1.5 text-blue-800">
+                    <Sparkles className="h-4 w-4 text-blue-600" />
+                    Comment fonctionne l'analyse automatique ?
+                  </div>
+                  <p className="text-blue-700 leading-relaxed">
+                    L'intelligence artificielle lit les documents fournis, identifie le nom du client ou de l'entreprise, les coordonnées (téléphone, email, adresse), la date de prestation, le type d'événement, le lieu ainsi que les détails du contrat. Une fenêtre de confirmation s'ouvrira ensuite pour vous permettre de vérifier et ajuster chaque coordonnée avant de créer les dossiers clients.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* Review Step */
+              <div className="space-y-4">
+                {/* Control bar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5">
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-emerald-600 text-white font-semibold">
+                      {selectedExtractedIds.size} / {extractedClients.length} sélectionné(s)
+                    </Badge>
+                    <span className="text-xs text-emerald-900 font-medium">
+                      Cochez les clients que vous souhaitez enregistrer dans le CRM.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleSelectAllExtracted(true)}
+                      className="h-7 text-xs bg-white border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                    >
+                      Tout sélectionner
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleSelectAllExtracted(false)}
+                      className="h-7 text-xs bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+                    >
+                      Tout désélectionner
+                    </Button>
+                  </div>
+                </div>
+
+                {/* List of Extracted Clients */}
+                <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+                  {extractedClients.map((client) => {
+                    const isSelected = selectedExtractedIds.has(client.id);
+                    const duplicate = checkExistingDuplicate(client);
+
+                    return (
+                      <div 
+                        key={client.id} 
+                        className={`border rounded-xl p-4 transition-all duration-150 ${
+                          isSelected 
+                            ? 'bg-white border-emerald-300 shadow-sm ring-1 ring-emerald-200' 
+                            : 'bg-slate-50/80 border-slate-200 opacity-70'
+                        }`}
+                      >
+                        {/* Header Row */}
+                        <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+                          <div className="flex items-center gap-3">
+                            <input 
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleExtractedClient(client.id)}
+                              className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-base text-slate-900">
+                                  {client.nom || "Client sans nom"}
+                                </span>
+                                <Badge className={
+                                  client.type_client === "Entreprise" ? "bg-slate-100 text-slate-800" :
+                                  client.type_client === "Association" ? "bg-purple-100 text-purple-800" :
+                                  "bg-indigo-100 text-indigo-800"
+                                }>
+                                  {client.type_client || "Particulier"}
+                                </Badge>
+                                {duplicate ? (
+                                  <Badge className="bg-amber-100 text-amber-900 border border-amber-300 gap-1 text-[10px]">
+                                    <AlertCircle className="h-3 w-3 text-amber-600" />
+                                    Existe déjà : {duplicate.nom}
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 gap-1 text-[10px]">
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                    Nouveau dossier
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-400 mt-0.5 block flex items-center gap-1">
+                                <Paperclip className="h-3 w-3" />
+                                Source : {client.source_file}
+                              </span>
+                            </div>
+                          </div>
+
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDeleteExtractedClient(client.id)}
+                            className="h-8 w-8 text-slate-400 hover:text-red-600"
+                            title="Retirer ce client"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        {/* Editable Form Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 text-xs">
+                          <div>
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Nom / Raison Sociale</Label>
+                            <Input 
+                              value={client.nom}
+                              onChange={(e) => handleUpdateExtractedField(client.id, 'nom', e.target.value)}
+                              className="h-8 text-xs mt-1"
+                              placeholder="Nom du client"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Type de client</Label>
+                            <Select 
+                              value={client.type_client || "Particulier"}
+                              onValueChange={(val) => handleUpdateExtractedField(client.id, 'type_client', val)}
+                            >
+                              <SelectTrigger className="h-8 text-xs mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Particulier">Particulier</SelectItem>
+                                <SelectItem value="Entreprise">Entreprise</SelectItem>
+                                <SelectItem value="Association">Association</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div>
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Téléphone</Label>
+                            <Input 
+                              value={client.telephone}
+                              onChange={(e) => handleUpdateExtractedField(client.id, 'telephone', e.target.value)}
+                              className="h-8 text-xs mt-1"
+                              placeholder="06 12 34 56 78"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Email</Label>
+                            <Input 
+                              value={client.email}
+                              onChange={(e) => handleUpdateExtractedField(client.id, 'email', e.target.value)}
+                              className="h-8 text-xs mt-1"
+                              placeholder="client@domaine.fr"
+                            />
+                          </div>
+
+                          <div className="md:col-span-2">
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Adresse postale</Label>
+                            <Input 
+                              value={client.adresse}
+                              onChange={(e) => handleUpdateExtractedField(client.id, 'adresse', e.target.value)}
+                              className="h-8 text-xs mt-1"
+                              placeholder="Numéro, rue, code postal, ville"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Date de prestation</Label>
+                            <Input 
+                              type="date"
+                              value={client.date_evenement || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                handleUpdateExtractedField(client.id, 'date_evenement', val);
+                                if (val) {
+                                  handleUpdateExtractedField(client.id, 'annee_prestation', val.split('-')[0]);
+                                }
+                              }}
+                              className="h-8 text-xs mt-1"
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Type d'événement</Label>
+                            <Input 
+                              value={client.type_evenement || ""}
+                              onChange={(e) => handleUpdateExtractedField(client.id, 'type_evenement', e.target.value)}
+                              className="h-8 text-xs mt-1"
+                              placeholder="ex: Mariage, Anniversaire..."
+                            />
+                          </div>
+
+                          <div>
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Lieu / Salle</Label>
+                            <Input 
+                              value={client.lieu_evenement || ""}
+                              onChange={(e) => handleUpdateExtractedField(client.id, 'lieu_evenement', e.target.value)}
+                              className="h-8 text-xs mt-1"
+                              placeholder="ex: Château de X, Salle des Fêtes..."
+                            />
+                          </div>
+
+                          {client.type_client === "Entreprise" && (
+                            <div>
+                              <Label className="text-[11px] text-slate-500 uppercase font-semibold">SIRET / SIREN</Label>
+                              <Input 
+                                value={client.siret || ""}
+                                onChange={(e) => handleUpdateExtractedField(client.id, 'siret', e.target.value)}
+                                className="h-8 text-xs mt-1"
+                                placeholder="Numéro SIRET"
+                              />
+                            </div>
+                          )}
+
+                          <div className={client.type_client === "Entreprise" ? "md:col-span-2" : "md:col-span-3"}>
+                            <Label className="text-[11px] text-slate-500 uppercase font-semibold">Notes / Détails du contrat</Label>
+                            <Textarea 
+                              value={client.notes || ""}
+                              onChange={(e) => handleUpdateExtractedField(client.id, 'notes', e.target.value)}
+                              rows={2}
+                              className="text-xs mt-1 resize-none"
+                              placeholder="Formule choisie, matériel, options..."
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+            <Button
+              variant="outline"
+              onClick={() => setShowContractModal(false)}
+              disabled={isAnalyzingContracts || isSavingBatch}
+            >
+              Annuler
+            </Button>
+
+            {contractModalStep === 'upload' ? (
+              <Button
+                onClick={handleStartAnalysis}
+                disabled={contractFiles.length === 0 || isAnalyzingContracts}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[200px]"
+              >
+                {isAnalyzingContracts ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <span>{analysisProgress || "Analyse IA en cours..."}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4 text-emerald-200" />
+                    <span>Lancer l'analyse IA ({contractFiles.length} doc{contractFiles.length > 1 ? 's' : ''})</span>
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button
+                onClick={handleSaveValidatedClients}
+                disabled={selectedExtractedIds.size === 0 || isSavingBatch}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[200px]"
+              >
+                {isSavingBatch ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <span>Enregistrement...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 h-4 w-4 text-emerald-200" />
+                    <span>Valider et importer ({selectedExtractedIds.size}) dossier{selectedExtractedIds.size > 1 ? 's' : ''}</span>
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════ DIALOG GESTION & FUSION DES DOUBLONS ══════════ */}
+      <Dialog open={showDuplicatesModal} onOpenChange={(open) => {
+        if (!open && isMergingOrDeleting) return;
+        setShowDuplicatesModal(open);
+      }}>
+        <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden">
+          {(() => {
+            const pair = duplicatePairs[currentPairIndex];
+            if (!pair) {
+              return (
+                <div className="p-12 text-center space-y-4">
+                  <CheckCircle className="h-16 w-16 text-emerald-500 mx-auto" />
+                  <h3 className="text-xl font-bold text-slate-800">Aucun doublon restant</h3>
+                  <p className="text-sm text-slate-500">Tous les doublons ont été traités ou ignorés.</p>
+                  <Button onClick={() => setShowDuplicatesModal(false)}>Fermer</Button>
+                </div>
+              );
+            }
+
+            const { companyA, companyB, reasons, score } = pair;
+            const relancesA = getCompanyRelances(companyA.id);
+            const relancesB = getCompanyRelances(companyB.id);
+
+            return (
+              <>
+                {/* Header */}
+                <div className="px-6 py-4 bg-gradient-to-r from-indigo-700 via-slate-800 to-slate-900 text-white flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-sm">
+                      <GitMerge className="h-6 w-6 text-indigo-300" />
+                    </div>
+                    <div>
+                      <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+                        Résolution des doublons
+                        <Badge className="bg-indigo-500/40 text-indigo-100 border border-indigo-400/30 text-[11px] font-normal">
+                          Paire {currentPairIndex + 1} / {duplicatePairs.length}
+                        </Badge>
+                      </DialogTitle>
+                      <DialogDescription className="text-indigo-100/90 text-xs mt-0.5">
+                        Comparez les deux fiches, fusionnez leurs données sans perte ou supprimez le doublon inutile.
+                      </DialogDescription>
+                    </div>
+                  </div>
+
+                  {duplicatePairs.length > 1 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleMergeAllRemaining}
+                      disabled={isMergingOrDeleting}
+                      className="bg-white/10 border-white/20 text-white hover:bg-white/20 text-xs gap-1.5 hidden sm:flex"
+                      title="Fusionne automatiquement tous les doublons détectés"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                      Tout fusionner automatiquement ({duplicatePairs.length})
+                    </Button>
+                  )}
+                </div>
+
+                {/* Body Content */}
+                <div className="p-6 overflow-y-auto flex-1 space-y-6 bg-slate-50/50">
+                  {/* Stepper / Reasons bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                        <Search className="h-3.5 w-3.5 text-indigo-600" />
+                        Critères détectés :
+                      </span>
+                      {reasons.map((r, idx) => (
+                        <Badge key={idx} variant="outline" className="bg-white text-indigo-900 border-indigo-300 text-[11px] font-medium shadow-2xs">
+                          {r}
+                        </Badge>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        disabled={currentPairIndex === 0 || isMergingOrDeleting}
+                        onClick={() => {
+                          const prevIdx = currentPairIndex - 1;
+                          setCurrentPairIndex(prevIdx);
+                          setEditMergeDraft({ ...duplicatePairs[prevIdx].mergedDraft });
+                          setIsCustomizingMerge(false);
+                        }}
+                        className="h-7 w-7 bg-white"
+                        title="Paire précédente"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-xs font-semibold text-indigo-900 px-1">
+                        {currentPairIndex + 1} / {duplicatePairs.length}
+                      </span>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        disabled={currentPairIndex === duplicatePairs.length - 1 || isMergingOrDeleting}
+                        onClick={() => {
+                          const nextIdx = currentPairIndex + 1;
+                          setCurrentPairIndex(nextIdx);
+                          setEditMergeDraft({ ...duplicatePairs[nextIdx].mergedDraft });
+                          setIsCustomizingMerge(false);
+                        }}
+                        className="h-7 w-7 bg-white"
+                        title="Paire suivante"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Side-by-Side Comparison */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* CARD A */}
+                    <div className="bg-white border-2 border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between hover:border-slate-300 transition-colors">
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-100">
+                          <div>
+                            <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100 text-[10px] uppercase tracking-wider mb-1 font-bold">
+                              Fiche A (Enregistrement #1)
+                            </Badge>
+                            <h3 className="text-lg font-bold text-slate-900">{companyA.nom || "Sans nom"}</h3>
+                            <p className="text-[11px] text-slate-400">
+                              Créé le {companyA.created_at ? new Date(companyA.created_at).toLocaleDateString("fr-FR") : "Date inconnue"}
+                            </p>
+                          </div>
+                          <Badge className={
+                            companyA.type_client === "Entreprise" ? "bg-slate-200 text-slate-800" :
+                            companyA.type_client === "Association" ? "bg-purple-100 text-purple-800" :
+                            "bg-blue-100 text-blue-800"
+                          }>
+                            {companyA.type_client || "Particulier"}
+                          </Badge>
+                        </div>
+
+                        {/* Fields List */}
+                        <div className="space-y-2 text-xs">
+                          <div className="flex items-start gap-2">
+                            <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold text-slate-600">Téléphone : </span>
+                              <span className={companyA.telephone ? "text-slate-900 font-medium" : "text-slate-400 italic"}>
+                                {companyA.telephone || "Non renseigné"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <div className="truncate">
+                              <span className="font-semibold text-slate-600">Email : </span>
+                              <span className={companyA.email ? "text-slate-900 font-medium" : "text-slate-400 italic"}>
+                                {companyA.email || "Non renseigné"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold text-slate-600">Adresse : </span>
+                              <span className={companyA.adresse ? "text-slate-900" : "text-slate-400 italic"}>
+                                {companyA.adresse || "Non renseignée"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold text-slate-600">Événement : </span>
+                              <span>
+                                {companyA.date_evenement ? `${companyA.date_evenement} ` : ""}
+                                {companyA.type_evenement ? `(${companyA.type_evenement}) ` : ""}
+                                {companyA.lieu_evenement ? `à ${companyA.lieu_evenement}` : ""}
+                                {!companyA.date_evenement && !companyA.type_evenement && !companyA.lieu_evenement && (
+                                  <span className="text-slate-400 italic">Aucun renseigné</span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          {companyA.siret && (
+                            <div className="flex items-start gap-2">
+                              <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-semibold text-slate-600">SIRET : </span>
+                                <span>{companyA.siret}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <Badge variant="outline" className="text-[10px] text-slate-600">
+                              👥 {Array.isArray(companyA.contacts) ? companyA.contacts.length : 0} contact(s)
+                            </Badge>
+                            <Badge variant="outline" className="text-[10px] text-slate-600">
+                              ⏰ {relancesA.length} relance(s)
+                            </Badge>
+                          </div>
+
+                          {companyA.notes && (
+                            <div className="bg-slate-50 border border-slate-100 rounded-lg p-2.5 mt-2 text-[11px] text-slate-700 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                              <span className="font-semibold text-slate-500 block mb-0.5">Notes :</span>
+                              {companyA.notes}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Single Keep Button */}
+                      <div className="pt-4 border-t border-slate-100 mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteOneDuplicate(companyB, companyA)}
+                          disabled={isMergingOrDeleting}
+                          className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 gap-1.5"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Conserver Fiche A & Supprimer Fiche B
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* CARD B */}
+                    <div className="bg-white border-2 border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between hover:border-slate-300 transition-colors">
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-100">
+                          <div>
+                            <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100 text-[10px] uppercase tracking-wider mb-1 font-bold">
+                              Fiche B (Enregistrement #2)
+                            </Badge>
+                            <h3 className="text-lg font-bold text-slate-900">{companyB.nom || "Sans nom"}</h3>
+                            <p className="text-[11px] text-slate-400">
+                              Créé le {companyB.created_at ? new Date(companyB.created_at).toLocaleDateString("fr-FR") : "Date inconnue"}
+                            </p>
+                          </div>
+                          <Badge className={
+                            companyB.type_client === "Entreprise" ? "bg-slate-200 text-slate-800" :
+                            companyB.type_client === "Association" ? "bg-purple-100 text-purple-800" :
+                            "bg-blue-100 text-blue-800"
+                          }>
+                            {companyB.type_client || "Particulier"}
+                          </Badge>
+                        </div>
+
+                        {/* Fields List */}
+                        <div className="space-y-2 text-xs">
+                          <div className="flex items-start gap-2">
+                            <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold text-slate-600">Téléphone : </span>
+                              <span className={companyB.telephone ? "text-slate-900 font-medium" : "text-slate-400 italic"}>
+                                {companyB.telephone || "Non renseigné"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <div className="truncate">
+                              <span className="font-semibold text-slate-600">Email : </span>
+                              <span className={companyB.email ? "text-slate-900 font-medium" : "text-slate-400 italic"}>
+                                {companyB.email || "Non renseigné"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold text-slate-600">Adresse : </span>
+                              <span className={companyB.adresse ? "text-slate-900" : "text-slate-400 italic"}>
+                                {companyB.adresse || "Non renseignée"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2">
+                            <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-semibold text-slate-600">Événement : </span>
+                              <span>
+                                {companyB.date_evenement ? `${companyB.date_evenement} ` : ""}
+                                {companyB.type_evenement ? `(${companyB.type_evenement}) ` : ""}
+                                {companyB.lieu_evenement ? `à ${companyB.lieu_evenement}` : ""}
+                                {!companyB.date_evenement && !companyB.type_evenement && !companyB.lieu_evenement && (
+                                  <span className="text-slate-400 italic">Aucun renseigné</span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          {companyB.siret && (
+                            <div className="flex items-start gap-2">
+                              <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-semibold text-slate-600">SIRET : </span>
+                                <span>{companyB.siret}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <Badge variant="outline" className="text-[10px] text-slate-600">
+                              👥 {Array.isArray(companyB.contacts) ? companyB.contacts.length : 0} contact(s)
+                            </Badge>
+                            <Badge variant="outline" className="text-[10px] text-slate-600">
+                              ⏰ {relancesB.length} relance(s)
+                            </Badge>
+                          </div>
+
+                          {companyB.notes && (
+                            <div className="bg-slate-50 border border-slate-100 rounded-lg p-2.5 mt-2 text-[11px] text-slate-700 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                              <span className="font-semibold text-slate-500 block mb-0.5">Notes :</span>
+                              {companyB.notes}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Single Keep Button */}
+                      <div className="pt-4 border-t border-slate-100 mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteOneDuplicate(companyA, companyB)}
+                          disabled={isMergingOrDeleting}
+                          className="w-full text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 gap-1.5"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Conserver Fiche B & Supprimer Fiche A
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ══════════ PROPOSITION DE FUSION INTELLIGENTE ══════════ */}
+                  <div className="bg-emerald-50/70 border-2 border-emerald-300 rounded-2xl p-5 shadow-xs space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-emerald-200">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 bg-emerald-600 text-white rounded-lg shadow-xs">
+                          <Sparkles className="h-5 w-5 text-emerald-100" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-slate-900 text-base">
+                            Fusion intelligente recommandée (1 seul dossier complet)
+                          </h4>
+                          <p className="text-xs text-slate-600">
+                            Combine automatiquement les meilleures coordonnées, concatène les notes et conserve toutes les relances.
+                          </p>
+                        </div>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setIsCustomizingMerge(!isCustomizingMerge)}
+                        className="text-xs text-emerald-800 hover:text-emerald-950 hover:bg-emerald-100/60"
+                      >
+                        {isCustomizingMerge ? "Masquer le formulaire détaillé" : "✏️ Personnaliser les champs fusionnés"}
+                      </Button>
+                    </div>
+
+                    {/* Preview / Editable Form */}
+                    {editMergeDraft && (
+                      <div className="space-y-4">
+                        {isCustomizingMerge ? (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-white p-4 rounded-xl border border-emerald-200 text-xs">
+                            <div>
+                              <Label className="text-[11px] font-semibold text-slate-600">Nom final</Label>
+                              <Input 
+                                value={editMergeDraft.nom || ""}
+                                onChange={(e) => setEditMergeDraft({ ...editMergeDraft, nom: e.target.value })}
+                                className="h-8 text-xs mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-[11px] font-semibold text-slate-600">Type de client</Label>
+                              <Select
+                                value={editMergeDraft.type_client || "Particulier"}
+                                onValueChange={(val) => setEditMergeDraft({ ...editMergeDraft, type_client: val })}
+                              >
+                                <SelectTrigger className="h-8 text-xs mt-1">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Particulier">Particulier</SelectItem>
+                                  <SelectItem value="Entreprise">Entreprise</SelectItem>
+                                  <SelectItem value="Association">Association</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label className="text-[11px] font-semibold text-slate-600">Téléphone</Label>
+                              <Input 
+                                value={editMergeDraft.telephone || ""}
+                                onChange={(e) => setEditMergeDraft({ ...editMergeDraft, telephone: e.target.value })}
+                                className="h-8 text-xs mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-[11px] font-semibold text-slate-600">Email</Label>
+                              <Input 
+                                value={editMergeDraft.email || ""}
+                                onChange={(e) => setEditMergeDraft({ ...editMergeDraft, email: e.target.value })}
+                                className="h-8 text-xs mt-1"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <Label className="text-[11px] font-semibold text-slate-600">Adresse postale</Label>
+                              <Input 
+                                value={editMergeDraft.adresse || ""}
+                                onChange={(e) => setEditMergeDraft({ ...editMergeDraft, adresse: e.target.value })}
+                                className="h-8 text-xs mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-[11px] font-semibold text-slate-600">Date événement</Label>
+                              <Input 
+                                type="date"
+                                value={editMergeDraft.date_evenement || ""}
+                                onChange={(e) => setEditMergeDraft({ ...editMergeDraft, date_evenement: e.target.value, annee_prestation: e.target.value ? e.target.value.split('-')[0] : "" })}
+                                className="h-8 text-xs mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-[11px] font-semibold text-slate-600">Type d'événement</Label>
+                              <Input 
+                                value={editMergeDraft.type_evenement || ""}
+                                onChange={(e) => setEditMergeDraft({ ...editMergeDraft, type_evenement: e.target.value })}
+                                className="h-8 text-xs mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-[11px] font-semibold text-slate-600">Lieu événement</Label>
+                              <Input 
+                                value={editMergeDraft.lieu_evenement || ""}
+                                onChange={(e) => setEditMergeDraft({ ...editMergeDraft, lieu_evenement: e.target.value })}
+                                className="h-8 text-xs mt-1"
+                              />
+                            </div>
+                            <div className="md:col-span-3">
+                              <Label className="text-[11px] font-semibold text-slate-600">Notes combinées</Label>
+                              <Textarea 
+                                value={editMergeDraft.notes || ""}
+                                onChange={(e) => setEditMergeDraft({ ...editMergeDraft, notes: e.target.value })}
+                                rows={3}
+                                className="text-xs mt-1"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs bg-white/80 p-3.5 rounded-xl border border-emerald-200/80">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Nom</span>
+                              <span className="font-bold text-slate-800 truncate block">{editMergeDraft.nom}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Téléphone</span>
+                              <span className="text-slate-800 truncate block">{editMergeDraft.telephone || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Email</span>
+                              <span className="text-slate-800 truncate block">{editMergeDraft.email || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Type & Événement</span>
+                              <span className="text-slate-800 truncate block">
+                                {editMergeDraft.type_client} {editMergeDraft.date_evenement ? `• ${editMergeDraft.date_evenement}` : ""}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleDismissPair}
+                            disabled={isMergingOrDeleting}
+                            className="text-xs text-slate-600 hover:text-slate-900"
+                          >
+                            <X className="mr-1.5 h-3.5 w-3.5" />
+                            Ignorer (Garder les 2 fiches séparées)
+                          </Button>
+
+                          <Button
+                            onClick={handleApplyMerge}
+                            disabled={isMergingOrDeleting}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 shadow-sm gap-2 text-xs sm:text-sm"
+                          >
+                            {isMergingOrDeleting ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Fusion en cours...
+                              </>
+                            ) : (
+                              <>
+                                <GitMerge className="h-4 w-4 text-emerald-200" />
+                                Valider la fusion en 1 dossier
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowDuplicatesModal(false)}
+                    disabled={isMergingOrDeleting}
+                  >
+                    Fermer
+                  </Button>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      disabled={currentPairIndex === 0 || isMergingOrDeleting}
+                      onClick={() => {
+                        const prevIdx = currentPairIndex - 1;
+                        setCurrentPairIndex(prevIdx);
+                        setEditMergeDraft({ ...duplicatePairs[prevIdx].mergedDraft });
+                        setIsCustomizingMerge(false);
+                      }}
+                      className="gap-1 text-xs"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Précédent
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={currentPairIndex === duplicatePairs.length - 1 || isMergingOrDeleting}
+                      onClick={() => {
+                        const nextIdx = currentPairIndex + 1;
+                        setCurrentPairIndex(nextIdx);
+                        setEditMergeDraft({ ...duplicatePairs[nextIdx].mergedDraft });
+                        setIsCustomizingMerge(false);
+                      }}
+                      className="gap-1 text-xs"
+                    >
+                      Suivant
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </>
             );
           })()}
         </DialogContent>
