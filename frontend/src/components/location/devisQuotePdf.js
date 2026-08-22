@@ -24,9 +24,9 @@ export const calculateDays = (startDate, endDate) => {
  * @param {Array} equipment - Liste des équipements (pour lookup si items non enrichis)
  * @returns {boolean} true si le PDF a été généré avec succès
  */
-export const generateQuotePDF = (quoteData, clients, equipment, companySettings = {}, options = {}) => {
+export const generateQuotePDF = (quoteData, clients = [], equipment = [], companySettings = {}, options = {}) => {
   try {
-    const { returnBase64 = false } = options;
+    const { returnBase64 = false, returnBlobUrl = false, returnBlob = false, returnDoc = false } = options;
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 15;
@@ -655,9 +655,24 @@ export const generateQuotePDF = (quoteData, clients, equipment, companySettings 
       : quoteDate.replace(/\//g, '-');
     const filename = `DevisLoc_${clientNameForFile}_${startDateForFile}.pdf`;
 
+    if (returnDoc) {
+      return { success: true, doc, filename };
+    }
+
+    if (returnBlobUrl) {
+      const blob = doc.output('blob');
+      const blobUrl = URL.createObjectURL(blob);
+      return { success: true, blob, blobUrl, filename, doc };
+    }
+
+    if (returnBlob) {
+      const blob = doc.output('blob');
+      return { success: true, blob, filename, doc };
+    }
+
     if (returnBase64) {
       const base64 = doc.output('datauristring').split(',')[1];
-      return { success: true, base64, filename };
+      return { success: true, base64, filename, doc };
     }
 
     doc.save(filename);

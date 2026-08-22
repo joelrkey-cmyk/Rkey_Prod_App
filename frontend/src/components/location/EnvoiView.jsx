@@ -386,7 +386,7 @@ function EnvoiView({ pendingQuoteToSend, setPendingQuoteToSend }) {
     }
   };
 
-  // Fonction pour générer l'aperçu PDF
+  // Fonction pour générer l'aperçu PDF conforme au PDF final
   const generatePdfPreview = async () => {
     if (!selectedQuoteId) {
       toast.error('Veuillez sélectionner un devis pour prévisualiser');
@@ -396,284 +396,33 @@ function EnvoiView({ pendingQuoteToSend, setPendingQuoteToSend }) {
     try {
       setGeneratingPreview(true);
       
-      // Récupérer les détails complets du devis
-      const response = await axios.get(`${API}/quotes/${selectedQuoteId}`);
-      const quote = response.data;
-      
-      // Récupérer les équipements et clients
-      const [equipmentRes, clientsRes] = await Promise.all([
+      // Récupérer les détails complets du devis, équipements, clients, paramètres globaux et CGV
+      const [quoteRes, equipmentRes, clientsRes, settingsRes, cgvRes] = await Promise.all([
+        axios.get(`${API}/quotes/${selectedQuoteId}`),
         axios.get(`${API}/equipment`),
-        axios.get(`${API}/clients`)
+        axios.get(`${API}/clients`),
+        axios.get(`${BACKEND_URL}/api/global-settings`).catch(() => ({ data: {} })),
+        axios.get(`${BACKEND_URL}/api/location/settings/cgv`).catch(() => ({ data: { cgv: '' } }))
       ]);
+      const quote = quoteRes.data;
       const equipmentList = equipmentRes.data || [];
       const clientsList = clientsRes.data || [];
-      
-      // Générer le PDF en mémoire (sans télécharger)
-      const jsPDF = (await import('jspdf')).default;
-      const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const margin = 15;
-      let yPos = 20;
+      const companySettings = settingsRes.data || {};
+      const cgvText = cgvRes.data?.cgv || '';
 
-      // En-tête
-      doc.setFontSize(16);
-      doc.setFont('helvetica', 'bold');
-      doc.text("R'KEY PROD", margin, yPos);
-      yPos += 6;
+      // Générer l'aperçu avec le moteur officiel identique au PDF final
+      const pdfResult = generateQuotePDF(quote, clientsList, equipmentList, companySettings, { returnBlobUrl: true, cgvText });
       
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'normal');
-      doc.text("5 rue du Hohlandsbourg", margin, yPos);
-      yPos += 4;
-      doc.text("67390 Marckolsheim", margin, yPos);
-      yPos += 4;
-      doc.text("Tel: 07 83 55 36 74", margin, yPos);
-      yPos += 4;
-      doc.text("Email: info@rkey-prod.fr", margin, yPos);
-      yPos += 4;
-      doc.text("SIRET: 99992355000019", margin, yPos);
-      yPos += 12;
-
-      // Titre
-      doc.setFontSize(18);
-      doc.setFont('helvetica', 'bold');
-      doc.text("DEVIS DE LOCATION DE MATÉRIEL", pageWidth / 2, yPos, { align: 'center' });
-      yPos += 8;
-      
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      const quoteDate = quote.created_at ? new Date(quote.created_at).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR');
-      doc.text(`Date: ${quoteDate}`, pageWidth / 2, yPos, { align: 'center' });
-      yPos += 10;
-
-      // Client
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.text("CLIENT:", margin, yPos);
-      yPos += 6;
-      
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      const client = clientsList.find(c => c.id === quote.client_id);
-      if (client) {
-        const clientName = client.company_name || client.name;
-        doc.text(clientName, margin, yPos);
-        yPos += 5;
-        if (client.address) {
-          doc.text(client.address, margin, yPos);
-          yPos += 5;
+      if (pdfResult && pdfResult.blobUrl) {
+        if (pdfPreviewUrl) {
+          URL.revokeObjectURL(pdfPreviewUrl);
         }
+        setPdfPreviewUrl(pdfResult.blobUrl);
+        setPdfFilename(pdfResult.filename || 'Devis.pdf');
+        setShowPdfPreview(true);
       } else {
-        doc.text(quote.client_name || "(Devis rapide)", margin, yPos);
-        yPos += 5;
+        toast.error('Erreur lors de la génération de l\'aperçu');
       }
-      yPos += 5;
-
-      // Période
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'bold');
-      doc.text("PÉRIODE DE LOCATION:", margin, yPos);
-      yPos += 6;
-      
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'normal');
-      const startDate = new Date(quote.start_date).toLocaleDateString('fr-FR');
-      const endDate = new Date(quote.end_date).toLocaleDateString('fr-FR');
-      doc.text(`Du ${startDate} au ${endDate}`, margin, yPos);
-      yPos += 10;
-
-      // Tableau matériel (simplifié pour l'aperçu)
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setFillColor(240, 240, 240);
-      doc.rect(margin, yPos - 5, pageWidth - 2 * margin, 8, 'F');
-      doc.text("MATÉRIEL", margin + 2, yPos);
-      doc.text("TOTAL", pageWidth - margin - 20, yPos);
-      yPos += 8;
-
-      doc.setFont('helvetica', 'normal');
-      let subtotal = 0;
-      (quote.items || []).forEach(item => {
-        const eq = equipmentList.find(e => e.id === item.equipment_id);
-        if (eq) {
-          const lineTotal = item.total_price || (eq.daily_price * item.quantity);
-          subtotal += lineTotal;
-          doc.text(eq.name.substring(0, 45), margin + 2, yPos);
-          doc.text(`${lineTotal.toFixed(2)}€`, pageWidth - margin - 20, yPos);
-          yPos += 6;
-        }
-      });
-      
-      doc.line(margin, yPos, pageWidth - margin, yPos);
-      yPos += 10;
-
-      // Totaux
-      const rightAlignX = pageWidth - margin;
-      const labelX = margin + 90;
-      
-      doc.text("Sous-total matériel:", labelX, yPos);
-      doc.text(`${subtotal.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
-      yPos += 6;
-
-      // Livraison
-      const deliveryCost = quote.delivery_cost || 0;
-      const deliveryZone = quote.delivery_zone || '';
-      let deliveryLabel = "Forfait livraison";
-      if (deliveryZone === 'zone1') deliveryLabel = "Livraison Zone 1 (Local)";
-      else if (deliveryZone === 'zone2') deliveryLabel = "Livraison Zone 2";
-      else if (deliveryZone === 'zone3') deliveryLabel = "Livraison Zone 3";
-      
-      doc.text(`${deliveryLabel}:`, labelX, yPos);
-      doc.text(deliveryCost === 0 && deliveryZone === 'zone1' ? "GRATUIT" : `${deliveryCost.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
-      yPos += 6;
-
-      // Installation
-      const installCost = quote.installation_cost || 0;
-      doc.text("Frais d'installation:", labelX, yPos);
-      doc.text(`${installCost.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
-      yPos += 8;
-
-      // TVA et Total
-      const finalTotal = quote.total_amount || 0;
-      const totalHT = finalTotal / 1.20;
-      const tvaAmount = finalTotal - totalHT;
-      
-      doc.line(labelX, yPos - 2, rightAlignX, yPos - 2);
-      
-      doc.text("Total HT:", labelX, yPos);
-      doc.text(`${totalHT.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
-      yPos += 6;
-      
-      doc.text("TVA (20%):", labelX, yPos);
-      doc.text(`${tvaAmount.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
-      yPos += 6;
-      
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text("TOTAL TTC:", labelX, yPos);
-      doc.text(`${finalTotal.toFixed(2)}€`, rightAlignX, yPos, { align: 'right' });
-      yPos += 12;
-
-      // ==============================
-      // LAYOUT 2 COLONNES : Livraison (gauche) + Caution/Signature (droite)
-      // ==============================
-      const colLeftX = margin;
-      const colRightX = margin + 97;
-      const colLeftWidth = 92;
-      const colRightWidth = pageWidth - 2 * margin - colLeftWidth - 5;
-      let yLeft = yPos;
-      let yRight = yPos;
-
-      // --- COLONNE GAUCHE : Livraison & Retour ---
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.text("LIVRAISON & RETOUR", colLeftX, yLeft);
-      yLeft += 2;
-      doc.setDrawColor(234, 88, 12);
-      doc.setLineWidth(0.5);
-      doc.line(colLeftX, yLeft, colLeftX + 50, yLeft);
-      doc.setLineWidth(0.2);
-      doc.setDrawColor(0, 0, 0);
-      yLeft += 5;
-
-      doc.setFontSize(9);
-      const hasDelivInfo = quote.delivery_address || quote.pickup_by_us || quote.pickup_by_client;
-      if (hasDelivInfo) {
-        if (quote.delivery_address) {
-          doc.setFont('helvetica', 'bold');
-          doc.text("Adresse de livraison :", colLeftX, yLeft);
-          yLeft += 4;
-          doc.setFont('helvetica', 'normal');
-          const delivLines = doc.splitTextToSize(quote.delivery_address, colLeftWidth);
-          delivLines.forEach(line => { doc.text(line, colLeftX + 3, yLeft); yLeft += 4; });
-          yLeft += 2;
-        }
-        if (quote.pickup_by_us) {
-          doc.setFont('helvetica', 'bold');
-          doc.text("Retour du matériel :", colLeftX, yLeft);
-          yLeft += 4;
-          doc.setFont('helvetica', 'normal');
-          doc.text("Retrait par nos soins", colLeftX + 3, yLeft);
-          yLeft += 5;
-          const pickupAddr = quote.pickup_address || quote.delivery_address;
-          if (pickupAddr) {
-            doc.setFont('helvetica', 'bold');
-            doc.text("Adresse de retrait :", colLeftX, yLeft);
-            yLeft += 4;
-            doc.setFont('helvetica', 'normal');
-            const pLines = doc.splitTextToSize(pickupAddr, colLeftWidth);
-            pLines.forEach(line => { doc.text(line, colLeftX + 3, yLeft); yLeft += 4; });
-          }
-        } else if (quote.pickup_by_client) {
-          doc.setFont('helvetica', 'bold');
-          doc.text("Retour du matériel :", colLeftX, yLeft);
-          yLeft += 4;
-          doc.setFont('helvetica', 'normal');
-          doc.text("Le client ramène le matériel", colLeftX + 3, yLeft);
-        }
-      } else {
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(120, 120, 120);
-        doc.text("Retrait et retour en agence", colLeftX, yLeft);
-        doc.setTextColor(0, 0, 0);
-      }
-
-      // --- COLONNE DROITE : Acompte + Caution ---
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      
-      let depositAmount = quote.deposit_amount || 0;
-      let guaranteeAmount = quote.guarantee_amount || 0;
-      const isTrustedClient = quote.trusted_client || false;
-      
-      if (depositAmount === 0 && subtotal > 0) {
-        depositAmount = Math.ceil(subtotal * 0.30 / 10) * 10;
-      }
-      if (!isTrustedClient && guaranteeAmount === 0 && subtotal > 0) {
-        const rawGuarantee = subtotal < 150 ? 350 : 350 + subtotal;
-        guaranteeAmount = Math.ceil(rawGuarantee / 50) * 50;
-      }
-      
-      const cautionBoxH = isTrustedClient ? 24 : 20;
-      doc.setFillColor(245, 245, 220);
-      doc.rect(colRightX, yRight - 4, colRightWidth, cautionBoxH, 'F');
-      doc.setDrawColor(200, 180, 100);
-      doc.rect(colRightX, yRight - 4, colRightWidth, cautionBoxH, 'S');
-      
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.text("Acompte :", colRightX + 3, yRight + 1);
-      doc.text(`${depositAmount.toFixed(2)}€`, colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
-      yRight += 7;
-      
-      if (isTrustedClient) {
-        doc.text("Caution :", colRightX + 3, yRight + 1);
-        doc.setTextColor(34, 139, 34);
-        doc.text("0.00€", colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
-        doc.setTextColor(0, 0, 0);
-        yRight += 5;
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(7);
-        doc.setTextColor(34, 139, 34);
-        doc.text("Client de confiance", colRightX + 3, yRight + 1);
-        doc.setTextColor(0, 0, 0);
-      } else {
-        doc.text("Caution :", colRightX + 3, yRight + 1);
-        doc.text(`${guaranteeAmount.toFixed(2)}€`, colRightX + colRightWidth - 3, yRight + 1, { align: 'right' });
-        yRight += 5;
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(7);
-        doc.setTextColor(100, 100, 100);
-        doc.text("(Empreinte CB - sans prélèvement)", colRightX + 3, yRight + 1);
-        doc.setTextColor(0, 0, 0);
-      }
-
-      // Convertir en blob URL pour l'aperçu
-      const pdfBlob = doc.output('blob');
-      const blobUrl = URL.createObjectURL(pdfBlob);
-      setPdfPreviewUrl(blobUrl);
-      setShowPdfPreview(true);
-      
     } catch (error) {
       console.error('Error generating PDF preview:', error);
       toast.error('Erreur lors de la génération de l\'aperçu');
