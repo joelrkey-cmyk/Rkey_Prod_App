@@ -7,7 +7,6 @@ import { useAuth } from '../contexts/AuthContext';
 const NAV_ITEMS = [
   { key: 'home', path: '/', icon: Home, label: 'Accueil', activeClass: 'bg-gray-800 text-white hover:bg-gray-900', inactiveClass: 'text-gray-600 hover:bg-gray-100' },
   { key: 'agenda-prestation', path: '/agenda-prestation', icon: Calendar, label: 'Agenda Presta', activeClass: 'bg-rose-600 text-white hover:bg-rose-700', inactiveClass: 'text-rose-600 hover:bg-rose-50' },
-  { key: 'fiche-visite', path: '/fiche-visite', icon: ClipboardList, label: 'Fiche de Visite', activeClass: 'bg-indigo-600 text-white hover:bg-indigo-700', inactiveClass: 'text-indigo-600 hover:bg-indigo-50' },
   { key: 'contracts2', path: '/contracts2', icon: FileSignature, label: 'Contrats', activeClass: 'bg-amber-600 text-white hover:bg-amber-700', inactiveClass: 'text-amber-600 hover:bg-amber-50' },
   { key: 'venues', path: '/venues', icon: MapPin, label: 'Lieux', activeClass: 'bg-indigo-600 text-white hover:bg-indigo-700', inactiveClass: 'text-indigo-600 hover:bg-indigo-50' },
   { key: 'devis', path: '/devis', icon: Send, label: 'Envoi de Devis', activeClass: 'bg-orange-600 text-white hover:bg-orange-700', inactiveClass: 'text-orange-600 hover:bg-orange-50' },

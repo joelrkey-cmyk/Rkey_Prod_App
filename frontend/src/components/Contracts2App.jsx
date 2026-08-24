@@ -2722,25 +2722,6 @@ function Contracts2App() {
                 <ArrowLeft className="h-4 w-4" /> Retour au Sommaire
               </Button>
               <Button onClick={resetForm} variant="outline" className="px-4 py-3 text-sm">Reset</Button>
-              <Button onClick={() => {
-                // Pré-remplir un mariage test
-                setClientInfo({
-                  name: "Marie Dupont", company: "", address: "12 rue des Lilas, 67000 Strasbourg",
-                  phone: "06 12 34 56 78", phone2: "", email: "marie.dupont@test.fr",
-                  event_date: new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0],
-                  event_location: "Château de Pourtalès, Strasbourg",
-                  event_type: "Mariage", custom_event_type: "", event_note: "Thème champêtre",
-                  setup_date: new Date(Date.now() + 89 * 86400000).toISOString().split('T')[0],
-                  setup_time: "14h00", start_time: "18:00", end_time: "04:00",
-                  unlimited_time: false, guest_count: "150"
-                });
-                setBasePrice(1200);
-                setFraisMandat(500);
-                setCachetArtiste(800);
-                setDiscountAmount(0);
-                setInvoiceNumber("C2-" + new Date().getFullYear() + "-001");
-                toast.success("Données de test Mariage chargées !");
-              }} variant="outline" className="px-4 py-3 text-sm border-amber-400 text-amber-700 hover:bg-amber-50" data-testid="test-fill-btn">Test Mariage</Button>
               <Button 
                 onClick={() => setIsImportModalOpen(true)} 
                 variant="outline" 

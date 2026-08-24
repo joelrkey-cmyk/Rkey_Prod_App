@@ -316,7 +316,6 @@ const HomePage = () => {
           
           {[
             { name: 'Agenda Presta', icon: <CalendarDays className="w-7 h-7" />, color: 'bg-red-500', route: '/agenda-prestation', key: 'agenda-prestation' },
-            { name: 'Fiche Visite', icon: <ClipboardList className="w-7 h-7" />, color: 'bg-indigo-600', route: '/fiche-visite', key: 'fiche-visite' },
             { name: 'Envoi de Devis', icon: <Send className="w-7 h-7" />, color: 'bg-orange-500', route: '/devis', key: 'devis' },
             { name: 'Contrats', icon: <FileSignature className="w-7 h-7" />, color: 'bg-amber-600', route: '/contracts2', key: 'contracts2' },
             { name: 'Lieux', icon: <MapPin className="w-7 h-7" />, color: 'bg-indigo-600', route: '/venues', key: 'venues' },

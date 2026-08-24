@@ -114,7 +114,7 @@ export const ContractPreview = ({
             <div className="text-center space-y-4">
               <div className="flex justify-center gap-4">
                 <Button onClick={onExportPDF} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg" data-testid="export-pdf-btn">
-                  <Download className="h-5 w-5 mr-2" />Exporter les PDFs
+                  <Download className="h-5 w-5 mr-2" />Exporter le contrat
                 </Button>
                 <Button onClick={onSendEmail} className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-lg" data-testid="send-contract-email-btn">
                   <Send className="h-5 w-5 mr-2" />Envoyer par email

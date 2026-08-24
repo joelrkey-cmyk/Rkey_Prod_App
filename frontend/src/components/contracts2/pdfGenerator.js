@@ -266,13 +266,12 @@ export const previewContractPdf = async (contract, generateContractHTMLFn, loadS
   }
 };
 
-// Orchestrateur: Génère les deux PDFs séparés
+// Exportation du Contrat PDF
 export const generateContractAndGuide = async (contract, generateContractHTMLFn, loadSignatureImagesFn, selectedPdfIds, apiService) => {
   try {
-    toast.info("Préparation de la compilation des documents...", { duration: 5000 });
+    toast.info("Génération du contrat PDF...", { duration: 3000 });
 
-    // 1. Générer le Contrat Administratif (Page 1 + Page Last)
-    const cleanName = (contract.client_info.name || 'Client')
+    const cleanName = (contract.client_info?.name || 'Client')
       .replace(/[^a-zA-Z0-9\s]/g, '')
       .replace(/\s+/g, '_')
       .substring(0, 50);
@@ -283,48 +282,10 @@ export const generateContractAndGuide = async (contract, generateContractHTMLFn,
       filename: contractFileName,
       showToast: false 
     });
-    toast.success("PDF 1/2 Généré (Contrat Administratif)");
-
-    // 2. Générer le Guide Organisation (Merging avec pdf-lib via backend)
-    let deroulementBase64 = null;
-    if (selectedPdfIds.includes('__deroulement_soiree')) {
-      deroulementBase64 = await generatePDFFromHTML(contract, generateContractHTMLFn, loadSignatureImagesFn, {
-        mode: 'technical-only',
-        returnBase64: true,
-        showToast: false
-      });
-    }
-
-    const otherPdfIds = selectedPdfIds.filter(id => id !== '__deroulement_soiree');
-    
-    if (deroulementBase64 || otherPdfIds.length > 0) {
-      const response = await apiService.compileContractGuide({
-        deroulement_pdf_base64: deroulementBase64,
-        selected_pdf_ids: otherPdfIds
-      });
-
-      if (response && response.pdf_base64) {
-        // Téléchargement du Guide
-        const binaryString = window.atob(response.pdf_base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: 'application/pdf' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `GUIDE_ORGANISATION_${cleanName}_${getFormattedEventDate(contract)}.pdf`;
-        link.click();
-        toast.success("PDF 2/2 Généré (Guide Organisation)");
-      }
-    } else {
-      toast.warning("Aucun document sélectionné pour le Guide Organisation");
-    }
-
-    toast.success("Compilation terminée !");
+    toast.success("Contrat PDF exporté avec succès !");
   } catch (error) {
-    console.error('Erreur compilation bi-PDF:', error);
-    toast.error("Échec de la compilation complète : " + error.message);
+    console.error('Erreur exportation contrat PDF:', error);
+    toast.error("Échec de l'exportation du contrat : " + error.message);
   }
 };
 
