@@ -1920,16 +1920,24 @@ async function addPriceToTarifImage(imageBuffer, priceAmount, priceType, endTime
   const imgW = metadata.width;
   const imgH = metadata.height;
   
-  let priceNum;
-  try { priceNum = parseFloat(String(priceAmount).replace(/\s/g, '').replace(',', '.')); }
-  catch { priceNum = priceAmount; }
-  const priceText = typeof priceNum === 'number' && !isNaN(priceNum)
-    ? priceNum.toLocaleString('fr-FR', { maximumFractionDigits: 0 }).replace(/\u202F/g, ' ') + '€'
-    : String(priceAmount);
-  const typeText = (priceType && priceType !== 'NONE') ? ` ${priceType}` : '';
+  let priceText = '';
+  if (priceAmount !== null && priceAmount !== undefined && String(priceAmount).trim()) {
+    let priceNum;
+    try { priceNum = parseFloat(String(priceAmount).replace(/\s/g, '').replace(',', '.')); }
+    catch { priceNum = priceAmount; }
+    priceText = typeof priceNum === 'number' && !isNaN(priceNum)
+      ? priceNum.toLocaleString('fr-FR', { maximumFractionDigits: 0 }).replace(/\u202F/g, ' ') + '€'
+      : String(priceAmount);
+  }
+  const typeText = (priceText && priceType && priceType !== 'NONE') ? ` ${priceType}` : '';
   
   // Hourly limit text
   const limitText = unlimitedTime ? "sans limite horaire" : (endTime ? `jusqu'à ${endTime}` : "");
+  
+  // If neither price nor limit text is specified, return original image
+  if (!priceText && !limitText) {
+    return imageBuffer;
+  }
   
   const priceFontSize = Math.floor(imgH * 0.041); // Reduced size
   const typeFontSize = Math.floor(priceFontSize * 0.5);
@@ -1942,12 +1950,12 @@ async function addPriceToTarifImage(imageBuffer, priceAmount, priceType, endTime
 
   // Simple and robust SVG overlay
   const svgOverlay = `<svg width="${imgW}" height="${imgH}">
-    <text x="${Math.floor(imgW / 2) + 25}" y="${yPrice}" text-anchor="middle" 
+    ${priceText ? `<text x="${Math.floor(imgW / 2) + 25}" y="${yPrice}" text-anchor="middle" 
           font-family="Poppins, Arial, sans-serif" font-weight="bold" font-size="${priceFontSize}" 
           fill="white" letter-spacing="-2">
       ${priceText.replace(/&/g,'&amp;')}
       <tspan font-weight="normal" font-size="${typeFontSize}" dx="-12" dy="-14">${typeText.replace(/&/g,'&amp;')}</tspan>
-    </text>
+    </text>` : ''}
     ${limitText ? `<text x="${xLimit}" y="${yLimit}" text-anchor="middle" 
           font-family="Poppins, Arial, sans-serif" font-weight="600" font-size="${limitFontSize}" 
           fill="white">
@@ -9290,7 +9298,7 @@ api.post('/devis2/generate-pdf', authMiddleware, async (req, res) => {
       const labelLower = (page.label || '').toLowerCase();
       const isTarifPage = page.is_tarif || labelLower.includes('tarif') || labelLower.includes('horaire');
       
-      if (isTarifPage && price_amount) {
+      if (isTarifPage && (price_amount || end_time || unlimited_time)) {
         try { imgBytes = await addPriceToTarifImage(imgBytes, price_amount, price_type, end_time, unlimited_time); }
         catch (e) { console.error('Price overlay error:', e.message); }
       }
@@ -9357,7 +9365,7 @@ api.post('/devis2/send-email', authMiddleware, async (req, res) => {
       const labelLower = (page.label || '').toLowerCase();
       const isTarifPage = page.is_tarif || labelLower.includes('tarif') || labelLower.includes('horaire');
 
-      if (isTarifPage && price_amount) {
+      if (isTarifPage && (price_amount || end_time || unlimited_time)) {
         try { imgBytes = await addPriceToTarifImage(imgBytes, price_amount, price_type, end_time, unlimited_time); } catch (e) { console.error('Price overlay:', e.message); }
       }
       const isPng = imgBytes[0] === 0x89 && imgBytes[1] === 0x50;

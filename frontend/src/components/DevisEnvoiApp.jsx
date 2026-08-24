@@ -61,6 +61,7 @@ const DevisEnvoiApp = () => {
   const [availablePages, setAvailablePages] = useState([]);
   const [selectedPages, setSelectedPages] = useState([]);
   const [priceAmount, setPriceAmount] = useState('');
+  const [isFormule, setIsFormule] = useState(false);
   const [priceType, setPriceType] = useState('TTC');
   const [eventDate, setEventDate] = useState('');
   const [eventDateType, setEventDateType] = useState('full');
@@ -421,18 +422,20 @@ const DevisEnvoiApp = () => {
   // ═══════════════════════════════════════════
   const generatePdfPreview = async () => {
     if (selectedPages.length === 0) { toast.error('Veuillez sélectionner au moins une page'); return; }
-    if (!priceAmount) { toast.error('Veuillez saisir un montant ou texte'); return; }
+    if (!isFormule && !priceAmount) { toast.error('Veuillez saisir un tarif (ou cocher "Formule")'); return; }
     if (!eventDate) { toast.error('Veuillez saisir la date ou l\'année de l\'événement'); return; }
+    if (!isFormule && !unlimitedTime && !endTime) { toast.error('Veuillez renseigner une heure de fin (ou cocher "Sans limite horaire" ou "Formule")'); return; }
     try {
       setGeneratingPdf(true);
       if (pdfBlobUrl) { URL.revokeObjectURL(pdfBlobUrl); setPdfBlobUrl(null); }
       const orderedSelectedPages = getOrderedSelectedPages();
       const response = await api.post('/devis2/generate-pdf', { 
         selected_pages: orderedSelectedPages, 
-        price_amount: priceAmount || null, 
+        price_amount: isFormule && !priceAmount ? null : (priceAmount || null), 
         price_type: priceType,
         end_time: endTime,
-        unlimited_time: unlimitedTime
+        unlimited_time: unlimitedTime,
+        is_formule: isFormule
       });
       if (response.data.success) {
         setPdfPreview(response.data.pdf_base64);
@@ -447,8 +450,9 @@ const DevisEnvoiApp = () => {
 
   const sendEmail = async () => {
     if (selectedPages.length === 0) { toast.error('Veuillez sélectionner au moins une page'); return; }
-    if (!priceAmount) { toast.error('Veuillez saisir un montant ou texte'); return; }
+    if (!isFormule && !priceAmount) { toast.error('Veuillez saisir un tarif (ou cocher "Formule")'); return; }
     if (!eventDate) { toast.error('Veuillez saisir la date ou l\'année de l\'événement'); return; }
+    if (!isFormule && !unlimitedTime && !endTime) { toast.error('Veuillez renseigner une heure de fin (ou cocher "Sans limite horaire" ou "Formule")'); return; }
     if (!recipientEmail) { toast.error('Veuillez saisir l\'email du destinataire'); return; }
     if (!emailSubject) { toast.error('Veuillez saisir l\'objet du mail'); return; }
     try {
@@ -465,10 +469,11 @@ const DevisEnvoiApp = () => {
       const finalBody = replaceVariables(emailBody, variableData);
       const response = await api.post('/devis2/send-email', { 
         selected_pages: orderedSelectedPages, 
-        price_amount: priceAmount || null, 
+        price_amount: isFormule && !priceAmount ? null : (priceAmount || null), 
         price_type: priceType, 
         end_time: endTime,
         unlimited_time: unlimitedTime,
+        is_formule: isFormule,
         event_date: formattedEventDate, 
         recipient_email: recipientEmail, 
         email_subject: finalSubject, 
@@ -558,11 +563,32 @@ const DevisEnvoiApp = () => {
               <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2"><Euro className="w-5 h-5 text-orange-500" />Configuration du Prix</CardTitle></CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap sm:flex-nowrap gap-4 items-start">
                     <div className="flex-1">
-                      <Label htmlFor="price">Montant ou texte <span className="text-red-500">*</span></Label>
-                      <Input id="price" type="text" value={priceAmount} onChange={(e) => setPriceAmount(e.target.value)} className={`mt-1 ${!priceAmount ? 'border-red-300' : ''}`} data-testid="price-input" required />
-                      {!priceAmount && <p className="text-xs text-red-500 mt-1">Champ obligatoire</p>}
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="price">
+                          Tarif {!isFormule && <span className="text-red-500">*</span>}
+                        </Label>
+                        <div className="flex items-center space-x-1.5 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                          <Checkbox 
+                            id="formule" 
+                            checked={isFormule} 
+                            onCheckedChange={(val) => setIsFormule(!!val)} 
+                            data-testid="formule-checkbox"
+                          />
+                          <Label htmlFor="formule" className="cursor-pointer text-xs font-semibold text-orange-700">Formule</Label>
+                        </div>
+                      </div>
+                      <Input 
+                        id="price" 
+                        type="text" 
+                        placeholder={isFormule ? "Optionnel (ex: Selon formule choisie)" : "Montant ou texte (ex: 1200)"} 
+                        value={priceAmount} 
+                        onChange={(e) => setPriceAmount(e.target.value)} 
+                        className={`mt-1 ${(!isFormule && !priceAmount) ? 'border-red-300' : ''}`} 
+                        data-testid="price-input" 
+                        required={!isFormule} 
+                      />
                     </div>
                     <div className="w-32">
                       <Label>Mention</Label>
@@ -588,21 +614,23 @@ const DevisEnvoiApp = () => {
                         ) : (
                           <Input id="eventDate" type="number" min="2024" max="2100" placeholder="2026" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={`mt-1 ${!eventDate ? 'border-red-300' : ''}`} data-testid="event-year-input" required />
                         )}
-                        {!eventDate && <p className="text-xs text-red-500 mt-1">Champ obligatoire</p>}
                       </div>
                     </div>
                   </div>
                   <div className="border-t pt-4">
-                    <div className="flex gap-4 items-center">
+                    <div className="flex flex-wrap sm:flex-nowrap gap-4 items-start">
                       <div className="flex-1">
-                        <Label htmlFor="endTime">Heure de fin</Label>
+                        <Label htmlFor="endTime">
+                          Heure de fin {(!isFormule && !unlimitedTime) && <span className="text-red-500">*</span>}
+                        </Label>
                         <Input 
                           id="endTime" 
                           type="time" 
                           value={endTime} 
                           onChange={(e) => setEndTime(e.target.value)} 
-                          className="mt-1"
+                          className={`mt-1 ${(!isFormule && !unlimitedTime && !endTime) ? 'border-red-300' : ''}`}
                           disabled={unlimitedTime}
+                          required={!isFormule && !unlimitedTime}
                         />
                       </div>
                       <div className="flex items-center space-x-2 pt-6">
@@ -612,7 +640,7 @@ const DevisEnvoiApp = () => {
                           onCheckedChange={(val) => setUnlimitedTime(!!val)} 
                           data-testid="unlimited-checkbox"
                         />
-                        <Label htmlFor="unlimited" className="cursor-pointer">Sans limite horaire</Label>
+                        <Label htmlFor="unlimited" className="cursor-pointer text-sm">Sans limite horaire</Label>
                       </div>
                     </div>
                   </div>
