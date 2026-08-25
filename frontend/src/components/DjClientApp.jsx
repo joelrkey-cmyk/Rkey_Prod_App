@@ -5129,6 +5129,10 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       const removeOptionFromContract = async (optToRemove) => {
+        if (role !== 'admin') {
+          toast.error("Seul l'administrateur est autorisé à supprimer une option validée du contrat.");
+          return;
+        }
         if (!window.confirm(`Êtes-vous sûr de vouloir supprimer l'option "${optToRemove.name}" du contrat ?\n\nLe montant total de la prestation et le solde restant dû seront automatiquement recalculés.`)) return;
         setOptionsSubmitting(true);
         try {
@@ -5146,7 +5150,7 @@ function urlBase64ToUint8Array(base64String) {
           const headers = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
           
-          const endpoint = isPublic ? `/api/public/dj-client/${ev.id}` : `/api/contracts2/${ev.id}`;
+          const endpoint = `/api/contracts2/${ev.id}`;
           const res = await fetch(`${BACKEND_URL}${endpoint}`, {
             method: 'PUT',
             headers,
@@ -5224,18 +5228,20 @@ function urlBase64ToUint8Array(base64String) {
                               </button>
                             )}
                           </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeOptionFromContract(opt);
-                            }}
-                            disabled={optionsSubmitting}
-                            title="Supprimer cette option du contrat"
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {role === 'admin' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeOptionFromContract(opt);
+                              }}
+                              disabled={optionsSubmitting}
+                              title="Supprimer cette option du contrat"
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </li>
                       );
                     })}
@@ -5475,18 +5481,20 @@ function urlBase64ToUint8Array(base64String) {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="font-semibold">{Number(opt.price || 0).toFixed(2)} €</span>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeOptionFromContract(opt);
-                              }}
-                              disabled={optionsSubmitting}
-                              title="Supprimer cette option du contrat"
-                              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {role === 'admin' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeOptionFromContract(opt);
+                                }}
+                                disabled={optionsSubmitting}
+                                title="Supprimer cette option du contrat"
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </li>
                       );
