@@ -3163,7 +3163,7 @@ api.get('/partners/public/widget/:category', async (req, res) => {
 });
 
 // ══════════ DJ PROFILES ══════════
-const DJ_PRIVATE = new Set(['nom_complet','email','telephone','siret','adresse_postale','statut_artiste','iban','bic']);
+const DJ_PRIVATE = new Set(['siret','adresse_postale','statut_artiste','google_calendar_id']);
 api.get('/dj-fiches', authMiddleware, async (req, res) => {
   res.json(await autoSignGcsUrlsInObject(cleanList(await db.collection('dj_profiles').find({}, { projection: { _id: 0 } }).toArray())));
 });

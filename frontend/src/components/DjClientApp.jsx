@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -95,6 +95,7 @@ const DjClientApp = ({ isPublic = false }) => {
   const [currentRoute, setCurrentRoute] = useState({ view: 'list', role: 'admin', eventId: null, mode: 'dashboard' });
   const [expandedSections, setExpandedSections] = useState({ past: false }); 
   const [djProfiles, setDjProfiles] = useState([]);
+  const [copiedIban, setCopiedIban] = useState(false);
   const [selectedDjFilter, setSelectedDjFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -3283,17 +3284,24 @@ function urlBase64ToUint8Array(base64String) {
       let phone = currentDjProfile?.telephone || djSnapshot.phone || '';
       let titre = currentDjProfile?.titre || djSnapshot.titre || 'Animateur DJ';
       let photoUrl = currentDjProfile?.photo_url || djSnapshot.photo_url || '';
+      let iban = currentDjProfile?.iban || djSnapshot.iban || '';
+      let bic = currentDjProfile?.bic || djSnapshot.bic || '';
+      let artistFullName = currentDjProfile?.nom_complet || djSnapshot.nom_complet || fullName || '';
 
       if (isJoel) {
         stageName = "Joël R'Key";
-        email = "info@rkey-prod.fr";
-        phone = "07 83 55 36 74";
-        titre = "Gérant de R'KEY PROD";
+        email = currentDjProfile?.email || "info@rkey-prod.fr";
+        phone = currentDjProfile?.telephone || "07 83 55 36 74";
+        titre = currentDjProfile?.titre || "Gérant de R'KEY PROD";
+        if (!iban && currentDjProfile?.iban) iban = currentDjProfile.iban;
+        if (!bic && currentDjProfile?.bic) bic = currentDjProfile.bic;
       } else if (isStephane) {
         stageName = "Stefan Edison";
-        email = "stephane@rkey-prod.fr";
-        phone = "06 31 21 61 14";
-        titre = "Animateur DJ";
+        email = currentDjProfile?.email || "stephane@rkey-prod.fr";
+        phone = currentDjProfile?.telephone || "06 31 21 61 14";
+        titre = currentDjProfile?.titre || "Animateur DJ";
+        if (!iban) iban = currentDjProfile?.iban || "FR76 4061 8804 8700 0401 4272 395";
+        if (!bic && currentDjProfile?.bic) bic = currentDjProfile.bic;
       }
 
       return (
@@ -3372,6 +3380,63 @@ function urlBase64ToUint8Array(base64String) {
                     <a href={`tel:${phone}`} className="font-semibold text-indigo-600 hover:text-indigo-800 hover:underline text-sm leading-tight inline-flex items-center gap-1">
                       <Phone className="w-3.5 h-3.5" /> {phone}
                     </a>
+                  </div>
+                )}
+
+                {iban && (
+                  <div className="sm:col-span-2 bg-indigo-50/70 border border-indigo-200/70 rounded-xl p-3.5 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="p-2 bg-indigo-600 text-white rounded-lg flex-shrink-0 mt-0.5 sm:mt-0 shadow-xs">
+                        <CreditCard className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-[10px] font-bold text-indigo-950/60 uppercase tracking-widest">
+                            IBAN / RIB du DJ
+                          </p>
+                          {artistFullName && (
+                            <span className="text-[11px] font-medium text-slate-600">
+                              ({artistFullName})
+                            </span>
+                          )}
+                          {bic && (
+                            <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                              BIC : {bic}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-mono font-bold text-slate-900 text-sm sm:text-base tracking-wide mt-0.5 break-all select-all">
+                          {iban}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(iban.replace(/\s+/g, ''));
+                        setCopiedIban(true);
+                        toast.success("IBAN copié dans le presse-papier !");
+                        setTimeout(() => setCopiedIban(false), 2500);
+                      }}
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all flex-shrink-0 shadow-xs cursor-pointer ${
+                        copiedIban 
+                          ? 'bg-emerald-600 text-white shadow-emerald-200' 
+                          : 'bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 hover:border-indigo-300'
+                      }`}
+                      title="Copier l'IBAN"
+                    >
+                      {copiedIban ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-white" />
+                          <span>Copié !</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copier le RIB</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 )}
               </div>

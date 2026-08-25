@@ -1265,6 +1265,16 @@ function Contracts2App() {
       catch (error) { toast.error("Erreur lors de l'annulation du contrat"); console.error(error); }
   };
 
+  const reactivateCancelledContract = async (contractId) => {
+      try { 
+        await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'archived', cancellation_observation: '' }); 
+        toast.success("Annulation annulée : contrat rétabli comme signé !"); 
+        await loadContracts(); 
+        await loadArchivedContracts(); 
+      }
+      catch (error) { toast.error("Erreur lors du rétablissement du contrat"); console.error(error); }
+  };
+
   const markArchivedAsUnsigned = async (contractId) => {
       try { 
         const response = await axios.get(`${API}/contracts2/${contractId}`);
@@ -4432,6 +4442,7 @@ function Contracts2App() {
               onMarkArchivedAsUnsigned={markArchivedAsUnsigned}
               onDeleteArchived={deleteArchivedContract}
               onCancelArchived={cancelArchivedContract}
+              onReactivateCancelled={reactivateCancelledContract}
               onManageAttachments={handleManageAttachments}
             />
           </TabsContent>

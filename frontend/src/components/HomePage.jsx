@@ -180,7 +180,7 @@ const HomePage = () => {
               iconColor: 'text-orange-500',
               bgHover: 'group-hover:bg-orange-50',
               count: dashboardStats.devis_envoi_pending, 
-              route: '/devis?tab=suivi' 
+              route: '/devis' 
             },
             { 
               name: 'Contrats', 

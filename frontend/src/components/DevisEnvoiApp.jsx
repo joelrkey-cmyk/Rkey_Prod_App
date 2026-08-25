@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -9,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from 'sonner';
 import { 
   FileText, Send, Eye, Euro, Mail, Plus, Trash2, Edit2, Save, Star, Loader2,
-  CheckCircle, Image as ImageIcon, Settings2, ChevronUp, ChevronDown, XCircle, History
+  CheckCircle, Image as ImageIcon, Settings2, ChevronUp, ChevronDown, XCircle
 } from 'lucide-react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
@@ -22,11 +21,10 @@ import VariableInsertMenu, { VARIABLES } from './VariableInsertMenu';
 import { useEmailSignature } from '../hooks/useEmailSignature';
 
 // Modules extraits
-import { quillModules, quillFormats, categoryLabels, initialManualQuoteForm } from './devis/constants';
-import { SuiviTab } from './devis/SuiviTab';
+import { quillModules, quillFormats, categoryLabels } from './devis/constants';
 import {
   PdfPreviewDialog, TemplateDialog, EditPageDialog, AddPageDialog,
-  PagePreviewDialog, RelanceDialog, NotesDialog, ManualQuoteDialog
+  PagePreviewDialog
 } from './devis/DevisDialogs';
 
 // Configure PDF.js worker
@@ -92,26 +90,6 @@ const DevisEnvoiApp = () => {
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
-  const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState(() => {
-    const tabParam = searchParams.get('tab');
-    return tabParam === 'suivi' ? 'suivi' : 'envoi';
-  });
-  const [sentQuotes, setSentQuotes] = useState([]);
-  const [loadingSentQuotes, setLoadingSentQuotes] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [searchFilter, setSearchFilter] = useState('');
-  const [showRelanceDialog, setShowRelanceDialog] = useState(false);
-  const [selectedQuoteForRelance, setSelectedQuoteForRelance] = useState(null);
-  const [relanceNote, setRelanceNote] = useState('');
-  const [showNotesDialog, setShowNotesDialog] = useState(false);
-  const [selectedQuoteForNotes, setSelectedQuoteForNotes] = useState(null);
-  const [notesText, setNotesText] = useState('');
-  const [showAddManualDialog, setShowAddManualDialog] = useState(false);
-  const [manualQuoteForm, setManualQuoteForm] = useState(initialManualQuoteForm);
-  const [manualQuoteFile, setManualQuoteFile] = useState(null);
-  const [savingManualQuote, setSavingManualQuote] = useState(false);
-  const manualFileInputRef = useRef(null);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const quillRef = useRef(null);
   const subjectInputRef = useRef(null);
@@ -216,7 +194,7 @@ const DevisEnvoiApp = () => {
   // ═══════════════════════════════════════════
   // DATA LOADING
   // ═══════════════════════════════════════════
-  useEffect(() => { fetchPages(); fetchTemplates(); fetchSentQuotes(); }, []);
+  useEffect(() => { fetchPages(); fetchTemplates(); }, []);
 
   // Initialize email body with default template and signature when loaded
   useEffect(() => {
@@ -243,74 +221,6 @@ const DevisEnvoiApp = () => {
     try { const response = await api.get('/devis2/templates'); setTemplates(response.data.templates || []); }
     catch (error) { console.error('Error fetching templates:', error); }
   };
-
-  const fetchSentQuotes = async () => {
-    setLoadingSentQuotes(true);
-    try { const response = await api.get('/devis2/sent'); setSentQuotes(response.data.quotes || []); }
-    catch (error) { console.error('Error fetching sent quotes:', error); }
-    finally { setLoadingSentQuotes(false); }
-  };
-
-  // ═══════════════════════════════════════════
-  // SUIVI OPERATIONS
-  // ═══════════════════════════════════════════
-  const updateQuoteStatus = async (quoteId, newStatus) => {
-    try { await api.put(`/devis2/sent/${quoteId}`, { status: newStatus }); setSentQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status: newStatus } : q)); toast.success('Statut mis à jour'); }
-    catch (error) { console.error('Error updating status:', error); toast.error('Erreur lors de la mise à jour'); }
-  };
-
-  const addRelance = async () => {
-    if (!selectedQuoteForRelance || !relanceNote.trim()) return;
-    try {
-      const response = await api.post(`/devis2/sent/${selectedQuoteForRelance.id}/relances`, { note: relanceNote });
-      setSentQuotes(prev => prev.map(q => q.id === selectedQuoteForRelance.id ? { ...q, relances: [...(q.relances || []), response.data.relance], status: 'a_relancer' } : q));
-      setShowRelanceDialog(false); setRelanceNote(''); setSelectedQuoteForRelance(null); toast.success('Relance ajoutée');
-    } catch (error) { console.error('Error adding relance:', error); toast.error('Erreur lors de l\'ajout de la relance'); }
-  };
-
-  const saveNotes = async () => {
-    if (!selectedQuoteForNotes) return;
-    try { await api.put(`/devis2/sent/${selectedQuoteForNotes.id}`, { notes: notesText }); setSentQuotes(prev => prev.map(q => q.id === selectedQuoteForNotes.id ? { ...q, notes: notesText } : q)); setShowNotesDialog(false); setNotesText(''); setSelectedQuoteForNotes(null); toast.success('Notes enregistrées'); }
-    catch (error) { console.error('Error saving notes:', error); toast.error('Erreur lors de l\'enregistrement'); }
-  };
-
-  const deleteQuote = async (quoteId) => {
-    if (!window.confirm('Supprimer ce devis du suivi ?')) return;
-    try { await api.delete(`/devis2/sent/${quoteId}`); setSentQuotes(prev => prev.filter(q => q.id !== quoteId)); toast.success('Devis supprimé du suivi'); }
-    catch (error) { console.error('Error deleting quote:', error); toast.error('Erreur lors de la suppression'); }
-  };
-
-  const addManualQuote = async () => {
-    if (!manualQuoteForm.recipient_email.trim()) { toast.error('L\'email du destinataire est requis'); return; }
-    setSavingManualQuote(true);
-    try {
-      let fileData = null, fileName = null;
-      if (manualQuoteFile) {
-        const reader = new FileReader();
-        fileData = await new Promise((resolve, reject) => { reader.onload = () => resolve(reader.result.split(',')[1]); reader.onerror = reject; reader.readAsDataURL(manualQuoteFile); });
-        fileName = manualQuoteFile.name;
-      }
-      const response = await api.post('/devis2/sent/manual', { ...manualQuoteForm, file_data: fileData, file_name: fileName });
-      setSentQuotes(prev => [response.data.quote, ...prev]); setShowAddManualDialog(false); setManualQuoteForm(initialManualQuoteForm); setManualQuoteFile(null); toast.success('Devis ajouté au suivi');
-    } catch (error) { console.error('Error adding manual quote:', error); toast.error('Erreur lors de l\'ajout'); }
-    finally { setSavingManualQuote(false); }
-  };
-
-  const downloadQuoteFile = async (quoteId, fileName) => {
-    try {
-      const response = await api.get(`/devis2/sent/${quoteId}/file`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a'); link.href = url; link.setAttribute('download', fileName || 'devis.pdf'); document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url);
-    } catch (error) { console.error('Error downloading file:', error); toast.error('Erreur lors du téléchargement'); }
-  };
-
-  const filteredSentQuotes = useMemo(() => {
-    return sentQuotes.filter(q => {
-      const matchesStatus = statusFilter === 'all' || q.status === statusFilter;
-      const matchesSearch = !searchFilter || q.recipient_email?.toLowerCase().includes(searchFilter.toLowerCase()) || q.recipient_name?.toLowerCase().includes(searchFilter.toLowerCase());
-      return matchesStatus && matchesSearch;
-    });
-  }, [sentQuotes, statusFilter, searchFilter]);
 
   // ═══════════════════════════════════════════
   // PAGE MANAGEMENT
@@ -531,30 +441,7 @@ const DevisEnvoiApp = () => {
           <p className="text-gray-600 mt-2">Générez et envoyez des devis PDF personnalisés à vos clients</p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6">
-          <Button variant={activeTab === 'envoi' ? 'default' : 'outline'} onClick={() => setActiveTab('envoi')} className={activeTab === 'envoi' ? 'bg-orange-500 hover:bg-orange-600' : ''}>
-            <Send className="w-4 h-4 mr-2" />Envoi
-          </Button>
-          <Button variant={activeTab === 'suivi' ? 'default' : 'outline'} onClick={() => { setActiveTab('suivi'); fetchSentQuotes(); }} className={activeTab === 'suivi' ? 'bg-orange-500 hover:bg-orange-600' : ''}>
-            <History className="w-4 h-4 mr-2" />Suivi ({sentQuotes.length})
-          </Button>
-        </div>
-
-        {/* Suivi Tab (composant extrait) */}
-        {activeTab === 'suivi' && (
-          <SuiviTab
-            filteredSentQuotes={filteredSentQuotes} sentQuotes={sentQuotes} loadingSentQuotes={loadingSentQuotes}
-            statusFilter={statusFilter} setStatusFilter={setStatusFilter} searchFilter={searchFilter} setSearchFilter={setSearchFilter}
-            updateQuoteStatus={updateQuoteStatus} setSelectedQuoteForRelance={setSelectedQuoteForRelance}
-            setShowRelanceDialog={setShowRelanceDialog} setSelectedQuoteForNotes={setSelectedQuoteForNotes}
-            setNotesText={setNotesText} setShowNotesDialog={setShowNotesDialog} deleteQuote={deleteQuote}
-            downloadQuoteFile={downloadQuoteFile} setShowAddManualDialog={setShowAddManualDialog}
-          />
-        )}
-
-        {/* Envoi Tab */}
-        {activeTab === 'envoi' && (
+        {/* Main Content */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column - Price & Page Selection */}
           <div className="space-y-6">
@@ -798,7 +685,6 @@ const DevisEnvoiApp = () => {
             <p className="text-xs text-gray-500 text-center">L'email sera envoyé depuis info@rkey-prod.fr avec une copie automatique</p>
           </div>
         </div>
-        )}
 
         {/* Dialogs (composants extraits) */}
         <PdfPreviewDialog showPreview={showPreview} setShowPreview={setShowPreview} pdfPreview={pdfPreview} pdfBlobUrl={pdfBlobUrl} setPdfBlobUrl={setPdfBlobUrl} numPages={numPages} setNumPages={setNumPages} currentPage={currentPage} setCurrentPage={setCurrentPage} eventDate={eventDate} eventDateType={eventDateType} />
@@ -806,9 +692,6 @@ const DevisEnvoiApp = () => {
         <EditPageDialog editingPage={editingPage} setEditingPage={setEditingPage} pageForm={pageForm} setPageForm={setPageForm} savePageEdit={savePageEdit} />
         <AddPageDialog showAddPageDialog={showAddPageDialog} setShowAddPageDialog={setShowAddPageDialog} pageForm={pageForm} setPageForm={setPageForm} newPageFile={newPageFile} setNewPageFile={setNewPageFile} fileInputRef={fileInputRef} handleFileSelect={handleFileSelect} uploadNewPage={uploadNewPage} uploadingPage={uploadingPage} />
         <PagePreviewDialog showPagePreview={showPagePreview} setShowPagePreview={setShowPagePreview} pagePreviewData={pagePreviewData} />
-        <RelanceDialog showRelanceDialog={showRelanceDialog} setShowRelanceDialog={setShowRelanceDialog} selectedQuoteForRelance={selectedQuoteForRelance} setSelectedQuoteForRelance={setSelectedQuoteForRelance} relanceNote={relanceNote} setRelanceNote={setRelanceNote} addRelance={addRelance} />
-        <NotesDialog showNotesDialog={showNotesDialog} setShowNotesDialog={setShowNotesDialog} selectedQuoteForNotes={selectedQuoteForNotes} setSelectedQuoteForNotes={setSelectedQuoteForNotes} notesText={notesText} setNotesText={setNotesText} saveNotes={saveNotes} />
-        <ManualQuoteDialog showAddManualDialog={showAddManualDialog} setShowAddManualDialog={setShowAddManualDialog} manualQuoteForm={manualQuoteForm} setManualQuoteForm={setManualQuoteForm} manualQuoteFile={manualQuoteFile} setManualQuoteFile={setManualQuoteFile} manualFileInputRef={manualFileInputRef} addManualQuote={addManualQuote} savingManualQuote={savingManualQuote} initialFormValues={initialManualQuoteForm} />
       </div>
     </div>
   );

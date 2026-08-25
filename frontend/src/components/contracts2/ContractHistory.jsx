@@ -6,7 +6,7 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { 
   FileText, Calendar, MapPin, Music, Printer, Edit, Send, 
-  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye, Paperclip, Copy, MoreVertical, XCircle
+  FileCheck, Trash2, Plus, Settings, Archive, RotateCcw, Search, Filter, Eye, Paperclip, Copy, MoreVertical, XCircle, CheckCircle
 } from 'lucide-react';
 
 export const ContractHistory = ({
@@ -31,6 +31,7 @@ export const ContractHistory = ({
   onMarkArchivedAsUnsigned,
   onDeleteArchived,
   onCancelArchived,
+  onReactivateCancelled,
   onManageAttachments
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -357,58 +358,82 @@ export const ContractHistory = ({
                         )}
 
                         {showArchive && (
-                          <div className="relative">
-                            <Button
-                              onClick={() => setOpenDropdownId(openDropdownId === contract.id ? null : contract.id)}
-                              variant="outline"
-                              size="sm"
-                              className="text-gray-600 border-gray-200 hover:bg-gray-100 px-2"
-                            >
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                            {openDropdownId === contract.id && (
-                              <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 shadow-xl rounded-md z-50 flex flex-col py-1 animate-in fade-in zoom-in-95 duration-100">
-                                <button
-                                  className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center"
-                                  onClick={() => { setOpenDropdownId(null); onDuplicateContract?.(contract); }}
-                                >
-                                  <Copy className="h-4 w-4 mr-2" />Dupliquer
-                                </button>
-                                <button
-                                  className="w-full text-left px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50 flex items-center"
-                                  onClick={() => { setOpenDropdownId(null); onManageAttachments(contract); }}
-                                >
-                                  <Paperclip className="h-4 w-4 mr-2" />Pièces Jointes ({contract.event_documents?.length || 0})
-                                </button>
-                                <button
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center"
-                                  onClick={() => { setOpenDropdownId(null); onPreviewContract(contract); }}
-                                >
-                                  <Eye className="h-4 w-4 mr-2" />Aperçu
-                                </button>
-                                <button
-                                  className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center"
-                                  onClick={() => { setOpenDropdownId(null); handleRunAction(contract.id, onMarkArchivedAsUnsigned); }}
-                                >
-                                  <RotateCcw className="h-4 w-4 mr-2" />Non signé
-                                </button>
-                                {contract.status !== 'cancelled' && (
-                                  <button
-                                    className="w-full text-left px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 flex items-center"
-                                    onClick={() => { setOpenDropdownId(null); setContractToCancel(contract.id); }}
-                                  >
-                                    <XCircle className="h-4 w-4 mr-2" />Annuler
-                                  </button>
-                                )}
-                                <div className="h-px bg-gray-100 my-1"></div>
-                                <button
-                                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center"
-                                  onClick={() => { setOpenDropdownId(null); handleRunAction(contract.id, onDeleteArchived); }}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />Supprimer
-                                </button>
-                              </div>
+                          <div className="flex items-center space-x-2">
+                            {contract.status === 'cancelled' && (
+                              <Button
+                                onClick={() => handleRunAction(contract.id, onReactivateCancelled)}
+                                disabled={actionLoading[contract.id]}
+                                variant="outline"
+                                size="sm"
+                                className="text-emerald-700 border-emerald-300 hover:bg-emerald-50 bg-emerald-50/50 font-medium"
+                                title="Annuler l'annulation et rétablir le contrat comme signé dans les archives"
+                                data-testid={`reactivate-btn-${contract.id}`}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1.5 text-emerald-600" />
+                                Rétablir comme signé
+                              </Button>
                             )}
+                            <div className="relative">
+                              <Button
+                                onClick={() => setOpenDropdownId(openDropdownId === contract.id ? null : contract.id)}
+                                variant="outline"
+                                size="sm"
+                                className="text-gray-600 border-gray-200 hover:bg-gray-100 px-2"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                              {openDropdownId === contract.id && (
+                                <div className="absolute right-0 mt-1 w-52 bg-white border border-gray-200 shadow-xl rounded-md z-50 flex flex-col py-1 animate-in fade-in zoom-in-95 duration-100">
+                                  {contract.status === 'cancelled' && (
+                                    <button
+                                      className="w-full text-left px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50 flex items-center font-medium"
+                                      onClick={() => { setOpenDropdownId(null); handleRunAction(contract.id, onReactivateCancelled); }}
+                                    >
+                                      <CheckCircle className="h-4 w-4 mr-2 text-emerald-600" />Rétablir comme signé
+                                    </button>
+                                  )}
+                                  <button
+                                    className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+                                    onClick={() => { setOpenDropdownId(null); onDuplicateContract?.(contract); }}
+                                  >
+                                    <Copy className="h-4 w-4 mr-2" />Dupliquer
+                                  </button>
+                                  <button
+                                    className="w-full text-left px-4 py-2 text-sm text-emerald-700 hover:bg-emerald-50 flex items-center"
+                                    onClick={() => { setOpenDropdownId(null); onManageAttachments(contract); }}
+                                  >
+                                    <Paperclip className="h-4 w-4 mr-2" />Pièces Jointes ({contract.event_documents?.length || 0})
+                                  </button>
+                                  <button
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center"
+                                    onClick={() => { setOpenDropdownId(null); onPreviewContract(contract); }}
+                                  >
+                                    <Eye className="h-4 w-4 mr-2" />Aperçu
+                                  </button>
+                                  <button
+                                    className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+                                    onClick={() => { setOpenDropdownId(null); handleRunAction(contract.id, onMarkArchivedAsUnsigned); }}
+                                  >
+                                    <RotateCcw className="h-4 w-4 mr-2" />Non signé
+                                  </button>
+                                  {contract.status !== 'cancelled' && (
+                                    <button
+                                      className="w-full text-left px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 flex items-center"
+                                      onClick={() => { setOpenDropdownId(null); setContractToCancel(contract.id); }}
+                                    >
+                                      <XCircle className="h-4 w-4 mr-2" />Annuler
+                                    </button>
+                                  )}
+                                  <div className="h-px bg-gray-100 my-1"></div>
+                                  <button
+                                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center"
+                                    onClick={() => { setOpenDropdownId(null); handleRunAction(contract.id, onDeleteArchived); }}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />Supprimer
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
 
