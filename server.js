@@ -3943,7 +3943,15 @@ api.put('/public/dj-client/:id', async (req, res) => {
     return res.status(403).json({ error: "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)." });
   }
   await db.collection('contracts2').updateOne({ id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
+  const updatedContract = await db.collection('contracts2').findOne({ id }, { projection: { _id: 0 } });
   await syncVenueFromContract(id, req.body);
+  if (updatedContract) {
+    try {
+      await syncContractReservations(updatedContract);
+    } catch (resErr) {
+      console.error("[dj-client syncContractReservations Error]:", resErr);
+    }
+  }
   
   // Clear the public DJ-Client cache so the client's page updates immediately
   clearDjClientResponseCache();

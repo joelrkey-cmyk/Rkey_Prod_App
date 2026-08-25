@@ -1010,19 +1010,46 @@ export const ConfigurationPage = ({
                               )}
                             </div>
 
-                            <div className="space-y-1">
-                              <Label className="text-xs text-slate-500">Afficher pour (vide = tous) :</Label>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-xs font-semibold text-slate-700">Afficher pour les types d'événements :</Label>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...selectedOptions];
+                                      updated[index].event_categories = [...EVENT_CATEGORIES];
+                                      setSelectedOptions(updated);
+                                    }}
+                                    className="text-[11px] text-indigo-600 hover:underline cursor-pointer"
+                                  >
+                                    Tout cocher
+                                  </button>
+                                  <span className="text-slate-300">|</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...selectedOptions];
+                                      updated[index].event_categories = [];
+                                      setSelectedOptions(updated);
+                                    }}
+                                    className="text-[11px] text-slate-500 hover:underline cursor-pointer"
+                                  >
+                                    Tout décocher
+                                  </button>
+                                </div>
+                              </div>
                               <div className="flex flex-wrap gap-2">
                                 {EVENT_CATEGORIES.map(cat => (
-                                  <label key={cat} className="flex items-center space-x-1 border px-2 py-0.5 rounded bg-slate-50 cursor-pointer">
-                                    <input type="checkbox" className="w-3 h-3 text-blue-600" checked={(option.event_categories || []).includes(cat)} onChange={(e) => {
+                                  <label key={cat} className="flex items-center space-x-1.5 border px-2 py-1 rounded bg-slate-50 hover:bg-slate-100 cursor-pointer text-xs transition-colors">
+                                    <input type="checkbox" className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300" checked={(option.event_categories || []).includes(cat)} onChange={(e) => {
                                       const updated = [...selectedOptions];
                                       let cats = [...(updated[index].event_categories || [])];
                                       if (e.target.checked) cats.push(cat); else cats = cats.filter(c => c !== cat);
                                       updated[index].event_categories = cats;
                                       setSelectedOptions(updated);
                                     }} />
-                                    <span className="text-xs">{cat}</span>
+                                    <span className="text-xs font-medium text-slate-700">{cat}</span>
                                   </label>
                                 ))}
                               </div>
@@ -1251,16 +1278,35 @@ export const ConfigurationPage = ({
                     </div>
 
                     <div className="space-y-2">
-                      <Label className="text-xs font-medium text-slate-700">Afficher pour l'événement : (Laisser vide pour tous)</Label>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-semibold text-slate-700">Afficher pour les types d'événements :</Label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setNewOption({ ...newOption, event_categories: [...EVENT_CATEGORIES] })}
+                            className="text-[11px] text-indigo-600 hover:underline cursor-pointer"
+                          >
+                            Tout cocher
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => setNewOption({ ...newOption, event_categories: [] })}
+                            className="text-[11px] text-slate-500 hover:underline cursor-pointer"
+                          >
+                            Tout décocher
+                          </button>
+                        </div>
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {EVENT_CATEGORIES.map(cat => (
-                          <label key={cat} className="flex items-center space-x-1 border px-2 py-1 rounded bg-white hover:bg-slate-50 cursor-pointer text-xs">
-                            <input type="checkbox" className="w-3 h-3 text-indigo-600 rounded" checked={(newOption.event_categories || []).includes(cat)} onChange={(e) => {
+                          <label key={cat} className="flex items-center space-x-1.5 border px-2 py-1 rounded bg-white hover:bg-slate-50 cursor-pointer text-xs transition-colors">
+                            <input type="checkbox" className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300" checked={(newOption.event_categories || []).includes(cat)} onChange={(e) => {
                               let cats = [...(newOption.event_categories || [])];
                               if (e.target.checked) cats.push(cat); else cats = cats.filter(c => c !== cat);
                               setNewOption({...newOption, event_categories: cats});
                             }} />
-                            <span className="text-xs">{cat}</span>
+                            <span className="text-xs font-medium text-slate-700">{cat}</span>
                           </label>
                         ))}
                       </div>

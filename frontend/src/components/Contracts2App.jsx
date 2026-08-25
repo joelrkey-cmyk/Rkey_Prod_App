@@ -3667,7 +3667,21 @@ function Contracts2App() {
 
                   {/* Options Matériel (communes aux deux modes) */}
                   <div className="grid grid-cols-1 gap-3">
-                    {selectedOptions.filter(opt => !opt.event_categories || opt.event_categories.length === 0 || opt.event_categories.includes(clientInfo.event_type)).map((option) => (
+                    {selectedOptions.filter(opt => {
+                      let rawCats = opt.event_categories || opt.categories || opt.event_types;
+                      if (typeof rawCats === 'string') rawCats = rawCats.split(',').map(s => s.trim()).filter(Boolean);
+                      if (!rawCats || !Array.isArray(rawCats) || rawCats.length === 0) return false;
+                      
+                      const normalizeStr = (s) => String(s || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+                      const allowed = rawCats.map(normalizeStr).filter(Boolean);
+                      if (allowed.length === 0) return false;
+                      
+                      const currentType = clientInfo.event_type === 'custom' ? clientInfo.custom_event_type : clientInfo.event_type;
+                      const normCurrent = normalizeStr(currentType);
+                      if (!normCurrent) return false;
+                      
+                      return allowed.some(cat => normCurrent === cat || normCurrent.includes(cat) || cat.includes(normCurrent));
+                    }).map((option) => (
                       <div key={option.id} className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${option.selected ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"}`} onClick={() => handleOptionToggle(option.id)}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">

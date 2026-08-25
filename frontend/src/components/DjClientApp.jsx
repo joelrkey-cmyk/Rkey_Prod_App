@@ -4884,6 +4884,12 @@ function urlBase64ToUint8Array(base64String) {
         depositAmount = 0;
       } else if (isMandatMode) {
         depositAmount = fraisMandat;
+      } else if (Number(c.custom_deposit_amount) > 0) {
+        depositAmount = Number(c.custom_deposit_amount);
+      } else if (Number(c.initial_deposit_amount) > 0) {
+        depositAmount = Number(c.initial_deposit_amount);
+      } else if (Number(c.deposit_amount) > 0) {
+        depositAmount = Number(c.deposit_amount);
       } else {
         const tempContract = {
           ...c,
@@ -4916,12 +4922,62 @@ function urlBase64ToUint8Array(base64String) {
       const remainingBalance = Math.max(0, totalPrestation - amountPaid);
 
       const requestedOptions = ev.requestedOptions || [];
-      const eventType = ev.contractInfo?.event_type;
+      
+      const isOptionApplicableToCurrentEvent = (opt) => {
+        if (!opt) return false;
+        let rawCats = opt.event_categories || opt.categories || opt.event_types || opt.eventCategories;
+        if (typeof rawCats === 'string') {
+          rawCats = rawCats.split(',').map(s => s.trim()).filter(Boolean);
+        }
+        if (!rawCats || !Array.isArray(rawCats) || rawCats.length === 0) {
+          return false; // Non lié à cet événement si aucune catégorie n'est cochée
+        }
+        
+        const normalizeStr = (str) => {
+          if (!str) return '';
+          return String(str).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        };
+        
+        const allowedCats = rawCats.map(normalizeStr).filter(Boolean);
+        if (allowedCats.length === 0) return false;
+        
+        const possibleEventTypes = [
+          ev?.contractInfo?.event_type,
+          ev?.contractInfo?.custom_event_type,
+          ev?.eventType,
+          ev?.rawContractData?.client_info?.event_type,
+          ev?.rawContractData?.client_info?.custom_event_type,
+          ev?.rawClientInfo?.event_type,
+          ev?.rawClientInfo?.custom_event_type,
+          ev?.rawContractData?.eventType,
+          ev?.rawContractData?.event_type
+        ];
+        
+        if (ev?.name && typeof ev.name === 'string') {
+          const firstSegment = ev.name.split('-')[0].trim();
+          if (firstSegment) possibleEventTypes.push(firstSegment);
+        }
+        
+        const normalizedEventTypes = possibleEventTypes
+          .filter(Boolean)
+          .map(normalizeStr)
+          .filter(t => t && t !== 'evenement' && t !== 'custom');
+          
+        if (normalizedEventTypes.length === 0) {
+          return false;
+        }
+        
+        return allowedCats.some(cat => {
+          return normalizedEventTypes.some(type => {
+            return type === cat || type.includes(cat) || cat.includes(type);
+          });
+        });
+      };
       
       const nonSelectedOptions = availableOptions.filter(opt => 
         !contractOptions.some(co => co.id === opt.id || co.name === opt.name) &&
         !requestedOptions.some(ro => ro.id === opt.id || ro.name === opt.name) &&
-        (!opt.event_categories || opt.event_categories.length === 0 || opt.event_categories.includes(eventType))
+        isOptionApplicableToCurrentEvent(opt)
       );
       
       const isEntrepriseFreelance = isEntreprise && !isDirigeant;
@@ -5072,11 +5128,16 @@ function urlBase64ToUint8Array(base64String) {
         }
       };
 
-      const removePostSignatureOption = async (optToRemove) => {
-        if (!window.confirm(`Êtes-vous sûr de vouloir supprimer l'option "${optToRemove.name}" ?`)) return;
+      const removeOptionFromContract = async (optToRemove) => {
+        if (!window.confirm(`Êtes-vous sûr de vouloir supprimer l'option "${optToRemove.name}" du contrat ?\n\nLe montant total de la prestation et le solde restant dû seront automatiquement recalculés.`)) return;
         setOptionsSubmitting(true);
         try {
-          const updatedContractOptions = contractOptions.filter(opt => opt.name !== optToRemove.name);
+          const updatedContractOptions = contractOptions.filter(opt => {
+            if (opt.id && optToRemove.id) {
+              return opt.id !== optToRemove.id;
+            }
+            return opt.name !== optToRemove.name;
+          });
           const payload = { 
             selected_options: updatedContractOptions
           };
@@ -5094,16 +5155,21 @@ function urlBase64ToUint8Array(base64String) {
           
           if (res.ok) {
             await fetchContractsAsEvents();
-            toast.success("Option supprimée avec succès !");
+            toast.success(`Option "${optToRemove.name}" supprimée du contrat et solde recalculé !`);
           } else {
-            toast.error("Erreur lors de la suppression de l'option");
+            const errData = await res.json().catch(() => ({}));
+            toast.error(errData.error || "Erreur lors de la suppression de l'option");
           }
         } catch (e) {
-          console.error("Error removing post signature option", e);
+          console.error("Error removing contract option", e);
           toast.error("Erreur de connexion");
         } finally {
           setOptionsSubmitting(false);
         }
+      };
+
+      const removePostSignatureOption = async (optToRemove) => {
+        return removeOptionFromContract(optToRemove);
       };
 
       // Vue spéciale DJ en mode entreprise : uniquement le cachet DJ (violet) et les options sans prix
@@ -5158,6 +5224,18 @@ function urlBase64ToUint8Array(base64String) {
                               </button>
                             )}
                           </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeOptionFromContract(opt);
+                            }}
+                            disabled={optionsSubmitting}
+                            title="Supprimer cette option du contrat"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </li>
                       );
                     })}
@@ -5395,7 +5473,21 @@ function urlBase64ToUint8Array(base64String) {
                               </button>
                             )}
                           </div>
-                          <span className="font-semibold">{opt.price} €</span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold">{Number(opt.price || 0).toFixed(2)} €</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeOptionFromContract(opt);
+                              }}
+                              disabled={optionsSubmitting}
+                              title="Supprimer cette option du contrat"
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </li>
                       );
                     })}
@@ -5480,7 +5572,7 @@ function urlBase64ToUint8Array(base64String) {
               )}
               {role === 'client' && (
                 <p className="text-sm text-indigo-700 bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-200 mb-3 flex items-center gap-1.5">
-                  Cliquez sur l'icône <Info className="w-3.5 h-3.5 inline text-indigo-600 flex-shrink-0" /> pour voir les détails et l'infographie.
+                  Cliquez sur l'icône <Info className="w-3.5 h-3.5 inline text-indigo-600 flex-shrink-0" /> pour voir les détails.
                 </p>
               )}
               {nonSelectedOptions.length > 0 ? (
@@ -5491,49 +5583,47 @@ function urlBase64ToUint8Array(base64String) {
                       const visual = opt.image_url 
                         ? { image_url: opt.image_url, description: opt.description }
                         : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
                       return (
                         <li 
                           key={idx} 
                           onClick={() => role === 'client' && toggleBasket(opt)}
-                          className={`flex flex-col text-sm bg-white px-3 py-2.5 rounded-lg border shadow-sm transition-colors ${role === 'client' ? 'cursor-pointer hover:border-indigo-300' : ''} ${isSelected ? 'border-indigo-500 bg-indigo-50/70' : 'border-gray-200 hover:border-gray-300'}`}
+                          className={`flex items-center justify-between text-sm bg-white px-3 py-2.5 rounded-lg border shadow-xs transition-colors ${role === 'client' ? 'cursor-pointer hover:border-indigo-300' : ''} ${isSelected ? 'border-indigo-500 bg-indigo-50/70' : 'border-gray-200 hover:border-gray-300'}`}
                         >
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {role === 'client' && (
-                                <input 
-                                  type="checkbox" 
-                                  readOnly 
-                                  checked={isSelected} 
-                                  className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 shrink-0 pointer-events-none"
-                                />
-                              )}
-                              <span className={`font-medium truncate ${isSelected ? 'text-indigo-900' : 'text-gray-800'}`}>{opt.name}</span>
-                              
-                              {/* Bouton Info pour voir l'infographie de l'option */}
-                              {visual.image_url && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setOptionInfographicModal({
-                                      open: true,
-                                      title: opt.name,
-                                      price: opt.price,
-                                      imageUrl: visual.image_url,
-                                      description: visual.description || opt.description || ""
-                                    });
-                                  }}
-                                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white transition-all shadow-xs border border-indigo-200 hover:border-indigo-600 focus:outline-none shrink-0"
-                                  title="Cliquez pour voir l'infographie et les détails"
-                                  aria-label={`Voir l'infographie de ${opt.name}`}
-                                >
-                                  <Info className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                            <span className="font-semibold whitespace-nowrap ml-2 text-indigo-600">{opt.price} €</span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {role === 'client' && (
+                              <input 
+                                type="checkbox" 
+                                readOnly 
+                                checked={isSelected} 
+                                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 shrink-0 pointer-events-none"
+                              />
+                            )}
+                            <span className={`font-medium truncate ${isSelected ? 'text-indigo-900' : 'text-gray-800'}`}>{opt.name}</span>
+                            
+                            {/* Bouton Info pour voir les détails et l'infographie de l'option */}
+                            {hasDetails && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOptionInfographicModal({
+                                    open: true,
+                                    title: opt.name,
+                                    price: opt.price,
+                                    imageUrl: visual.image_url || "",
+                                    description: visual.description || opt.description || ""
+                                  });
+                                }}
+                                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white transition-all shadow-xs border border-indigo-200 hover:border-indigo-600 focus:outline-none shrink-0 cursor-pointer"
+                                title="Cliquez pour voir les détails"
+                                aria-label={`Voir les détails de ${opt.name}`}
+                              >
+                                <Info className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
-                          {opt.description && <span className={`mt-1 text-xs ${role === 'client' ? 'pl-6' : ''} ${isSelected ? 'text-indigo-700' : 'text-gray-500'}`}>{opt.description}</span>}
+                          <span className="font-semibold whitespace-nowrap ml-2 text-indigo-600">{opt.price} €</span>
                         </li>
                       );
                     })}
