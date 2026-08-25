@@ -2157,9 +2157,12 @@ function urlBase64ToUint8Array(base64String) {
             <h4 className="font-semibold text-green-700 mb-3 text-base">À passer absolument</h4>
             
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-0.5">
                 Lien de la playlist (Recommandé - Spotify, Deezer, Apple Music...)
               </label>
+              <p className="text-xs text-amber-700 font-medium mb-1.5">
+                Attention : tous les titres doivent se trouver dans cette playlist (tous les titres sans exception).
+              </p>
               {role === 'client' || role === 'admin' ? (
                 <input 
                   type="url"
@@ -2189,7 +2192,7 @@ function urlBase64ToUint8Array(base64String) {
 
             <div>
                <label className="block text-sm font-medium text-gray-700 mb-1">
-                 Titres et chansons (saisie manuelle)
+                 Titres et chansons (saisie manuelle si vous n'avez pas de plateforme de streaming)
                </label>
                <textarea
                  value={manualMustPlay}
@@ -2231,7 +2234,7 @@ function urlBase64ToUint8Array(base64String) {
                     onChange={(e) => setEntreeMariesNotes(e.target.value)}
                     onBlur={(e) => { if (currentRoute.eventId) updateContractDb(currentRoute.eventId, { entree_maries_notes: e.target.value })}}
                     className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-gray-50 mt-2 text-gray-600"
-                    placeholder="Observations (ex: Lancer à 0:34)..."
+                    placeholder="Observations..."
                   />
                 </div>
                 <div>
@@ -5476,8 +5479,8 @@ function urlBase64ToUint8Array(base64String) {
                 </p>
               )}
               {role === 'client' && (
-                <p className="text-sm text-indigo-700 bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-200 mb-3">
-                  Ce que vous voyez dans cette section sont les options supplémentaires possibles pour votre événement. Vous souhaitez en ajouter une ? Cochez-la ci-dessous et validez ! Cliquez sur l'icône <Info className="w-3.5 h-3.5 inline text-indigo-600" /> pour voir les détails et l'infographie.
+                <p className="text-sm text-indigo-700 bg-indigo-50 px-3 py-2 rounded-lg border border-indigo-200 mb-3 flex items-center gap-1.5">
+                  Cliquez sur l'icône <Info className="w-3.5 h-3.5 inline text-indigo-600 flex-shrink-0" /> pour voir les détails et l'infographie.
                 </p>
               )}
               {nonSelectedOptions.length > 0 ? (
