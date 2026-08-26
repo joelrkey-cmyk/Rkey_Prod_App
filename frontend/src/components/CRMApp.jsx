@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "../services/axiosConfig";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -163,6 +163,23 @@ function CRMApp() {
     company_id: ""
   });
 
+  // ══════════ ÉTAT RECHERCHE SIRENE / INSEE ══════════
+  const [sireneSearchQuery, setSireneSearchQuery] = useState("");
+  const [sireneResults, setSireneResults] = useState([]);
+  const [isSearchingSirene, setIsSearchingSirene] = useState(false);
+  const [showSireneDropdown, setShowSireneDropdown] = useState(false);
+  const sireneDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (sireneDropdownRef.current && !sireneDropdownRef.current.contains(event.target)) {
+        setShowSireneDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   useEffect(() => {
     loadCompanies();
     loadRelances();
@@ -320,6 +337,9 @@ function CRMApp() {
       date_evenement: ""
     });
     setEditingCompany(null);
+    setSireneSearchQuery("");
+    setSireneResults([]);
+    setShowSireneDropdown(false);
   };
 
   const openEditCompany = (company) => {
@@ -340,6 +360,9 @@ function CRMApp() {
       type_evenement: company.type_evenement || "",
       date_evenement: company.date_evenement || getCompanyEventDate(company) || ""
     });
+    setSireneSearchQuery("");
+    setSireneResults([]);
+    setShowSireneDropdown(false);
     setShowCompanyDialog(true);
   };
 
@@ -348,39 +371,69 @@ function CRMApp() {
     openEditCompany(company);
   };
 
-  const handleSiretFetch = async () => {
-    if (!companyForm.siret || companyForm.siret.trim().length < 9) {
-      toast.error("Veuillez saisir un SIRET ou SIREN valide");
+  const handleSireneSearch = async (forcedQuery = null) => {
+    const query = (forcedQuery !== null ? forcedQuery : sireneSearchQuery).trim();
+    if (!query || query.length < 2) {
+      toast.error("Veuillez saisir au moins 2 caractères (Nom, Enseigne, SIRET ou SIREN)");
       return;
     }
     
+    setIsSearchingSirene(true);
+    setShowSireneDropdown(true);
     try {
-      toast.info("Recherche SIRENE en cours...");
-      const response = await fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${companyForm.siret}`);
+      const response = await fetch(`https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(query)}&per_page=15`);
       const data = await response.json().catch(() => ({}));
       
       if (data && data.results && data.results.length > 0) {
-        const result = data.results[0];
-        
-        const siege = result.siege || {};
-        const adresseComplete = siege.adresse || `${siege.numero_voie || ''} ${siege.type_voie || ''} ${siege.libelle_voie || ''}, ${siege.code_postal || ''} ${siege.libelle_commune || ''}`.trim();
-
-        setCompanyForm(prev => ({
-          ...prev,
-          nom: result.nom_complet || prev.nom,
-          adresse: adresseComplete !== ',' ? adresseComplete.replace(/ {2,}/g, ' ') : prev.adresse,
-          siret: siege.siren ? (siege.siret || siege.siren) : prev.siret,
-          secteur: result.activite_principale || prev.secteur
-        }));
-        
-        toast.success("Informations trouvées et appliquées !");
+        setSireneResults(data.results);
+        setShowSireneDropdown(true);
+        if (forcedQuery === null) {
+          toast.success(`${data.results.length} entreprise(s) trouvée(s) dans l'annuaire officiel`);
+        }
       } else {
-        toast.error("Aucune entreprise trouvée avec ce numéro");
+        setSireneResults([]);
+        if (forcedQuery === null) {
+          toast.info("Aucune entreprise trouvée avec ce nom ou ce numéro");
+        }
       }
     } catch (error) {
       console.error(error);
       toast.error("Erreur lors de la recherche SIRENE");
+      setSireneResults([]);
+    } finally {
+      setIsSearchingSirene(false);
     }
+  };
+
+  const handleSelectSireneCompany = (result, specificEtablissement = null) => {
+    const targetEtab = specificEtablissement || result.siege || (result.matching_etablissements && result.matching_etablissements[0]) || {};
+    
+    let adresseComplete = targetEtab.adresse || "";
+    if (!adresseComplete || adresseComplete.trim() === "") {
+      const parts = [
+        targetEtab.numero_voie,
+        targetEtab.type_voie,
+        targetEtab.libelle_voie,
+        targetEtab.code_postal ? `${targetEtab.code_postal} ${targetEtab.libelle_commune || ''}` : targetEtab.libelle_commune
+      ].filter(Boolean);
+      adresseComplete = parts.join(" ");
+    }
+    
+    const siretValue = targetEtab.siret || result.siren || "";
+    const nomValue = result.nom_complet || result.nom_raison_sociale || result.enseigne_1 || "";
+    const secteurValue = result.activite_principale || targetEtab.activite_principale || "";
+
+    setCompanyForm(prev => ({
+      ...prev,
+      nom: nomValue || prev.nom,
+      siret: siretValue || prev.siret,
+      secteur: secteurValue || prev.secteur,
+      adresse: adresseComplete ? adresseComplete.replace(/ {2,}/g, ' ').trim() : prev.adresse
+    }));
+
+    setShowSireneDropdown(false);
+    setSireneSearchQuery("");
+    toast.success(`Entreprise sélectionnée : ${nomValue} (SIRET: ${siretValue})`);
   };
 
   const handleImportContacts = async () => {
@@ -1583,19 +1636,153 @@ function CRMApp() {
             </div>
 
             {(companyForm.type_client === "Entreprise" || companyForm.type_client === "Association") && (
-              <div className="flex gap-2 items-end">
-                <div className="flex-1">
-                  <Label htmlFor="siret">Recherche SIRET / SIREN</Label>
-                  <Input
-                    id="siret"
-                    value={companyForm.siret}
-                    onChange={(e) => setCompanyForm(prev => ({ ...prev, siret: e.target.value }))}
-                    placeholder="Entrez le SIRET ou SIREN"
-                  />
+              <div ref={sireneDropdownRef} className="relative bg-slate-50/90 p-3.5 rounded-xl border border-slate-200/90 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="sirene-search" className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Building2 className="h-3.5 w-3.5 text-blue-600" />
+                    Recherche automatique SIRENE / INSEE (Nom, Enseigne ou SIRET/SIREN)
+                  </Label>
+                  {sireneResults.length > 0 && (
+                    <span className="text-[11px] text-blue-600 font-medium">
+                      {sireneResults.length} résultat{sireneResults.length > 1 ? 's' : ''}
+                    </span>
+                  )}
                 </div>
-                <Button variant="secondary" onClick={handleSiretFetch}>
-                  <Search className="h-4 w-4 mr-2" /> Rechercher
-                </Button>
+
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      id="sirene-search"
+                      value={sireneSearchQuery}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSireneSearchQuery(val);
+                        if (val.trim().length >= 3) {
+                          handleSireneSearch(val);
+                        } else if (val.trim().length === 0) {
+                          setSireneResults([]);
+                          setShowSireneDropdown(false);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSireneSearch();
+                        }
+                      }}
+                      onFocus={() => {
+                        if (sireneResults.length > 0) setShowSireneDropdown(true);
+                      }}
+                      placeholder="Tapez un nom (ex: Le coin d'Hortense) ou un SIRET / SIREN..."
+                      className="bg-white border-slate-300 pr-8 text-sm"
+                    />
+                    {isSearchingSirene && (
+                      <Loader2 className="h-4 w-4 animate-spin absolute right-2.5 top-1/2 -translate-y-1/2 text-blue-600" />
+                    )}
+                    {sireneSearchQuery && !isSearchingSirene && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSireneSearchQuery("");
+                          setSireneResults([]);
+                          setShowSireneDropdown(false);
+                        }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  <Button 
+                    type="button" 
+                    variant="secondary"
+                    onClick={() => handleSireneSearch()}
+                    disabled={isSearchingSirene}
+                    className="bg-slate-800 hover:bg-slate-900 text-white shrink-0 shadow-sm text-xs px-3 font-medium"
+                  >
+                    {isSearchingSirene ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Search className="h-3.5 w-3.5 mr-1" />}
+                    Rechercher
+                  </Button>
+                </div>
+
+                {/* Menu déroulant des résultats d'entreprises */}
+                {showSireneDropdown && sireneResults.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white rounded-xl border border-blue-200 shadow-2xl overflow-hidden max-h-72 overflow-y-auto">
+                    <div className="bg-slate-100/90 px-3 py-2 border-b border-slate-200 flex items-center justify-between text-xs font-semibold text-slate-700 sticky top-0 z-10 backdrop-blur-xs">
+                      <span>Cliquez sur l'entreprise pour remplir automatiquement la fiche ({sireneResults.length}) :</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowSireneDropdown(false)}
+                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="divide-y divide-slate-100">
+                      {sireneResults.map((result, idx) => {
+                        const siege = result.siege || {};
+                        const siren = result.siren || "";
+                        const siret = siege.siret || (result.matching_etablissements && result.matching_etablissements[0]?.siret) || siren;
+                        const adresse = siege.adresse || `${siege.code_postal || ''} ${siege.libelle_commune || ''}`.trim();
+                        const isActif = result.etat_administratif !== 'C' && siege.etat_administratif !== 'F';
+
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => handleSelectSireneCompany(result)}
+                            className="p-3 hover:bg-blue-50/80 cursor-pointer transition-colors space-y-1.5 group text-left"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="font-bold text-slate-800 text-sm group-hover:text-blue-700 flex items-center gap-1.5">
+                                  <Building2 className="h-4 w-4 text-blue-600 shrink-0" />
+                                  {result.nom_complet || result.nom_raison_sociale || "Entreprise"}
+                                </div>
+                                {result.enseigne_1 && (
+                                  <div className="text-xs text-slate-500 italic pl-5.5">
+                                    Enseigne : {result.enseigne_1}
+                                  </div>
+                                )}
+                              </div>
+                              <Badge 
+                                variant="outline" 
+                                className={`text-[10px] shrink-0 font-medium ${isActif ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500'}`}
+                              >
+                                {isActif ? 'En activité' : 'Fermé'}
+                              </Badge>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 pl-5.5 text-xs">
+                              {siret && (
+                                <span className="font-mono bg-emerald-50 text-emerald-800 border border-emerald-200/80 px-2 py-0.5 rounded font-semibold text-[11px] flex items-center gap-1">
+                                  SIRET : {siret}
+                                </span>
+                              )}
+                              {siren && !siret && (
+                                <span className="font-mono bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded font-semibold text-[11px]">
+                                  SIREN : {siren}
+                                </span>
+                              )}
+                              {result.activite_principale && (
+                                <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px]">
+                                  NAF : {result.activite_principale}
+                                </span>
+                              )}
+                              {adresse && (
+                                <span className="text-slate-600 flex items-center gap-1 text-[11px]">
+                                  <MapPin className="h-3 w-3 text-slate-400 shrink-0" />
+                                  {adresse}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1609,14 +1796,34 @@ function CRMApp() {
               />
             </div>
 
-            <div>
-              <Label htmlFor="secteur">Secteur / Activité</Label>
-              <Input
-                id="secteur"
-                value={companyForm.secteur}
-                onChange={(e) => setCompanyForm(prev => ({ ...prev, secteur: e.target.value }))}
-                placeholder="Ex: CE, Mairie, Informatique..."
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="siret" className="flex items-center justify-between">
+                  <span>Numéro SIRET / SIREN</span>
+                  {companyForm.siret && companyForm.siret.replace(/\s+/g, '').length >= 9 && (
+                    <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                      {companyForm.siret.replace(/\s+/g, '').length === 14 ? 'SIRET (14 chiffres)' : 'SIREN (9 chiffres)'}
+                    </span>
+                  )}
+                </Label>
+                <Input
+                  id="siret"
+                  value={companyForm.siret || ""}
+                  onChange={(e) => setCompanyForm(prev => ({ ...prev, siret: e.target.value }))}
+                  placeholder="Ex: 988 051 850 00010"
+                  className="font-mono text-sm"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="secteur">Secteur / Activité</Label>
+                <Input
+                  id="secteur"
+                  value={companyForm.secteur || ""}
+                  onChange={(e) => setCompanyForm(prev => ({ ...prev, secteur: e.target.value }))}
+                  placeholder="Ex: 47.59B, Commerce, Mairie..."
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2147,15 +2354,12 @@ function CRMApp() {
                 <FileSignature className="h-6 w-6 text-emerald-200" />
               </div>
               <div>
-                <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
-                  {contractModalStep === 'upload' ? "Importer contrats, Word, Excel ou dossiers" : "Validation des coordonnées clients"}
-                  <Badge className="bg-emerald-500/30 text-emerald-100 border border-emerald-400/30 text-[11px] font-normal">
-                    Analyse IA Multi-Formats
-                  </Badge>
+                <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                  {contractModalStep === 'upload' ? "Importer des contrats (IA)" : "Validation des coordonnées clients"}
                 </DialogTitle>
                 <DialogDescription className="text-emerald-100/90 text-xs mt-0.5">
                   {contractModalStep === 'upload' 
-                    ? "Importez des contrats PDF, documents Word (.docx/.doc), tableaux Excel (.xlsx/.xls/.csv), photos/scans, ou même un dossier entier ou fichier .ZIP." 
+                    ? "Glissez vos contrats ou sélectionnez vos fichiers." 
                     : "Vérifiez, ajustez et validez les coordonnées extraites avant de créer les fiches clients."}
                 </DialogDescription>
               </div>
@@ -2176,12 +2380,12 @@ function CRMApp() {
           {/* Body Content */}
           <div className="p-6 overflow-y-auto flex-1 space-y-6">
             {contractModalStep === 'upload' ? (
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {/* Drag and Drop Zone */}
                 <div 
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleDropFiles}
-                  className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 transition-all rounded-2xl p-6 text-center flex flex-col items-center justify-center gap-3 relative shadow-sm"
+                  className="border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/70 transition-all rounded-2xl p-8 text-center flex flex-col items-center justify-center gap-4 relative shadow-sm"
                 >
                   {/* Hidden file inputs */}
                   <input 
@@ -2209,29 +2413,26 @@ function CRMApp() {
                     className="hidden" 
                   />
 
-                  <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shadow-inner">
-                    <FileUp className="h-8 w-8" />
+                  <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shadow-inner">
+                    <FileUp className="h-7 w-7" />
                   </div>
                   <div>
                     <h3 className="font-semibold text-slate-800 text-base">
-                      Glissez vos contrats, devis, fichiers Excel, Word ou dossiers complets ici
+                      Glissez vos contrats ici
                     </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      L'intelligence artificielle analyse tous les fichiers, sous-dossiers et archives .zip pour en extraire les coordonnées.
-                    </p>
                   </div>
 
                   {/* Actions buttons */}
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       onClick={(e) => { e.stopPropagation(); document.getElementById('contract-file-input')?.click(); }}
-                      className="bg-white border-emerald-300 text-emerald-800 hover:bg-emerald-50 text-xs font-semibold gap-1.5 shadow-sm"
+                      className="bg-white border-emerald-300 text-emerald-800 hover:bg-emerald-50 text-xs font-semibold gap-1.5 shadow-sm px-4 py-2 h-9"
                     >
-                      <FileText className="h-3.5 w-3.5 text-emerald-600" />
-                      Parcourir des fichiers (PDF, Word, Excel...)
+                      <FileText className="h-4 w-4 text-emerald-600" />
+                      Importer des fichiers
                     </Button>
 
                     <Button
@@ -2239,9 +2440,9 @@ function CRMApp() {
                       size="sm"
                       variant="outline"
                       onClick={(e) => { e.stopPropagation(); document.getElementById('contract-folder-input')?.click(); }}
-                      className="bg-white border-teal-300 text-teal-800 hover:bg-teal-50 text-xs font-semibold gap-1.5 shadow-sm"
+                      className="bg-white border-teal-300 text-teal-800 hover:bg-teal-50 text-xs font-semibold gap-1.5 shadow-sm px-4 py-2 h-9"
                     >
-                      <FolderUp className="h-3.5 w-3.5 text-teal-600" />
+                      <FolderUp className="h-4 w-4 text-teal-600" />
                       Sélectionner un dossier complet
                     </Button>
 
@@ -2250,33 +2451,11 @@ function CRMApp() {
                       size="sm"
                       variant="outline"
                       onClick={(e) => { e.stopPropagation(); document.getElementById('contract-zip-input')?.click(); }}
-                      className="bg-white border-amber-300 text-amber-800 hover:bg-amber-50 text-xs font-semibold gap-1.5 shadow-sm"
+                      className="bg-white border-amber-300 text-amber-800 hover:bg-amber-50 text-xs font-semibold gap-1.5 shadow-sm px-4 py-2 h-9"
                     >
-                      <FolderArchive className="h-3.5 w-3.5 text-amber-600" />
-                      Archive .ZIP
+                      <FolderArchive className="h-4 w-4 text-amber-600" />
+                      Archives ZIP
                     </Button>
-                  </div>
-
-                  {/* Formats Badges */}
-                  <div className="flex flex-wrap items-center justify-center gap-2 mt-2 pt-2 border-t border-emerald-200/60 w-full">
-                    <Badge variant="outline" className="bg-white text-slate-700 border-slate-200 text-[11px] gap-1 shadow-2xs">
-                      📄 PDF (mono / multi-pages)
-                    </Badge>
-                    <Badge variant="outline" className="bg-blue-50/80 text-blue-800 border-blue-200 text-[11px] gap-1 shadow-2xs">
-                      📝 Word (.docx, .doc)
-                    </Badge>
-                    <Badge variant="outline" className="bg-emerald-50/80 text-emerald-800 border-emerald-200 text-[11px] gap-1 shadow-2xs">
-                      📊 Excel & CSV (.xlsx, .xls, .csv)
-                    </Badge>
-                    <Badge variant="outline" className="bg-amber-50/80 text-amber-800 border-amber-200 text-[11px] gap-1 shadow-2xs">
-                      🗜️ Archive .ZIP (arborescence complète)
-                    </Badge>
-                    <Badge variant="outline" className="bg-teal-50/80 text-teal-800 border-teal-200 text-[11px] gap-1 shadow-2xs">
-                      📁 Dossiers complets
-                    </Badge>
-                    <Badge variant="outline" className="bg-purple-50/80 text-purple-800 border-purple-200 text-[11px] gap-1 shadow-2xs">
-                      🖼️ Photos & Scans (JPG, PNG, WebP)
-                    </Badge>
                   </div>
                 </div>
 
@@ -2286,7 +2465,7 @@ function CRMApp() {
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                         <Paperclip className="h-3.5 w-3.5 text-slate-500" />
-                        Fichiers / Documents prêts pour l'analyse ({contractFiles.length})
+                        Fichiers prêts pour l'analyse ({contractFiles.length})
                       </span>
                       <Button 
                         size="sm" 
@@ -2330,17 +2509,6 @@ function CRMApp() {
                     </div>
                   </div>
                 )}
-
-                {/* Info Guide */}
-                <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-4 text-xs text-blue-900 space-y-1.5">
-                  <div className="font-semibold flex items-center gap-1.5 text-blue-800">
-                    <Sparkles className="h-4 w-4 text-blue-600" />
-                    Comment fonctionne l'analyse intelligente des documents et archives ?
-                  </div>
-                  <p className="text-blue-700 leading-relaxed">
-                    L'IA inspecte chaque fichier fourni (contrats PDF, fiches Word, devis, lignes de tableaux Excel, images de contrats ou archives .zip décompressées automatiquement). Elle détecte chaque client ou prestation (nom, entreprise, type de structure, téléphones, emails, adresses, SIRET, date d'événement, type de prestation, salle et synthèse des prestations). Vous pourrez ensuite vérifier et corriger chaque fiche avant de l'enregistrer dans votre base client.
-                  </p>
-                </div>
               </div>
             ) : (
               /* Review Step */
