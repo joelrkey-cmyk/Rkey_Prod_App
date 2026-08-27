@@ -8,7 +8,7 @@ import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FileSpreadsheet, Folder } from "lucide-react";
+import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, AlertTriangle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FileSpreadsheet, Folder } from "lucide-react";
 import { toast } from "sonner";
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -93,6 +93,18 @@ const extractEmails = (emailStr) => {
     .filter(email => email && email.includes("@"));
 };
 
+const hasCompanyEmail = (company) => {
+  if (!company) return false;
+  const mainEmails = extractEmails(company.email);
+  if (mainEmails.length > 0) return true;
+  if (company.contacts && Array.isArray(company.contacts)) {
+    for (const c of company.contacts) {
+      if (c && extractEmails(c.email).length > 0) return true;
+    }
+  }
+  return false;
+};
+
 function CRMApp() {
   const [companies, setCompanies] = useState([]);
   const [relances, setRelances] = useState([]);
@@ -128,6 +140,7 @@ function CRMApp() {
   });
 
   const [typeFilter, setTypeFilter] = useState("all");
+  const [emailFilter, setEmailFilter] = useState("all"); // 'all' | 'missing' | 'has_email'
   const [isImporting, setIsImporting] = useState(false);
 
   // ══════════ ÉTAT IMPORTATION CONTRATS (IA) ══════════
@@ -146,6 +159,7 @@ function CRMApp() {
   const [currentPairIndex, setCurrentPairIndex] = useState(0);
   const [isSearchingDuplicates, setIsSearchingDuplicates] = useState(false);
   const [isMergingOrDeleting, setIsMergingOrDeleting] = useState(false);
+  const [confirmDeleteBoth, setConfirmDeleteBoth] = useState(false);
   const [editMergeDraft, setEditMergeDraft] = useState(null);
   const [isCustomizingMerge, setIsCustomizingMerge] = useState(false);
   const [dismissedPairKeys, setDismissedPairKeys] = useState(new Set());
@@ -1183,6 +1197,7 @@ function CRMApp() {
     if (!pair) return;
 
     setIsMergingOrDeleting(true);
+    setConfirmDeleteBoth(false);
     try {
       await axios.delete(`${API}/crm/companies/${companyToDelete.id}`);
       toast.success(`🗑️ Dossier "${companyToDelete.nom}" supprimé. Dossier "${companyToKeep.nom}" conservé.`);
@@ -1214,10 +1229,55 @@ function CRMApp() {
     }
   };
 
+  const handleDeleteBothDuplicates = async () => {
+    const pair = duplicatePairs[currentPairIndex];
+    if (!pair) return;
+
+    setIsMergingOrDeleting(true);
+    setConfirmDeleteBoth(false);
+    try {
+      const nomA = pair.companyA.nom || "Fiche A";
+      const nomB = pair.companyB.nom || "Fiche B";
+
+      await Promise.all([
+        axios.delete(`${API}/crm/companies/${pair.companyA.id}`),
+        axios.delete(`${API}/crm/companies/${pair.companyB.id}`)
+      ]);
+      toast.success(`🗑️ Les 2 fiches ("${nomA}" et "${nomB}") ont été supprimées définitivement.`);
+
+      // Update companies list
+      const deletedIds = new Set([pair.companyA.id, pair.companyB.id]);
+      setCompanies(prev => prev.filter(c => !deletedIds.has(c.id)));
+
+      // Remove handled pairs referencing either company
+      const remaining = duplicatePairs.filter(p => 
+        !deletedIds.has(p.companyA.id) && 
+        !deletedIds.has(p.companyB.id)
+      );
+
+      setDuplicatePairs(remaining);
+      if (remaining.length > 0) {
+        const nextIndex = Math.min(currentPairIndex, remaining.length - 1);
+        setCurrentPairIndex(nextIndex);
+        setEditMergeDraft({ ...remaining[nextIndex].mergedDraft });
+        setIsCustomizingMerge(false);
+      } else {
+        setShowDuplicatesModal(false);
+        toast.success("🎉 Tous les doublons ont été traités !");
+      }
+    } catch (err) {
+      console.error("Delete both duplicates error:", err);
+      toast.error("Erreur lors de la suppression des 2 fiches : " + (err.response?.data?.error || err.message));
+    } finally {
+      setIsMergingOrDeleting(false);
+    }
+  };
+
   const handleDismissPair = () => {
     const pair = duplicatePairs[currentPairIndex];
     if (!pair) return;
 
+    setConfirmDeleteBoth(false);
     setDismissedPairKeys(prev => new Set(prev).add(pair.id));
     const remaining = duplicatePairs.filter(p => p.id !== pair.id);
     setDuplicatePairs(remaining);
@@ -1314,7 +1374,12 @@ function CRMApp() {
       if (!evDate || evDate > endDateFilter) matchesDateRange = false;
     }
 
-    return matchesSearch && matchesStatus && matchesType && matchesAnnee && matchesEvent && matchesDateRange;
+    // Filtre par présence ou absence d'email
+    const matchesEmail = emailFilter === "all" || 
+                         (emailFilter === "missing" && !hasCompanyEmail(company)) || 
+                         (emailFilter === "has_email" && hasCompanyEmail(company));
+
+    return matchesSearch && matchesStatus && matchesType && matchesAnnee && matchesEvent && matchesDateRange && matchesEmail;
   });
 
   const getStatusBadge = (statut) => {
@@ -1490,6 +1555,20 @@ function CRMApp() {
               <span className="text-lg font-bold text-slate-950">{getUpcomingRelances().length}</span>
             </div>
           </div>
+          <div className="h-8 w-px bg-slate-200 hidden md:block"></div>
+          <div 
+            onClick={() => setEmailFilter(prev => prev === "missing" ? "all" : "missing")}
+            className={`flex items-center gap-2 cursor-pointer px-2.5 py-1 rounded-lg transition-all select-none ${emailFilter === "missing" ? "bg-red-100 border border-red-300 ring-2 ring-red-400" : "hover:bg-red-50/70"}`}
+            title="Cliquer pour afficher uniquement les fiches sans adresse email"
+          >
+            <span className="text-xl">⚠️</span>
+            <div>
+              <span className="text-xs text-slate-500 block font-medium uppercase tracking-wider">Sans Email</span>
+              <span className={`text-lg font-bold ${companies.filter(c => !hasCompanyEmail(c)).length > 0 ? "text-red-600" : "text-slate-700"}`}>
+                {companies.filter(c => !hasCompanyEmail(c)).length}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Barre de recherche et filtres */}
@@ -1591,7 +1670,22 @@ function CRMApp() {
                     </SelectContent>
                   </Select>
 
-                  {(searchTerm || anneeFilter !== "all" || eventFilter !== "all" || statusFilter !== "all" || typeFilter !== "all" || startDateFilter || endDateFilter) && (
+                  <Select value={emailFilter} onValueChange={setEmailFilter}>
+                    <SelectTrigger className={`w-full sm:w-44 ${emailFilter === "missing" ? "border-red-400 bg-red-50 text-red-900 font-semibold" : ""}`}>
+                      <SelectValue placeholder="Email" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tous les emails</SelectItem>
+                      <SelectItem value="missing" className="text-red-700 font-medium">
+                        ⚠️ Email manquant ({companies.filter(c => !hasCompanyEmail(c)).length})
+                      </SelectItem>
+                      <SelectItem value="has_email" className="text-green-700">
+                        ✅ Avec adresse email
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {(searchTerm || anneeFilter !== "all" || eventFilter !== "all" || statusFilter !== "all" || typeFilter !== "all" || emailFilter !== "all" || startDateFilter || endDateFilter) && (
                     <Button
                       variant="outline"
                       onClick={() => {
@@ -1600,6 +1694,7 @@ function CRMApp() {
                         setEventFilter("all");
                         setStatusFilter("all");
                         setTypeFilter("all");
+                        setEmailFilter("all");
                         setStartDateFilter("");
                         setEndDateFilter("");
                       }}
@@ -1635,6 +1730,26 @@ function CRMApp() {
           </CardContent>
         </Card>
 
+        {/* Message d'information lorsque le filtre "Email manquant" est actif */}
+        {emailFilter === "missing" && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-red-800 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-[11px] shrink-0">!</span>
+              <span>
+                Filtre actif : <strong>{filteredCompanies.length}</strong> fiche(s) sans email. Recherchez ces noms dans votre boîte mail pour retrouver leurs adresses et compléter leurs fiches.
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEmailFilter("all")}
+              className="text-xs text-red-700 hover:text-red-900 hover:bg-red-100 h-7 px-2 font-semibold shrink-0"
+            >
+              Afficher tous les clients
+            </Button>
+          </div>
+        )}
+
         {/* Liste des entreprises (Lignes compactes) */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden divide-y divide-slate-100">
           {/* Header de la liste */}
@@ -1654,6 +1769,7 @@ function CRMApp() {
           ) : (
             filteredCompanies.map(company => {
               const activeRelances = getActiveRelances(company.id);
+              const hasEmail = hasCompanyEmail(company);
               return (
                 <div 
                   key={company.id} 
@@ -1668,9 +1784,18 @@ function CRMApp() {
                     <span className="text-2xl shrink-0 select-none">
                       {company.type_client === "Particulier" ? "👤" : company.type_client === "Association" ? "🤝" : "🏢"}
                     </span>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <h4 className="font-semibold text-slate-800 text-base truncate flex items-center gap-2 flex-wrap">
                         {company.nom}
+                        {!hasEmail && (
+                          <span 
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-red-100 text-red-700 border border-red-250 hover:bg-red-200 transition-colors shrink-0 shadow-2xs select-none"
+                            title="⚠️ Adresse email manquante : recherche à effectuer dans votre boîte mail pour retrouver le contact"
+                          >
+                            <span className="w-3.5 h-3.5 rounded-full bg-red-600 text-white flex items-center justify-center font-black text-[9px] leading-none">!</span>
+                            <span className="uppercase tracking-tight font-semibold">Email à chercher</span>
+                          </span>
+                        )}
                         {activeRelances.length > 0 && (
                           <span className="inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold text-white bg-red-500 rounded-full" title={`${activeRelances.length} relance(s) active(s)`}>
                             {activeRelances.length}
@@ -1687,8 +1812,17 @@ function CRMApp() {
                           </Badge>
                         )}
                       </h4>
-                      <p className="text-sm text-slate-400 truncate mt-0.5">
-                        {company.secteur || "Aucun secteur"} {company.siret && `• SIRET: ${company.siret}`}
+                      <p className="text-sm text-slate-400 truncate mt-0.5 flex items-center gap-1.5 flex-wrap">
+                        <span>{company.secteur || "Aucun secteur"} {company.siret && `• SIRET: ${company.siret}`}</span>
+                        {!hasEmail ? (
+                          <span className="inline-flex items-center text-red-500 font-medium text-xs">
+                            • ✉️ <span className="ml-0.5">Aucun email</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 font-normal text-xs">
+                            • ✉️ {extractEmails(company.email)[0] || (company.contacts && company.contacts.find(c => c.email)?.email)}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -2246,6 +2380,30 @@ function CRMApp() {
                 </DialogHeader>
 
                 <div className="space-y-6 py-4">
+                  {/* Alerte si email manquant */}
+                  {!hasCompanyEmail(company) && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                          !
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-red-900">Adresse email non renseignée</p>
+                          <p className="text-xs text-red-700 mt-0.5">
+                            Recherchez <strong>« {company.nom} »</strong> dans votre boîte mail pour retrouver ses coordonnées et compléter sa fiche.
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleEditFromDetail(company)}
+                        className="bg-red-600 hover:bg-red-700 text-white text-xs shrink-0 font-semibold h-8"
+                      >
+                        <Edit className="w-3.5 h-3.5 mr-1" /> Renseigner l'email
+                      </Button>
+                    </div>
+                  )}
+
                   {/* Meta / Badges */}
                   <div className="flex flex-wrap gap-2">
                     {getTypeBadge(company.type_client)}
@@ -2286,12 +2444,20 @@ function CRMApp() {
                         </div>
                       </div>
                     )}
-                    {company.email && (
+                    {company.email ? (
                       <div className="flex items-start text-sm text-gray-700 md:col-span-2 border-t pt-3 mt-1">
                         <Mail className="h-5 w-5 mr-3 text-slate-400 shrink-0" />
                         <div>
                           <p className="font-semibold text-gray-500 text-xs uppercase tracking-wider">Email</p>
-                          <a href={`mailto:${company.email}`} className="mt-0.5 text-blue-600 hover:underline block">{company.email}</a>
+                          <a href={`mailto:${company.email}`} className="mt-0.5 text-blue-600 hover:underline block font-medium">{company.email}</a>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start text-sm text-gray-700 md:col-span-2 border-t pt-3 mt-1">
+                        <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-xs mr-3 shrink-0">!</div>
+                        <div>
+                          <p className="font-semibold text-red-800 text-xs uppercase tracking-wider">Email</p>
+                          <p className="mt-0.5 text-red-600 text-xs font-medium">Aucune adresse email renseignée</p>
                         </div>
                       </div>
                     )}
@@ -2954,6 +3120,7 @@ function CRMApp() {
       {/* ══════════ DIALOG GESTION & FUSION DES DOUBLONS ══════════ */}
       <Dialog open={showDuplicatesModal} onOpenChange={(open) => {
         if (!open && isMergingOrDeleting) return;
+        setConfirmDeleteBoth(false);
         setShowDuplicatesModal(open);
       }}>
         <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col p-0 overflow-hidden">
@@ -3033,6 +3200,7 @@ function CRMApp() {
                         disabled={currentPairIndex === 0 || isMergingOrDeleting}
                         onClick={() => {
                           const prevIdx = currentPairIndex - 1;
+                          setConfirmDeleteBoth(false);
                           setCurrentPairIndex(prevIdx);
                           setEditMergeDraft({ ...duplicatePairs[prevIdx].mergedDraft });
                           setIsCustomizingMerge(false);
@@ -3051,6 +3219,7 @@ function CRMApp() {
                         disabled={currentPairIndex === duplicatePairs.length - 1 || isMergingOrDeleting}
                         onClick={() => {
                           const nextIdx = currentPairIndex + 1;
+                          setConfirmDeleteBoth(false);
                           setCurrentPairIndex(nextIdx);
                           setEditMergeDraft({ ...duplicatePairs[nextIdx].mergedDraft });
                           setIsCustomizingMerge(false);
@@ -3429,16 +3598,62 @@ function CRMApp() {
                         )}
 
                         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleDismissPair}
-                            disabled={isMergingOrDeleting}
-                            className="text-xs text-slate-600 hover:text-slate-900"
-                          >
-                            <X className="mr-1.5 h-3.5 w-3.5" />
-                            Ignorer (Garder les 2 fiches séparées)
-                          </Button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleDismissPair}
+                              disabled={isMergingOrDeleting}
+                              className="text-xs text-slate-600 hover:text-slate-900"
+                            >
+                              <X className="mr-1.5 h-3.5 w-3.5" />
+                              Ignorer (Garder les 2 fiches séparées)
+                            </Button>
+
+                            {/* Suppression des 2 fiches */}
+                            {confirmDeleteBoth ? (
+                              <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 rounded-lg p-1 animate-in fade-in">
+                                <span className="text-xs font-semibold text-red-800 px-1.5">
+                                  ⚠️ Supprimer définitivement les 2 fiches ?
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={handleDeleteBothDuplicates}
+                                  disabled={isMergingOrDeleting}
+                                  className="h-7 text-xs bg-red-600 hover:bg-red-700 font-bold px-2.5 gap-1"
+                                >
+                                  {isMergingOrDeleting ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-3 w-3" />
+                                  )}
+                                  Oui, supprimer les 2
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => setConfirmDeleteBoth(false)}
+                                  disabled={isMergingOrDeleting}
+                                  className="h-7 text-xs text-slate-600 hover:text-slate-800 px-2"
+                                >
+                                  Annuler
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setConfirmDeleteBoth(true)}
+                                disabled={isMergingOrDeleting}
+                                className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200 gap-1.5"
+                                title="Supprimer les deux fiches si rien n'est à conserver"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Supprimer les 2 fiches
+                              </Button>
+                            )}
+                          </div>
 
                           <Button
                             onClick={handleApplyMerge}
@@ -3479,6 +3694,7 @@ function CRMApp() {
                       disabled={currentPairIndex === 0 || isMergingOrDeleting}
                       onClick={() => {
                         const prevIdx = currentPairIndex - 1;
+                        setConfirmDeleteBoth(false);
                         setCurrentPairIndex(prevIdx);
                         setEditMergeDraft({ ...duplicatePairs[prevIdx].mergedDraft });
                         setIsCustomizingMerge(false);
@@ -3493,6 +3709,7 @@ function CRMApp() {
                       disabled={currentPairIndex === duplicatePairs.length - 1 || isMergingOrDeleting}
                       onClick={() => {
                         const nextIdx = currentPairIndex + 1;
+                        setConfirmDeleteBoth(false);
                         setCurrentPairIndex(nextIdx);
                         setEditMergeDraft({ ...duplicatePairs[nextIdx].mergedDraft });
                         setIsCustomizingMerge(false);

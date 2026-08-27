@@ -79,33 +79,10 @@ const HomePage = () => {
 
   const loadRelances = async () => {
     try {
-      setLoading(true);
-      
-      // Charger les relances et les entreprises
-      const [relancesRes, companiesRes] = await Promise.all([
-        axios.get(`${API}/crm/relances`),
-        axios.get(`${API}/crm/companies`)
-      ]);
-      
-      const allRelances = relancesRes.data || [];
-      const allCompanies = companiesRes.data || [];
-      
-      // Filtrer les relances actives et à venir (jusqu'à 30 jours)
-      const today = new Date();
-      const in30Days = new Date();
-      in30Days.setDate(today.getDate() + 30);
-      
-      const activeRelances = allRelances
-        .filter(r => r.statut === "active")
-        .filter(r => {
-          const relanceDate = new Date(r.date);
-          return relanceDate >= today && relanceDate <= in30Days;
-        })
-        .sort((a, b) => new Date(a.date) - new Date(b.date))
-        .slice(0, 10); // Max 10 relances
-      
+      const response = await axios.get(`${API}/crm/relances`);
+      const allRelances = response.data || [];
+      const activeRelances = allRelances.filter(r => r.statut === "active");
       setUpcomingRelances(activeRelances);
-      setCompanies(allCompanies);
       setLoading(false);
     } catch (error) {
       if (error?.response?.status !== 401) {
@@ -115,39 +92,14 @@ const HomePage = () => {
     }
   };
 
-  const getCompanyName = (companyId) => {
-    const company = companies.find(c => c.id === companyId);
-    return company ? company.nom : "Entreprise inconnue";
+  const getAppBadgeCount = (key) => {
+    if (key === 'contracts2') return dashboardStats.contracts_pending_signature || 0;
+    if (key === 'delivery') return dashboardStats.location_to_deliver_week || 0;
+    if (key === 'location') return dashboardStats.location_pending || 0;
+    if (key === 'crm') return upcomingRelances.length || 0;
+    if (key === 'dj-client') return unreadNotifications || 0;
+    return 0;
   };
-
-  const getDaysUntil = (dateStr) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const relanceDate = new Date(dateStr);
-    relanceDate.setHours(0, 0, 0, 0);
-    const diffTime = relanceDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) return "Aujourd'hui";
-    if (diffDays === 1) return "Demain";
-    if (diffDays < 7) return `Dans ${diffDays} jours`;
-    return `Dans ${Math.floor(diffDays / 7)} semaine${Math.floor(diffDays / 7) > 1 ? 's' : ''}`;
-  };
-
-  const getPriorityColor = (dateStr) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const relanceDate = new Date(dateStr);
-    relanceDate.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((relanceDate - today) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays <= 0) return "bg-red-100 border-red-300 text-red-800";
-    if (diffDays <= 3) return "bg-orange-100 border-orange-300 text-orange-800";
-    if (diffDays <= 7) return "bg-yellow-100 border-yellow-300 text-yellow-800";
-    return "bg-blue-100 border-blue-300 text-blue-800";
-  };
-  
-
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
@@ -164,151 +116,6 @@ const HomePage = () => {
           </div>
         </div>
       </div>
-
-      {/* Dashboard - Pastilles notification style Android */}
-      <div className="max-w-4xl mx-auto px-6 pt-6 pb-2">
-        <div className="flex items-center gap-2 mb-5">
-          <LayoutDashboard className="w-5 h-5 text-gray-500" />
-          <h2 className="text-lg font-semibold text-gray-700">En attente</h2>
-        </div>
-        <div className="grid grid-cols-4 sm:grid-cols-4 gap-y-6 gap-x-4 justify-items-center">
-          {[
-            { 
-              name: 'Envoi Devis', 
-              icon: <Send className="w-6 h-6" />, 
-              borderColor: 'border-orange-400', 
-              iconColor: 'text-orange-500',
-              bgHover: 'group-hover:bg-orange-50',
-              count: dashboardStats.devis_envoi_pending, 
-              route: '/devis' 
-            },
-            { 
-              name: 'Contrats', 
-              icon: <FileSignature className="w-6 h-6" />, 
-              borderColor: 'border-amber-400', 
-              iconColor: 'text-amber-500',
-              bgHover: 'group-hover:bg-amber-50',
-              count: dashboardStats.contracts_pending_signature, 
-              route: '/contracts2?tab=list' 
-            },
-            { 
-              name: 'À livrer', 
-              icon: <Package className="w-6 h-6" />, 
-              borderColor: 'border-red-400', 
-              iconColor: 'text-red-500',
-              bgHover: 'group-hover:bg-red-50',
-              count: dashboardStats.location_to_deliver_week, 
-              route: '/location?view=livraisons' 
-            },
-            { 
-              name: 'Devis matériel', 
-              icon: <FileText className="w-6 h-6" />, 
-              borderColor: 'border-purple-400', 
-              iconColor: 'text-purple-500',
-              bgHover: 'group-hover:bg-purple-50',
-              count: dashboardStats.location_pending, 
-              route: '/location?view=devis' 
-            },
-          ].map((item) => (
-            <button
-              key={item.route}
-              onClick={() => navigate(item.route)}
-              className="flex flex-col items-center gap-2 group w-20"
-              data-testid={`dashboard-${item.name.toLowerCase().replace(/\s/g, '-')}`}
-            >
-              <div className="relative">
-                <div className={`w-14 h-14 bg-transparent border-2 ${item.borderColor} ${item.bgHover} rounded-2xl flex items-center justify-center ${item.iconColor} group-hover:scale-110 transition-all duration-200`}>
-                  {item.icon}
-                </div>
-                {item.count > 0 && (
-                  <span className="absolute -top-2 -right-2 min-w-[22px] h-[22px] bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1 shadow-sm border-2 border-white">
-                    {item.count}
-                  </span>
-                )}
-              </div>
-              <span className="text-xs font-medium text-gray-600 text-center leading-tight">{item.name}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-
-
-      {/* Section Relances à Venir - Version Compacte */}
-      {!loading && upcomingRelances.length > 0 && (
-        <div className="max-w-6xl mx-auto px-6 pt-6 pb-2">
-          <Card className="shadow-lg border border-green-200 bg-gradient-to-r from-green-50 to-emerald-50">
-            <CardHeader className="pb-2 pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Bell className="w-5 h-5 text-green-600" />
-                  <CardTitle className="text-lg text-gray-900 flex items-center gap-2">
-                    Relances à Venir
-                    <Badge className="bg-green-600 hover:bg-green-600 text-white text-xs">
-                      {upcomingRelances.length}
-                    </Badge>
-                  </CardTitle>
-                </div>
-                <Button
-                  onClick={() => navigate('/crm')}
-                  size="sm"
-                  variant="outline"
-                  className="border-green-600 text-green-600 hover:bg-green-50 text-xs"
-                >
-                  Voir tout
-                  <ArrowRight className="ml-1 h-3 w-3" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-3 pb-4">
-              <div className="space-y-2">
-                {upcomingRelances.map((relance) => (
-                  <div
-                    key={relance.id}
-                    className={`p-2.5 rounded-md border transition-all hover:shadow cursor-pointer ${getPriorityColor(relance.date)}`}
-                    onClick={() => navigate('/crm')}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Building2 className="h-4 w-4 flex-shrink-0" />
-                        <span className="font-semibold text-sm truncate">
-                          {getCompanyName(relance.company_id)}
-                        </span>
-                        <Badge variant="outline" className="text-xs px-1.5 py-0 flex-shrink-0">
-                          {getDaysUntil(relance.date)}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-600 flex-shrink-0">
-                        <Calendar className="h-3 w-3" />
-                        {new Date(relance.date).toLocaleDateString('fr-FR', { 
-                          day: 'numeric',
-                          month: 'short'
-                        })}
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-700 mt-1 ml-6 truncate">
-                      {relance.objet}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              
-              {upcomingRelances.length >= 10 && (
-                <div className="mt-3 text-center">
-                  <Button
-                    onClick={() => navigate('/crm')}
-                    variant="link"
-                    size="sm"
-                    className="text-green-600 text-xs"
-                  >
-                    Voir toutes les relances →
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* Application Selection - Style pastilles Android */}
       <div className="max-w-4xl mx-auto px-6 pb-16 pt-8">
@@ -340,24 +147,29 @@ const HomePage = () => {
               if (!allowed || allowed.length === 0) return true;
               return allowed.includes(app.key);
             } catch { return true; }
-          }).map((app) => (
-            <button
-              key={app.route}
-              onClick={() => navigate(app.route)}
-              className="flex flex-col items-center gap-2 group w-20"
-              data-testid={`app-icon-${app.route.replace('/', '')}`}
-            >
-              <div className={`w-16 h-16 ${app.color} rounded-2xl flex items-center justify-center text-white shadow-md group-hover:shadow-lg group-hover:scale-110 transition-all duration-200 relative`}>
-                {app.icon}
-                {app.key === 'dj-client' && unreadNotifications > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 h-6 min-w-6 px-1.5 bg-red-500 border-2 border-white text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md animate-bounce transform translate-x-1 -translate-y-1">
-                    {unreadNotifications}
-                  </span>
-                )}
-              </div>
-              <span className="text-xs font-medium text-gray-700 text-center leading-tight">{app.name}</span>
-            </button>
-          ))}
+          }).map((app) => {
+            const badgeCount = getAppBadgeCount(app.key);
+            return (
+              <button
+                key={app.route}
+                onClick={() => navigate(app.route)}
+                className="flex flex-col items-center gap-2 group w-20"
+                data-testid={`app-icon-${app.route.replace('/', '')}`}
+              >
+                <div className={`w-16 h-16 ${app.color} rounded-2xl flex items-center justify-center text-white shadow-md group-hover:shadow-lg group-hover:scale-110 transition-all duration-200 relative`}>
+                  {app.icon}
+                  {badgeCount > 0 && (
+                    <span 
+                      className={`absolute -top-1.5 -right-1.5 h-6 min-w-6 px-1.5 bg-red-500 border-2 border-white text-white text-[11px] font-extrabold rounded-full flex items-center justify-center shadow-md ${app.key === 'dj-client' ? 'animate-bounce transform translate-x-1 -translate-y-1' : ''}`}
+                    >
+                      {badgeCount}
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs font-medium text-gray-700 text-center leading-tight">{app.name}</span>
+              </button>
+            );
+          })}
 
         </div>
       </div>

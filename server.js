@@ -6791,6 +6791,7 @@ api.put('/crm/companies/:id', authMiddleware, async (req, res) => {
 });
 api.delete('/crm/companies/:id', authMiddleware, async (req, res) => {
   await db.collection('crm_companies').deleteOne({ id: req.params.id });
+  await db.collection('crm_relances').deleteMany({ company_id: req.params.id });
   res.json({ success: true });
 });
 api.get('/crm/relances', authMiddleware, async (req, res) => {
