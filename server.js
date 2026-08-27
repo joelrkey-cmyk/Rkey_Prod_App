@@ -771,8 +771,101 @@ async function getGcsUseDirectUrls() {
   return cachedGcsSettings;
 }
 
+function getMimeType(filename) {
+  if (!filename || typeof filename !== 'string') return 'application/octet-stream';
+  const ext = path.extname(filename).toLowerCase();
+  switch (ext) {
+    case '.mp3': return 'audio/mpeg';
+    case '.wav': return 'audio/wav';
+    case '.ogg': return 'audio/ogg';
+    case '.m4a': return 'audio/mp4';
+    case '.aac': return 'audio/aac';
+    case '.flac': return 'audio/flac';
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg';
+    case '.png': return 'image/png';
+    case '.gif': return 'image/gif';
+    case '.webp': return 'image/webp';
+    case '.svg': return 'image/svg+xml';
+    case '.pdf': return 'application/pdf';
+    case '.mp4': return 'video/mp4';
+    case '.webm': return 'video/webm';
+    case '.json': return 'application/json';
+    default: return 'application/octet-stream';
+  }
+}
+
+function extractGcsPath(url) {
+  if (!url || typeof url !== 'string') return '';
+  let clean = url.trim();
+  if (clean.includes('?')) {
+    clean = clean.split('?')[0];
+  }
+  const gcsDomainIdx = clean.indexOf('storage.googleapis.com/');
+  if (gcsDomainIdx !== -1) {
+    const afterDomain = clean.substring(gcsDomainIdx + 'storage.googleapis.com/'.length);
+    const firstSlash = afterDomain.indexOf('/');
+    if (firstSlash !== -1) {
+      return afterDomain.substring(firstSlash + 1);
+    }
+    return afterDomain;
+  }
+  if (clean.includes('api/gcs/')) {
+    clean = clean.substring(clean.indexOf('api/gcs/') + 'api/gcs/'.length);
+  } else if (clean.includes('/gcs/')) {
+    clean = clean.substring(clean.indexOf('/gcs/') + '/gcs/'.length);
+  } else if (clean.startsWith('gcs/')) {
+    clean = clean.substring(4);
+  }
+  if (clean.startsWith('/')) {
+    clean = clean.substring(1);
+  }
+  return clean;
+}
+
+function toCanonicalGcsUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (url.startsWith('data:')) return url;
+  const gcsPath = extractGcsPath(url);
+  if (gcsPath) {
+    return `/api/gcs/${gcsPath}`;
+  }
+  return url;
+}
+
+function sanitizeContractPayload(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const sanitized = { ...payload };
+
+  if (Array.isArray(sanitized.playlist_audio_files)) {
+    sanitized.playlist_audio_files = sanitized.playlist_audio_files.map(file => {
+      if (!file || typeof file !== 'object') return file;
+      return {
+        ...file,
+        url: toCanonicalGcsUrl(file.url)
+      };
+    });
+  }
+
+  if (sanitized.client_photo) {
+    sanitized.client_photo = toCanonicalGcsUrl(sanitized.client_photo);
+  }
+
+  if (Array.isArray(sanitized.venue_photos)) {
+    sanitized.venue_photos = sanitized.venue_photos.map(p => {
+      if (!p || typeof p !== 'object') return p;
+      return {
+        ...p,
+        url: toCanonicalGcsUrl(p.url)
+      };
+    });
+  }
+
+  return sanitized;
+}
+
 // Recursively processes any response object or list returned by standard API routes, and transforms
-// any GCS reference like "/gcs/folder/file.ext" into a secure GCS direct-access signed URL.
+// any GCS reference into either a secure direct signed URL (if enabled) or a permanent canonical proxy URL.
 async function autoSignGcsUrlsInObject(obj, useDirectUrls = null) {
   try {
     if (!obj || !getGcsBucket()) return obj;
@@ -781,14 +874,11 @@ async function autoSignGcsUrlsInObject(obj, useDirectUrls = null) {
       useDirectUrls = await getGcsUseDirectUrls();
     }
     
-    if (!useDirectUrls) return obj; // If direct URLs are disabled (standard proxy mode), send clean DB paths
-    
     if (Array.isArray(obj)) {
       return Promise.all(obj.map(item => autoSignGcsUrlsInObject(item, useDirectUrls)));
     }
     
     if (typeof obj === 'object' && !(obj instanceof Date)) {
-      // Guard against non-plain objects like MongoDB ObjectIds, buffers, etc.
       if (obj.constructor && obj.constructor.name !== 'Object' && obj.constructor.name !== 'Array') {
         return obj;
       }
@@ -798,21 +888,16 @@ async function autoSignGcsUrlsInObject(obj, useDirectUrls = null) {
       const signedValues = await Promise.all(
         keys.map(async (key) => {
           const val = cloned[key];
-          if (typeof val === 'string' && val.length < 512 && !val.startsWith('data:') && (val.includes('/gcs/') || val.includes('gcs/'))) {
-            let gcsPath = val;
-            if (gcsPath.includes('api/gcs/')) {
-              gcsPath = gcsPath.substring(gcsPath.indexOf('api/gcs/') + 8);
-            } else if (gcsPath.includes('gcs/')) {
-              gcsPath = gcsPath.substring(gcsPath.indexOf('gcs/') + 4);
+          if (typeof val === 'string' && !val.startsWith('data:') && (val.includes('/gcs/') || val.includes('gcs/') || val.includes('storage.googleapis.com/'))) {
+            const gcsPath = extractGcsPath(val);
+            if (!gcsPath) return val;
+            
+            if (useDirectUrls) {
+              const signedUrl = await getGcsSignedUrl(gcsPath);
+              return signedUrl || `/api/gcs/${gcsPath}`;
+            } else {
+              return `/api/gcs/${gcsPath}`;
             }
-            if (gcsPath.startsWith('/')) {
-              gcsPath = gcsPath.substring(1);
-            }
-            if (gcsPath.includes('?')) {
-              gcsPath = gcsPath.split('?')[0];
-            }
-            const signedUrl = await getGcsSignedUrl(gcsPath);
-            return signedUrl || val;
           } else if (val && typeof val === 'object' && !(val instanceof Date)) {
             return autoSignGcsUrlsInObject(val, useDirectUrls);
           }
@@ -1986,8 +2071,8 @@ app.use((req, res, next) => {
 
 // ─── Middleware ───
 app.use(cors({ origin: '*' }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 const clientErrors = [];
 app.post('/api/log-client-error', (req, res) => {
@@ -2245,6 +2330,56 @@ async function connectDB() {
       console.error('Error during UTF-8 mangled filenames migration:', e);
     }
 
+    // Migration to sanitize any expired/direct GCS signed URLs in contracts2 (playlist_audio_files, client_photo, venue_photos)
+    try {
+      const contractsWithGcs = await db.collection('contracts2').find({
+        $or: [
+          { "playlist_audio_files.0": { $exists: true } },
+          { client_photo: { $exists: true, $ne: null } },
+          { "venue_photos.0": { $exists: true } }
+        ]
+      }).toArray();
+      for (const contract of contractsWithGcs) {
+        let changed = false;
+        const updates = {};
+        if (Array.isArray(contract.playlist_audio_files)) {
+          const sanitizedAudio = contract.playlist_audio_files.map(a => {
+            const canonical = toCanonicalGcsUrl(a.url);
+            if (canonical !== a.url) {
+              changed = true;
+              return { ...a, url: canonical };
+            }
+            return a;
+          });
+          if (changed) updates.playlist_audio_files = sanitizedAudio;
+        }
+        if (contract.client_photo) {
+          const canonicalPhoto = toCanonicalGcsUrl(contract.client_photo);
+          if (canonicalPhoto !== contract.client_photo) {
+            changed = true;
+            updates.client_photo = canonicalPhoto;
+          }
+        }
+        if (Array.isArray(contract.venue_photos)) {
+          const sanitizedVenuePhotos = contract.venue_photos.map(p => {
+            const canonical = toCanonicalGcsUrl(p.url);
+            if (canonical !== p.url) {
+              changed = true;
+              return { ...p, url: canonical };
+            }
+            return p;
+          });
+          if (changed) updates.venue_photos = sanitizedVenuePhotos;
+        }
+        if (changed) {
+          await db.collection('contracts2').updateOne({ _id: contract._id }, { $set: updates });
+          console.log(`[Migration] Sanitized GCS URLs in contract ${contract.id || contract._id}`);
+        }
+      }
+    } catch (e) {
+      console.error('Error during GCS URLs migration in contracts2:', e);
+    }
+
     // TTL index: auto-delete uploaded form files after 24 hours
     try {
       await db.collection('form_files').createIndex({ created_at: 1 }, { expireAfterSeconds: 86400 });
@@ -2316,46 +2451,83 @@ function optionalAuth(req, res, next) {
   } catch { req.user = null; next(); }
 }
 
-async function generateContentWithRetry(ai, params, modelsToTry = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"]) {
+// Set of models known to have exhausted quotas to avoid retrying them needlessly
+const quotaExhaustedModels = new Set();
+
+async function generateContentWithRetry(ai, params, modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-flash-latest", "gemini-3.7-flash"]) {
   let lastException = null;
-  for (let i = 0; i < modelsToTry.length; i++) {
-    const modelName = modelsToTry[i];
-    for (let attempt = 1; attempt <= 3; attempt++) {
+  const rawModels = [...modelsToTry];
+  if (!rawModels.includes("gemini-3.1-flash-lite")) rawModels.push("gemini-3.1-flash-lite");
+  if (!rawModels.includes("gemini-2.5-flash")) rawModels.push("gemini-2.5-flash");
+  if (!rawModels.includes("gemini-flash-latest")) rawModels.push("gemini-flash-latest");
+
+  // Filter out models that have already exceeded daily quota in this process lifecycle
+  const models = rawModels.filter(m => !quotaExhaustedModels.has(m));
+  if (models.length === 0) {
+    // If all are marked exhausted, reset the cache in case quotas replenished
+    quotaExhaustedModels.clear();
+    models.push(...rawModels);
+  }
+
+  for (let i = 0; i < models.length; i++) {
+    const modelName = models[i];
+    if (quotaExhaustedModels.has(modelName)) continue;
+
+    const maxAttempts = 2;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        console.log(`[Gemini SDK Request] Attempting model: ${modelName} (Model ${i + 1}/${modelsToTry.length}, Attempt ${attempt}/3)`);
+        console.log(`[Gemini SDK Request] Attempting model: ${modelName} (Model ${i + 1}/${models.length}, Attempt ${attempt}/${maxAttempts})`);
         const response = await ai.models.generateContent({
           ...params,
           model: modelName
         });
         if (response && response.text) {
-          console.log(`[Gemini SDK Request] Success with model: ${modelName} on attempt ${attempt}`);
+          console.log(`[Gemini SDK Request] Success with model: ${modelName} (attempt ${attempt})`);
           return response;
         }
       } catch (exc) {
         const errorMsg = exc.message || String(exc);
-        console.log(`[Gemini SDK Request Error] Model ${modelName} (Attempt ${attempt}/3) exception:`, errorMsg);
+        console.log(`[Gemini SDK Request Error] Model ${modelName} (Attempt ${attempt}/${maxAttempts}) exception:`, errorMsg);
         lastException = exc;
-        
-        const errStr = (errorMsg + JSON.stringify(exc)).toLowerCase();
-        const isQuotaOrRateLimit = errStr.includes('429') || errStr.includes('quota') || errStr.includes('exhausted') || errStr.includes('limit') || errStr.includes('503') || errStr.includes('unavailable');
-        
-        if (isQuotaOrRateLimit) {
-          console.log(`[Gemini SDK] Detected resource constraint or rate limit (429/503). Skipping further attempts on ${modelName} and moving to fallback model.`);
-          break; // Break the attempt loop to move to the next model immediately
+
+        const errStr = (errorMsg + ' ' + JSON.stringify(exc)).toLowerCase();
+        const isNotFoundOrBadModel = errStr.includes('404') || errStr.includes('not found') || errStr.includes('invalid_argument');
+        const isTransient503 = errStr.includes('503') || errStr.includes('unavailable') || errStr.includes('high demand') || errStr.includes('overloaded') || errStr.includes('temporarily unavailable');
+        const isRateLimit429 = errStr.includes('429') || errStr.includes('quota') || errStr.includes('exhausted') || errStr.includes('resource_exhausted');
+
+        if (isNotFoundOrBadModel) {
+          // Model does not exist or invalid argument on this model, jump to next model immediately
+          break;
         }
 
-        if (attempt < 3) {
-          const delay = attempt * 1500;
-          console.log(`[Gemini SDK] Waiting ${delay}ms before next retry on ${modelName}...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+        if (isRateLimit429) {
+          // Model has exceeded quota. Mark this model (and any related alias) as exhausted and switch immediately without sleeping
+          quotaExhaustedModels.add(modelName);
+          if (modelName === 'gemini-3.7-flash' || modelName === 'gemini-flash-latest' || errStr.includes('gemini-3.7-flash')) {
+            quotaExhaustedModels.add('gemini-3.7-flash');
+            quotaExhaustedModels.add('gemini-flash-latest');
+          }
+          console.log(`[Gemini SDK] Quota exhausted on ${modelName}. Switching immediately to next fallback model without delay...`);
+          break; // Don't retry the same model
+        }
+
+        if (isTransient503) {
+          if (attempt < maxAttempts) {
+            const delay = 600 + Math.floor(Math.random() * 400);
+            console.log(`[Gemini SDK] High demand on ${modelName}. Waiting ${delay}ms before quick retry ${attempt + 1}...`);
+            await new Promise(r => setTimeout(r, delay));
+          } else {
+            console.log(`[Gemini SDK] Model ${modelName} 503 attempts finished. Moving to next fallback model...`);
+          }
+        } else {
+          // Other unexpected error, move to next model immediately
+          break;
         }
       }
     }
-    console.log(`[Gemini SDK Request] Model ${modelName} attempts exhausted. Checking next fallback model...`);
-    if (i < modelsToTry.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
   }
+
   throw lastException || new Error("All model fallback attempts exhausted.");
 }
 
@@ -2523,7 +2695,13 @@ function clean(doc) {
 function cleanList(docs) { return docs.map(clean); }
 
 // File upload config
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ 
+  storage: multer.memoryStorage(), 
+  limits: { 
+    fileSize: 100 * 1024 * 1024,
+    fieldSize: 100 * 1024 * 1024
+  } 
+});
 
 function decodeMulterFilename(originalName) {
   if (!originalName) return '';
@@ -3916,17 +4094,23 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   return res.status(404).json({ error: 'Not found' });
 });
 
-function isContractLockedByJ2(contract) {
-  if (!contract) return false;
+function getContractEventDate(contract) {
+  if (!contract) return null;
   const info = contract.client_info || {};
   const eventDateStr = info.event_date || contract.event_date;
-  if (!eventDateStr || eventDateStr === '1970-01-01') return false;
+  if (!eventDateStr || eventDateStr === '1970-01-01') return null;
   
   const dateOnly = String(eventDateStr).split('T')[0];
   const parts = dateOnly.split('-').map(Number);
-  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) return false;
+  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) return null;
   
-  const eventDate = new Date(parts[0], parts[1] - 1, parts[2]);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function isContractLockedByJ2(contract) {
+  const eventDate = getContractEventDate(contract);
+  if (!eventDate) return false;
+  
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   
@@ -3936,15 +4120,94 @@ function isContractLockedByJ2(contract) {
   return diffDays <= 2;
 }
 
+function isEventPassedByJ2(contract) {
+  const eventDate = getContractEventDate(contract);
+  if (!eventDate) return false;
+  
+  // Date of event + 2 days (ex: Nov 1st -> J+2 is Nov 3rd at 00:00:00)
+  const expirationDate = new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate() + 2, 0, 0, 0);
+  const now = new Date();
+  
+  return now.getTime() >= expirationDate.getTime();
+}
+
+async function deleteGcsFileByUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  const gcsPath = extractGcsPath(rawUrl);
+  if (!gcsPath) return false;
+  const b = getGcsBucket();
+  if (!b) return false;
+  try {
+    const file = b.file(gcsPath);
+    const [exists] = await file.exists();
+    if (exists) {
+      await file.delete();
+      console.log(`[Auto-Cleanup GCS] Successfully deleted GCS file: ${gcsPath}`);
+      return true;
+    }
+  } catch (err) {
+    console.warn(`[Auto-Cleanup GCS Warning] Could not delete GCS file ${gcsPath}:`, err.message);
+  }
+  return false;
+}
+
+async function cleanupExpiredEventAudioFiles() {
+  if (!db) return { purgedFiles: 0, updatedContracts: 0 };
+  try {
+    const contractsWithAudio = await db.collection('contracts2').find({
+      "playlist_audio_files.0": { $exists: true }
+    }).toArray();
+
+    let totalPurgedFiles = 0;
+    let contractsUpdated = 0;
+
+    for (const contract of contractsWithAudio) {
+      if (isEventPassedByJ2(contract)) {
+        const audioFiles = contract.playlist_audio_files || [];
+        console.log(`[Audio Auto-Cleanup J+2] Purging ${audioFiles.length} audio file(s) for event (Contract: ${contract.id}, Date: ${contract.client_info?.event_date || contract.event_date})`);
+        
+        for (const audio of audioFiles) {
+          if (audio && audio.url) {
+            await deleteGcsFileByUrl(audio.url);
+            totalPurgedFiles++;
+          }
+        }
+
+        await db.collection('contracts2').updateOne(
+          { _id: contract._id },
+          { 
+            $set: { 
+              playlist_audio_files: [],
+              updated_at: new Date().toISOString()
+            } 
+          }
+        );
+        contractsUpdated++;
+      }
+    }
+
+    if (contractsUpdated > 0) {
+      clearDjClientResponseCache();
+      console.log(`[Audio Auto-Cleanup J+2] ✅ Auto-cleanup completed: ${totalPurgedFiles} file(s) deleted across ${contractsUpdated} contract(s).`);
+    }
+
+    return { purgedFiles: totalPurgedFiles, updatedContracts: contractsUpdated };
+  } catch (err) {
+    console.error('[Audio Auto-Cleanup J+2 Error]:', err);
+    return { error: err.message };
+  }
+}
+
 api.put('/public/dj-client/:id', async (req, res) => {
   const id = req.params.id;
   const contract = await db.collection('contracts2').findOne({ id });
   if (contract && isContractLockedByJ2(contract)) {
     return res.status(403).json({ error: "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)." });
   }
-  await db.collection('contracts2').updateOne({ id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
+  const cleanBody = sanitizeContractPayload(req.body);
+  await db.collection('contracts2').updateOne({ id }, { $set: { ...cleanBody, updated_at: new Date().toISOString() } });
   const updatedContract = await db.collection('contracts2').findOne({ id }, { projection: { _id: 0 } });
-  await syncVenueFromContract(id, req.body);
+  await syncVenueFromContract(id, cleanBody);
   if (updatedContract) {
     try {
       await syncContractReservations(updatedContract);
@@ -4634,7 +4897,6 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
 }`;
 
     const response = await generateContentWithRetry(ai, {
-      model: "gemini-3.5-flash",
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
@@ -4657,8 +4919,22 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
       }
     });
 
-    const result = JSON.parse(response.text.trim());
-    res.json(result);
+    let result = null;
+    try {
+      let rawText = response.text.trim();
+      if (rawText.startsWith('```json')) {
+        rawText = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (rawText.startsWith('```')) {
+        rawText = rawText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+      result = JSON.parse(rawText);
+    } catch (parseErr) {
+      console.warn('Venue suggestion JSON parse error:', parseErr.message);
+    }
+    if (result && typeof result === 'object') {
+      return res.json(result);
+    }
+    throw new Error('Invalid JSON from Gemini venue suggestion');
   } catch (err) {
     console.error('Error generating venue suggestion:', err);
     
@@ -5005,17 +5281,19 @@ api.get('/contracts2/:id', authMiddleware, async (req, res) => {
   res.json(c);
 });
 api.post('/contracts2', authMiddleware, async (req, res) => {
-  const contract = { id: uuidv4(), ...req.body, status: req.body.status || 'draft', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  const cleanBody = sanitizeContractPayload(req.body);
+  const contract = { id: uuidv4(), ...cleanBody, status: cleanBody.status || 'draft', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   await db.collection('contracts2').insertOne(contract);
-  await syncVenueFromContract(contract.id, req.body);
+  await syncVenueFromContract(contract.id, cleanBody);
   await syncContractReservations(contract);
   clearDjClientResponseCache();
   res.json(clean(contract));
 });
 api.put('/contracts2/:id', authMiddleware, async (req, res) => {
-  await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
+  const cleanBody = sanitizeContractPayload(req.body);
+  await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { ...cleanBody, updated_at: new Date().toISOString() } });
   const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
-  await syncVenueFromContract(req.params.id, req.body);
+  await syncVenueFromContract(req.params.id, cleanBody);
   await syncContractReservations(updatedContract);
   clearDjClientResponseCache();
   res.json(updatedContract);
@@ -5924,8 +6202,164 @@ api.post('/crm/companies/batch', authMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Memory store for chunked uploads
+const crmChunkUploads = new Map();
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, rec] of crmChunkUploads.entries()) {
+    if (now - rec.createdAt > 15 * 60 * 1000) {
+      crmChunkUploads.delete(id);
+    }
+  }
+}, 5 * 60 * 1000);
+
+// Endpoint 1: Get signed GCS upload URL (bypasses reverse proxy completely for large files)
+api.post('/crm/get-signed-upload-url', authMiddleware, async (req, res) => {
+  try {
+    const { filename, contentType } = req.body;
+    const activeBucket = getGcsBucket();
+    if (!activeBucket) {
+      return res.json({ directUploadAvailable: false });
+    }
+
+    const decodedName = filename || 'document';
+    const cleanBaseName = decodedName.replace(/[\\/]/g, '_').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeName = `${Date.now()}_${uuidv4().slice(0, 8)}_${cleanBaseName}`;
+    const gcsPath = `crm-imported-contracts/${safeName}`;
+    const file = activeBucket.file(gcsPath);
+
+    const [signedUrl] = await file.getSignedUrl({
+      version: 'v4',
+      action: 'write',
+      expires: Date.now() + 15 * 60 * 1000,
+      contentType: contentType || 'application/octet-stream'
+    });
+
+    res.json({
+      directUploadAvailable: true,
+      signedUrl,
+      gcs_path: gcsPath,
+      gcs_url: `/api/gcs/${gcsPath}`,
+      filename: decodedName
+    });
+  } catch (err) {
+    console.warn("[CRM Signed Upload URL Warn]:", err.message);
+    res.json({ directUploadAvailable: false, error: err.message });
+  }
+});
+
+// Endpoint 2: Chunked upload fallback (chunks < 500KB, guaranteed immunity to 413 Payload Too Large)
+api.post('/crm/upload-chunk', authMiddleware, upload.single('chunk'), async (req, res) => {
+  try {
+    const { uploadId, chunkIndex, totalChunks, filename, mimeType } = req.body;
+    if (!uploadId || chunkIndex === undefined || !totalChunks || !req.file) {
+      return res.status(400).json({ error: "Paramètres de chunk invalides" });
+    }
+
+    const idx = parseInt(chunkIndex, 10);
+    const total = parseInt(totalChunks, 10);
+
+    if (!crmChunkUploads.has(uploadId)) {
+      crmChunkUploads.set(uploadId, {
+        filename: decodeMulterFilename(filename) || filename || 'file',
+        mimeType: mimeType || 'application/octet-stream',
+        totalChunks: total,
+        chunks: new Map(),
+        createdAt: Date.now()
+      });
+    }
+
+    const record = crmChunkUploads.get(uploadId);
+    record.chunks.set(idx, req.file.buffer);
+
+    if (record.chunks.size === total) {
+      const orderedBuffers = [];
+      for (let i = 0; i < total; i++) {
+        const buf = record.chunks.get(i);
+        if (!buf) {
+          throw new Error(`Morceau ${i + 1}/${total} manquant pour le fichier ${record.filename}`);
+        }
+        orderedBuffers.push(buf);
+      }
+      const fullBuffer = Buffer.concat(orderedBuffers);
+      crmChunkUploads.delete(uploadId);
+
+      const activeBucket = getGcsBucket();
+      let gcsPath = null;
+      let gcsUrl = null;
+      const cleanBaseName = (record.filename || 'file').replace(/[\\/]/g, '_').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const safeName = `${Date.now()}_${uuidv4().slice(0, 8)}_${cleanBaseName}`;
+      gcsPath = `crm-imported-contracts/${safeName}`;
+
+      if (activeBucket) {
+        const gcsFile = activeBucket.file(gcsPath);
+        await gcsFile.save(fullBuffer, { metadata: { contentType: record.mimeType } });
+        gcsUrl = `/api/gcs/${gcsPath}`;
+      }
+
+      return res.json({
+        completed: true,
+        filename: record.filename,
+        mimetype: record.mimeType,
+        size: fullBuffer.length,
+        gcs_path: gcsPath,
+        gcs_url: gcsUrl
+      });
+    }
+
+    return res.json({ completed: false, received: record.chunks.size, total });
+  } catch (err) {
+    console.error("[CRM Chunk Upload Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 150), async (req, res) => {
-  if (!req.files || req.files.length === 0) {
+  const activeBucket = getGcsBucket();
+  let rawFiles = [];
+
+  // Parse gcs_files from JSON body or stringified form field
+  let incomingGcsFiles = [];
+  if (req.body && req.body.gcs_files) {
+    if (Array.isArray(req.body.gcs_files)) {
+      incomingGcsFiles = req.body.gcs_files;
+    } else if (typeof req.body.gcs_files === 'string') {
+      try {
+        incomingGcsFiles = JSON.parse(req.body.gcs_files);
+      } catch (e) {}
+    }
+  }
+
+  // Load files from GCS if references provided
+  if (incomingGcsFiles.length > 0 && activeBucket) {
+    for (const gFile of incomingGcsFiles) {
+      try {
+        if (!gFile.gcs_path) continue;
+        const fileRef = activeBucket.file(gFile.gcs_path);
+        const [buffer] = await fileRef.download();
+        rawFiles.push({
+          originalname: gFile.filename || 'document',
+          buffer: buffer,
+          size: buffer.length,
+          mimetype: gFile.mimetype || 'application/octet-stream',
+          gcs_path: gFile.gcs_path,
+          gcs_url: gFile.gcs_url || `/api/gcs/${gFile.gcs_path}`
+        });
+      } catch (dlErr) {
+        console.error(`[CRM GCS File Load Error for ${gFile.gcs_path}]:`, dlErr.message);
+      }
+    }
+  }
+
+  // Add any direct multipart files
+  if (req.files && req.files.length > 0) {
+    for (const f of req.files) {
+      rawFiles.push(f);
+    }
+  }
+
+  if (rawFiles.length === 0) {
     return res.status(400).json({ error: "Veuillez sélectionner au moins un fichier ou dossier (PDF, Word, Excel, Images, Zip)." });
   }
 
@@ -5944,7 +6378,21 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
       }
     });
 
-    const activeBucket = getGcsBucket();
+    // Helper to identify and skip "fiche de visite" files (handwritten notes / not official contracts)
+    const isFicheDeVisite = (filename) => {
+      if (!filename) return false;
+      const baseName = filename.split(/[/\\]/).pop().replace(/\.[^/.]+$/, "");
+      const normalized = baseName
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (normalized.includes('fiche de visite') || normalized.includes('fiche visite')) return true;
+      const compact = normalized.replace(/\s+/g, '');
+      return compact.includes('fichedevisite') || compact.includes('fichevisite');
+    };
 
     // 1. Expand all files, unpacking any .zip files encountered
     const expandedFiles = [];
@@ -5967,8 +6415,12 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
       }
     };
 
-    for (const rawFile of req.files) {
+    for (const rawFile of rawFiles) {
       const decodedName = decodeMulterFilename(rawFile.originalname) || rawFile.originalname || 'document';
+      if (isFicheDeVisite(decodedName)) {
+        console.log(`[CRM AI Skip]: Ignoring "fiche de visite" file: ${decodedName}`);
+        continue;
+      }
       const fileExt = decodedName.split('.').pop().toLowerCase();
 
       if (fileExt === 'zip' || rawFile.mimetype === 'application/zip' || rawFile.mimetype === 'application/x-zip-compressed') {
@@ -5979,8 +6431,12 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
           for (const entry of zipEntries) {
             if (entry.isDirectory) continue;
             const entryName = entry.entryName;
-            // Ignore system/hidden files
+            // Ignore system/hidden files or fiches de visite
             if (entryName.includes('__MACOSX') || entryName.includes('.DS_Store') || entryName.startsWith('.') || entryName.includes('/.')) {
+              continue;
+            }
+            if (isFicheDeVisite(entryName)) {
+              console.log(`[CRM Zip Unpack]: Ignoring "fiche de visite" entry: ${entryName}`);
               continue;
             }
             const entryExt = entryName.split('.').pop().toLowerCase();
@@ -5990,13 +6446,14 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
                 originalname: entryName,
                 buffer: entry.getData(),
                 size: entry.header.size,
-                mimetype: getMimeFromExt(entryExt)
+                mimetype: getMimeFromExt(entryExt),
+                gcs_path: rawFile.gcs_path,
+                gcs_url: rawFile.gcs_url
               });
             }
           }
         } catch (zipErr) {
           console.error(`[CRM Zip Unpack Error] Failed to extract ${decodedName}:`, zipErr.message);
-          // If zip reading fails, keep the file as is
           expandedFiles.push(rawFile);
         }
       } else {
@@ -6004,7 +6461,9 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
           originalname: decodedName,
           buffer: rawFile.buffer,
           size: rawFile.size,
-          mimetype: rawFile.mimetype || getMimeFromExt(fileExt)
+          mimetype: rawFile.mimetype || getMimeFromExt(fileExt),
+          gcs_path: rawFile.gcs_path,
+          gcs_url: rawFile.gcs_url
         });
       }
     }
@@ -6014,19 +6473,18 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
     }
 
     const uploadedDocs = [];
-    const inlineParts = [];
-    const textDocumentsContent = [];
+    const processedFilesInfo = [];
 
     for (const file of expandedFiles) {
       const decodedOriginalName = decodeMulterFilename(file.originalname) || file.originalname || 'document';
       const fileExt = decodedOriginalName.split('.').pop().toLowerCase();
       let mimeType = file.mimetype || getMimeFromExt(fileExt);
 
-      let gcsPath = null;
-      let gcsUrl = null;
+      let gcsPath = file.gcs_path || null;
+      let gcsUrl = file.gcs_url || null;
 
-      // Save file to GCS
-      if (activeBucket) {
+      // Save file to GCS if not already stored
+      if (activeBucket && !gcsPath) {
         const cleanBaseName = decodedOriginalName.replace(/[\\/]/g, '_').replace(/[^a-zA-Z0-9._-]/g, '_');
         const safeName = `${Date.now()}_${uuidv4().slice(0, 8)}_${cleanBaseName}`;
         gcsPath = `crm-imported-contracts/${safeName}`;
@@ -6039,43 +6497,81 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
         }
       }
 
-      uploadedDocs.push({
+      const docInfo = {
         filename: decodedOriginalName,
         mimetype: mimeType,
         size: file.size,
         gcs_path: gcsPath,
         gcs_url: gcsUrl
-      });
+      };
+      uploadedDocs.push(docInfo);
 
-      // Process content based on document type
-      if (['pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(fileExt)) {
-        // Multimodal image or PDF
-        inlineParts.push({
-          inlineData: {
-            mimeType: mimeType.startsWith('image/') || mimeType === 'application/pdf' ? mimeType : (fileExt === 'pdf' ? 'application/pdf' : 'image/jpeg'),
-            data: file.buffer.toString('base64')
+      // Extract text or prepare inlineData for this file
+      let textContent = '';
+      let inlinePart = null;
+
+      if (fileExt === 'pdf') {
+        let extractedPdfText = '';
+        try {
+          const pdfParse = require('pdf-parse');
+          const pdfParsePromise = pdfParse(file.buffer);
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('pdf-parse timeout')), 5000));
+          const pdfData = await Promise.race([pdfParsePromise, timeoutPromise]);
+          if (pdfData && pdfData.text && pdfData.text.trim().length > 30) {
+            extractedPdfText = pdfData.text.trim();
           }
-        });
+        } catch (pdfErr) {
+          console.warn(`[CRM PDF-Parse Notice for ${decodedOriginalName}]:`, pdfErr.message);
+        }
+
+        if (extractedPdfText) {
+          const safeText = extractedPdfText.length > 35000 ? extractedPdfText.slice(0, 35000) + '... [suite]' : extractedPdfText;
+          textContent = `=== DOCUMENT CONTRAT / DEVIS PDF : "${decodedOriginalName}" ===\n${safeText}\n`;
+        } else {
+          // If scanned PDF with no text layer, send as multimodal inlineData
+          if (file.buffer.length <= 5 * 1024 * 1024) {
+            inlinePart = {
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: file.buffer.toString('base64')
+              }
+            };
+          } else {
+            inlinePart = {
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: file.buffer.slice(0, 4 * 1024 * 1024).toString('base64')
+              }
+            };
+          }
+        }
+      } else if (['png', 'jpg', 'jpeg', 'webp'].includes(fileExt)) {
+        const imageBuffer = file.buffer.length > 4 * 1024 * 1024 ? file.buffer.slice(0, 4 * 1024 * 1024) : file.buffer;
+        inlinePart = {
+          inlineData: {
+            mimeType: mimeType.startsWith('image/') ? mimeType : 'image/jpeg',
+            data: imageBuffer.toString('base64')
+          }
+        };
       } else if (fileExt === 'docx') {
         try {
           const docxResult = await mammoth.extractRawText({ buffer: file.buffer });
-          const textContent = (docxResult && docxResult.value) ? docxResult.value.trim() : "";
-          if (textContent) {
-            textDocumentsContent.push(`=== DOCUMENT WORD (.docx) : "${decodedOriginalName}" ===\n${textContent}\n`);
+          const text = (docxResult && docxResult.value) ? docxResult.value.trim() : "";
+          if (text) {
+            textContent = `=== DOCUMENT WORD (.docx) : "${decodedOriginalName}" ===\n${text.length > 35000 ? text.slice(0, 35000) : text}\n`;
           }
         } catch (mErr) {
           console.warn(`[CRM Mammoth Parse Warning for ${decodedOriginalName}]:`, mErr.message);
         }
       } else if (fileExt === 'doc') {
         try {
-          // Attempt mammoth fallback or text extract
           const docxResult = await mammoth.extractRawText({ buffer: file.buffer }).catch(() => null);
-          let textContent = (docxResult && docxResult.value) ? docxResult.value.trim() : "";
-          if (!textContent) {
-            textContent = file.buffer.toString('latin1').replace(/[^\x20-\x7E\xC0-\xFF\n\r\t]/g, ' ').replace(/\s{2,}/g, ' ');
+          let text = (docxResult && docxResult.value) ? docxResult.value.trim() : "";
+          if (!text) {
+            text = file.buffer.toString('latin1').replace(/[^\x20-\x7E\xC0-\xFF\n\r\t]/g, ' ').replace(/\s{2,}/g, ' ');
           }
-          if (textContent && textContent.length > 20) {
-            textDocumentsContent.push(`=== DOCUMENT WORD (.doc) : "${decodedOriginalName}" ===\n${textContent}\n`);
+          if (text && text.length > 20) {
+            textContent = `=== DOCUMENT WORD (.doc) : "${decodedOriginalName}" ===\n${text.length > 35000 ? text.slice(0, 35000) : text}\n`;
           }
         } catch (docErr) {
           console.warn(`[CRM DOC Parse Warning for ${decodedOriginalName}]:`, docErr.message);
@@ -6093,31 +6589,58 @@ api.post('/crm/extract-contract-clients', authMiddleware, upload.array('files', 
             }
           }
           if (sheetsOutput.length > 0) {
-            textDocumentsContent.push(`=== TABLEAU EXCEL / HISTORIQUE (${fileExt.toUpperCase()}) : "${decodedOriginalName}" ===\n${sheetsOutput.join('\n\n')}\n`);
+            textContent = `=== TABLEAU EXCEL / HISTORIQUE (${fileExt.toUpperCase()}) : "${decodedOriginalName}" ===\n${sheetsOutput.join('\n\n')}\n`;
           }
         } catch (xlErr) {
           console.warn(`[CRM Excel Parse Warning for ${decodedOriginalName}]:`, xlErr.message);
         }
       } else if (['txt', 'rtf', 'odt'].includes(fileExt)) {
         try {
-          const textContent = file.buffer.toString('utf8').trim();
-          if (textContent) {
-            textDocumentsContent.push(`=== DOCUMENT TEXTE : "${decodedOriginalName}" ===\n${textContent}\n`);
+          const text = file.buffer.toString('utf8').trim();
+          if (text) {
+            textContent = `=== DOCUMENT TEXTE : "${decodedOriginalName}" ===\n${text}\n`;
           }
         } catch (tErr) {
           console.warn(`[CRM Text Parse Warning for ${decodedOriginalName}]:`, tErr.message);
         }
       }
+
+      processedFilesInfo.push({
+        filename: decodedOriginalName,
+        docInfo,
+        textContent,
+        inlinePart
+      });
     }
 
-    const promptText = `Tu es un assistant expert en gestion administrative, CRM et analyse de contrats, devis, fiches techniques et listings clients (PDF, Word, Excel, CSV, scans, images) pour une entreprise d'événementiel, sonorisation, DJ et spectacle (R'KEY PROD).
+    // Split processed files into sub-batches of max 3 files each to guarantee fast inference and zero timeout
+    const SUB_BATCH_SIZE = 3;
+    const subBatches = [];
+    for (let i = 0; i < processedFilesInfo.length; i += SUB_BATCH_SIZE) {
+      subBatches.push(processedFilesInfo.slice(i, i + SUB_BATCH_SIZE));
+    }
 
-Voici ${expandedFiles.length} document(s) / contrat(s) / tableau(x) téléversé(s).
-Analyse minutieusement chaque document, tableau et page pour extraire TOUS les clients ou dossiers de prestation identifiés.
+    console.log(`[CRM AI Extraction] Processing ${processedFilesInfo.length} document(s) in ${subBatches.length} sub-batch(es)...`);
+    let allExtractedClients = [];
 
-${textDocumentsContent.length > 0 ? `\n--- CONTENU TEXTUEL, WORD & TABLEAUX EXCEL EXTRAITS ---\n${textDocumentsContent.join('\n----------------------------------------\n')}\n` : ''}
+    for (let b = 0; b < subBatches.length; b++) {
+      const batchItems = subBatches[b];
+      const batchInlineParts = [];
+      const batchTexts = [];
 
-Pour chaque client ou dossier trouvé (ou pour chaque ligne d'un tableau Excel/CSV représentant un client/événement) :
+      for (const item of batchItems) {
+        if (item.inlinePart) batchInlineParts.push(item.inlinePart);
+        if (item.textContent) batchTexts.push(item.textContent);
+      }
+
+      const promptText = `Tu es un assistant expert en gestion administrative, CRM et analyse de contrats, devis, fiches techniques et listings clients pour une entreprise d'événementiel, sonorisation, DJ et spectacle (R'KEY PROD).
+
+Voici ${batchItems.length} document(s) / contrat(s) à analyser :
+${batchItems.map(it => `- "${it.filename}"`).join('\n')}
+
+${batchTexts.length > 0 ? `\n--- CONTENU TEXTUEL & TABLEAUX EXTRAITS ---\n${batchTexts.join('\n----------------------------------------\n')}\n` : ''}
+
+Analyse minutieusement chaque document, tableau et page pour extraire TOUS les clients ou dossiers de prestation identifiés :
 - "nom": Le nom complet du client (ex: "Thomas & Émilie DUPONT", "Alexandre MARTIN") ou le nom de l'entreprise / collectivité / association (ex: "Mairie de Strasbourg", "Société ABC").
 - "type_client": "Particulier", "Entreprise", ou "Association" selon le profil détecté.
 - "telephone": Numéro de téléphone portable ou fixe (ex: "06 12 34 56 78").
@@ -6130,71 +6653,70 @@ Pour chaque client ou dossier trouvé (ou pour chaque ligne d'un tableau Excel/C
 - "type_evenement": Type d'événement (ex: "Mariage", "Anniversaire", "Soirée d'entreprise", "Cocktail", "Baptême", "Gala", "Prestation DJ", "Autre").
 - "lieu_evenement": Nom du lieu ou salle de réception et ville de l'événement.
 - "notes": Synthèse claire des prestations, formules choisies, options (sonorisation, éclairage, vin d'honneur, borne photo, etc.), numéro de contrat ou devis, montant total TTC ou acompte, horaires, et toute remarque importante.
-- "source_file": Le nom exact du fichier d'origine parmi ceux fournis.
+- "source_file": Le nom exact du fichier d'origine correspondant parmi : ${batchItems.map(it => `"${it.filename}"`).join(', ')}.
 
 Réponds obligatoirement par un objet JSON strict avec la propriété 'clients' contenant le tableau de tous les clients extraits.`;
 
-    const contents = [
-      ...inlineParts,
-      promptText
-    ];
+      const contents = [
+        ...batchInlineParts,
+        promptText
+      ];
 
-    const response = await generateContentWithRetry(ai, {
-      contents,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            clients: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  nom: { type: Type.STRING },
-                  type_client: { type: Type.STRING },
-                  telephone: { type: Type.STRING },
-                  email: { type: Type.STRING },
-                  adresse: { type: Type.STRING },
-                  siret: { type: Type.STRING },
-                  secteur: { type: Type.STRING },
-                  date_evenement: { type: Type.STRING },
-                  annee_prestation: { type: Type.STRING },
-                  type_evenement: { type: Type.STRING },
-                  lieu_evenement: { type: Type.STRING },
-                  notes: { type: Type.STRING },
-                  source_file: { type: Type.STRING }
-                },
-                required: ["nom", "type_client"]
-              }
-            }
-          },
-          required: ["clients"]
-        }
-      }
-    }, ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"]);
-
-    let extractedClients = [];
-    if (response && response.text) {
       try {
-        let rawText = response.text.trim();
-        if (rawText.startsWith('```json')) {
-          rawText = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-        } else if (rawText.startsWith('```')) {
-          rawText = rawText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        const response = await generateContentWithRetry(ai, {
+          contents,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                clients: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      nom: { type: Type.STRING },
+                      type_client: { type: Type.STRING },
+                      telephone: { type: Type.STRING },
+                      email: { type: Type.STRING },
+                      adresse: { type: Type.STRING },
+                      siret: { type: Type.STRING },
+                      secteur: { type: Type.STRING },
+                      date_evenement: { type: Type.STRING },
+                      annee_prestation: { type: Type.STRING },
+                      type_evenement: { type: Type.STRING },
+                      lieu_evenement: { type: Type.STRING },
+                      notes: { type: Type.STRING },
+                      source_file: { type: Type.STRING }
+                    },
+                    required: ["nom", "type_client"]
+                  }
+                }
+              },
+              required: ["clients"]
+            }
+          }
+        }, ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-flash-latest", "gemini-3.7-flash"]);
+
+        if (response && response.text) {
+          let rawText = response.text.trim();
+          if (rawText.startsWith('```json')) {
+            rawText = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+          } else if (rawText.startsWith('```')) {
+            rawText = rawText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+          const parsed = JSON.parse(rawText);
+          const clientsList = Array.isArray(parsed.clients) ? parsed.clients : (Array.isArray(parsed) ? parsed : []);
+          for (const c of clientsList) {
+            allExtractedClients.push(c);
+          }
         }
-        const parsed = JSON.parse(rawText);
-        if (Array.isArray(parsed.clients)) {
-          extractedClients = parsed.clients;
-        } else if (Array.isArray(parsed)) {
-          extractedClients = parsed;
-        }
-      } catch (parseErr) {
-        console.error("[CRM Contract Extraction JSON Parse Error]:", parseErr, response.text);
+      } catch (batchAiErr) {
+        console.error(`[CRM AI Sub-batch ${b + 1}/${subBatches.length} Error]:`, batchAiErr.message || batchAiErr);
       }
     }
 
-    const formattedClients = extractedClients.map((client, index) => {
+    const formattedClients = allExtractedClients.map((client, index) => {
       const matchedDoc = uploadedDocs.find(d => d.filename === client.source_file) || uploadedDocs[0] || {};
       return {
         id: `extracted_${Date.now()}_${index}`,
@@ -6514,84 +7036,116 @@ api.delete('/location/equipment/:id', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 
-api.get('/gcs/:folder/:filename', async (req, res) => {
-  if (!getGcsBucket()) {
-    console.error(`[GCS GET ERROR] Request for /gcs/${req.params.folder}/${req.params.filename} failed: GCS bucket is not initialized`);
-    return res.status(500).send('GCS not configured');
+api.get(['/gcs/:path(*)', '/gcs/:folder/:filename', '/gcs/*'], async (req, res) => {
+  const activeBucket = getGcsBucket();
+  if (!activeBucket) {
+    console.error(`[GCS GET ERROR] Request failed: GCS bucket is not initialized`);
+    return res.status(500).json({ error: 'GCS not configured' });
   }
-  
-  const gcsFilePath = `${req.params.folder}/${req.params.filename}`;
-  const exactGcsUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFilePath}`;
-  
-  console.log(`[GCS GET] Request received for: /gcs/${gcsFilePath}`);
-  console.log(`[GCS GET] Attempting to load from Google Cloud: ${exactGcsUrl}`);
 
-  const file = bucket.file(gcsFilePath);
-  res.setHeader('Cache-Control', 'public, max-age=31536000');
-  res.type(req.params.filename);
-  if (req.query.download === 'true') {
-    res.setHeader('Content-Disposition', `attachment; filename="${req.params.filename}"`);
+  let gcsFilePath = req.params.path || req.params[0] || (req.params.folder && req.params.filename ? `${req.params.folder}/${req.params.filename}` : '');
+  if (!gcsFilePath && req.url) {
+    const parsedUrl = req.url.split('?')[0];
+    const match = parsedUrl.match(/\/gcs\/(.+)$/);
+    if (match) gcsFilePath = match[1];
   }
-  
+  if (gcsFilePath && gcsFilePath.startsWith('/')) {
+    gcsFilePath = gcsFilePath.substring(1);
+  }
+  if (!gcsFilePath) {
+    return res.status(400).json({ error: 'Chemin de fichier invalide' });
+  }
+
+  const file = activeBucket.file(gcsFilePath);
+  const filename = path.basename(gcsFilePath);
+  const mimeType = getMimeType(filename);
+  const isImage = mimeType.startsWith('image/');
+
   try {
-    const [buffer] = await file.download();
-    res.send(buffer);
-  } catch (err) {
-    console.error(`[GCS GET ERROR] Fail loading file from GCS: ${exactGcsUrl}`);
-    console.error(`[GCS GET ERROR] Google Cloud API error description:`);
-    console.error(`  - Name: ${err.name}`);
-    console.error(`  - Status Code / Error Code: ${err.code}`);
-    console.error(`  - Raw Message: ${err.message}`);
-    console.error(`  - Stack: ${err.stack}`);
-    
-    if (!res.headersSent) {
-      const isPermissionError = err.message.toLowerCase().includes('permission') || 
-                                err.message.toLowerCase().includes('access') || 
-                                err.message.toLowerCase().includes('denied') || 
-                                err.message.toLowerCase().includes('forbidden') ||
-                                err.message.toLowerCase().includes('credential') ||
-                                err.message.toLowerCase().includes('key') ||
-                                err.code === 403;
-      
-      let clientEmail = 'agenda-bot@booking-pro-sync.iam.gserviceaccount.com';
-      if (process.env.GOOGLE_CREDENTIALS_JSON) {
-        try {
-          const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-          if (creds.client_email) clientEmail = creds.client_email;
-        } catch(e) {}
-      }
-      
-      res.setHeader('Content-Type', 'image/svg+xml');
-      res.status(200);
-      
-      if (isPermissionError) {
-        res.send(`
-          <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
-            <rect width="100%" height="100%" fill="#FEE2E2" rx="8" stroke="#F87171" stroke-width="2"/>
-            <text x="50%" y="45" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#DC2626">⚠️ ERREUR D'ACCÈS GCS (403)</text>
-            <text x="50%" y="80" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#7F1D1D" font-weight="bold">Le compte de service n'a pas accès au Bucket !</text>
-            <text x="50%" y="110" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#374151" font-weight="bold">Compte :</text>
-            <text x="50%" y="125" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="8.5" fill="#1F2937">${clientEmail}</text>
-            <text x="50%" y="150" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9.5" fill="#374151" font-weight="bold">Bucket :</text>
-            <text x="50%" y="165" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#1F2937">rkey-prod-storage-01</text>
-            <rect x="15" y="185" width="370" height="50" fill="#FEF3C7" rx="4" stroke="#D97706" stroke-width="1"/>
-            <text x="50%" y="205" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#92400E">SOLUTION : Ajoutez le rôle "Administrateur des objets de stockage"</text>
-            <text x="50%" y="222" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#92400E">à ce compte de service sur votre bucket dans GCP.</text>
-          </svg>
-        `.trim());
-      } else {
-        res.send(`
+    const [exists] = await file.exists();
+    if (!exists) {
+      console.warn(`[GCS GET 404] File ${gcsFilePath} not found in GCS bucket`);
+      if (isImage && !req.headers.range) {
+        res.setHeader('Content-Type', 'image/svg+xml');
+        return res.status(200).send(`
           <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
             <rect width="100%" height="100%" fill="#F3F4F6" rx="8" stroke="#D1D5DB" stroke-width="2"/>
             <text x="50%" y="60" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#4B5563">📷 404 - IMAGE INTROUVABLE</text>
             <text x="50%" y="100" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="10.5" fill="#374151">L'image n'existe pas dans le bucket Google Cloud Storage.</text>
-            <text x="50%" y="130" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#9CA3AF" font-family="monospace">Path: ${req.params.folder}/${req.params.filename}</text>
-            <rect x="25" y="170" width="350" height="50" fill="#ECFDF5" rx="4" stroke="#10B981" stroke-width="1"/>
-            <text x="50%" y="190" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#065F46">RÉSOLUTION : Importez à nouveau l'image</text>
-            <text x="50%" y="208" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" font-weight="bold" fill="#065F46">du matériel pour la recréer.</text>
+            <text x="50%" y="130" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="9" fill="#9CA3AF" font-family="monospace">Path: ${gcsFilePath}</text>
           </svg>
         `.trim());
       }
+      return res.status(404).json({ error: 'Fichier non trouvé', path: gcsFilePath });
+    }
+
+    const [metadata] = await file.getMetadata();
+    const fileSize = parseInt(metadata.size, 10);
+    const contentType = metadata.contentType || mimeType;
+
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    if (req.query.download === 'true') {
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    }
+
+    // Range Request Handling (Required for smooth HTML5 <audio> and <video> playback and seeking)
+    const range = req.headers.range;
+    if (range && fileSize > 0) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10) || 0;
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      if (start >= fileSize || end >= fileSize || start > end) {
+        res.setHeader('Content-Range', `bytes */${fileSize}`);
+        return res.status(416).end();
+      }
+
+      const chunkSize = (end - start) + 1;
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Content-Length', chunkSize);
+      res.setHeader('Content-Type', contentType);
+
+      const stream = file.createReadStream({ start, end });
+      stream.on('error', (streamErr) => {
+        console.error(`[GCS STREAM ERROR] ${gcsFilePath}:`, streamErr.message);
+        if (!res.headersSent) res.status(500).end();
+      });
+      return stream.pipe(res);
+    } else {
+      if (fileSize > 0) {
+        res.setHeader('Content-Length', fileSize);
+      }
+      res.setHeader('Content-Type', contentType);
+      const stream = file.createReadStream();
+      stream.on('error', (streamErr) => {
+        console.error(`[GCS STREAM ERROR] ${gcsFilePath}:`, streamErr.message);
+        if (!res.headersSent) res.status(500).end();
+      });
+      return stream.pipe(res);
+    }
+  } catch (err) {
+    console.error(`[GCS GET ERROR] Failed loading ${gcsFilePath}:`, err.message);
+    if (!res.headersSent) {
+      if (isImage && !req.headers.range) {
+        let clientEmail = 'agenda-bot@booking-pro-sync.iam.gserviceaccount.com';
+        if (process.env.GOOGLE_CREDENTIALS_JSON) {
+          try {
+            const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            if (creds.client_email) clientEmail = creds.client_email;
+          } catch(e) {}
+        }
+        res.setHeader('Content-Type', 'image/svg+xml');
+        return res.status(200).send(`
+          <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
+            <rect width="100%" height="100%" fill="#FEE2E2" rx="8" stroke="#F87171" stroke-width="2"/>
+            <text x="50%" y="45" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="15" font-weight="bold" fill="#DC2626">⚠️ ERREUR D'ACCÈS GCS</text>
+            <text x="50%" y="80" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="11" fill="#7F1D1D" font-weight="bold">${err.message}</text>
+          </svg>
+        `.trim());
+      }
+      return res.status(500).json({ error: 'Erreur de chargement du fichier', message: err.message });
     }
   }
 });
@@ -6665,32 +7219,8 @@ api.delete('/public/dj-client/:id/playlist-audio/:audioId', async (req, res) => 
     }
     
     const audioToDelete = contract.playlist_audio_files.find(a => a.id === audioId);
-    if (audioToDelete) {
-      let gcsPath = audioToDelete.url;
-      if (gcsPath.includes('/api/gcs/')) {
-        gcsPath = gcsPath.substring(gcsPath.indexOf('/api/gcs/') + 9);
-      } else if (gcsPath.includes('gcs/')) {
-        gcsPath = gcsPath.substring(gcsPath.indexOf('gcs/') + 4);
-      }
-      if (gcsPath.startsWith('/')) {
-        gcsPath = gcsPath.substring(1);
-      }
-      
-      const b = getGcsBucket();
-      if (b && gcsPath) {
-        const file = b.file(gcsPath);
-        try {
-          const [exists] = await file.exists();
-          if (exists) {
-            await file.delete();
-            console.log(`Successfully deleted audio file ${gcsPath} from GCS`);
-          } else {
-            console.warn(`File ${gcsPath} did not exist on GCS, skipping file.delete`);
-          }
-        } catch (gcsDelErr) {
-          console.error('Failed to delete audio from GCS bucket:', gcsDelErr.message);
-        }
-      }
+    if (audioToDelete && audioToDelete.url) {
+      await deleteGcsFileByUrl(audioToDelete.url);
     }
 
     await db.collection('contracts2').updateOne(
@@ -6703,6 +7233,15 @@ api.delete('/public/dj-client/:id/playlist-audio/:audioId', async (req, res) => 
   } catch (err) {
     console.error('Error deleting playlist audio file:', err);
     res.status(500).json({ error: 'Erreur interne lors de la suppression' });
+  }
+});
+
+api.post('/dj-client/admin/cleanup-expired-audio', authMiddleware, async (req, res) => {
+  try {
+    const result = await cleanupExpiredEventAudioFiles();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -7367,7 +7906,7 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
               required: ["suggestedPrice", "explanation"]
             }
           }
-        }, ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"]);
+        }, ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3.7-flash", "gemini-3.1-flash-lite"]);
       } catch (searchError) {
         console.log("[Pricing Search grounding notice] Grounding or model busy, trying base knowledge fallback:", searchError.message || searchError);
         response = await generateContentWithRetry(ai, {
@@ -7392,8 +7931,18 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
         });
       }
       
-      const text = response.text.trim();
-      const result = JSON.parse(text);
+      let result = null;
+      try {
+        let rawText = (response.text || "").trim();
+        if (rawText.startsWith('```json')) {
+          rawText = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (rawText.startsWith('```')) {
+          rawText = rawText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+        result = JSON.parse(rawText);
+      } catch (parseE) {
+        console.warn('AI suggest-price JSON parse error:', parseE.message);
+      }
       if (result && typeof result.suggestedPrice === 'number') {
         return res.json(result);
       }
@@ -9894,6 +10443,16 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
+// Hourly task: Auto-cleanup audio files for events past J+2 (to optimize GCS storage)
+cron.schedule('0 * * * *', async () => {
+  if (!db) return;
+  try {
+    await cleanupExpiredEventAudioFiles();
+  } catch (err) {
+    console.error("[CRON] Audio cleanup error:", err);
+  }
+});
+
 // ═══════════════════════════════════════════
 // START SERVER
 // ═══════════════════════════════════════════
@@ -9903,6 +10462,8 @@ app.listen(PORT, '0.0.0.0', () => {
   // Connect to DB in background
   connectDB().then(() => {
     console.log('MongoDB connection established successfully');
+    // Run cleanup once at startup
+    cleanupExpiredEventAudioFiles().catch(err => console.error('Startup audio cleanup error:', err));
   }).catch(err => {
     console.error('Initial MongoDB connection failed:', err.message);
     // db is undefined, api middleware will return 503

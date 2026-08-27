@@ -332,6 +332,7 @@ const HomePage = () => {
             { name: 'Paramètres', icon: <Settings className="w-7 h-7" />, color: 'bg-slate-600', route: '/parametres', key: 'parametres' },
           ].filter(app => {
             const savedUser = localStorage.getItem('user');
+            if (!savedUser || savedUser === 'undefined') return true;
             try {
               const u = JSON.parse(savedUser);
               if (u?.role === 'admin') return true;

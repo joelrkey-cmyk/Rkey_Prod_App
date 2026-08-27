@@ -34,10 +34,12 @@ import PublicFormView from "./components/forms/PublicFormView";
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
   let interfaceType = 'desktop';
-  try {
-    const u = JSON.parse(savedUser);
-    interfaceType = u?.interface_type || (u?.role === 'location' ? 'mobile' : 'desktop');
-  } catch(e) {}
+  if (savedUser && savedUser !== 'undefined') {
+    try {
+      const u = JSON.parse(savedUser);
+      interfaceType = u?.interface_type || (u?.role === 'location' ? 'mobile' : 'desktop');
+    } catch(e) {}
+  }
   if (interfaceType === 'mobile') return <MobileHome />;
   return <HomePage />;
 };

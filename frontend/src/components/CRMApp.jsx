@@ -8,7 +8,7 @@ import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FolderArchive, FileSpreadsheet, Folder } from "lucide-react";
+import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FileSpreadsheet, Folder } from "lucide-react";
 import { toast } from "sonner";
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -589,7 +589,22 @@ function CRMApp() {
     }
   };
 
-  // ══════════ HANDLERS IMPORTATION CONTRATS, WORD, EXCEL, DOSSIERS & ZIP (IA) ══════════
+  // ══════════ HANDLERS IMPORTATION CONTRATS, WORD, EXCEL & DOSSIERS (IA) ══════════
+  const isFicheDeVisite = (filename) => {
+    if (!filename) return false;
+    const baseName = filename.split(/[/\\]/).pop().replace(/\.[^/.]+$/, "");
+    const normalized = baseName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (normalized.includes('fiche de visite') || normalized.includes('fiche visite')) return true;
+    const compact = normalized.replace(/\s+/g, '');
+    return compact.includes('fichedevisite') || compact.includes('fichevisite');
+  };
+
   const scanEntry = (entry, path = "") => {
     return new Promise((resolve) => {
       if (!entry) return resolve([]);
@@ -621,19 +636,30 @@ function CRMApp() {
   };
 
   const handleFilesSelected = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+    const rawFiles = Array.from(e.target.files || []);
+    if (rawFiles.length === 0) return;
     // Keep relative path if available from webkitRelativePath
-    files.forEach(f => {
+    rawFiles.forEach(f => {
       if (f.webkitRelativePath) f.relativePath = f.webkitRelativePath;
     });
-    setContractFiles(prev => [...prev, ...files]);
+
+    const validFiles = rawFiles.filter(f => !isFicheDeVisite(f.relativePath || f.name));
+    const ignoredCount = rawFiles.length - validFiles.length;
+
+    if (ignoredCount > 0) {
+      toast.info(`${ignoredCount} fiche(s) de visite manuscrite(s) ignorée(s) automatiquement.`);
+    }
+
+    if (validFiles.length > 0) {
+      setContractFiles(prev => [...prev, ...validFiles]);
+    }
     // Reset file input value to allow selecting same files/folder again
     if (e.target) e.target.value = '';
   };
 
   const handleDropFiles = async (e) => {
     e.preventDefault();
+    let files = [];
     const items = e.dataTransfer.items;
     if (items && items.length > 0) {
       const scanPromises = [];
@@ -647,16 +673,24 @@ function CRMApp() {
         }
       }
       if (scanPromises.length > 0) {
-        const scannedFiles = (await Promise.all(scanPromises)).flat();
-        if (scannedFiles.length > 0) {
-          setContractFiles(prev => [...prev, ...scannedFiles]);
-          return;
-        }
+        files = (await Promise.all(scanPromises)).flat();
       }
     }
-    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length === 0) {
+      files = Array.from(e.dataTransfer.files || []);
+    }
     if (files.length === 0) return;
-    setContractFiles(prev => [...prev, ...files]);
+
+    const validFiles = files.filter(f => !isFicheDeVisite(f.relativePath || f.name));
+    const ignoredCount = files.length - validFiles.length;
+
+    if (ignoredCount > 0) {
+      toast.info(`${ignoredCount} fiche(s) de visite manuscrite(s) ignorée(s) automatiquement.`);
+    }
+
+    if (validFiles.length > 0) {
+      setContractFiles(prev => [...prev, ...validFiles]);
+    }
   };
 
   const handleRemoveFile = (index) => {
@@ -680,6 +714,82 @@ function CRMApp() {
     return { icon: '📄', label: 'Document', bg: 'bg-slate-50 text-slate-700 border-slate-200' };
   };
 
+  const uploadFileWithChunking = async (file, onProgress) => {
+    const filename = file.relativePath || file.name || 'document';
+    const fileSize = file.size || 0;
+    const mimeType = file.type || 'application/octet-stream';
+
+    // Strategy 1: Try Direct GCS Signed Upload URL
+    try {
+      const signRes = await axios.post(`${API}/crm/get-signed-upload-url`, {
+        filename,
+        contentType: mimeType
+      }, { timeout: 10000 });
+
+      if (signRes.data && signRes.data.directUploadAvailable && signRes.data.signedUrl) {
+        onProgress && onProgress(30, "Téléversement direct...");
+        await axios.put(signRes.data.signedUrl, file, {
+          headers: { 'Content-Type': mimeType },
+          timeout: 120000,
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const pct = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              onProgress && onProgress(pct, `Téléversement direct (${pct}%)...`);
+            }
+          }
+        });
+        return {
+          filename,
+          mimetype: mimeType,
+          size: fileSize,
+          gcs_path: signRes.data.gcs_path,
+          gcs_url: signRes.data.gcs_url
+        };
+      }
+    } catch (directErr) {
+      console.warn("Direct GCS upload fallback to chunked upload:", directErr.message);
+    }
+
+    // Strategy 2: Reliable Chunked Upload (< 400KB chunks to completely bypass reverse proxy 413 limits)
+    const CHUNK_SIZE = 400 * 1024; // 400 Ko par bloc (toujours accepté par les proxys HTTP)
+    const totalChunks = Math.ceil(fileSize / CHUNK_SIZE) || 1;
+    const uploadId = `crm_up_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, fileSize);
+      const chunkBlob = file.slice(start, end);
+
+      const chunkFormData = new FormData();
+      chunkFormData.append('chunk', chunkBlob, filename);
+      chunkFormData.append('uploadId', uploadId);
+      chunkFormData.append('chunkIndex', String(i));
+      chunkFormData.append('totalChunks', String(totalChunks));
+      chunkFormData.append('filename', filename);
+      chunkFormData.append('mimeType', mimeType);
+
+      const pct = Math.round(((i + 1) * 100) / totalChunks);
+      onProgress && onProgress(pct, `Envoi par blocs (${i + 1}/${totalChunks})...`);
+
+      const chunkRes = await axios.post(`${API}/crm/upload-chunk`, chunkFormData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 60000
+      });
+
+      if (chunkRes.data && chunkRes.data.completed) {
+        return {
+          filename,
+          mimetype: mimeType,
+          size: fileSize,
+          gcs_path: chunkRes.data.gcs_path,
+          gcs_url: chunkRes.data.gcs_url
+        };
+      }
+    }
+
+    throw new Error(`Échec de l'envoi en morceaux pour "${filename}"`);
+  };
+
   const handleStartAnalysis = async () => {
     if (contractFiles.length === 0) {
       toast.error("Veuillez sélectionner au moins un contrat, document, tableau Excel ou dossier.");
@@ -687,28 +797,97 @@ function CRMApp() {
     }
 
     setIsAnalyzingContracts(true);
-    setAnalysisProgress("Envoi des documents et analyse IA des coordonnées en cours...");
+    setAnalysisProgress("Préparation et téléversement des documents...");
+
     try {
-      const formData = new FormData();
-      contractFiles.forEach(file => {
-        formData.append('files', file, file.relativePath || file.name);
-      });
+      const uploadedGcsFiles = [];
+      const totalCount = contractFiles.length;
 
-      const response = await axios.post(`${API}/crm/extract-contract-clients`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // 1. Upload all files safely via chunking/direct GCS to prevent 413 errors
+      for (let i = 0; i < totalCount; i++) {
+        const file = contractFiles[i];
+        const displayLabel = file.relativePath || file.name;
+        setAnalysisProgress(`Téléversement (${i + 1}/${totalCount}) : "${displayLabel}"...`);
 
-      if (response.data.success && response.data.clients && response.data.clients.length > 0) {
-        setExtractedClients(response.data.clients);
-        setSelectedExtractedIds(new Set(response.data.clients.map(c => c.id)));
+        try {
+          const uploadedInfo = await uploadFileWithChunking(file, (pct, status) => {
+            setAnalysisProgress(`Fichier ${i + 1}/${totalCount} : ${status}`);
+          });
+          if (uploadedInfo) {
+            uploadedGcsFiles.push(uploadedInfo);
+          }
+        } catch (uploadErr) {
+          console.error(`Error uploading file ${displayLabel}:`, uploadErr);
+          toast.error(`Erreur d'envoi pour "${displayLabel}": ${uploadErr.message}`);
+        }
+      }
+
+      if (uploadedGcsFiles.length === 0) {
+        toast.error("Aucun fichier n'a pu être téléversé pour l'analyse.");
+        setIsAnalyzingContracts(false);
+        setAnalysisProgress("");
+        return;
+      }
+
+      // 2. Batch AI extraction (1 file per AI call for ultra-fast response, highest accuracy & individual resilience)
+      const AI_BATCH_SIZE = 1;
+      const aiBatches = [];
+      for (let i = 0; i < uploadedGcsFiles.length; i += AI_BATCH_SIZE) {
+        aiBatches.push(uploadedGcsFiles.slice(i, i + AI_BATCH_SIZE));
+      }
+
+      let allExtracted = [];
+      let totalFilesProcessed = 0;
+      let failedBatches = 0;
+
+      for (let batchIdx = 0; batchIdx < aiBatches.length; batchIdx++) {
+        const currentBatch = aiBatches[batchIdx];
+        const docNames = currentBatch.map(f => f.filename).join(', ');
+        const progressLabel = aiBatches.length > 1 
+          ? `Analyse IA (${batchIdx + 1}/${aiBatches.length}) : "${docNames}"...` 
+          : `Extraction des données clients par l'IA : "${docNames}"...`;
+        setAnalysisProgress(progressLabel);
+
+        try {
+          const response = await axios.post(`${API}/crm/extract-contract-clients`, {
+            gcs_files: currentBatch
+          }, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 300000 // 5 minutes max pour les gros volumes / archives Zip
+          });
+
+          if (response.data && response.data.success) {
+            if (Array.isArray(response.data.clients)) {
+              allExtracted.push(...response.data.clients);
+            }
+            totalFilesProcessed += response.data.filesCount || currentBatch.length;
+          }
+        } catch (batchErr) {
+          console.error(`Contract extraction error for file ${docNames}:`, batchErr);
+          failedBatches++;
+          const errMsg = batchErr.response?.data?.error || batchErr.message || "Erreur réseau";
+          toast.error(`Document "${docNames}" : ${errMsg}`);
+        }
+      }
+
+      if (allExtracted.length > 0) {
+        // Réassigner des IDs uniques pour la sélection
+        const formattedList = allExtracted.map((c, i) => ({
+          ...c,
+          id: `extracted_${Date.now()}_${i}`
+        }));
+        setExtractedClients(formattedList);
+        setSelectedExtractedIds(new Set(formattedList.map(c => c.id)));
         setContractModalStep('review');
-        toast.success(`✨ ${response.data.extractedCount} client(s) extrait(s) des ${response.data.filesCount} document(s) analysé(s) !`);
+        toast.success(`✨ ${formattedList.length} client(s) extrait(s) des ${totalFilesProcessed} document(s) analysé(s) !`);
       } else {
-        toast.warning("Aucun client n'a pu être extrait des documents fournis.");
+        if (failedBatches === 0) {
+          toast.warning("Aucun client n'a pu être extrait des documents fournis.");
+        }
       }
     } catch (err) {
-      console.error("Contract extraction error:", err);
-      toast.error("Erreur lors de l'analyse IA : " + (err.response?.data?.error || err.message));
+      console.error("Contract extraction general error:", err);
+      toast.error("Erreur lors de l'analyse : " + (err.response?.data?.error || err.message));
     } finally {
       setIsAnalyzingContracts(false);
       setAnalysisProgress("");
@@ -2392,7 +2571,7 @@ function CRMApp() {
                     id="contract-file-input"
                     type="file" 
                     multiple 
-                    accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.zip,image/png,image/jpeg,image/jpg,image/webp,text/plain" 
+                    accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,image/png,image/jpeg,image/jpg,image/webp,text/plain" 
                     onChange={handleFilesSelected} 
                     className="hidden" 
                   />
@@ -2405,21 +2584,18 @@ function CRMApp() {
                     onChange={handleFilesSelected} 
                     className="hidden" 
                   />
-                  <input 
-                    id="contract-zip-input"
-                    type="file" 
-                    accept=".zip" 
-                    onChange={handleFilesSelected} 
-                    className="hidden" 
-                  />
 
                   <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 shadow-inner">
                     <FileUp className="h-7 w-7" />
                   </div>
-                  <div>
+                  <div className="space-y-1">
                     <h3 className="font-semibold text-slate-800 text-base">
                       Glissez vos contrats ici
                     </h3>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      Formats acceptés : PDF, Word, Excel, Tableaux & Images.<br />
+                      <span className="text-emerald-700 font-medium">ℹ️ Les fiches de visite manuscrites sont automatiquement ignorées pour se concentrer sur les contrats.</span>
+                    </p>
                   </div>
 
                   {/* Actions buttons */}
@@ -2444,17 +2620,6 @@ function CRMApp() {
                     >
                       <FolderUp className="h-4 w-4 text-teal-600" />
                       Sélectionner un dossier complet
-                    </Button>
-
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => { e.stopPropagation(); document.getElementById('contract-zip-input')?.click(); }}
-                      className="bg-white border-amber-300 text-amber-800 hover:bg-amber-50 text-xs font-semibold gap-1.5 shadow-sm px-4 py-2 h-9"
-                    >
-                      <FolderArchive className="h-4 w-4 text-amber-600" />
-                      Archives ZIP
                     </Button>
                   </div>
                 </div>

@@ -1987,6 +1987,49 @@ function urlBase64ToUint8Array(base64String) {
       }
     };
 
+    const sanitizeAudioList = (list) => {
+      if (!Array.isArray(list)) return [];
+      return list.map(a => {
+        if (!a || typeof a !== 'object') return a;
+        let u = a.url || '';
+        if (u.includes('storage.googleapis.com/')) {
+          const parts = u.substring(u.indexOf('storage.googleapis.com/') + 'storage.googleapis.com/'.length).split('?')[0].split('/');
+          parts.shift();
+          u = `/api/gcs/${parts.join('/')}`;
+        } else if (u.includes('?')) {
+          u = u.split('?')[0];
+        }
+        return { ...a, url: u };
+      });
+    };
+
+    const resolveAudioUrl = (rawUrl, download = false) => {
+      if (!rawUrl || typeof rawUrl !== 'string') return '';
+      if (rawUrl.startsWith('data:')) return rawUrl;
+      let clean = rawUrl.trim();
+      if (clean.includes('storage.googleapis.com/')) {
+        const parts = clean.substring(clean.indexOf('storage.googleapis.com/') + 'storage.googleapis.com/'.length).split('?')[0].split('/');
+        parts.shift();
+        clean = `/api/gcs/${parts.join('/')}`;
+      } else if (clean.includes('api/gcs/')) {
+        clean = clean.substring(clean.indexOf('api/gcs/') + 'api/gcs/'.length);
+        if (clean.includes('?')) clean = clean.split('?')[0];
+        clean = `/api/gcs/${clean}`;
+      } else if (clean.includes('/gcs/')) {
+        clean = clean.substring(clean.indexOf('/gcs/') + '/gcs/'.length);
+        if (clean.includes('?')) clean = clean.split('?')[0];
+        clean = `/api/gcs/${clean}`;
+      } else if (clean.includes('?')) {
+        clean = clean.split('?')[0];
+      }
+
+      const query = download ? '?download=true' : '';
+      if (clean.startsWith('http')) {
+        return clean + query;
+      }
+      return `${BACKEND_URL}${clean.startsWith('/') ? '' : '/'}${clean}${query}`;
+    };
+
     const handleNoteUpdate = (audioId, newNote) => {
       const updatedList = allAudioFiles.map(a => a.id === audioId ? { ...a, note: newNote } : a);
       const newEvents = [...events];
@@ -1999,7 +2042,7 @@ function urlBase64ToUint8Array(base64String) {
 
     const handleNoteBlur = (audioId, finalNote) => {
       const updatedList = allAudioFiles.map(a => a.id === audioId ? { ...a, note: finalNote } : a);
-      updateContractDb(currentRoute.eventId, { playlist_audio_files: updatedList });
+      updateContractDb(currentRoute.eventId, { playlist_audio_files: sanitizeAudioList(updatedList) });
     };
 
     const handleToggleAudioSurprise = (audioId) => {
@@ -2010,7 +2053,7 @@ function urlBase64ToUint8Array(base64String) {
         newEvents[idx].playlistAudioFiles = updatedList;
         setEvents(newEvents);
       }
-      updateContractDb(currentRoute.eventId, { playlist_audio_files: updatedList });
+      updateContractDb(currentRoute.eventId, { playlist_audio_files: sanitizeAudioList(updatedList) });
       toast.success("Statut Surprise du fichier mis à jour !");
     };
 
@@ -2362,11 +2405,17 @@ function urlBase64ToUint8Array(base64String) {
 
           {/* Section d'upload de fichiers audio */}
           <div className="border rounded-lg p-5 bg-indigo-50/40 border-indigo-200 mt-6" id="section-audio-upload">
-            <h4 className="font-bold text-indigo-800 mb-1 text-base flex items-center gap-2">
-              🎵 Dépôt de Fichiers Audio (MP3 / WAV)
-            </h4>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+              <h4 className="font-bold text-indigo-800 text-base flex items-center gap-2">
+                🎵 Dépôt de Fichiers Audio (MP3 / WAV)
+              </h4>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full w-fit">
+                <Clock className="w-3 h-3 text-amber-600" />
+                Conservation jusqu'à J+2 après l'événement
+              </span>
+            </div>
             <p className="text-xs text-slate-500 mb-4">
-              Idéal pour fournir des versions spécifiques de morceaux, des montages, des audios d'interventions ou de surprises.
+              Idéal pour fournir des versions spécifiques de morceaux, des montages, des audios d'interventions ou de surprises. Les fichiers sont automatiquement effacés 2 jours après la fête pour libérer le stockage.
             </p>
 
             {/* Drag and Drop Zone */}
@@ -2467,9 +2516,30 @@ function urlBase64ToUint8Array(base64String) {
                         </div>
                       </div>
 
-                      {/* Native Audio Preview */}
-                      <div className="my-2">
-                        <audio src={file.url.startsWith('http') ? file.url : `${BACKEND_URL}${file.url}`} controls className="w-full h-8" />
+                      {/* Native Audio Preview & Controls */}
+                      <div className="my-2 space-y-1.5">
+                        <audio 
+                          src={resolveAudioUrl(file.url)} 
+                          controls 
+                          preload="metadata"
+                          className="w-full h-8" 
+                          onError={(e) => {
+                            console.warn("Audio playback notice:", file.url);
+                          }}
+                        />
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5">
+                          <span className="truncate max-w-[200px]" title={file.name}>{file.name}</span>
+                          <a
+                            href={resolveAudioUrl(file.url, true)}
+                            download={file.name || "audio.mp3"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-medium transition-colors cursor-pointer"
+                            title="Télécharger directement le fichier audio"
+                          >
+                            <Download className="w-3 h-3" /> Télécharger
+                          </a>
+                        </div>
                       </div>
 
                       {/* Note Input */}
