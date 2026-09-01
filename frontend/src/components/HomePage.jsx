@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -43,6 +43,15 @@ const HomePage = () => {
   const [editTaskDialogOpen, setEditTaskDialogOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState(null);
   const [editText, setEditText] = useState("");
+  const [dragOverDay, setDragOverDay] = useState(null);
+  const [draggingTaskId, setDraggingTaskId] = useState(null);
+
+  // Notepad states
+  const [notepadContent, setNotepadContent] = useState("");
+  const [notepadLoading, setNotepadLoading] = useState(true);
+  const [notepadSavingState, setNotepadSavingState] = useState("idle");
+
+  const deletionTimeoutsRef = useRef({});
 
   useEffect(() => {
     loadRelances();
@@ -50,7 +59,49 @@ const HomePage = () => {
     loadDashboardStats();
     loadSubscriptionStats();
     loadPlannerTasks();
+    loadNotepad();
+
+    return () => {
+      // Clear pending timeouts and execute deletion on unmount immediately
+      Object.entries(deletionTimeoutsRef.current).forEach(([id, { timeoutId }]) => {
+        clearTimeout(timeoutId);
+        axios.delete(`${API}/home-planner/tasks/${id}`).catch(err => {
+          console.error("Unmount cleanup task delete failed:", err);
+        });
+      });
+    };
   }, []);
+
+  const loadNotepad = async () => {
+    try {
+      const response = await axios.get(`${API}/home-planner/notepad`);
+      setNotepadContent(response.data.content || "");
+      setNotepadLoading(false);
+    } catch (error) {
+      if (error?.response?.status !== 401) {
+        console.error("Error loading notepad:", error);
+      }
+      setNotepadLoading(false);
+    }
+  };
+
+  // Debounced auto-save notepad
+  useEffect(() => {
+    if (notepadLoading) return;
+
+    setNotepadSavingState("saving");
+    const saveTimeout = setTimeout(async () => {
+      try {
+        await axios.post(`${API}/home-planner/notepad`, { content: notepadContent });
+        setNotepadSavingState("saved");
+      } catch (error) {
+        console.error("Error auto-saving notepad:", error);
+        setNotepadSavingState("error");
+      }
+    }, 1200);
+
+    return () => clearTimeout(saveTimeout);
+  }, [notepadContent, notepadLoading]);
 
   const loadPlannerTasks = async () => {
     try {
@@ -98,14 +149,89 @@ const HomePage = () => {
   };
 
   const handleDeleteTask = async (id) => {
+    const taskToDelete = plannerTasks.find(t => t.id === id);
+    if (!taskToDelete) return;
+
+    // Optimistically remove from UI
+    setPlannerTasks(prev => prev.filter(t => t.id !== id));
+
+    // Clear any previous timeout for this task if it existed
+    if (deletionTimeoutsRef.current[id]) {
+      clearTimeout(deletionTimeoutsRef.current[id].timeoutId);
+    }
+
+    // Set 5 seconds timeout before actual DB deletion
+    const timeoutId = setTimeout(async () => {
+      try {
+        await axios.delete(`${API}/home-planner/tasks/${id}`);
+        delete deletionTimeoutsRef.current[id];
+      } catch (error) {
+        console.error("Error deleting task:", error);
+        toast.error("Erreur de suppression définitive");
+        // Revert UI if deletion on backend fails
+        setPlannerTasks(prev => {
+          if (!prev.some(t => t.id === id)) {
+            return [...prev, taskToDelete];
+          }
+          return prev;
+        });
+      }
+    }, 5000);
+
+    deletionTimeoutsRef.current[id] = {
+      timeoutId,
+      task: taskToDelete
+    };
+
+    // Beautiful Sonner toast with UNDO action
+    toast.success("Tâche supprimée", {
+      duration: 5000,
+      action: {
+        label: "Annuler",
+        onClick: () => {
+          const saved = deletionTimeoutsRef.current[id];
+          if (saved) {
+            clearTimeout(saved.timeoutId);
+            delete deletionTimeoutsRef.current[id];
+            // Restore in UI state
+            setPlannerTasks(prev => [...prev, saved.task]);
+            toast.success("Suppression annulée");
+          }
+        }
+      }
+    });
+  };
+
+  const handleDropOnDay = async (e, targetDay) => {
+    e.preventDefault();
+    setDragOverDay(null);
+    setDraggingTaskId(null);
+    const taskId = e.dataTransfer.getData('text/plain');
+    if (!taskId) return;
+
+    const task = plannerTasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    if (task.day === targetDay) return;
+
     try {
-      setPlannerTasks(prev => prev.filter(t => t.id !== id));
-      await axios.delete(`${API}/home-planner/tasks/${id}`);
-      toast.success("Tâche supprimée");
+      // Optimistic update
+      setPlannerTasks(prev => prev.map(t => t.id === taskId ? { ...t, day: targetDay } : t));
+      
+      await axios.put(`${API}/home-planner/tasks/${taskId}`, { day: targetDay });
+      
+      const dayLabels = {
+        lundi: "Lundi",
+        mardi: "Mardi",
+        mercredi: "Mercredi",
+        jeudi: "Jeudi",
+        vendredi: "Vendredi"
+      };
+      toast.success(`Tâche déplacée au ${dayLabels[targetDay] || targetDay}`);
     } catch (error) {
-      console.error("Error deleting task:", error);
-      toast.error("Erreur de suppression");
-      loadPlannerTasks();
+      console.error("Error moving task:", error);
+      toast.error("Impossible de déplacer la tâche");
+      loadPlannerTasks(); // Revert
     }
   };
 
@@ -345,7 +471,21 @@ const HomePage = () => {
                   return (
                     <div 
                       key={day.key} 
-                      className={`flex flex-col rounded-xl border border-slate-150 bg-white shadow-sm overflow-hidden border-t-4 ${day.color.split(' ')[0]}`}
+                      className={`flex flex-col rounded-xl border border-slate-150 bg-white shadow-sm overflow-hidden border-t-4 ${day.color.split(' ')[0]} transition-all duration-200 ${
+                        dragOverDay === day.key 
+                          ? 'ring-2 ring-emerald-500 ring-offset-1 scale-[1.02] shadow-md bg-emerald-50/20' 
+                          : ''
+                      }`}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (dragOverDay !== day.key) {
+                          setDragOverDay(day.key);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        setDragOverDay(null);
+                      }}
+                      onDrop={(e) => handleDropOnDay(e, day.key)}
                     >
                       {/* En-tête du jour */}
                       <div className="px-3.5 py-2.5 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between">
@@ -373,10 +513,21 @@ const HomePage = () => {
                             {dayTasks.map(task => (
                               <div 
                                 key={task.id} 
-                                className={`group flex items-start gap-2 p-2 rounded-lg border text-xs transition-all ${
-                                  task.completed 
-                                    ? 'bg-slate-50 border-slate-100 text-slate-400 line-through' 
-                                    : 'bg-white border-slate-150 text-slate-700 hover:bg-slate-50/50 hover:shadow-sm'
+                                draggable={true}
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('text/plain', task.id);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                  setDraggingTaskId(task.id);
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingTaskId(null);
+                                }}
+                                className={`group flex items-start gap-2 p-2 rounded-lg border text-xs transition-all cursor-grab active:cursor-grabbing ${
+                                  draggingTaskId === task.id
+                                    ? 'opacity-40 border-dashed border-indigo-400 bg-indigo-50/30'
+                                    : task.completed 
+                                      ? 'bg-slate-50 border-slate-100 text-slate-400 line-through' 
+                                      : 'bg-white border-slate-150 text-slate-700 hover:bg-slate-50/50 hover:shadow-sm'
                                 }`}
                               >
                                 {/* Checkbox Rond/Carré élégant */}
@@ -476,6 +627,79 @@ const HomePage = () => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Bloc-notes / Projets */}
+      <div className="max-w-6xl mx-auto px-6 pb-16">
+        <Card className="border border-slate-200 bg-white/70 backdrop-blur shadow-sm">
+          <CardHeader className="pb-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <CardTitle className="text-xl md:text-2xl font-bold flex items-center gap-2 text-slate-800">
+                  <PenLine className="w-6 h-6 text-indigo-600" />
+                  Bloc-notes & Projets
+                </CardTitle>
+                <CardDescription className="text-sm text-slate-500 mt-1">
+                  Saisissez vos projets, vos idées de tâches ou vos notes générales en toute liberté sans case à cocher.
+                </CardDescription>
+              </div>
+              
+              {/* Indicateur de sauvegarde */}
+              <div className="flex items-center gap-2 shrink-0 select-none">
+                {notepadSavingState === "saving" && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                    <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
+                    Enregistrement...
+                  </span>
+                )}
+                {notepadSavingState === "saved" && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                    <Check className="w-3 h-3 text-emerald-500 stroke-[3]" />
+                    Sauvegardé
+                  </span>
+                )}
+                {notepadSavingState === "error" && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-100">
+                    ⚠️ Erreur de sauvegarde
+                  </span>
+                )}
+                {notepadSavingState === "idle" && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-500 border border-slate-100">
+                    Prêt
+                  </span>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {notepadLoading ? (
+              <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                <RefreshCw className="w-8 h-8 animate-spin text-slate-400" />
+                <p className="text-sm font-medium">Chargement du bloc-notes...</p>
+              </div>
+            ) : (
+              <div className="relative rounded-xl border border-slate-150 overflow-hidden bg-slate-50/50 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all duration-200">
+                <Textarea
+                  value={notepadContent}
+                  onChange={(e) => setNotepadContent(e.target.value)}
+                  placeholder="Exemple :&#10;- Lancement projet billetterie R'KEY&#10;- Contacter l'artiste DJ Greg pour le contrat de samedi&#10;- Acheter des nouveaux câbles XLR pour le parc de location"
+                  className="w-full min-h-[250px] p-5 text-sm md:text-base leading-relaxed font-sans text-slate-800 bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 resize-y"
+                />
+                
+                {/* Pied de page du bloc-notes */}
+                <div className="px-5 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-semibold select-none">
+                  <span className="flex items-center gap-1.5">
+                    <span>💡</span> 
+                    <span className="italic font-medium text-slate-500">Le bloc-notes s'enregistre automatiquement dès que vous arrêtez de taper.</span>
+                  </span>
+                  <span>
+                    {notepadContent ? notepadContent.trim().split('\n').filter(Boolean).length : 0} ligne(s)
+                  </span>
+                </div>
               </div>
             )}
           </CardContent>

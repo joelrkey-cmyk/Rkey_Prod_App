@@ -512,25 +512,12 @@ function BilletterieApp() {
                 const isOnline = event.actif !== false;
                 return (
                 <Card key={event.id} className={`hover:shadow-lg transition-all relative overflow-hidden ${
-                  !isOnline ? "border-amber-300/80 bg-amber-50/20" : ""
+                  !isOnline ? "border-slate-100 bg-slate-50/50" : ""
                 }`}>
                   {/* Étiquette/Badge en diagonale */}
                   {event.etiquette && (
                     <div className="absolute top-[32px] right-[-32px] z-20 w-[150px] bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] font-bold py-1 text-center shadow-md uppercase tracking-wider transform rotate-45 select-none pointer-events-none">
                       {event.etiquette}
-                    </div>
-                  )}
-
-                  {!isOnline && (
-                    <div className="bg-amber-500/10 border-b border-amber-200 px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 font-medium">
-                      <span>⚠️ <strong>Hors ligne (OFF)</strong> — Masqué du widget public</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEventStatus(event)}
-                        className="underline text-amber-900 hover:text-amber-700 font-bold ml-2 cursor-pointer"
-                      >
-                        Mettre en ON
-                      </button>
                     </div>
                   )}
                   
@@ -546,19 +533,25 @@ function BilletterieApp() {
                       <div className="flex-1 space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
                           {getTypeBadge(event.type)}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleEventStatus(event)}
-                            title={isOnline ? "Cliquer pour mettre cet événement en OFF (hors ligne)" : "Cliquer pour mettre cet événement en ON (en ligne)"}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all shadow-sm cursor-pointer ${
-                              isOnline
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
-                                : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300"
-                            }`}
-                          >
-                            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`}></span>
-                            {isOnline ? "En ligne (ON)" : "Hors ligne (OFF)"}
-                          </button>
+                          <div className="inline-flex items-center gap-1.5 bg-slate-100/80 px-2 py-0.5 rounded-full border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleEventStatus(event)}
+                              title={isOnline ? "Cliquer pour mettre cet événement hors ligne (OFF)" : "Cliquer pour mettre cet événement en ligne (ON)"}
+                              className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                isOnline ? 'bg-emerald-500' : 'bg-gray-300'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                  isOnline ? 'translate-x-3.5' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                            <span className="text-[10px] font-bold text-gray-600 select-none uppercase">
+                              {isOnline ? "ON" : "OFF"}
+                            </span>
+                          </div>
                         </div>
                         <h3 className="text-xl font-bold text-gray-800">{event.titre}</h3>
                       </div>
@@ -658,38 +651,32 @@ function BilletterieApp() {
                 const isOnline = event.actif !== false;
                 return (
                 <Card key={event.id} className={`hover:shadow-lg transition-shadow relative overflow-hidden ${
-                  !isOnline ? "border-amber-300/80 bg-amber-50/20" : ""
+                  !isOnline ? "border-slate-100 bg-slate-50/50" : ""
                 }`}>
-                  {!isOnline && (
-                    <div className="bg-amber-500/10 border-b border-amber-200 px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 font-medium">
-                      <span>⚠️ <strong>Hors ligne (OFF)</strong></span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEventStatus(event)}
-                        className="underline text-amber-900 hover:text-amber-700 font-bold ml-2 cursor-pointer"
-                      >
-                        Mettre en ON
-                      </button>
-                    </div>
-                  )}
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
                           {getTypeBadge(event.type)}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleEventStatus(event)}
-                            title={isOnline ? "Cliquer pour mettre cet événement en OFF (hors ligne)" : "Cliquer pour mettre cet événement en ON (en ligne)"}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all shadow-sm cursor-pointer ${
-                              isOnline
-                                ? "bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
-                                : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300"
-                            }`}
-                          >
-                            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`}></span>
-                            {isOnline ? "En ligne (ON)" : "Hors ligne (OFF)"}
-                          </button>
+                          <div className="inline-flex items-center gap-1.5 bg-slate-100/80 px-2 py-0.5 rounded-full border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleEventStatus(event)}
+                              title={isOnline ? "Cliquer pour mettre cet événement hors ligne (OFF)" : "Cliquer pour mettre cet événement en ligne (ON)"}
+                              className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                isOnline ? 'bg-emerald-500' : 'bg-gray-300'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                  isOnline ? 'translate-x-3.5' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                            <span className="text-[10px] font-bold text-gray-600 select-none uppercase">
+                              {isOnline ? "ON" : "OFF"}
+                            </span>
+                          </div>
                         </div>
                         <h3 className="text-xl font-bold text-gray-800">{event.titre}</h3>
                       </div>
@@ -963,25 +950,29 @@ function BilletterieApp() {
             </div>
 
             {/* Statut En ligne / Hors ligne */}
-            <div className={`p-4 rounded-lg border flex items-start space-x-3 transition-colors ${
-              eventForm.actif !== false ? "bg-emerald-50/60 border-emerald-200" : "bg-gray-50 border-gray-200"
-            }`}>
-              <Checkbox
-                id="event_actif"
-                checked={eventForm.actif !== false}
-                onCheckedChange={(checked) => setEventForm(prev => ({ ...prev, actif: checked }))}
-                className="mt-0.5"
-              />
-              <div className="space-y-1">
-                <Label htmlFor="event_actif" className="font-semibold cursor-pointer">
-                  {eventForm.actif !== false ? "🟢 Événement en ligne (ON) — Visible sur le widget public" : "⚪ Événement hors ligne (OFF) — Masqué du widget"}
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="event_actif" className="font-bold text-gray-800 cursor-pointer text-sm">
+                  Statut de l'événement
                 </Label>
                 <p className="text-xs text-gray-500">
-                  {eventForm.actif !== false
-                    ? "Cet événement est publié et s'affiche dans le widget partagé sur vos sites."
-                    : "Cet événement est sauvegardé mais n'apparaît pas dans le widget public de billetterie."}
+                  {eventForm.actif !== false ? "En ligne (ON) — visible sur votre site" : "Hors ligne (OFF) — masqué de votre site"}
                 </p>
               </div>
+              <button
+                type="button"
+                id="event_actif"
+                onClick={() => setEventForm(prev => ({ ...prev, actif: prev.actif === false ? true : false }))}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  eventForm.actif !== false ? 'bg-emerald-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                    eventForm.actif !== false ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
           </div>
 

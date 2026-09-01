@@ -3112,6 +3112,31 @@ api.get('/home-planner/tasks', authMiddleware, async (req, res) => {
   }
 });
 
+api.get('/home-planner/notepad', authMiddleware, async (req, res) => {
+  try {
+    let note = await db.collection('planner_metadata').findOne({ id: 'global_notepad' });
+    res.json({ content: note ? note.content : "" });
+  } catch (err) {
+    console.error('Error fetching global notepad:', err);
+    res.status(500).json({ detail: 'Erreur lors de la récupération du bloc-notes' });
+  }
+});
+
+api.post('/home-planner/notepad', authMiddleware, async (req, res) => {
+  try {
+    const { content } = req.body;
+    await db.collection('planner_metadata').updateOne(
+      { id: 'global_notepad' },
+      { $set: { content: content || "" } },
+      { upsert: true }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error saving global notepad:', err);
+    res.status(500).json({ detail: 'Erreur lors de l\'enregistrement du bloc-notes' });
+  }
+});
+
 api.post('/home-planner/tasks', authMiddleware, async (req, res) => {
   try {
     const { day, text } = req.body;
