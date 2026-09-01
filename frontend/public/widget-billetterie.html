@@ -352,7 +352,8 @@
 
         async function loadEvents() {
             try {
-                var response = await fetch(API_URL);
+                // Append timestamp cache-buster to always get fresh status
+                var response = await fetch(API_URL + '?t=' + new Date().getTime());
                 
                 if (!response.ok) {
                     throw new Error('Erreur lors du chargement');
@@ -360,6 +361,14 @@
                 
                 allEvents = await response.json();
                 console.log('Événements chargés:', allEvents.length);
+                
+                // Filtrer les événements actifs/en ligne
+                allEvents = allEvents.filter(function(event) {
+                    if (event.actif === false || event.actif === 'false' || event.actif === 'OFF' || event.actif === 'off') {
+                        return false;
+                    }
+                    return true;
+                });
                 
                 // Appliquer le filtre si un type est pré-défini dans l'URL
                 var eventsToShow = allEvents;

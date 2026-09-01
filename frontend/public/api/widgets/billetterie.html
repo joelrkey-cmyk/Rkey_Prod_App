@@ -336,32 +336,24 @@
             transform: translateY(-2px);
         }
         
-        .event-label-container {
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            width: 130px;
-            height: 130px;
-            overflow: hidden;
-            pointer-events: none;
-            z-index: 10;
-        }
-        
         .event-label {
             position: absolute;
-            top: 28px;
-            right: -42px;
+            top: 32px;
+            right: -32px;
             transform: rotate(45deg);
             background: linear-gradient(135deg, #ef4444 0%, #ec4899 100%);
             color: white;
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
-            padding: 6px 0;
-            width: 180px;
+            padding: 5px 0;
+            width: 150px;
             text-align: center;
             text-transform: uppercase;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
             letter-spacing: 0.5px;
+            z-index: 20;
+            pointer-events: none;
+            user-select: none;
         }
         
         .no-events {
@@ -558,7 +550,8 @@
 
         async function loadEvents() {
             try {
-                var response = await fetch(API_URL);
+                // Append timestamp cache-buster to always get fresh status
+                var response = await fetch(API_URL + '?t=' + new Date().getTime());
                 
                 if (!response.ok) {
                     throw new Error('Erreur lors du chargement');
@@ -566,10 +559,13 @@
                 
                 allEvents = await response.json();
                 
-                // Filtrer pour n'afficher que les événements à venir (date >= aujourd'hui)
+                // Filtrer pour n'afficher que les événements actifs/en ligne et à venir (date >= aujourd'hui)
                 var today = new Date();
                 today.setHours(0, 0, 0, 0);
                 allEvents = allEvents.filter(function(event) {
+                    if (event.actif === false || event.actif === 'false' || event.actif === 'OFF' || event.actif === 'off') {
+                        return false;
+                    }
                     var eventEnd = event.date_fin ? new Date(event.date_fin) : new Date(event.date);
                     eventEnd.setHours(23, 59, 59, 999);
                     return eventEnd >= today;
@@ -640,9 +636,9 @@
                 
                 html += '<div class="event-card" data-type="' + event.type + '">';
                 
-                // Étiquette en diagonale avec container
+                // Étiquette en diagonale directe sur la carte (sans container limitant)
                 if (event.etiquette) {
-                    html += '<div class="event-label-container"><div class="event-label">' + event.etiquette + '</div></div>';
+                    html += '<div class="event-label">' + event.etiquette + '</div>';
                 }
                 
                 html += '<div class="event-image-container">';

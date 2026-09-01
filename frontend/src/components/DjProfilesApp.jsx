@@ -6,6 +6,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Checkbox } from "./ui/checkbox";
+import { Switch } from "./ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { ArrowLeft, Plus, Edit, Trash2, Code, User, Music, Award, Instagram, Facebook, Youtube, Globe, Mail, Phone, X, Eye, Upload, Image, Paperclip, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -192,6 +193,27 @@ const DjProfilesApp = () => {
     setCustomStyleInput("");
     setCustomSpecialiteInput("");
     setShowProfileDialog(true);
+  };
+
+  const handleToggleProfileStatus = async (profile) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const newStatus = profile.actif === false ? true : false;
+      const response = await fetch(`${BACKEND_URL}/api/dj-fiches/${profile.id}/toggle-status`, {
+        method: 'PATCH',
+        headers
+      });
+      if (response.ok) {
+        setProfiles(prev => prev.map(p => p.id === profile.id ? { ...p, actif: newStatus } : p));
+        toast.success(newStatus ? `Profil "${profile.nom_artistique}" mis en ligne (ON) !` : `Profil "${profile.nom_artistique}" mis hors ligne (OFF) !`);
+      } else {
+        toast.error("Erreur lors de la mise à jour du statut");
+      }
+    } catch (error) {
+      console.error("Error toggling status:", error);
+      toast.error("Erreur lors du changement de statut");
+    }
   };
 
   // Fonction pour gérer l'upload d'image et la convertir en base64
@@ -616,8 +638,12 @@ const DjProfilesApp = () => {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {profiles.map((profile) => (
-              <Card key={profile.id} className="shadow-lg border-0 bg-white/80 backdrop-blur-sm hover:shadow-xl transition-all">
+            {profiles.map((profile) => {
+              const isOnline = profile.actif !== false;
+              return (
+              <Card key={profile.id} className={`shadow-lg border bg-white/90 backdrop-blur-sm hover:shadow-xl transition-all ${
+                !isOnline ? "opacity-80 border-slate-200" : "border-slate-100"
+              }`}>
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
@@ -636,13 +662,17 @@ const DjProfilesApp = () => {
                         <CardTitle className="text-xl">{profile.nom_artistique}</CardTitle>
                       </div>
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      profile.actif 
-                        ? "bg-green-100 text-green-700" 
-                        : "bg-gray-100 text-gray-700"
-                    }`}>
-                      {profile.actif ? "Actif" : "Inactif"}
-                    </span>
+                    <div className="flex items-center gap-2 bg-slate-100/90 px-2.5 py-1 rounded-full border border-slate-200">
+                      <span className={`text-xs font-bold select-none ${isOnline ? "text-emerald-600" : "text-gray-400"}`}>
+                        {isOnline ? "ON" : "OFF"}
+                      </span>
+                      <Switch
+                        id={`switch-status-${profile.id}`}
+                        checked={isOnline}
+                        onCheckedChange={() => handleToggleProfileStatus(profile)}
+                        className="data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-gray-300"
+                      />
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -769,7 +799,8 @@ const DjProfilesApp = () => {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -1119,14 +1150,22 @@ const DjProfilesApp = () => {
                 </div>
               </div>
 
-              {/* Actif */}
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="actif"
-                  checked={profileForm.actif}
-                  onCheckedChange={(checked) => setProfileForm(prev => ({ ...prev, actif: checked }))}
-                />
-                <Label htmlFor="actif">Profil actif (visible sur le widget public)</Label>
+              {/* Actif / Visibilité avec Switch simple */}
+              <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between">
+                <Label htmlFor="actif" className="font-semibold text-sm cursor-pointer text-slate-700">
+                  Visibilité du profil
+                </Label>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold select-none ${profileForm.actif ? "text-emerald-600" : "text-gray-400"}`}>
+                    {profileForm.actif ? "ON" : "OFF"}
+                  </span>
+                  <Switch
+                    id="actif"
+                    checked={profileForm.actif}
+                    onCheckedChange={(checked) => setProfileForm(prev => ({ ...prev, actif: checked }))}
+                    className="data-[state=checked]:bg-emerald-600 data-[state=unchecked]:bg-gray-300"
+                  />
+                </div>
               </div>
             </div>
 

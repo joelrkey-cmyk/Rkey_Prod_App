@@ -3039,6 +3039,152 @@ api.delete('/home-notes/:id', authMiddleware, async (req, res) => {
   await db.collection('home_notes').deleteOne({ id: req.params.id });
   res.json({ success: true });
 });
+
+// ══════════ WEEKLY PLANNER ══════════
+api.get('/home-planner/tasks', authMiddleware, async (req, res) => {
+  try {
+    const now = new Date();
+    // Helper to calculate most recent Monday 1:00 AM
+    const getMostRecentMonday1AM = (date) => {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diffToMonday = (day === 0 ? -6 : 1 - day);
+      const monday = new Date(d);
+      monday.setDate(d.getDate() + diffToMonday);
+      monday.setHours(1, 0, 0, 0);
+      if (d < monday) {
+        monday.setDate(monday.getDate() - 7);
+      }
+      return monday;
+    };
+
+    const mostRecentMonday1AM = getMostRecentMonday1AM(now);
+    const mostRecentTimestamp = mostRecentMonday1AM.getTime();
+
+    // Check last reset time
+    let meta = await db.collection('planner_metadata').findOne({ id: 'last_reset_time' });
+    if (!meta || meta.timestamp < mostRecentTimestamp) {
+      // Auto-reset all tasks to unchecked
+      await db.collection('weekly_tasks').updateMany({}, { $set: { completed: false } });
+      // Update metadata
+      await db.collection('planner_metadata').updateOne(
+        { id: 'last_reset_time' },
+        { $set: { timestamp: mostRecentTimestamp, formatted: mostRecentMonday1AM.toISOString() } },
+        { upsert: true }
+      );
+      console.log(`[Weekly Planner] Auto-reset triggered. Last reset week set to ${mostRecentMonday1AM.toISOString()}`);
+    }
+
+    // Retrieve tasks
+    let tasks = await db.collection('weekly_tasks').find({}, { projection: { _id: 0 } }).toArray();
+
+    // If no tasks exist, seed the defaults
+    if (tasks.length === 0) {
+      const defaultTasks = [
+        { id: uuidv4(), day: 'lundi', text: 'Faire le débriefing des prestations du week-end', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'lundi', text: 'Ranger et vérifier le matériel de sonorisation et d\'éclairage', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'lundi', text: 'Traiter les relances CRM et fiches clients', completed: false, created_at: new Date().toISOString() },
+        
+        { id: uuidv4(), day: 'mardi', text: 'Préparer les contrats et devis pour les nouveaux événements', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'mardi', text: 'Mettre à jour les playlists et les profils DJ', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'mardi', text: 'Relancer les clients indécis', completed: false, created_at: new Date().toISOString() },
+        
+        { id: uuidv4(), day: 'mercredi', text: 'Point d\'avancement sur les locations de matériel', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'mercredi', text: 'Valider les contrats reçus et fiches de liaison', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'mercredi', text: 'Planifier la logistique de livraison pour le week-end', completed: false, created_at: new Date().toISOString() },
+        
+        { id: uuidv4(), day: 'jeudi', text: 'Préparer les packs de sonorisation et lyres pour les retraits', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'jeudi', text: 'Chargement et vérification des véhicules de livraison', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'jeudi', text: 'Contacter les organisateurs pour les derniers détails', completed: false, created_at: new Date().toISOString() },
+        
+        { id: uuidv4(), day: 'vendredi', text: 'Dernier check-up technique du matériel', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'vendredi', text: 'Briefing final des artistes et DJs de la prestation', completed: false, created_at: new Date().toISOString() },
+        { id: uuidv4(), day: 'vendredi', text: 'Lancement et suivi des événements et de la billetterie', completed: false, created_at: new Date().toISOString() }
+      ];
+      await db.collection('weekly_tasks').insertMany(defaultTasks);
+      tasks = defaultTasks.map(clean);
+    }
+
+    res.json(tasks);
+  } catch (err) {
+    console.error('Error fetching weekly tasks:', err);
+    res.status(500).json({ detail: 'Erreur lors de la récupération des tâches' });
+  }
+});
+
+api.post('/home-planner/tasks', authMiddleware, async (req, res) => {
+  try {
+    const { day, text } = req.body;
+    if (!day || !text) {
+      return res.status(400).json({ detail: 'Le jour et le texte de la tâche sont requis' });
+    }
+    const validDays = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'];
+    if (!validDays.includes(day.toLowerCase())) {
+      return res.status(400).json({ detail: 'Le jour doit être compris entre lundi et vendredi' });
+    }
+
+    const task = {
+      id: uuidv4(),
+      day: day.toLowerCase(),
+      text: text.trim(),
+      completed: false,
+      created_at: new Date().toISOString()
+    };
+    await db.collection('weekly_tasks').insertOne(task);
+    res.json(clean(task));
+  } catch (err) {
+    console.error('Error creating task:', err);
+    res.status(500).json({ detail: 'Erreur lors de la création de la tâche' });
+  }
+});
+
+api.put('/home-planner/tasks/:id', authMiddleware, async (req, res) => {
+  try {
+    const { text, completed, day } = req.body;
+    const update = {};
+    if (text !== undefined) update.text = text.trim();
+    if (completed !== undefined) update.completed = !!completed;
+    if (day !== undefined) {
+      const validDays = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'];
+      if (validDays.includes(day.toLowerCase())) {
+        update.day = day.toLowerCase();
+      }
+    }
+
+    await db.collection('weekly_tasks').updateOne({ id: req.params.id }, { $set: update });
+    const updated = await db.collection('weekly_tasks').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    if (!updated) {
+      return res.status(404).json({ detail: 'Tâche introuvable' });
+    }
+    res.json(updated);
+  } catch (err) {
+    console.error('Error updating task:', err);
+    res.status(500).json({ detail: 'Erreur lors de la mise à jour de la tâche' });
+  }
+});
+
+api.delete('/home-planner/tasks/:id', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.collection('weekly_tasks').deleteOne({ id: req.params.id });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ detail: 'Tâche introuvable' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting task:', err);
+    res.status(500).json({ detail: 'Erreur lors de la suppression de la tâche' });
+  }
+});
+
+api.post('/home-planner/tasks/reset', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('weekly_tasks').updateMany({}, { $set: { completed: false } });
+    res.json({ success: true, message: 'Toutes les tâches ont été remises à zéro' });
+  } catch (err) {
+    console.error('Error resetting tasks:', err);
+    res.status(500).json({ detail: 'Erreur lors de la remise à zéro des tâches' });
+  }
+});
 api.get('/dj-client/pending-alerts', authMiddleware, async (req, res) => {
   try {
     const now = Date.now();
@@ -3346,7 +3492,7 @@ api.get('/dj-fiches', authMiddleware, async (req, res) => {
   res.json(await autoSignGcsUrlsInObject(cleanList(await db.collection('dj_profiles').find({}, { projection: { _id: 0 } }).toArray())));
 });
 api.get('/dj-fiches/public', async (req, res) => {
-  const profiles = await db.collection('dj_profiles').find({ actif: true }, { projection: { _id: 0 } }).toArray();
+  const profiles = await db.collection('dj_profiles').find({ actif: { $ne: false } }, { projection: { _id: 0 } }).toArray();
   const cleaned = profiles.map(p => { const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } return r; });
   res.json(await autoSignGcsUrlsInObject(cleaned));
 });
@@ -3373,8 +3519,17 @@ api.get('/dj-fiches/public/:id', async (req, res) => {
   }
 
   if (!p) return res.status(404).json({ detail: 'DJ Profile not found' });
+  if (p.actif === false) return res.status(404).json({ detail: 'Ce profil DJ est actuellement désactivé ou hors ligne' });
   const r = {}; for (const [k,v] of Object.entries(p)) { if (!DJ_PRIVATE.has(k)) r[k] = v; } 
   res.json(await autoSignGcsUrlsInObject(r));
+});
+api.patch('/dj-fiches/:id/toggle-status', authMiddleware, async (req, res) => {
+  const profile = await db.collection('dj_profiles').findOne({ id: req.params.id });
+  if (!profile) return res.status(404).json({ detail: 'Profile not found' });
+  const newStatus = profile.actif === false ? true : false;
+  await db.collection('dj_profiles').updateOne({ id: req.params.id }, { $set: { actif: newStatus } });
+  const updated = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.post('/dj-fiches', authMiddleware, async (req, res) => {
   const body = { ...req.body };
@@ -3383,7 +3538,7 @@ api.post('/dj-fiches', authMiddleware, async (req, res) => {
   if (body.logo) body.logo = await uploadBase64ToGcs(body.logo, 'dj-photos');
   if (body.logo_url && body.logo_url.startsWith('data:')) body.logo_url = await uploadBase64ToGcs(body.logo_url, 'dj-photos');
 
-  const profile = { id: uuidv4(), ...body, created_at: new Date().toISOString() };
+  const profile = { id: uuidv4(), actif: body.actif !== false, ...body, created_at: new Date().toISOString() };
   await db.collection('dj_profiles').insertOne(profile);
   res.json(await autoSignGcsUrlsInObject(clean(profile)));
 });
@@ -3548,11 +3703,25 @@ api.get('/billetterie/events', authMiddleware, async (req, res) => {
   res.json(await autoSignGcsUrlsInObject(list));
 });
 api.get('/billetterie/events/public', async (req, res) => {
-  const list = cleanList(await db.collection('events').find({}, { projection: { _id: 0 } }).sort({ date: -1 }).toArray());
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  const list = cleanList(await db.collection('events').find({
+    actif: { $nin: [false, 'false', 'OFF', 'off'] }
+  }, { projection: { _id: 0 } }).sort({ date: -1 }).toArray());
   res.json(await autoSignGcsUrlsInObject(list));
 });
+api.patch('/billetterie/events/:id/toggle-status', authMiddleware, async (req, res) => {
+  const event = await db.collection('events').findOne({ id: req.params.id });
+  if (!event) return res.status(404).json({ detail: 'Event not found' });
+  const isOffline = event.actif === false || event.actif === 'false' || event.actif === 'OFF' || event.actif === 'off';
+  const newStatus = isOffline ? true : false;
+  await db.collection('events').updateOne({ id: req.params.id }, { $set: { actif: newStatus } });
+  const updated = await db.collection('events').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  res.json(await autoSignGcsUrlsInObject(updated));
+});
 api.post('/billetterie/events', authMiddleware, async (req, res) => {
-  const event = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
+  const event = { id: uuidv4(), actif: req.body.actif !== false, ...req.body, created_at: new Date().toISOString() };
   await db.collection('events').insertOne(event);
   res.json(await autoSignGcsUrlsInObject(clean(event)));
 });
@@ -10069,7 +10238,13 @@ app.get('/api/pwa-manifest', (req, res) => {
 });
 
 // Serve widget HTML files (BEFORE api router so /api/widgets/* is served as static files)
-app.use('/api/widgets', express.static(path.join(__dirname, 'frontend', 'public', 'api', 'widgets')));
+app.use('/api/widgets', express.static(path.join(__dirname, 'frontend', 'public', 'api', 'widgets'), {
+  setHeaders: function (res, filePath, stat) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+}));
 
 api.get('/agenda-custom-events', authMiddleware, async (req, res) => {
   try {
@@ -10350,7 +10525,15 @@ if (!fs.existsSync(frontendPath)) {
 }
 
 console.log(`Serving frontend from: ${frontendPath}`);
-app.use(express.static(frontendPath));
+app.use(express.static(frontendPath, {
+  setHeaders: function (res, filePath, stat) {
+    if (filePath.endsWith('.html')) {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
+    }
+  }
+}));
 
 // SPA fallback - all non-API and non-file routes serve index.html
 app.use((req, res, next) => {

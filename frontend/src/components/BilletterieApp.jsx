@@ -5,6 +5,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
+import { Checkbox } from "./ui/checkbox";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -62,6 +63,7 @@ function BilletterieApp() {
   const [previewType, setPreviewType] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
   const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -77,7 +79,8 @@ function BilletterieApp() {
     photo_url: "",
     lien_reservation: "",
     telephone_reservation: "",
-    etiquette: ""
+    etiquette: "",
+    actif: true
   });
 
   useEffect(() => {
@@ -94,6 +97,18 @@ function BilletterieApp() {
     }
   };
 
+  const handleToggleEventStatus = async (event) => {
+    try {
+      const newStatus = event.actif === false ? true : false;
+      await axios.patch(`${API}/billetterie/events/${event.id}/toggle-status`);
+      setEvents(prev => prev.map(e => e.id === event.id ? { ...e, actif: newStatus } : e));
+      toast.success(newStatus ? `Événement "${event.titre}" mis en ligne (ON) !` : `Événement "${event.titre}" mis hors ligne (OFF) !`);
+    } catch (error) {
+      console.error("Error toggling event status:", error);
+      toast.error("Erreur lors du changement de statut");
+    }
+  };
+
   const handleSaveEvent = async () => {
     if (!eventForm.titre.trim() || !eventForm.date || !eventForm.lieu.trim()) {
       toast.error("Les champs titre, date de début et lieu sont requis");
@@ -105,13 +120,15 @@ function BilletterieApp() {
         await axios.put(`${API}/billetterie/events/${editingEvent.id}`, {
           ...editingEvent,
           ...eventForm,
-          date_fin: eventForm.date_fin || null
+          date_fin: eventForm.date_fin || null,
+          actif: eventForm.actif !== false
         });
         toast.success("Événement mis à jour !");
       } else {
         await axios.post(`${API}/billetterie/events`, {
           ...eventForm,
-          date_fin: eventForm.date_fin || null
+          date_fin: eventForm.date_fin || null,
+          actif: eventForm.actif !== false
         });
         toast.success("Événement créé !");
       }
@@ -189,7 +206,8 @@ function BilletterieApp() {
       photo_url: "",
       lien_reservation: "",
       telephone_reservation: "",
-      etiquette: ""
+      etiquette: "",
+      actif: true
     });
     setEditingEvent(null);
   };
@@ -208,7 +226,8 @@ function BilletterieApp() {
       photo_url: event.photo_url || "",
       lien_reservation: event.lien_reservation || "",
       telephone_reservation: event.telephone_reservation || "",
-      etiquette: event.etiquette || ""
+      etiquette: event.etiquette || "",
+      actif: event.actif !== false
     });
     setShowEventDialog(true);
   };
@@ -228,7 +247,8 @@ function BilletterieApp() {
       photo_url: event.photo_url || "",
       lien_reservation: event.lien_reservation || "",
       telephone_reservation: event.telephone_reservation || "",
-      etiquette: event.etiquette || ""
+      etiquette: event.etiquette || "",
+      actif: true
     });
     setShowEventDialog(true);
     toast.info("Événement dupliqué - Modifiez la date et les détails");
@@ -272,8 +292,10 @@ function BilletterieApp() {
   };
 
   const filteredEvents = events.filter(event => {
-    if (typeFilter === "all") return true;
-    return event.type === typeFilter;
+    if (typeFilter !== "all" && event.type !== typeFilter) return false;
+    if (statusFilter === "online" && event.actif === false) return false;
+    if (statusFilter === "offline" && event.actif !== false) return false;
+    return true;
   });
 
   const futureEvents = filteredEvents.filter(event => {
@@ -347,7 +369,7 @@ function BilletterieApp() {
         </div>
 
         {/* Statistiques */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <Card className="bg-gradient-to-br from-gray-700 to-gray-900 text-white">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
@@ -355,19 +377,35 @@ function BilletterieApp() {
                   <p className="text-sm opacity-90">Événements à venir</p>
                   <p className="text-3xl font-bold">{futureEvents.length}</p>
                 </div>
-                <Ticket className="h-12 w-12 opacity-80" />
+                <Ticket className="h-10 w-10 opacity-80" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-purple-500 to-pink-600 text-white">
+          <Card className="bg-gradient-to-br from-emerald-600 to-teal-700 text-white">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm opacity-90">Événements passés</p>
-                  <p className="text-3xl font-bold">{pastEvents.length}</p>
+                  <p className="text-sm opacity-90">En ligne (ON)</p>
+                  <p className="text-3xl font-bold">{events.filter(e => e.actif !== false).length}</p>
                 </div>
-                <Calendar className="h-12 w-12 opacity-80" />
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-bold text-lg">
+                  ON
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-amber-600 to-orange-700 text-white">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm opacity-90">Hors ligne (OFF)</p>
+                  <p className="text-3xl font-bold">{events.filter(e => e.actif === false).length}</p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-bold text-lg">
+                  OFF
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -379,7 +417,7 @@ function BilletterieApp() {
                   <p className="text-sm opacity-90">Total événements</p>
                   <p className="text-3xl font-bold">{events.length}</p>
                 </div>
-                <Ticket className="h-12 w-12 opacity-80" />
+                <Calendar className="h-10 w-10 opacity-80" />
               </div>
             </CardContent>
           </Card>
@@ -390,7 +428,7 @@ function BilletterieApp() {
           <CardContent className="pt-6">
             <div className="flex flex-col md:flex-row gap-4">
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-full md:w-48">
+                <SelectTrigger className="w-full md:w-44">
                   <SelectValue placeholder="Filtrer par type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -398,6 +436,17 @@ function BilletterieApp() {
                   <SelectItem value="dj">🎵 DJ</SelectItem>
                   <SelectItem value="hypnose">🎭 Hypnose</SelectItem>
                   <SelectItem value="formation">📚 Formation</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full md:w-44">
+                  <SelectValue placeholder="Filtrer par statut" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les statuts</SelectItem>
+                  <SelectItem value="online">🟢 En ligne (ON)</SelectItem>
+                  <SelectItem value="offline">⚪ Hors ligne (OFF)</SelectItem>
                 </SelectContent>
               </Select>
               
@@ -459,15 +508,29 @@ function BilletterieApp() {
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">Événements à venir</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {futureEvents.map(event => (
-                <Card key={event.id} className="hover:shadow-lg transition-shadow relative">
+              {futureEvents.map(event => {
+                const isOnline = event.actif !== false;
+                return (
+                <Card key={event.id} className={`hover:shadow-lg transition-all relative overflow-hidden ${
+                  !isOnline ? "border-amber-300/80 bg-amber-50/20" : ""
+                }`}>
                   {/* Étiquette/Badge en diagonale */}
                   {event.etiquette && (
-                    <div className="absolute -top-2 -right-2 z-20 overflow-hidden" style={{ width: '130px', height: '130px' }}>
-                      <div className="absolute bg-gradient-to-r from-red-500 to-pink-500 text-white text-[9px] font-bold py-1.5 text-center shadow-lg uppercase tracking-wider transform rotate-45"
-                           style={{ width: '180px', top: '28px', right: '-42px' }}>
-                        {event.etiquette}
-                      </div>
+                    <div className="absolute top-[32px] right-[-32px] z-20 w-[150px] bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] font-bold py-1 text-center shadow-md uppercase tracking-wider transform rotate-45 select-none pointer-events-none">
+                      {event.etiquette}
+                    </div>
+                  )}
+
+                  {!isOnline && (
+                    <div className="bg-amber-500/10 border-b border-amber-200 px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 font-medium">
+                      <span>⚠️ <strong>Hors ligne (OFF)</strong> — Masqué du widget public</span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleEventStatus(event)}
+                        className="underline text-amber-900 hover:text-amber-700 font-bold ml-2 cursor-pointer"
+                      >
+                        Mettre en ON
+                      </button>
                     </div>
                   )}
                   
@@ -480,11 +543,26 @@ function BilletterieApp() {
                   
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        {getTypeBadge(event.type)}
-                        <h3 className="text-xl font-bold text-gray-800 mt-2">{event.titre}</h3>
+                      <div className="flex-1 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {getTypeBadge(event.type)}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEventStatus(event)}
+                            title={isOnline ? "Cliquer pour mettre cet événement en OFF (hors ligne)" : "Cliquer pour mettre cet événement en ON (en ligne)"}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all shadow-sm cursor-pointer ${
+                              isOnline
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                                : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300"
+                            }`}
+                          >
+                            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`}></span>
+                            {isOnline ? "En ligne (ON)" : "Hors ligne (OFF)"}
+                          </button>
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-800">{event.titre}</h3>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1 shrink-0 ml-2">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -565,7 +643,8 @@ function BilletterieApp() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}
@@ -574,16 +653,47 @@ function BilletterieApp() {
         {pastEvents.length > 0 && (
           <div>
             <h2 className="text-2xl font-bold text-gray-400 mb-4">Événements passés</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-60">
-              {pastEvents.map(event => (
-                <Card key={event.id} className="hover:shadow-lg transition-shadow">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-80">
+              {pastEvents.map(event => {
+                const isOnline = event.actif !== false;
+                return (
+                <Card key={event.id} className={`hover:shadow-lg transition-shadow relative overflow-hidden ${
+                  !isOnline ? "border-amber-300/80 bg-amber-50/20" : ""
+                }`}>
+                  {!isOnline && (
+                    <div className="bg-amber-500/10 border-b border-amber-200 px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 font-medium">
+                      <span>⚠️ <strong>Hors ligne (OFF)</strong></span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleEventStatus(event)}
+                        className="underline text-amber-900 hover:text-amber-700 font-bold ml-2 cursor-pointer"
+                      >
+                        Mettre en ON
+                      </button>
+                    </div>
+                  )}
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        {getTypeBadge(event.type)}
-                        <h3 className="text-xl font-bold text-gray-800 mt-2">{event.titre}</h3>
+                      <div className="flex-1 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {getTypeBadge(event.type)}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEventStatus(event)}
+                            title={isOnline ? "Cliquer pour mettre cet événement en OFF (hors ligne)" : "Cliquer pour mettre cet événement en ON (en ligne)"}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-all shadow-sm cursor-pointer ${
+                              isOnline
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                                : "bg-gray-100 text-gray-700 border border-gray-300 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300"
+                            }`}
+                          >
+                            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500 animate-pulse" : "bg-gray-400"}`}></span>
+                            {isOnline ? "En ligne (ON)" : "Hors ligne (OFF)"}
+                          </button>
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-800">{event.titre}</h3>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-1 shrink-0 ml-2">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -591,6 +701,14 @@ function BilletterieApp() {
                           title="Dupliquer"
                         >
                           <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEditEvent(event)}
+                          title="Modifier"
+                        >
+                          <Edit className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -616,7 +734,8 @@ function BilletterieApp() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}
@@ -841,6 +960,28 @@ function BilletterieApp() {
               <p className="text-xs text-gray-500 mt-1">
                 Numéro de téléphone pour réserver (optionnel)
               </p>
+            </div>
+
+            {/* Statut En ligne / Hors ligne */}
+            <div className={`p-4 rounded-lg border flex items-start space-x-3 transition-colors ${
+              eventForm.actif !== false ? "bg-emerald-50/60 border-emerald-200" : "bg-gray-50 border-gray-200"
+            }`}>
+              <Checkbox
+                id="event_actif"
+                checked={eventForm.actif !== false}
+                onCheckedChange={(checked) => setEventForm(prev => ({ ...prev, actif: checked }))}
+                className="mt-0.5"
+              />
+              <div className="space-y-1">
+                <Label htmlFor="event_actif" className="font-semibold cursor-pointer">
+                  {eventForm.actif !== false ? "🟢 Événement en ligne (ON) — Visible sur le widget public" : "⚪ Événement hors ligne (OFF) — Masqué du widget"}
+                </Label>
+                <p className="text-xs text-gray-500">
+                  {eventForm.actif !== false
+                    ? "Cet événement est publié et s'affiche dans le widget partagé sur vos sites."
+                    : "Cet événement est sauvegardé mais n'apparaît pas dans le widget public de billetterie."}
+                </p>
+              </div>
             </div>
           </div>
 
