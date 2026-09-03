@@ -7345,19 +7345,36 @@ api.get(['/gcs/:path(*)', '/gcs/:folder/:filename', '/gcs/*'], async (req, res) 
   }
 });
 
+// Helper function to optimize smartphone photos (EXIF auto-orientation, resize to max 1920px, JPEG 80)
+async function optimizeImageBuffer(inputBuffer, mimetype) {
+  try {
+    const optimized = await sharp(inputBuffer)
+      .rotate() // auto-orient based on smartphone EXIF data
+      .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80, progressive: true })
+      .toBuffer();
+    return { buffer: optimized, contentType: 'image/jpeg', ext: '.jpg' };
+  } catch (err) {
+    console.warn('Sharp optimization fallback, using raw buffer:', err.message);
+    return { buffer: inputBuffer, contentType: mimetype || 'image/jpeg', ext: '.jpg' };
+  }
+}
+
 api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'No image' });
   
   try {
-    if (bucket) {
-      const ext = path.extname(req.file.originalname) || '';
+    const { buffer: processedBuffer, contentType: mimeType, ext } = await optimizeImageBuffer(req.file.buffer, req.file.mimetype);
+    const gcsBucket = getGcsBucket() || bucket;
+    
+    if (gcsBucket) {
       const imageId = uuidv4();
       const gcsPath = `client-uploads/${imageId}${ext}`;
-      const file = bucket.file(gcsPath);
+      const file = gcsBucket.file(gcsPath);
       
       try {
-        await file.save(req.file.buffer, {
-          metadata: { contentType: req.file.mimetype }
+        await file.save(processedBuffer, {
+          metadata: { contentType: mimeType }
         });
         return res.json({ url: `/api/gcs/${gcsPath}` });
       } catch (gcsErr) {
@@ -7366,8 +7383,8 @@ api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
     }
     
     const imageId = uuidv4();
-    const b64 = req.file.buffer.toString('base64');
-    const doc = { upload_id: imageId, data: b64, content_type: req.file.mimetype, created_at: new Date().toISOString() };
+    const b64 = processedBuffer.toString('base64');
+    const doc = { upload_id: imageId, data: b64, content_type: mimeType, created_at: new Date().toISOString() };
     await db.collection('event_uploads').insertOne(doc);
     return res.json({ url: `/api/uploads/events/${imageId}` });
   } catch (error) {
@@ -7376,22 +7393,24 @@ api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
   }
 });
 
-api.post('/public/upload/photos', upload.array('files'), async (req, res) => {
+api.post('/public/upload/photos', upload.array('files', 30), async (req, res) => {
   const files = req.files || [];
   if (!files.length) return res.status(400).json({ detail: 'Aucune image transmise' });
 
   try {
     const urls = [];
+    const gcsBucket = getGcsBucket() || bucket;
     for (const f of files) {
-      if (bucket) {
-        const ext = path.extname(f.originalname) || '';
-        const imageId = uuidv4();
+      const { buffer: processedBuffer, contentType: mimeType, ext } = await optimizeImageBuffer(f.buffer, f.mimetype);
+      const imageId = uuidv4();
+
+      if (gcsBucket) {
         const gcsPath = `client-uploads/${imageId}${ext}`;
-        const file = bucket.file(gcsPath);
+        const file = gcsBucket.file(gcsPath);
 
         try {
-          await file.save(f.buffer, {
-            metadata: { contentType: f.mimetype }
+          await file.save(processedBuffer, {
+            metadata: { contentType: mimeType }
           });
           urls.push(`/api/gcs/${gcsPath}`);
           continue;
@@ -7400,9 +7419,8 @@ api.post('/public/upload/photos', upload.array('files'), async (req, res) => {
         }
       }
 
-      const imageId = uuidv4();
-      const b64 = f.buffer.toString('base64');
-      const doc = { upload_id: imageId, data: b64, content_type: f.mimetype, created_at: new Date().toISOString() };
+      const b64 = processedBuffer.toString('base64');
+      const doc = { upload_id: imageId, data: b64, content_type: mimeType, created_at: new Date().toISOString() };
       await db.collection('event_uploads').insertOne(doc);
       urls.push(`/api/uploads/events/${imageId}`);
     }

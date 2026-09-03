@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
-import { Check, FileText, Printer, ArrowLeft, ArrowRight, Camera, Trash2, Plus, AlertTriangle, Upload, Eye, Loader2 } from 'lucide-react';
+import { Check, FileText, Printer, ArrowLeft, ArrowRight, Camera, Trash2, Plus, AlertTriangle, Upload, Eye, Loader2, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { calculateGuaranteeDeposit } from '../../utils/pdfGenerator';
 import { generateWithdrawalPDF } from './withdrawalPdf';
@@ -195,30 +195,111 @@ export function WithdrawalSlipModal({
     setAddedItems(prev => prev.filter(item => item.id !== id));
   };
 
+  // Compression client-side sur canvas pour optimiser les photos smartphone (ex: photos 12MP/48MP de 10Mo réduites à ~250Ko)
+  const compressImageClient = async (file) => {
+    if (!file) return file;
+    // Ne pas altérer les formats vectoriels ou animations
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') return file;
+
+    return new Promise((resolve) => {
+      try {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          try {
+            const maxDim = 1920;
+            let width = img.naturalWidth || img.width;
+            let height = img.naturalHeight || img.height;
+
+            if (!width || !height) return resolve(file);
+
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return resolve(file);
+
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob(
+              (blob) => {
+                if (blob && blob.size > 0) {
+                  const baseName = (file.name || 'photo').replace(/\.[^/.]+$/, '');
+                  const optimizedFile = new File([blob], `${baseName}.jpg`, {
+                    type: 'image/jpeg',
+                    lastModified: Date.now()
+                  });
+                  resolve(optimizedFile);
+                } else {
+                  resolve(file);
+                }
+              },
+              'image/jpeg',
+              0.82
+            );
+          } catch (canvasErr) {
+            console.warn('Canvas compression fallback:', canvasErr);
+            resolve(file);
+          }
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve(file);
+        };
+
+        img.src = url;
+      } catch (err) {
+        console.warn('Image compression general fallback:', err);
+        resolve(file);
+      }
+    });
+  };
+
   // Upload d'une seule photo (pour webcam ou fallback)
   const handleFileUpload = async (file, type) => {
     if (!file) return;
     return handleFilesUpload([file], type);
   };
 
-  // Upload de médias sur GCS via l'endpoint de l'application (support multi-fichiers)
+  // Upload de médias sur GCS via l'endpoint de l'application (support multi-fichiers et smartphones)
   const handleFilesUpload = async (files, type) => {
     if (!files || files.length === 0) return;
-    const fileArray = Array.from(files).filter(f => f && (f.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic|heif|bmp|svg)$/i.test(f?.name || '')));
+    
+    // Filtrage souple : sur smartphone (iOS/Android), file.type peut être vide ("") ou application/octet-stream
+    const fileArray = Array.from(files).filter(f => {
+      if (!f) return false;
+      if (f.type && f.type.startsWith('image/')) return true;
+      if (!f.type || f.type === 'application/octet-stream') return true;
+      if (/\.(jpg|jpeg|png|gif|webp|heic|heif|bmp|svg|tiff)$/i.test(f.name || '')) return true;
+      return false;
+    });
 
     if (fileArray.length === 0) {
-      toast.error("Veuillez sélectionner des fichiers image valides (JPG, PNG, WEBP, etc.)");
+      toast.error("Veuillez sélectionner des images valides.");
       return;
     }
 
     // Gestion pièce d'identité (recto / verso)
     if (type === 'recto' || type === 'verso') {
-      if (type === 'recto' && fileArray.length >= 2) {
-        setIsUploading(true);
-        try {
+      setIsUploading(true);
+      try {
+        if (type === 'recto' && fileArray.length >= 2) {
           const [f1, f2] = fileArray;
-          const fd1 = new FormData(); fd1.append('file', f1);
-          const fd2 = new FormData(); fd2.append('file', f2);
+          const [opt1, opt2] = await Promise.all([compressImageClient(f1), compressImageClient(f2)]);
+          const fd1 = new FormData(); fd1.append('file', opt1);
+          const fd2 = new FormData(); fd2.append('file', opt2);
           const [res1, res2] = await Promise.all([
             axios.post(`${BACKEND_URL}/api/public/upload/photo`, fd1, { headers: { 'Content-Type': 'multipart/form-data' } }),
             axios.post(`${BACKEND_URL}/api/public/upload/photo`, fd2, { headers: { 'Content-Type': 'multipart/form-data' } })
@@ -226,20 +307,12 @@ export function WithdrawalSlipModal({
           if (res1.data?.url) setIdentityRecto(res1.data.url);
           if (res2.data?.url) setIdentityVerso(res2.data.url);
           toast.success("Pièce d'identité (Recto & Verso) importée avec succès !");
-        } catch (err) {
-          console.error(err);
-          toast.error("Erreur lors de l'upload des pièces d'identité");
-        } finally {
-          setIsUploading(false);
+          return;
         }
-        return;
-      }
 
-      const singleFile = fileArray[0];
-      const formData = new FormData();
-      formData.append('file', singleFile);
-      try {
-        setIsUploading(true);
+        const singleFile = await compressImageClient(fileArray[0]);
+        const formData = new FormData();
+        formData.append('file', singleFile);
         const res = await axios.post(`${BACKEND_URL}/api/public/upload/photo`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
@@ -249,7 +322,7 @@ export function WithdrawalSlipModal({
           toast.success("Document importé avec succès");
         }
       } catch (err) {
-        console.error(err);
+        console.error('Erreur transfert justificatif:', err);
         toast.error("Erreur lors du transfert du justificatif");
       } finally {
         setIsUploading(false);
@@ -257,54 +330,58 @@ export function WithdrawalSlipModal({
       return;
     }
 
-    // Type === 'equipment' : Import de plusieurs photos en même temps
+    // Type === 'equipment' : Import de photos matériel avec traitement optimisé pour smartphone
     setIsUploading(true);
-    setUploadProgress({ current: 0, total: fileArray.length });
+    const totalCount = fileArray.length;
+    setUploadProgress({ current: 0, total: totalCount });
 
     try {
-      let completedCount = 0;
-      const uploadPromises = fileArray.map(async (file) => {
+      const newlyAddedPhotos = [];
+      // Upload séquentiel par photo : évite les coupures réseau mobiles, les saturations de bande passante et de mémoire
+      for (let i = 0; i < totalCount; i++) {
+        const rawFile = fileArray[i];
+        setUploadProgress({ current: i + 1, total: totalCount });
+
+        // Optimisation client-side avant envoi (réduit le temps d'upload par 10 sur mobile)
+        const readyFile = await compressImageClient(rawFile);
+        const formData = new FormData();
+        formData.append('file', readyFile);
+
         try {
-          const formData = new FormData();
-          formData.append('file', file);
           const res = await axios.post(`${BACKEND_URL}/api/public/upload/photo`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 45000
           });
-          completedCount++;
-          setUploadProgress({ current: completedCount, total: fileArray.length });
-          if (res.data && res.data.url) {
-            return {
+          if (res.data?.url) {
+            newlyAddedPhotos.push({
               url: res.data.url,
               photo: res.data.url,
               comments: '',
-              name: file.name
-            };
+              name: rawFile.name || `Photo ${i + 1}`
+            });
           }
-          return null;
-        } catch (fileErr) {
-          console.error(`Erreur upload photo ${file.name}:`, fileErr);
-          completedCount++;
-          setUploadProgress({ current: completedCount, total: fileArray.length });
-          return null;
+        } catch (singleErr) {
+          console.error(`Erreur upload photo ${rawFile.name}:`, singleErr);
         }
-      });
+      }
 
-      const results = await Promise.all(uploadPromises);
-      const successfulPhotos = results.filter(Boolean);
-
-      if (successfulPhotos.length > 0) {
-        setEquipmentPhotos(prev => [...prev, ...successfulPhotos]);
-        toast.success(
-          successfulPhotos.length === 1
-            ? "Photo importée avec succès"
-            : `${successfulPhotos.length} photos importées en même temps avec succès !`
-        );
+      if (newlyAddedPhotos.length > 0) {
+        setEquipmentPhotos(prev => [...prev, ...newlyAddedPhotos]);
+        if (newlyAddedPhotos.length === totalCount) {
+          toast.success(
+            totalCount === 1
+              ? "Photo importée avec succès !"
+              : `${totalCount} photos importées avec succès depuis votre appareil !`
+          );
+        } else {
+          toast.warning(`${newlyAddedPhotos.length} photo(s) sur ${totalCount} importée(s).`);
+        }
       } else {
-        toast.error("Impossible d'importer les photos sélectionnées");
+        toast.error("Impossible d'importer les photos. Veuillez vérifier votre connexion.");
       }
     } catch (err) {
       console.error("Erreur globale d'upload multiple:", err);
-      toast.error("Erreur lors de l'importation multiple des photos");
+      toast.error("Erreur lors de l'importation des photos");
     } finally {
       setIsUploading(false);
       setUploadProgress(null);
@@ -784,6 +861,32 @@ export function WithdrawalSlipModal({
 
             {/* Photos du matériel */}
             <div className="space-y-3">
+              {/* Inputs cachés de manière accessible (sr-only) pour compatibilité totale iOS/Safari et Android */}
+              <input
+                id="file-upload-equipment"
+                type="file"
+                accept="image/*,image/jpeg,image/png,image/heic,image/heif,image/webp"
+                multiple
+                className="sr-only"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (files && files.length > 0) handleFilesUpload(files, 'equipment');
+                  e.target.value = '';
+                }}
+              />
+              <input
+                id="file-capture-equipment"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (files && files.length > 0) handleFilesUpload(files, 'equipment');
+                  e.target.value = '';
+                }}
+              />
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h4 className="font-bold text-gray-900 text-sm">Photos du matériel (État au retrait)</h4>
@@ -799,47 +902,53 @@ export function WithdrawalSlipModal({
                     </span>
                   )}
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    id="file-upload-equipment"
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      const files = e.target.files;
-                      if (files && files.length > 0) handleFilesUpload(files, 'equipment');
-                      e.target.value = '';
-                    }}
-                  />
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Prise de photo directe sur smartphone */}
+                  <label
+                    htmlFor="file-capture-equipment"
+                    className={`sm:hidden px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 cursor-pointer transition-all border shadow-2xs ${
+                      isUploading
+                        ? 'opacity-50 pointer-events-none bg-gray-100 text-gray-400 border-gray-200'
+                        : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
+                    }`}
+                    title="Prendre une photo avec l'appareil photo"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Photo</span>
+                  </label>
+
+                  {/* Bouton Webcam (PC / Laptop) */}
                   <Button 
                     size="sm" 
                     variant="outline" 
                     onClick={() => startWebcam('equipment')}
                     disabled={isUploading}
-                    className="flex items-center gap-1 text-xs"
+                    className="hidden sm:flex items-center gap-1 text-xs"
                   >
                     <Camera className="w-3.5 h-3.5" /> Webcam
                   </Button>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => triggerFileInput('equipment')}
-                    disabled={isUploading}
-                    className="flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50/50 hover:bg-blue-50 border-blue-200 hover:border-blue-300"
+
+                  {/* Bouton Galerie / Multi-photos avec label natif htmlFor (100% compatible mobile) */}
+                  <label
+                    htmlFor="file-upload-equipment"
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-all border shadow-2xs ${
+                      isUploading 
+                        ? 'opacity-50 pointer-events-none bg-gray-100 text-gray-400 border-gray-200' 
+                        : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200 hover:border-blue-300'
+                    }`}
                   >
                     {isUploading ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>En cours...</span>
+                        <span>Envoi {uploadProgress?.current || 0}/{uploadProgress?.total || 0}...</span>
                       </>
                     ) : (
                       <>
                         <Upload className="w-3.5 h-3.5" />
-                        <span>Importer des photos</span>
+                        <span>Galerie / Multi-photos</span>
                       </>
                     )}
-                  </Button>
+                  </label>
                 </div>
               </div>
 
@@ -873,9 +982,9 @@ export function WithdrawalSlipModal({
                     </div>
                   ))}
 
-                  {/* Carte d'ajout supplémentaire avec support drag & drop multi-photos */}
-                  <div 
-                    onClick={() => triggerFileInput('equipment')}
+                  {/* Carte d'ajout supplémentaire avec support drag & drop et clic multi-photos */}
+                  <label 
+                    htmlFor="file-upload-equipment"
                     onDragOver={(e) => { e.preventDefault(); setIsEquipmentDragging(true); }}
                     onDragLeave={() => setIsEquipmentDragging(false)}
                     onDrop={(e) => {
@@ -892,12 +1001,11 @@ export function WithdrawalSlipModal({
                       <Plus className="w-5 h-5" />
                     </div>
                     <span className="text-xs font-semibold text-gray-700">Ajouter d'autres photos</span>
-                    <span className="text-[10px] text-gray-400 mt-0.5">Glisser ou cliquer (sélection multiple)</span>
-                  </div>
+                    <span className="text-[10px] text-gray-400 mt-0.5">Galerie (plusieurs photos) ou glisser</span>
+                  </label>
                 </div>
               ) : (
                 <div 
-                  onClick={() => triggerFileInput('equipment')}
                   onDragOver={(e) => { e.preventDefault(); setIsEquipmentDragging(true); }}
                   onDragLeave={() => setIsEquipmentDragging(false)}
                   onDrop={(e) => {
@@ -906,7 +1014,7 @@ export function WithdrawalSlipModal({
                     const files = e.dataTransfer.files;
                     if (files && files.length > 0) handleFilesUpload(files, 'equipment');
                   }}
-                  className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
+                  className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all ${
                     isEquipmentDragging 
                       ? 'border-blue-500 bg-blue-50/70 shadow-inner' 
                       : 'border-gray-200 hover:border-blue-400 hover:bg-blue-50/20'
@@ -916,8 +1024,30 @@ export function WithdrawalSlipModal({
                     <Camera className="w-6 h-6" />
                   </div>
                   <p className="text-sm font-semibold text-gray-800">Prendre en photo l'état du matériel</p>
-                  <p className="text-xs text-blue-600 font-medium mt-1">Glissez-déposez plusieurs photos ici ou cliquez pour parcourir</p>
-                  <p className="text-[11px] text-gray-400 mt-1">Sélection multiple acceptée (JPG, PNG, HEIC, WEBP)</p>
+                  <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
+                    Sélectionnez plusieurs photos de vos équipements pour attester de leur état lors du retrait.
+                  </p>
+
+                  <div className="mt-4 flex flex-wrap justify-center gap-2.5">
+                    {/* Bouton smartphone direct : Appareil photo */}
+                    <label
+                      htmlFor="file-capture-equipment"
+                      className="cursor-pointer px-4 py-2 rounded-xl text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 flex items-center gap-2 shadow-xs transition-colors"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>Prendre une photo</span>
+                    </label>
+
+                    {/* Bouton multi-photos : Galerie du téléphone / Ordinateur */}
+                    <label
+                      htmlFor="file-upload-equipment"
+                      className="cursor-pointer px-4 py-2 rounded-xl text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 flex items-center gap-2 shadow-xs transition-colors"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Sélectionner plusieurs photos</span>
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-2.5">Compatible tous smartphones (Android, iPhone HEIC, JPEG, PNG, WEBP)</p>
                 </div>
               )}
             </div>
@@ -933,9 +1063,8 @@ export function WithdrawalSlipModal({
                   <input
                     id="file-upload-recto"
                     type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
+                    accept="image/*,image/jpeg,image/png,image/heic,image/heif,image/webp"
+                    className="sr-only"
                     onChange={(e) => {
                       const files = e.target.files;
                       if (files && files.length > 0) handleFilesUpload(files, 'recto');
@@ -966,13 +1095,16 @@ export function WithdrawalSlipModal({
                     >
                       <Upload className="w-6 h-6 text-gray-400 mb-1.5" />
                       <span className="text-xs font-medium text-gray-600 mb-2">Pièce d'identité - Recto</span>
-                      <div className="flex gap-1.5">
+                      <div className="flex gap-2">
                         <Button size="xs" variant="outline" onClick={() => startWebcam('recto')} className="text-[10px] h-7 px-2">
                           Camera
                         </Button>
-                        <Button size="xs" variant="outline" onClick={() => triggerFileInput('recto')} className="text-[10px] h-7 px-2">
+                        <label
+                          htmlFor="file-upload-recto"
+                          className="cursor-pointer inline-flex items-center justify-center text-[10px] h-7 px-2.5 rounded-md font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-2xs"
+                        >
                           Fichier
-                        </Button>
+                        </label>
                       </div>
                     </div>
                   )}
@@ -984,8 +1116,8 @@ export function WithdrawalSlipModal({
                   <input
                     id="file-upload-verso"
                     type="file"
-                    accept="image/*"
-                    className="hidden"
+                    accept="image/*,image/jpeg,image/png,image/heic,image/heif,image/webp"
+                    className="sr-only"
                     onChange={(e) => {
                       const files = e.target.files;
                       if (files && files.length > 0) handleFilesUpload(files, 'verso');
@@ -1016,13 +1148,16 @@ export function WithdrawalSlipModal({
                     >
                       <Upload className="w-6 h-6 text-gray-400 mb-1.5" />
                       <span className="text-xs font-medium text-gray-600 mb-2">Pièce d'identité - Verso</span>
-                      <div className="flex gap-1.5">
+                      <div className="flex gap-2">
                         <Button size="xs" variant="outline" onClick={() => startWebcam('verso')} className="text-[10px] h-7 px-2">
                           Camera
                         </Button>
-                        <Button size="xs" variant="outline" onClick={() => triggerFileInput('verso')} className="text-[10px] h-7 px-2">
+                        <label
+                          htmlFor="file-upload-verso"
+                          className="cursor-pointer inline-flex items-center justify-center text-[10px] h-7 px-2.5 rounded-md font-medium border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 shadow-2xs"
+                        >
                           Fichier
-                        </Button>
+                        </label>
                       </div>
                     </div>
                   )}
