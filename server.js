@@ -7376,6 +7376,44 @@ api.post('/public/upload/photo', upload.single('file'), async (req, res) => {
   }
 });
 
+api.post('/public/upload/photos', upload.array('files'), async (req, res) => {
+  const files = req.files || [];
+  if (!files.length) return res.status(400).json({ detail: 'Aucune image transmise' });
+
+  try {
+    const urls = [];
+    for (const f of files) {
+      if (bucket) {
+        const ext = path.extname(f.originalname) || '';
+        const imageId = uuidv4();
+        const gcsPath = `client-uploads/${imageId}${ext}`;
+        const file = bucket.file(gcsPath);
+
+        try {
+          await file.save(f.buffer, {
+            metadata: { contentType: f.mimetype }
+          });
+          urls.push(`/api/gcs/${gcsPath}`);
+          continue;
+        } catch (gcsErr) {
+          console.warn('GCS Upload Failed for /public/upload/photos, falling back to MongoDB:', gcsErr.message);
+        }
+      }
+
+      const imageId = uuidv4();
+      const b64 = f.buffer.toString('base64');
+      const doc = { upload_id: imageId, data: b64, content_type: f.mimetype, created_at: new Date().toISOString() };
+      await db.collection('event_uploads').insertOne(doc);
+      urls.push(`/api/uploads/events/${imageId}`);
+    }
+
+    return res.json({ urls });
+  } catch (error) {
+    console.error('Error uploading photos:', error);
+    res.status(500).json({ detail: 'Erreur lors de l\'upload des photos' });
+  }
+});
+
 api.post('/public/upload/audio', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ detail: 'Aucun fichier' });
   

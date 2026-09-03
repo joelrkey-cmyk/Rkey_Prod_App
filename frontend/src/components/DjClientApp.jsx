@@ -96,6 +96,7 @@ const DjClientApp = ({ isPublic = false }) => {
   const [expandedSections, setExpandedSections] = useState({ past: false }); 
   const [djProfiles, setDjProfiles] = useState([]);
   const [copiedIban, setCopiedIban] = useState(false);
+  const [copiedOptionsIban, setCopiedOptionsIban] = useState(false);
   const [selectedDjFilter, setSelectedDjFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -3367,7 +3368,10 @@ function urlBase64ToUint8Array(base64String) {
         phone = currentDjProfile?.telephone || "07 83 55 36 74";
         titre = currentDjProfile?.titre || "Gérant de R'KEY PROD";
         if (!iban && currentDjProfile?.iban) iban = currentDjProfile.iban;
+        if (!iban && companySettings?.bank_iban) iban = companySettings.bank_iban;
         if (!bic && currentDjProfile?.bic) bic = currentDjProfile.bic;
+        if (!bic && companySettings?.bank_bic) bic = companySettings.bank_bic;
+        artistFullName = "R'Key Prod";
       } else if (isStephane) {
         stageName = "Stefan Edison";
         email = currentDjProfile?.email || "stephane@rkey-prod.fr";
@@ -3453,63 +3457,6 @@ function urlBase64ToUint8Array(base64String) {
                     <a href={`tel:${phone}`} className="font-semibold text-indigo-600 hover:text-indigo-800 hover:underline text-sm leading-tight inline-flex items-center gap-1">
                       <Phone className="w-3.5 h-3.5" /> {phone}
                     </a>
-                  </div>
-                )}
-
-                {iban && (
-                  <div className="sm:col-span-2 bg-indigo-50/70 border border-indigo-200/70 rounded-xl p-3.5 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <div className="p-2 bg-indigo-600 text-white rounded-lg flex-shrink-0 mt-0.5 sm:mt-0 shadow-xs">
-                        <CreditCard className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-[10px] font-bold text-indigo-950/60 uppercase tracking-widest">
-                            IBAN / RIB du DJ
-                          </p>
-                          {artistFullName && (
-                            <span className="text-[11px] font-medium text-slate-600">
-                              ({artistFullName})
-                            </span>
-                          )}
-                          {bic && (
-                            <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                              BIC : {bic}
-                            </span>
-                          )}
-                        </div>
-                        <p className="font-mono font-bold text-slate-900 text-sm sm:text-base tracking-wide mt-0.5 break-all select-all">
-                          {iban}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(iban.replace(/\s+/g, ''));
-                        setCopiedIban(true);
-                        toast.success("IBAN copié dans le presse-papier !");
-                        setTimeout(() => setCopiedIban(false), 2500);
-                      }}
-                      className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all flex-shrink-0 shadow-xs cursor-pointer ${
-                        copiedIban 
-                          ? 'bg-emerald-600 text-white shadow-emerald-200' 
-                          : 'bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 hover:border-indigo-300'
-                      }`}
-                      title="Copier l'IBAN"
-                    >
-                      {copiedIban ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-white" />
-                          <span>Copié !</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copier le RIB</span>
-                        </>
-                      )}
-                    </button>
                   </div>
                 )}
               </div>
@@ -5087,6 +5034,152 @@ function urlBase64ToUint8Array(base64String) {
 
       const role = currentRoute.role;
 
+      // Résolution du RIB (IBAN / BIC / Titulaire) pour cet événement
+      const djProfileKey = c.dj_profile || '';
+      const currentDjProfile = djProfiles.find(p => {
+        if (p.id && (p.id === djProfileKey || (p.id.length >= 8 && djProfileKey.startsWith(p.id)))) return true;
+        const pArtistLower = String(p.nom_artistique || '').toLowerCase();
+        const pCompletLower = String(p.nom_complet || '').toLowerCase();
+        const keyLower = String(djProfileKey).toLowerCase();
+        if (keyLower === 'joel' || keyLower === 'joël') {
+          return pArtistLower.includes('joel') || pArtistLower.includes('joël') || pArtistLower.includes("r'key") || pArtistLower.includes("rkey") || pCompletLower.includes('ruttkay');
+        }
+        if (keyLower === 'stephane' || keyLower === 'stéphane') {
+          return pArtistLower.includes('stephane') || pArtistLower.includes('stéphane') || pArtistLower.includes('edison') || pCompletLower.includes('jacoby');
+        }
+        return false;
+      });
+
+      const djSnapshot = c.dj_profile_data || {};
+      const rawStageName = currentDjProfile?.nom_artistique || djSnapshot.nom_artistique || ev.dj?.name || 'Artiste DJ';
+      const fullName = currentDjProfile?.nom_complet || djSnapshot.nom_complet || '';
+
+      const isJoel = String(djProfileKey).toLowerCase().includes('joel') || 
+                     String(djProfileKey).toLowerCase().includes('joël') || 
+                     String(rawStageName).toLowerCase().includes("r'key") || 
+                     String(rawStageName).toLowerCase().includes("rkey") ||
+                     String(fullName).toLowerCase().includes("ruttkay");
+
+      const isStephane = String(djProfileKey).toLowerCase().includes('stephane') || 
+                        String(djProfileKey).toLowerCase().includes('stéphane') || 
+                        String(rawStageName).toLowerCase().includes('edison') ||
+                        String(fullName).toLowerCase().includes('jacoby');
+
+      let resolvedIban = currentDjProfile?.iban || djSnapshot.iban || '';
+      let resolvedBic = currentDjProfile?.bic || djSnapshot.bic || '';
+      let resolvedTitulaire = currentDjProfile?.nom_complet || djSnapshot.nom_complet || fullName || '';
+
+      if (isJoel) {
+        if (!resolvedIban && currentDjProfile?.iban) resolvedIban = currentDjProfile.iban;
+        if (!resolvedIban && companySettings?.bank_iban) resolvedIban = companySettings.bank_iban;
+        if (!resolvedBic && currentDjProfile?.bic) resolvedBic = currentDjProfile.bic;
+        if (!resolvedBic && companySettings?.bank_bic) resolvedBic = companySettings.bank_bic;
+        resolvedTitulaire = "R'Key Prod";
+      } else if (isStephane) {
+        if (!resolvedIban) resolvedIban = currentDjProfile?.iban || "FR76 4061 8804 8700 0401 4272 395";
+        if (!resolvedBic && currentDjProfile?.bic) resolvedBic = currentDjProfile.bic;
+        resolvedTitulaire = "Stéphane Jacoby (Stefan Edison)";
+      } else {
+        if (!resolvedIban && companySettings?.bank_iban) resolvedIban = companySettings.bank_iban;
+        if (!resolvedBic && companySettings?.bank_bic) resolvedBic = companySettings.bank_bic;
+        if (!resolvedTitulaire && companySettings?.bank_titulaire) resolvedTitulaire = companySettings.bank_titulaire;
+      }
+
+      // Statut et détails du règlement du solde (Admin)
+      const isBalancePaid = Boolean(c.balance_paid);
+      const balancePaidDate = c.balance_paid_date || c.balance_payment_date || '';
+      const balancePaymentMethod = c.balance_payment_method || 'virement';
+
+      const handleToggleBalancePaid = async (checked) => {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const newDate = checked ? (balancePaidDate || todayStr) : balancePaidDate;
+        const newMethod = balancePaymentMethod || 'virement';
+
+        setEvents(prevEvents => prevEvents.map(item => {
+          if (item.id === ev.id) {
+            return {
+              ...item,
+              rawContractData: {
+                ...(item.rawContractData || {}),
+                balance_paid: checked,
+                balance_paid_date: newDate,
+                balance_payment_method: newMethod
+              }
+            };
+          }
+          return item;
+        }));
+
+        try {
+          await updateContractDb(ev.id, {
+            balance_paid: checked,
+            balance_paid_date: newDate,
+            balance_payment_method: newMethod
+          });
+          toast.success(checked ? "Règlement du solde enregistré !" : "Statut du solde remis en attente");
+        } catch (err) {
+          console.error("Erreur mise à jour règlement du solde:", err);
+          toast.error("Erreur lors de la mise à jour");
+        }
+      };
+
+      const handleBalanceDateChange = async (newDate) => {
+        setEvents(prevEvents => prevEvents.map(item => {
+          if (item.id === ev.id) {
+            return {
+              ...item,
+              rawContractData: {
+                ...(item.rawContractData || {}),
+                balance_paid_date: newDate
+              }
+            };
+          }
+          return item;
+        }));
+        await updateContractDb(ev.id, { balance_paid_date: newDate });
+      };
+
+      const handleBalanceMethodChange = async (newMethod) => {
+        setEvents(prevEvents => prevEvents.map(item => {
+          if (item.id === ev.id) {
+            return {
+              ...item,
+              rawContractData: {
+                ...(item.rawContractData || {}),
+                balance_payment_method: newMethod
+              }
+            };
+          }
+          return item;
+        }));
+        await updateContractDb(ev.id, { balance_payment_method: newMethod });
+      };
+
+      const getPaymentMethodLabel = (methodKey) => {
+        switch (methodKey) {
+          case 'especes':
+            return 'Espèces';
+          case 'carte':
+            return 'Carte bancaire';
+          case 'cheque':
+            return 'Chèque';
+          case 'autre':
+            return 'Autre';
+          case 'virement':
+          default:
+            return 'Virement bancaire';
+        }
+      };
+
+      const formatDisplayDate = (dStr) => {
+        if (!dStr) return '';
+        const parts = String(dStr).split('T')[0].split('-');
+        if (parts.length === 3) {
+          return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return dStr;
+      };
+
       const toggleBasket = (opt) => {
         if (optionsBasket.some(o => o.id === opt.id)) {
           setOptionsBasket(optionsBasket.filter(o => o.id !== opt.id));
@@ -5333,8 +5426,68 @@ function urlBase64ToUint8Array(base64String) {
             Tarifs et Options de l'Événement
           </h3>
 
+          {/* Coordonnées bancaires / RIB pour le règlement */}
+          {resolvedIban && (
+            <div className="bg-gradient-to-r from-indigo-50/80 via-purple-50/40 to-slate-50 border border-indigo-100/90 rounded-xl p-4 mb-5 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="p-2.5 bg-indigo-600 text-white rounded-xl flex-shrink-0 shadow-xs mt-0.5 sm:mt-0">
+                    <CreditCard className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[10px] font-bold text-indigo-950/70 uppercase tracking-widest">
+                        RIB / Coordonnées bancaires pour le règlement
+                      </p>
+                      {resolvedTitulaire && (
+                        <span className="text-[11px] font-semibold text-slate-700 bg-white/90 px-2 py-0.5 rounded-md border border-slate-200/70 shadow-2xs">
+                          Titulaire : {resolvedTitulaire}
+                        </span>
+                      )}
+                      {resolvedBic && (
+                        <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                          BIC : {resolvedBic}
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-mono font-bold text-slate-900 text-sm sm:text-base tracking-wider mt-1 break-all select-all">
+                      {resolvedIban}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(resolvedIban.replace(/\s+/g, ''));
+                    setCopiedOptionsIban(true);
+                    toast.success("IBAN copié dans le presse-papier !");
+                    setTimeout(() => setCopiedOptionsIban(false), 2500);
+                  }}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all flex-shrink-0 shadow-xs cursor-pointer ${
+                    copiedOptionsIban 
+                      ? 'bg-emerald-600 text-white shadow-emerald-200' 
+                      : 'bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 hover:border-indigo-300'
+                  }`}
+                  title="Copier l'IBAN"
+                >
+                  {copiedOptionsIban ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-white stroke-[3]" />
+                      <span>Copié !</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copier l'IBAN</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Tableaux de bord financier simple & esthétique */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200/50">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200/50">
             {/* Total prestation */}
             <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-between">
               <div>
@@ -5451,14 +5604,44 @@ function urlBase64ToUint8Array(base64String) {
             </div>
 
             {/* Solde restant (Cachet) */}
-            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-between">
+            <div className={`p-4 rounded-lg border shadow-sm flex flex-col justify-between transition-colors ${
+              isBalancePaid ? "bg-emerald-50/50 border-emerald-200" : "bg-white border-slate-200"
+            }`}>
               <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  {isEntrepriseFreelance ? "Solde restant à régler à R'Key Prod" : (isMandatMode ? "Cachet Artiste restants" : "Solde restant dû")}
-                </span>
-                <span className="text-xl font-bold text-indigo-600">
-                  {remainingBalance.toFixed(2)} €
-                </span>
+                <div className="flex items-center justify-between gap-1 mb-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    {isEntrepriseFreelance ? "Solde restant à régler à R'Key Prod" : (isMandatMode ? "Cachet Artiste restant" : "Solde restant dû")}
+                  </span>
+                  {isBalancePaid ? (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-200 uppercase">
+                      <Check className="w-2.5 h-2.5 stroke-[3]" /> Réglé
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 uppercase">
+                      À régler
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-xl font-bold ${isBalancePaid ? "text-emerald-700" : "text-indigo-600"}`}>
+                    {remainingBalance.toFixed(2)} €
+                  </span>
+                  {isBalancePaid && (
+                    <span className="text-xs font-semibold text-emerald-600">
+                      (Acquitté)
+                    </span>
+                  )}
+                </div>
+
+                {isBalancePaid && (
+                  <div className="mt-2 py-1.5 px-2.5 bg-emerald-100/70 rounded-lg border border-emerald-200 text-[11px] text-emerald-800 font-medium flex items-center gap-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>
+                      Réglé le <strong>{formatDisplayDate(balancePaidDate)}</strong> par <strong>{getPaymentMethodLabel(balancePaymentMethod)}</strong>
+                    </span>
+                  </div>
+                )}
                 
                 {additions.length > 0 && (
                   <div className="mt-2 space-y-1 border-t border-dashed border-slate-200 pt-1.5">
@@ -5513,6 +5696,78 @@ function urlBase64ToUint8Array(base64String) {
               </div>
             </div>
           </div>
+
+          {/* Espace Admin : Suivi et validation du règlement du solde */}
+          {role === 'admin' && (
+            <div className={`p-4 rounded-xl border mb-6 transition-all ${
+              isBalancePaid ? 'bg-emerald-50/60 border-emerald-200 shadow-2xs' : 'bg-slate-50 border-slate-200/80'
+            }`}>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                {/* Case à cocher pour le règlement du solde */}
+                <label className="flex items-start sm:items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isBalancePaid}
+                    onChange={(e) => handleToggleBalancePaid(e.target.checked)}
+                    className="mt-0.5 sm:mt-0 w-5 h-5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-bold text-sm text-slate-800 flex items-center gap-2 flex-wrap">
+                      Règlement du solde reçu
+                      {isBalancePaid ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wider">
+                          <CheckCircle className="w-3 h-3 text-emerald-600" /> Solde Encaissé
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/80 text-slate-600 uppercase tracking-wider">
+                          Non encaissé
+                        </span>
+                      )}
+                    </span>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Cochez cette case pour confirmer la réception du règlement du solde de l'événement.
+                    </p>
+                  </div>
+                </label>
+
+                {/* Formulaire Date & Moyen de paiement (actif quand le solde est coché) */}
+                {isBalancePaid && (
+                  <div className="flex flex-wrap items-center gap-3 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-200">
+                    {/* Date du règlement */}
+                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+                      <Calendar className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <label className="text-xs font-semibold text-slate-600 shrink-0">Date :</label>
+                      <input
+                        type="date"
+                        value={balancePaidDate}
+                        onChange={(e) => handleBalanceDateChange(e.target.value)}
+                        className="text-xs font-bold text-slate-800 bg-transparent border-0 focus:ring-0 p-0 outline-none cursor-pointer"
+                        title="Sélectionner la date de règlement"
+                      />
+                    </div>
+
+                    {/* Mode de paiement */}
+                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+                      <CreditCard className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <label className="text-xs font-semibold text-slate-600 shrink-0">Mode :</label>
+                      <select
+                        value={balancePaymentMethod}
+                        onChange={(e) => handleBalanceMethodChange(e.target.value)}
+                        className="text-xs font-bold text-slate-800 bg-transparent border-0 focus:ring-0 p-0 outline-none cursor-pointer pr-4"
+                        title="Sélectionner le mode de paiement"
+                      >
+                        <option value="virement">Virement bancaire</option>
+                        <option value="especes">Espèces</option>
+                        <option value="carte">Carte bancaire</option>
+                        <option value="cheque">Chèque</option>
+                        <option value="autre">Autre mode</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-6">
