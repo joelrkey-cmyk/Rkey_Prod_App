@@ -402,10 +402,10 @@ const HomePage = () => {
         </div>
       </div>
 
-      {/* Planning Hebdomadaire */}
-      <div className="max-w-6xl mx-auto px-6 pb-16">
-        <Card className="border border-slate-200 bg-white/70 backdrop-blur shadow-sm">
-          <CardHeader className="pb-4">
+      {/* Planning Hebdomadaire - Pleine largeur sur ordinateur & responsive au redimensionnement */}
+      <div className="w-full px-3 sm:px-6 lg:px-8 xl:px-10 2xl:px-12 pb-12">
+        <Card className="w-full border border-slate-200 bg-white/80 backdrop-blur shadow-sm rounded-2xl">
+          <CardHeader className="pb-4 px-4 sm:px-6 md:px-8 pt-6">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
                 <CardTitle className="text-xl md:text-2xl font-bold flex items-center gap-2 text-slate-800">
@@ -449,14 +449,14 @@ const HomePage = () => {
             </div>
           </CardHeader>
 
-          <CardContent>
+          <CardContent className="px-4 sm:px-6 md:px-8 pb-6">
             {plannerLoading ? (
               <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
                 <RefreshCw className="w-8 h-8 animate-spin text-slate-400" />
                 <p className="text-sm font-medium">Chargement du planning...</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                 {[
                   { key: 'lundi', label: 'Lundi', color: 'border-blue-500 bg-blue-50/10 text-blue-800' },
                   { key: 'mardi', label: 'Mardi', color: 'border-purple-500 bg-purple-50/10 text-purple-800' },
@@ -471,10 +471,10 @@ const HomePage = () => {
                   return (
                     <div 
                       key={day.key} 
-                      className={`flex flex-col rounded-xl border border-slate-150 bg-white shadow-sm overflow-hidden border-t-4 ${day.color.split(' ')[0]} transition-all duration-200 ${
+                      className={`flex flex-col h-full rounded-xl border border-slate-200/80 bg-white shadow-xs overflow-hidden border-t-4 ${day.color.split(' ')[0]} transition-all duration-200 ${
                         dragOverDay === day.key 
-                          ? 'ring-2 ring-emerald-500 ring-offset-1 scale-[1.02] shadow-md bg-emerald-50/20' 
-                          : ''
+                          ? 'ring-2 ring-emerald-500 ring-offset-1 scale-[1.01] shadow-md bg-emerald-50/20' 
+                          : 'hover:shadow-md'
                       }`}
                       onDragOver={(e) => {
                         e.preventDefault();
@@ -527,7 +527,7 @@ const HomePage = () => {
                                     ? 'opacity-40 border-dashed border-indigo-400 bg-indigo-50/30'
                                     : task.completed 
                                       ? 'bg-slate-50 border-slate-100 text-slate-400 line-through' 
-                                      : 'bg-white border-slate-150 text-slate-700 hover:bg-slate-50/50 hover:shadow-sm'
+                                      : 'bg-white border-slate-150 text-slate-700 hover:bg-slate-50/50 hover:shadow-xs'
                                 }`}
                               >
                                 {/* Checkbox Rond/Carré élégant */}
@@ -548,8 +548,8 @@ const HomePage = () => {
                                   {task.text}
                                 </span>
 
-                                {/* Menu action en hover */}
-                                <div className="hidden group-hover:flex items-center gap-1 opacity-80 shrink-0">
+                                {/* Menu action : visible au survol sur PC, accessible sur mobile */}
+                                <div className="flex items-center gap-0.5 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                                   <button
                                     type="button"
                                     onClick={() => handleOpenEditTask(task)}
