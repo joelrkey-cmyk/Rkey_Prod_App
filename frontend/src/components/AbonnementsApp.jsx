@@ -354,7 +354,7 @@ function AbonnementsApp() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 font-montserrat">
       {/* Header */}
       <div className="bg-gradient-to-r from-slate-800 to-slate-700 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-6 py-4">
@@ -586,7 +586,7 @@ function AbonnementsApp() {
 
       {/* Form Dialog */}
       <Dialog open={showForm} onOpenChange={(open) => !open && resetForm()}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto font-montserrat">
           <DialogHeader>
             <DialogTitle>
               {editingSubscription ? 'Modifier l\'abonnement' : 'Nouvel abonnement'}
@@ -843,7 +843,7 @@ function AbonnementsApp() {
 
       {/* Category Dialog */}
       <Dialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
-        <DialogContent>
+        <DialogContent className="font-montserrat">
           <DialogHeader>
             <DialogTitle>Gérer les catégories</DialogTitle>
             <DialogDescription>
@@ -890,7 +890,7 @@ function AbonnementsApp() {
 
       {/* Delete Confirmation */}
       <AlertDialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, subscription: null })}>
-        <AlertDialogContent>
+        <AlertDialogContent className="font-montserrat">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-red-600 flex items-center gap-2">
               <Trash2 className="w-5 h-5" />

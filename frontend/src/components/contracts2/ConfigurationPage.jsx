@@ -414,7 +414,7 @@ export const ConfigurationPage = ({
     };
     const loadEquipmentList = async () => {
       try {
-        const data = await apiService.request('/location/equipment');
+        const data = await apiService.getEquipmentList();
         setEquipmentList(data || []);
       } catch (error) {
         console.error("Error loading equipment list:", error);

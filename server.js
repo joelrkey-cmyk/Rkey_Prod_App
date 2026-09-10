@@ -5433,27 +5433,9 @@ api.post('/venues/merge', async (req, res) => {
 
 const CONTRACTS_LIST_PROJECTION = {
   _id: 0,
-  id: 1,
-  client_info: 1,
-  dj_profile: 1,
-  dj_profile_data: 1,
-  base_price: 1,
-  frais_mandat: 1,
-  cachet_artiste: 1,
-  pack_sonorisation: 1,
-  pack_lumiere: 1,
-  selected_options: 1,
-  discount_amount: 1,
-  invoice_number: 1,
-  status: 1,
-  cancellation_observation: 1,
-  created_at: 1,
-  updated_at: 1,
-  "event_documents.id": 1,
-  "event_documents.label": 1,
-  "event_documents.filename": 1,
-  "event_documents.hiddenForClient": 1,
-  "event_documents.uploadedAt": 1
+  cgv_text: 0,
+  predefined_notes: 0,
+  signatures: 0
 };
 
 api.get('/contracts2', authMiddleware, async (req, res) => {
@@ -5478,19 +5460,40 @@ api.post('/contracts2', authMiddleware, async (req, res) => {
   const cleanBody = sanitizeContractPayload(req.body);
   const contract = { id: uuidv4(), ...cleanBody, status: cleanBody.status || 'draft', created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   await db.collection('contracts2').insertOne(contract);
-  await syncVenueFromContract(contract.id, cleanBody);
-  await syncContractReservations(contract);
+  try {
+    await syncVenueFromContract(contract.id, cleanBody);
+  } catch (vErr) {
+    console.error("[contracts2 syncVenueFromContract Error]:", vErr);
+  }
+  try {
+    await syncContractReservations(contract);
+  } catch (resErr) {
+    console.error("[contracts2 syncContractReservations Error]:", resErr);
+  }
   clearDjClientResponseCache();
   res.json(clean(contract));
 });
 api.put('/contracts2/:id', authMiddleware, async (req, res) => {
-  const cleanBody = sanitizeContractPayload(req.body);
-  await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { ...cleanBody, updated_at: new Date().toISOString() } });
-  const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
-  await syncVenueFromContract(req.params.id, cleanBody);
-  await syncContractReservations(updatedContract);
-  clearDjClientResponseCache();
-  res.json(updatedContract);
+  try {
+    const cleanBody = sanitizeContractPayload(req.body);
+    await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { ...cleanBody, updated_at: new Date().toISOString() } });
+    const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    try {
+      await syncVenueFromContract(req.params.id, cleanBody);
+    } catch (vErr) {
+      console.error("[contracts2 syncVenueFromContract Error]:", vErr);
+    }
+    try {
+      await syncContractReservations(updatedContract);
+    } catch (resErr) {
+      console.error("[contracts2 syncContractReservations Error]:", resErr);
+    }
+    clearDjClientResponseCache();
+    res.json(updatedContract);
+  } catch (err) {
+    console.error("PUT /contracts2/:id error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 api.put('/contracts2/:id/status', authMiddleware, async (req, res) => {
   const updateData = { status: req.body.status, updated_at: new Date().toISOString() };
@@ -7433,7 +7436,7 @@ api.post('/public/upload/photos', upload.array('files', 30), async (req, res) =>
 });
 
 api.post('/public/upload/audio', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ detail: 'Aucun fichier' });
+  if (!req.file) return res.status(400).json({ detail: 'Aucun fichier reçu' });
   
   const b = getGcsBucket();
   if (!b) {
@@ -7441,14 +7444,26 @@ api.post('/public/upload/audio', upload.single('file'), async (req, res) => {
   }
 
   try {
-    const decodedName = decodeMulterFilename(req.file.originalname);
-    const ext = path.extname(decodedName) || '';
+    const decodedName = decodeMulterFilename(req.file.originalname) || 'audio_file.mp3';
+    let ext = path.extname(decodedName).toLowerCase();
+    if (!ext) {
+      const mime = (req.file.mimetype || '').toLowerCase();
+      if (mime.includes('wav')) ext = '.wav';
+      else if (mime.includes('m4a') || mime.includes('mp4')) ext = '.m4a';
+      else if (mime.includes('aac')) ext = '.aac';
+      else if (mime.includes('ogg')) ext = '.ogg';
+      else if (mime.includes('flac')) ext = '.flac';
+      else ext = '.mp3';
+    }
     const fileId = uuidv4();
     const gcsPath = `playlist-audio/${fileId}${ext}`;
     const file = b.file(gcsPath);
     
     await file.save(req.file.buffer, {
-      metadata: { contentType: req.file.mimetype }
+      metadata: { 
+        contentType: req.file.mimetype || (ext === '.wav' ? 'audio/wav' : (ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg')),
+        cacheControl: 'public, max-age=31536000'
+      }
     });
     
     return res.json({ url: `/api/gcs/${gcsPath}`, originalName: decodedName });

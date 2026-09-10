@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock, CreditCard } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock, CreditCard, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -790,15 +790,17 @@ function urlBase64ToUint8Array(base64String) {
             optionsTarifNotes: c.options_tarif_notes || "",
             showOptionsTarifNotesToClient: c.show_options_tarif_notes_to_client !== undefined ? c.show_options_tarif_notes_to_client : false,
             showGuestInterventionNotice: c.show_guest_intervention_notice !== undefined ? c.show_guest_intervention_notice : true,
-            playlistAudioFiles: c.playlist_audio_files || []
+            playlistAudioFiles: c.playlist_audio_files || [],
+            next_appointment_date: c.next_appointment_date || null,
+            next_appointment_time: c.next_appointment_time || null
          };
       });
       
       mappedEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
       if (silent) {
         setEvents(prev => {
-          const prevSummary = prev.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
-          const nextSummary = mappedEvents.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
+          const prevSummary = prev.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${e.next_appointment_date || ''}:${e.next_appointment_time || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
+          const nextSummary = mappedEvents.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${e.next_appointment_date || ''}:${e.next_appointment_time || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
           if (prevSummary !== nextSummary) {
             return mappedEvents;
           }
@@ -965,17 +967,21 @@ function urlBase64ToUint8Array(base64String) {
           }
       }
 
-      const token = localStorage.getItem('access_token');
+      const token = localStorage.getItem('access_token') || localStorage.getItem('token');
       const headers = { 
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       };
       const endpoint = isPublic ? `/api/public/dj-client/${eventId}` : `/api/contracts2/${eventId}`;
-      await fetch(`${BACKEND_URL}${endpoint}`, {
+      const saveRes = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify(finalPayload)
       });
+      if (!saveRes.ok) {
+        const errData = await saveRes.json().catch(() => ({}));
+        console.error("Save error:", errData);
+      }
       
       if (!payload.notifications && targetRolesToNotify.length > 0) {
         fetch(`${BACKEND_URL}/api/push/notify`, {
@@ -991,7 +997,7 @@ function urlBase64ToUint8Array(base64String) {
         }).catch(err => console.error("Push notify trigger failed:", err));
       }
 
-      fetchContractsAsEvents();
+      await fetchContractsAsEvents(true);
     } catch(e) {
       console.error("Erreur lors de la sauvegarde: ", e);
     }
@@ -1894,9 +1900,16 @@ function urlBase64ToUint8Array(base64String) {
         toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
         return;
       }
-      const isAudio = file.type === 'audio/mpeg' || file.type === 'audio/mp3' || file.type === 'audio/wav' || file.type === 'audio/x-wav' || file.name.endsWith('.mp3') || file.name.endsWith('.wav');
+      const fileNameLower = (file.name || '').toLowerCase();
+      const isAudio = (file.type && file.type.startsWith('audio/')) ||
+                      file.type === 'audio/mpeg' || file.type === 'audio/mp3' || 
+                      file.type === 'audio/wav' || file.type === 'audio/x-wav' ||
+                      fileNameLower.endsWith('.mp3') || fileNameLower.endsWith('.wav') ||
+                      fileNameLower.endsWith('.m4a') || fileNameLower.endsWith('.aac') ||
+                      fileNameLower.endsWith('.flac') || fileNameLower.endsWith('.ogg') ||
+                      fileNameLower.endsWith('.wma');
       if (!isAudio) {
-        toast.error("Format non supporté (MP3 ou WAV uniquement)");
+        toast.error("Format non supporté (MP3, WAV, M4A ou fichier audio uniquement)");
         return;
       }
 
@@ -1927,7 +1940,7 @@ function urlBase64ToUint8Array(base64String) {
             newEvents[idx].playlistAudioFiles = updatedList;
             setEvents(newEvents);
           }
-          updateContractDb(currentRoute.eventId, { playlist_audio_files: updatedList });
+          await updateContractDb(currentRoute.eventId, { playlist_audio_files: updatedList });
           toast.success("Fichier audio ajouté !");
         } else {
           toast.error(data.detail || "Erreur de chargement du fichier");
@@ -2408,7 +2421,7 @@ function urlBase64ToUint8Array(base64String) {
           <div className="border rounded-lg p-5 bg-indigo-50/40 border-indigo-200 mt-6" id="section-audio-upload">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
               <h4 className="font-bold text-indigo-800 text-base flex items-center gap-2">
-                🎵 Dépôt de Fichiers Audio (MP3 / WAV)
+                🎵 Dépôt de Fichiers Audio (MP3 / WAV / M4A)
               </h4>
               <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full w-fit">
                 <Clock className="w-3 h-3 text-amber-600" />
@@ -2435,11 +2448,12 @@ function urlBase64ToUint8Array(base64String) {
                 type="file"
                 ref={fileInputRef}
                 className="hidden"
-                accept=".mp3,.wav,audio/*"
+                accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,audio/*"
                 onChange={(e) => {
                   if (e.target.files && e.target.files[0]) {
                     handleUploadAudio(e.target.files[0]);
                   }
+                  e.target.value = '';
                 }}
               />
               
@@ -2454,7 +2468,7 @@ function urlBase64ToUint8Array(base64String) {
                   <span className="text-sm font-medium text-slate-700 font-sans">
                     Déposez votre fichier ici, ou <span className="text-indigo-600 underline cursor-pointer">parcourez vos fichiers</span>
                   </span>
-                  <span className="text-xs text-slate-400">MP3 ou WAV uniquement</span>
+                  <span className="text-xs text-slate-400">MP3, WAV ou M4A uniquement</span>
                 </div>
               )}
             </div>
@@ -2854,6 +2868,17 @@ function urlBase64ToUint8Array(base64String) {
             0: { cellWidth: 22 },
             1: { cellWidth: 22 }
           },
+          didParseCell: (data) => {
+            if (data.section === 'body') {
+              const item = scheduleItems[data.row.index];
+              if (item && item.isSurprise) {
+                // Surprises mises en valeur : écrites en vert et en gras avec fond vert doux
+                data.cell.styles.textColor = [21, 128, 61]; // Vert émeraude franc et net
+                data.cell.styles.fontStyle = 'bold'; // En gras
+                data.cell.styles.fillColor = [240, 253, 244]; // Fond vert pastel léger
+              }
+            }
+          },
           margin: { left: 15, right: 15 },
           tableLineWidth: 0.1,
           tableLineColor: [229, 231, 235],
@@ -3154,9 +3179,17 @@ function urlBase64ToUint8Array(base64String) {
 
       const handleSaveAppointment = async () => {
         try {
+          const newDate = appointmentDate || null;
+          const newTime = appointmentTime || null;
+          // Mise à jour optimiste immédiate de l'interface
+          setEvents(prev => prev.map(item => item.id === ev.id ? {
+            ...item,
+            next_appointment_date: newDate,
+            next_appointment_time: newTime
+          } : item));
           await updateContractDb(ev.id, {
-            next_appointment_date: appointmentDate,
-            next_appointment_time: appointmentTime
+            next_appointment_date: newDate,
+            next_appointment_time: newTime
           });
           setIsEditingAppointment(false);
           toast.success("Date du rendez-vous enregistrée !");
@@ -3168,6 +3201,11 @@ function urlBase64ToUint8Array(base64String) {
       const handleClearAppointment = async () => {
         if (window.confirm("Réinitialiser le rendez-vous à la valeur par défaut ?")) {
           try {
+            setEvents(prev => prev.map(item => item.id === ev.id ? {
+              ...item,
+              next_appointment_date: null,
+              next_appointment_time: null
+            } : item));
             await updateContractDb(ev.id, {
               next_appointment_date: null,
               next_appointment_time: null
@@ -3196,7 +3234,7 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       return (
-        <div className="bg-red-700/90 text-white rounded-xl p-4 shadow-md flex flex-col gap-3 border border-red-800/10 mb-6 animate-in fade-in duration-300">
+        <div className={`${hasDefinedAppointment ? 'bg-emerald-700/95 border-emerald-800/20' : 'bg-red-700/90 border-red-800/10'} text-white rounded-xl p-4 shadow-md flex flex-col gap-3 mb-6 animate-in fade-in duration-300`}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2.5 bg-white/10 text-white rounded-lg shrink-0">
@@ -3206,10 +3244,10 @@ function urlBase64ToUint8Array(base64String) {
                 <h4 className="text-sm font-bold text-white leading-snug">
                   Prochain rendez-vous
                 </h4>
-                <p className="text-xs text-red-100 mt-0.5 font-medium">
+                <p className={`text-xs ${hasDefinedAppointment ? 'text-emerald-100' : 'text-red-100'} mt-0.5 font-medium`}>
                   {hasDefinedAppointment ? (
                     <span>
-                      🗓️ Votre prochain rendez-vous de préparation est fixé le <span className="font-bold underline">{formatAppointmentDate(ev.next_appointment_date)}</span>
+                      🗓️ Le prochain rendez-vous se fera le <span className="font-bold underline">{formatAppointmentDate(ev.next_appointment_date)}</span>
                       {ev.next_appointment_time && (
                         <span> à <span className="font-bold underline">{ev.next_appointment_time}</span></span>
                       )}
@@ -3228,7 +3266,7 @@ function urlBase64ToUint8Array(base64String) {
                   setAppointmentTime(ev.next_appointment_time || "");
                   setIsEditingAppointment(true);
                 }}
-                className="bg-white hover:bg-stone-50 text-red-800 font-extrabold py-1.5 px-3 rounded-lg transition text-xs flex items-center justify-center gap-1.5 shadow-md whitespace-nowrap self-stretch sm:self-auto select-none"
+                className={`bg-white hover:bg-stone-50 ${hasDefinedAppointment ? 'text-emerald-800' : 'text-red-800'} font-extrabold py-1.5 px-3 rounded-lg transition text-xs flex items-center justify-center gap-1.5 shadow-md whitespace-nowrap self-stretch sm:self-auto select-none`}
               >
                 <Edit3 className="w-3.5 h-3.5" />
                 Modifier la date du rendez-vous
@@ -3237,26 +3275,26 @@ function urlBase64ToUint8Array(base64String) {
           </div>
 
           {isEditingAppointment && (
-            <div className="bg-red-800/30 p-3 rounded-lg border border-white/10 flex flex-col gap-3 mt-1 animate-in fade-in duration-200">
-              <p className="text-xs text-red-100 font-semibold">Saisir les informations du prochain rendez-vous (DJ / Admin) :</p>
+            <div className={`${hasDefinedAppointment ? 'bg-emerald-800/40' : 'bg-red-800/30'} p-3 rounded-lg border border-white/10 flex flex-col gap-3 mt-1 animate-in fade-in duration-200`}>
+              <p className={`text-xs ${hasDefinedAppointment ? 'text-emerald-100' : 'text-red-100'} font-semibold`}>Saisir les informations du prochain rendez-vous (DJ / Admin) :</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[10px] text-red-200 uppercase font-bold mb-1">Date</label>
+                  <label className={`block text-[10px] ${hasDefinedAppointment ? 'text-emerald-200' : 'text-red-200'} uppercase font-bold mb-1`}>Date</label>
                   <input
                     type="date"
                     value={appointmentDate}
                     onChange={(e) => setAppointmentDate(e.target.value)}
-                    className="w-full text-slate-900 bg-white border border-red-300 rounded-lg p-2 text-xs focus:ring-red-500 focus:border-red-500 font-medium"
+                    className="w-full text-slate-900 bg-white border border-stone-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-indigo-500 font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] text-red-200 uppercase font-bold mb-1">Heure / Précisions</label>
+                  <label className={`block text-[10px] ${hasDefinedAppointment ? 'text-emerald-200' : 'text-red-200'} uppercase font-bold mb-1`}>Heure / Précisions</label>
                   <input
                     type="text"
                     placeholder="Ex: 18h35"
                     value={appointmentTime}
                     onChange={(e) => setAppointmentTime(e.target.value)}
-                    className="w-full text-slate-900 bg-white border border-red-300 rounded-lg p-2 text-xs focus:ring-red-500 focus:border-red-500 font-medium"
+                    className="w-full text-slate-900 bg-white border border-stone-300 rounded-lg p-2 text-xs focus:ring-2 focus:ring-indigo-500 font-medium"
                   />
                 </div>
               </div>
@@ -3264,20 +3302,20 @@ function urlBase64ToUint8Array(base64String) {
                 {hasDefinedAppointment && (
                   <button
                     onClick={handleClearAppointment}
-                    className="mr-auto px-3 py-1.5 bg-red-800/60 hover:bg-red-900/60 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                    className={`mr-auto px-3 py-1.5 ${hasDefinedAppointment ? 'bg-emerald-900/60 hover:bg-emerald-950/60' : 'bg-red-800/60 hover:bg-red-900/60'} text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-sm`}
                   >
                     <Trash2 className="w-3.5 h-3.5" /> Réinitialiser par défaut
                   </button>
                 )}
                 <button
                   onClick={handleCancelAppointment}
-                  className="px-3 py-1.5 bg-red-900/40 hover:bg-red-950/40 text-red-200 hover:text-white rounded-lg text-xs font-bold transition flex items-center gap-1 border border-red-500/30"
+                  className={`px-3 py-1.5 ${hasDefinedAppointment ? 'bg-emerald-900/40 hover:bg-emerald-950/40 text-emerald-200 border-emerald-500/30' : 'bg-red-900/40 hover:bg-red-950/40 text-red-200 border-red-500/30'} hover:text-white rounded-lg text-xs font-bold transition flex items-center gap-1 border`}
                 >
                   Annuler
                 </button>
                 <button
                   onClick={handleSaveAppointment}
-                  className="px-4 py-1.5 bg-white hover:bg-stone-50 text-red-800 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-md"
+                  className={`px-4 py-1.5 bg-white hover:bg-stone-50 ${hasDefinedAppointment ? 'text-emerald-800' : 'text-red-800'} rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-md`}
                 >
                   <Check className="w-3.5 h-3.5" /> Enregistrer
                 </button>
@@ -4794,22 +4832,38 @@ function urlBase64ToUint8Array(base64String) {
 
       return (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in duration-300">
-          <div className="p-6">
-            <h3 className="text-lg font-bold flex items-center gap-2 text-slate-800 mb-4">
-              <Youtube className="w-6 h-6 text-red-600" />
-              Tutoriel d'utilisation de votre espace client
-            </h3>
-            <p className="text-sm text-slate-600 mb-4">
-              Regardez cette courte vidéo pour comprendre en détails comment compléter votre profil, choisir vos options, planifier le déroulement de votre soirée et interagir avec votre DJ.
-            </p>
-            <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-md border border-slate-200">
-              <iframe
-                className="absolute top-0 left-0 w-full h-full"
-                src={embedUrl}
-                title="Tutoriel de l'interface client"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+          <div className="p-5 sm:p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+              {/* Colonne gauche : Titre et texte explicatif */}
+              <div className="flex flex-col justify-center">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-red-700 text-xs font-semibold w-fit mb-3 border border-red-100">
+                  <Youtube className="w-4 h-4 text-red-600" />
+                  <span>Vidéo explicative</span>
+                </div>
+                <h3 className="text-lg sm:text-xl font-bold text-slate-800 mb-2.5 flex items-center gap-2">
+                  Tutoriel d'utilisation de votre espace client
+                </h3>
+                <p className="text-sm text-slate-600 leading-relaxed mb-4">
+                  Regardez cette courte vidéo pour comprendre en détails comment compléter votre profil, choisir vos options, planifier le déroulement de votre soirée et interagir avec votre DJ.
+                </p>
+                <div className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200/80 w-fit">
+                  <Play className="w-3.5 h-3.5 text-red-600 fill-red-600 shrink-0" />
+                  <span>Cliquez sur le lecteur pour lancer la vidéo</span>
+                </div>
+              </div>
+
+              {/* Colonne droite : Lecteur vidéo réduit de moitié */}
+              <div className="w-full flex items-center justify-center">
+                <div className="relative w-full aspect-video rounded-xl overflow-hidden shadow-md border border-slate-200 bg-slate-950">
+                  <iframe
+                    className="absolute top-0 left-0 w-full h-full"
+                    src={embedUrl}
+                    title="Tutoriel de l'interface client"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -7518,49 +7572,60 @@ function urlBase64ToUint8Array(base64String) {
             </div>
 
             {/* Content / Image Preview */}
-            <div className="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-slate-950/50 min-h-[300px]">
-              {optionInfographicModal.imageUrl ? (
-                <div className="relative max-w-full flex items-center justify-center">
-                  <img 
-                    src={optionInfographicModal.imageUrl} 
-                    alt={optionInfographicModal.title} 
-                    className="max-w-full max-h-[62vh] object-contain rounded-xl shadow-2xl border border-slate-800/80"
-                  />
-                </div>
-              ) : (
-                <div className="text-center py-12 text-slate-400">
-                  <Info className="w-12 h-12 mx-auto mb-2 opacity-40" />
-                  <p>Aucune infographie disponible pour cette option.</p>
-                </div>
-              )}
+            {(() => {
+              const modalImageUrl = optionInfographicModal.imageUrl
+                ? (optionInfographicModal.imageUrl.startsWith('http')
+                  ? optionInfographicModal.imageUrl
+                  : `${BACKEND_URL}${optionInfographicModal.imageUrl.startsWith('/') ? '' : '/'}${optionInfographicModal.imageUrl}`)
+                : "";
+              return (
+                <>
+                  <div className="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-slate-950/50 min-h-[300px]">
+                    {modalImageUrl ? (
+                      <div className="relative max-w-full flex items-center justify-center">
+                        <img 
+                          src={modalImageUrl} 
+                          alt={optionInfographicModal.title} 
+                          className="max-w-full max-h-[62vh] object-contain rounded-xl shadow-2xl border border-slate-800/80"
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 text-slate-400">
+                        <Info className="w-12 h-12 mx-auto mb-2 opacity-40" />
+                        <p>Aucune infographie disponible pour cette option.</p>
+                      </div>
+                    )}
 
-              {optionInfographicModal.description && (
-                <div className="mt-4 p-4 bg-slate-800/80 border border-slate-700/60 rounded-xl text-xs sm:text-sm text-slate-200 max-w-2xl text-center leading-relaxed shadow-sm">
-                  {optionInfographicModal.description}
-                </div>
-              )}
-            </div>
+                    {optionInfographicModal.description && (
+                      <div className="mt-4 p-4 bg-slate-800/80 border border-slate-700/60 rounded-xl text-xs sm:text-sm text-slate-200 max-w-2xl text-center leading-relaxed shadow-sm">
+                        {optionInfographicModal.description}
+                      </div>
+                    )}
+                  </div>
 
-            {/* Footer */}
-            <div className="px-5 py-3 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between shrink-0">
-              {optionInfographicModal.imageUrl ? (
-                <a
-                  href={optionInfographicModal.imageUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 transition font-medium"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Ouvrir l'image en plein écran</span>
-                </a>
-              ) : <div />}
-              <button
-                onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", description: "" })}
-                className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition focus:outline-none"
-              >
-                Fermer
-              </button>
-            </div>
+                  {/* Footer */}
+                  <div className="px-5 py-3 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between shrink-0">
+                    {modalImageUrl ? (
+                      <a
+                        href={modalImageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 transition font-medium"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Ouvrir l'image en plein écran</span>
+                      </a>
+                    ) : <div />}
+                    <button
+                      onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", description: "" })}
+                      className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition focus:outline-none"
+                    >
+                      Fermer
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

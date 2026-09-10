@@ -45,6 +45,12 @@ const apiService = {
     return res.data;
   },
 
+  // Equipment List
+  getEquipmentList: async () => {
+    const res = await axios.get("/location/equipment");
+    return res.data;
+  },
+
   // Material options
   getMaterialOptions: async () => {
     const res = await axios.get("/material-options");
