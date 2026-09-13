@@ -116,6 +116,61 @@ const DjClientApp = ({ isPublic = false }) => {
   // Option Material Infographic Preview Modal
   const [optionInfographicModal, setOptionInfographicModal] = useState({ open: false, title: "", price: null, imageUrl: "", description: "" });
 
+  const resolveOptionImageUrl = (rawUrl) => {
+    if (!rawUrl || typeof rawUrl !== 'string') return '';
+    if (rawUrl.startsWith('data:')) return rawUrl;
+    let clean = rawUrl.trim();
+    if (!clean) return '';
+
+    // If it points to Google Cloud Storage (direct or signed), extract the object path
+    if (clean.includes('storage.googleapis.com/')) {
+      const parts = clean.substring(clean.indexOf('storage.googleapis.com/') + 'storage.googleapis.com/'.length).split('?')[0].split('/');
+      parts.shift(); // remove bucket name
+      clean = `/api/gcs/${parts.join('/')}`;
+    } else if (clean.includes('/api/gcs/')) {
+      clean = clean.substring(clean.indexOf('/api/gcs/'));
+      if (clean.includes('?')) clean = clean.split('?')[0];
+    } else if (clean.includes('/gcs/')) {
+      clean = '/api' + clean.substring(clean.indexOf('/gcs/'));
+      if (clean.includes('?')) clean = clean.split('?')[0];
+    } else if (clean.startsWith('gcs/')) {
+      clean = `/api/${clean}`;
+      if (clean.includes('?')) clean = clean.split('?')[0];
+    }
+
+    if (clean.startsWith('http')) {
+      return clean;
+    }
+    return `${BACKEND_URL}${clean.startsWith('/') ? '' : '/'}${clean}`;
+  };
+
+  const getOptionVisualData = (opt) => {
+    if (!opt) return { image_url: '', description: '' };
+    const normalize = (s) => (s || '')
+      .toString()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "")
+      .trim();
+
+    const optId = opt.id || opt._id || opt.opt_id;
+    const optName = normalize(opt.name || opt.title || opt.label);
+
+    const matched = (availableOptions || []).find(o => {
+      if (!o) return false;
+      const oId = o.id || o._id || o.opt_id;
+      if (optId && oId && String(optId) === String(oId)) return true;
+      if (optName && normalize(o.name || o.title || o.label) === optName) return true;
+      return false;
+    }) || {};
+
+    return {
+      image_url: opt.image_url || matched.image_url || "",
+      description: opt.description || matched.description || ""
+    };
+  };
+
   const handleOpenLightbox = (images, index = 0) => {
     setLightboxImages(images || []);
     setLightboxIndex(index);
@@ -5417,15 +5472,14 @@ function urlBase64ToUint8Array(base64String) {
                 {contractOptions.length > 0 ? (
                   <ul className="space-y-2">
                     {contractOptions.map((opt, idx) => {
-                      const visual = opt.image_url 
-                        ? { image_url: opt.image_url, description: opt.description }
-                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      const visual = getOptionVisualData(opt);
+                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
                       return (
                         <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
                           <div className="flex items-center gap-2 font-medium">
                             <Check className="w-4 h-4 text-green-500 shrink-0" />
                             <span>{opt.name}</span>
-                            {visual.image_url && (
+                            {hasDetails && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -5434,7 +5488,7 @@ function urlBase64ToUint8Array(base64String) {
                                     open: true,
                                     title: opt.name,
                                     price: opt.price,
-                                    imageUrl: visual.image_url,
+                                    imageUrl: visual.image_url || "",
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -5704,14 +5758,13 @@ function urlBase64ToUint8Array(base64String) {
                       <span>{originalRemainingBalance.toFixed(2)} €</span>
                     </div>
                     {additions.map((opt, index) => {
-                      const visual = opt.image_url 
-                        ? { image_url: opt.image_url, description: opt.description }
-                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      const visual = getOptionVisualData(opt);
+                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
                       return (
                         <div key={index} className="flex justify-between items-center text-[11px] text-slate-600 font-medium">
                           <div className="flex items-center gap-1.5 truncate max-w-[140px]">
                             <span className="truncate text-amber-600" title={opt.name}>+ {opt.name}</span>
-                            {visual.image_url && (
+                            {hasDetails && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -5720,7 +5773,7 @@ function urlBase64ToUint8Array(base64String) {
                                     open: true,
                                     title: opt.name,
                                     price: opt.price,
-                                    imageUrl: visual.image_url,
+                                    imageUrl: visual.image_url || "",
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -5830,15 +5883,14 @@ function urlBase64ToUint8Array(base64String) {
                 {contractOptions.length > 0 ? (
                   <ul className="space-y-2">
                     {contractOptions.map((opt, idx) => {
-                      const visual = opt.image_url 
-                        ? { image_url: opt.image_url, description: opt.description }
-                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      const visual = getOptionVisualData(opt);
+                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
                       return (
                         <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border hover:bg-slate-100/60 transition-colors">
                           <div className="flex items-center gap-2">
                             <Check className="w-4 h-4 text-green-500 shrink-0" />
                             <span className="font-medium">{opt.name}</span>
-                            {visual.image_url && (
+                            {hasDetails && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -5847,7 +5899,7 @@ function urlBase64ToUint8Array(base64String) {
                                     open: true,
                                     title: opt.name,
                                     price: opt.price,
-                                    imageUrl: visual.image_url,
+                                    imageUrl: visual.image_url || "",
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -5892,14 +5944,13 @@ function urlBase64ToUint8Array(base64String) {
                   </h4>
                   <ul className="space-y-2">
                     {requestedOptions.map((opt, idx) => {
-                      const visual = opt.image_url 
-                        ? { image_url: opt.image_url, description: opt.description }
-                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      const visual = getOptionVisualData(opt);
+                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
                       return (
                         <li key={idx} className="flex items-center justify-between text-orange-800 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200 shadow-sm">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{opt.name}</span>
-                            {visual.image_url && (
+                            {hasDetails && (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -5908,7 +5959,7 @@ function urlBase64ToUint8Array(base64String) {
                                     open: true,
                                     title: opt.name,
                                     price: opt.price,
-                                    imageUrl: visual.image_url,
+                                    imageUrl: visual.image_url || "",
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -5967,9 +6018,7 @@ function urlBase64ToUint8Array(base64String) {
                   <ul className="space-y-2">
                     {nonSelectedOptions.map((opt, idx) => {
                       const isSelected = optionsBasket.some(o => o.id === opt.id);
-                      const visual = opt.image_url 
-                        ? { image_url: opt.image_url, description: opt.description }
-                        : (availableOptions.find(o => (o.id && opt.id && o.id === opt.id) || (o.name && opt.name && o.name.trim().toLowerCase() === opt.name.trim().toLowerCase())) || {});
+                      const visual = getOptionVisualData(opt);
                       const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
                       return (
                         <li 
@@ -7573,11 +7622,7 @@ function urlBase64ToUint8Array(base64String) {
 
             {/* Content / Image Preview */}
             {(() => {
-              const modalImageUrl = optionInfographicModal.imageUrl
-                ? (optionInfographicModal.imageUrl.startsWith('http')
-                  ? optionInfographicModal.imageUrl
-                  : `${BACKEND_URL}${optionInfographicModal.imageUrl.startsWith('/') ? '' : '/'}${optionInfographicModal.imageUrl}`)
-                : "";
+              const modalImageUrl = resolveOptionImageUrl(optionInfographicModal.imageUrl);
               return (
                 <>
                   <div className="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-slate-950/50 min-h-[300px]">
@@ -7586,6 +7631,23 @@ function urlBase64ToUint8Array(base64String) {
                         <img 
                           src={modalImageUrl} 
                           alt={optionInfographicModal.title} 
+                          onError={(e) => {
+                            if (modalImageUrl.includes('/api/gcs/')) {
+                              const rel = modalImageUrl.substring(modalImageUrl.indexOf('/api/gcs/'));
+                              if (e.currentTarget.src !== window.location.origin + rel && e.currentTarget.src !== rel) {
+                                e.currentTarget.src = rel;
+                                return;
+                              }
+                            }
+                            e.currentTarget.style.display = 'none';
+                            const parent = e.currentTarget.parentElement;
+                            if (parent && !parent.querySelector('.img-fallback-msg')) {
+                              const msg = document.createElement('div');
+                              msg.className = 'img-fallback-msg text-center py-8 text-slate-400';
+                              msg.innerHTML = '<p class="text-sm">Infographie non disponible pour le moment.</p>';
+                              parent.appendChild(msg);
+                            }
+                          }}
                           className="max-w-full max-h-[62vh] object-contain rounded-xl shadow-2xl border border-slate-800/80"
                         />
                       </div>

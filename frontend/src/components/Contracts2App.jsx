@@ -2634,6 +2634,7 @@ function Contracts2App() {
     pack_lumiere: packLumiere,
     discount_amount: discountAmount,
     custom_deposit_amount: customDepositAmount,
+    freelance_cachet_cap: freelanceCachetCap,
     no_deposit_required: noDepositRequired,
     selected_rib: selectedRIB,
     deposit_paid: depositPaid,

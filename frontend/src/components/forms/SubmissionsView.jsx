@@ -4,7 +4,7 @@ import { Badge } from '../ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { ArrowLeft, Inbox, ChevronDown, ChevronUp, Mail, Phone, User, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import axios from 'axios';
+import axios from '../../services/axiosConfig';
 
 import API_BASE_URL from '../../utils/apiUrl';
 

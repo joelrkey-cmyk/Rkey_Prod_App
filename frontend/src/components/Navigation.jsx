@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
-import { Home, FileSignature, FileCheck, Package, Users, Ticket, User, Send, LogOut, FileText, Handshake, Truck, CreditCard, Settings, ChevronDown, Building2, Smile, Headphones, Calendar, MapPin, ClipboardList } from 'lucide-react';
+import { Home, FileSignature, FileCheck, Package, Users, Ticket, User, Send, LogOut, FileText, Handshake, Truck, CreditCard, Settings, ChevronDown, Building2, Smile, Headphones, Calendar, MapPin, ClipboardList, FileSpreadsheet, Disc3, Download } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const NAV_ITEMS = [
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { key: 'venues', path: '/venues', icon: MapPin, label: 'Lieux', activeClass: 'bg-indigo-600 text-white hover:bg-indigo-700', inactiveClass: 'text-indigo-600 hover:bg-indigo-50' },
   { key: 'devis', path: '/devis', icon: Send, label: 'Envoi de Devis', activeClass: 'bg-orange-600 text-white hover:bg-orange-700', inactiveClass: 'text-orange-600 hover:bg-orange-50' },
   { key: 'dj-client', path: '/dj-client', icon: Headphones, label: 'DJ / Client', activeClass: 'bg-pink-600 text-white hover:bg-pink-700', inactiveClass: 'text-pink-600 hover:bg-pink-50' },
+  { key: 'mp3-downloader', path: '/telecharger-mp3', icon: Disc3, label: 'Télécharger MP3', activeClass: 'bg-emerald-600 text-white hover:bg-emerald-700', inactiveClass: 'text-emerald-600 hover:bg-emerald-50' },
   { key: 'location', path: '/location', icon: Package, label: 'Location', activeClass: 'bg-purple-600 text-white hover:bg-purple-700', inactiveClass: 'text-purple-600 hover:bg-purple-50' },
   { key: 'rental', path: '/rental', icon: Handshake, label: 'Retrait / Retour', activeClass: 'bg-slate-800 text-white hover:bg-slate-900', inactiveClass: 'text-slate-700 hover:bg-slate-100' },
   { key: 'delivery', path: '/delivery', icon: Truck, label: 'Livraison', activeClass: 'bg-blue-600 text-white hover:bg-blue-700', inactiveClass: 'text-blue-600 hover:bg-blue-50' },
@@ -18,8 +19,6 @@ const NAV_ITEMS = [
   { key: 'billetterie', path: '/billetterie', icon: Ticket, label: 'Événements', activeClass: 'bg-gray-800 text-white hover:bg-gray-900', inactiveClass: 'text-gray-800 hover:bg-gray-100' },
   { key: 'formulaires', path: '/formulaires', icon: FileText, label: 'Formulaires', activeClass: 'bg-orange-500 text-white hover:bg-orange-600', inactiveClass: 'text-orange-500 hover:bg-orange-50' },
   { key: 'dj-profiles', path: '/dj-profiles', icon: User, label: 'Profils Artistes', activeClass: 'bg-yellow-500 text-white hover:bg-yellow-600', inactiveClass: 'text-yellow-600 hover:bg-yellow-50' },
-  { key: 'abonnements', path: '/abonnements', icon: CreditCard, label: 'Abonnements', activeClass: 'bg-teal-500 text-white hover:bg-teal-600', inactiveClass: 'text-teal-600 hover:bg-teal-50' },
-  { key: 'partenaires', path: '/partenaires', icon: Smile, label: 'Partenaires', activeClass: 'bg-indigo-600 text-white hover:bg-indigo-700', inactiveClass: 'text-indigo-600 hover:bg-indigo-50' },
   { key: 'parametres', path: '/parametres', icon: Settings, label: 'Paramètres', activeClass: 'bg-slate-600 text-white hover:bg-slate-700', inactiveClass: 'text-slate-500 hover:bg-slate-50' },
 ];
 

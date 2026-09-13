@@ -21,15 +21,14 @@ import RentalApp from "./components/rental/RentalApp";
 import DeliveryApp from "./components/delivery/DeliveryApp";
 import MobileHome from "./components/mobile/MobileHome";
 
-import AbonnementsApp from "./components/AbonnementsApp";
 import FormsApp from "./components/FormsApp";
 import GlobalSettingsApp from "./components/GlobalSettingsApp";
-import PartnersApp from "./components/PartnersApp";
 import DjClientApp from "./components/DjClientApp";
 import AgendaPrestationApp from "./components/AgendaPrestationApp";
 import VenueApp from "./components/VenueApp";
 import PublicVenuesApp from "./components/PublicVenuesApp";
 import PublicFormView from "./components/forms/PublicFormView";
+import Mp3DownloaderApp from "./components/Mp3DownloaderApp";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -168,17 +167,6 @@ function App() {
                 </ProtectedRoute>
               } />
 
-              <Route path="/abonnements" element={
-                <ProtectedRoute>
-                  <>
-                    <Navigation />
-                    <ErrorBoundary>
-                      <AbonnementsApp />
-                    </ErrorBoundary>
-                  </>
-                </ProtectedRoute>
-              } />
-              
               <Route path="/dj-profiles" element={
                 <ProtectedRoute>
                   <>
@@ -245,16 +233,18 @@ function App() {
                 </ProtectedRoute>
               } />
 
-              <Route path="/partenaires" element={
+              <Route path="/telecharger-mp3" element={
                 <ProtectedRoute>
                   <>
                     <Navigation />
                     <ErrorBoundary>
-                      <PartnersApp />
+                      <Mp3DownloaderApp />
                     </ErrorBoundary>
                   </>
                 </ProtectedRoute>
               } />
+
+              <Route path="/mp3-downloader" element={<Navigate to="/telecharger-mp3" replace />} />
 
               <Route path="/lieux-reception" element={
                 <ErrorBoundary>

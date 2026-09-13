@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from './ui/textarea';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, PenLine, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw } from 'lucide-react';
+import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, PenLine, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw, FileSpreadsheet, Disc3 } from 'lucide-react';
 import axios from '../services/axiosConfig';
 import { toast } from 'sonner';
 
@@ -29,12 +29,6 @@ const HomePage = () => {
     location_to_deliver_week: 0,
     contracts_pending_signature: 0
   });
-  const [subscriptionStats, setSubscriptionStats] = useState({
-    active_count: 0,
-    total_monthly: 0,
-    renewals_soon: 0
-  });
-
   // Weekly planner states
   const [plannerTasks, setPlannerTasks] = useState([]);
   const [plannerLoading, setPlannerLoading] = useState(true);
@@ -57,7 +51,6 @@ const HomePage = () => {
     loadRelances();
     loadUnreadNotifications();
     loadDashboardStats();
-    loadSubscriptionStats();
     loadPlannerTasks();
     loadNotepad();
 
@@ -281,17 +274,6 @@ const HomePage = () => {
     }
   };
 
-  const loadSubscriptionStats = async () => {
-    try {
-      const response = await axios.get(`${API}/subscriptions/stats`);
-      setSubscriptionStats(response.data);
-    } catch (error) {
-      if (error?.response?.status !== 401) {
-        console.error("Error loading subscription stats:", error);
-      }
-    }
-  };
-
   const loadUnreadNotifications = async () => {
     try {
       const response = await axios.get(`${API}/dj-client/pending-alerts`);
@@ -358,12 +340,11 @@ const HomePage = () => {
             { name: 'Retrait / Retour', icon: <Handshake className="w-7 h-7" />, color: 'bg-slate-800', route: '/rental', key: 'rental' },
             { name: 'Livraison', icon: <Truck className="w-7 h-7" />, color: 'bg-blue-600', route: '/delivery', key: 'delivery' },
             { name: 'DJ/Client', icon: <Headphones className="w-7 h-7" />, color: 'bg-pink-600', route: '/dj-client', key: 'dj-client' },
+            { name: 'Télécharger MP3', icon: <Disc3 className="w-7 h-7" />, color: 'bg-emerald-600', route: '/telecharger-mp3', key: 'mp3-downloader' },
             { name: 'Fichier Client', icon: <Building2 className="w-7 h-7" />, color: 'bg-green-500', route: '/crm', key: 'crm' },
             { name: 'Événements', icon: <Ticket className="w-7 h-7" />, color: 'bg-gray-800', route: '/billetterie', key: 'billetterie' },
-            { name: 'Partenaires', icon: <Smile className="w-7 h-7" />, color: 'bg-indigo-600', route: '/partenaires', key: 'partenaires' },
             { name: 'Formulaires', icon: <FileText className="w-7 h-7" />, color: 'bg-orange-400', route: '/formulaires', key: 'formulaires' },
             { name: 'Artistes', icon: <User className="w-7 h-7" />, color: 'bg-yellow-500', route: '/dj-profiles', key: 'dj-profiles' },
-            { name: 'Abonnements', icon: <CreditCard className="w-7 h-7" />, color: 'bg-teal-500', route: '/abonnements', key: 'abonnements' },
             { name: 'Paramètres', icon: <Settings className="w-7 h-7" />, color: 'bg-slate-600', route: '/parametres', key: 'parametres' },
           ].filter(app => {
             const savedUser = localStorage.getItem('user');

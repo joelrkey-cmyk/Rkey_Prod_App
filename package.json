@@ -4,6 +4,7 @@
   "description": "R'KEY PROD CRM and Booking Management applet",
   "main": "server.js",
   "scripts": {
+    "dev": "node server.js",
     "build": "npm install --prefix frontend && FAST_REFRESH=false npm run build --prefix frontend",
     "start": "node server.js",
     "lint": "npm run lint --prefix frontend"
@@ -29,6 +30,7 @@
     "pdf-parse": "^1.1.1",
     "sharp": "^0.33.4",
     "tailwindcss-animate": "^1.0.7",
+    "tidal-music-api": "^1.2.1",
     "uuid": "^9.0.1",
     "web-push": "^3.6.7",
     "xlsx": "^0.18.5"
