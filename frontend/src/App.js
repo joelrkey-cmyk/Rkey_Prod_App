@@ -28,7 +28,6 @@ import AgendaPrestationApp from "./components/AgendaPrestationApp";
 import VenueApp from "./components/VenueApp";
 import PublicVenuesApp from "./components/PublicVenuesApp";
 import PublicFormView from "./components/forms/PublicFormView";
-import Mp3DownloaderApp from "./components/Mp3DownloaderApp";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -232,19 +231,6 @@ function App() {
                   </>
                 </ProtectedRoute>
               } />
-
-              <Route path="/telecharger-mp3" element={
-                <ProtectedRoute>
-                  <>
-                    <Navigation />
-                    <ErrorBoundary>
-                      <Mp3DownloaderApp />
-                    </ErrorBoundary>
-                  </>
-                </ProtectedRoute>
-              } />
-
-              <Route path="/mp3-downloader" element={<Navigate to="/telecharger-mp3" replace />} />
 
               <Route path="/lieux-reception" element={
                 <ErrorBoundary>

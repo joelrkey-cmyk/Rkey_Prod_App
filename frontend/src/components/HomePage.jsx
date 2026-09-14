@@ -6,7 +6,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw, FileSpreadsheet, Disc3, Flame, GripVertical } from 'lucide-react';
+import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw, FileSpreadsheet, Flame, GripVertical } from 'lucide-react';
 import axios from '../services/axiosConfig';
 import { toast } from 'sonner';
 
@@ -441,7 +441,6 @@ const HomePage = () => {
             { name: 'Retrait / Retour', icon: <Handshake className="w-7 h-7" />, color: 'bg-slate-800', route: '/rental', key: 'rental' },
             { name: 'Livraison', icon: <Truck className="w-7 h-7" />, color: 'bg-blue-600', route: '/delivery', key: 'delivery' },
             { name: 'DJ/Client', icon: <Headphones className="w-7 h-7" />, color: 'bg-pink-600', route: '/dj-client', key: 'dj-client' },
-            { name: 'Télécharger MP3', icon: <Disc3 className="w-7 h-7" />, color: 'bg-emerald-600', route: '/telecharger-mp3', key: 'mp3-downloader' },
             { name: 'Fichier Client', icon: <Building2 className="w-7 h-7" />, color: 'bg-green-500', route: '/crm', key: 'crm' },
             { name: 'Événements', icon: <Ticket className="w-7 h-7" />, color: 'bg-gray-800', route: '/billetterie', key: 'billetterie' },
             { name: 'Formulaires', icon: <FileText className="w-7 h-7" />, color: 'bg-orange-400', route: '/formulaires', key: 'formulaires' },

@@ -40,6 +40,7 @@ import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { Toaster } from '../ui/sonner';
 import { API, BACKEND_URL, formatDateLocal, axios, getImageUrl } from './helpers';
+import ImageSlideshow from '../ui/ImageSlideshow';
 import * as XLSX from 'xlsx';
 
 function MaterielView() {
@@ -51,6 +52,7 @@ function MaterielView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all'); // Nouveau filtre par catégorie
   const [isUploading, setIsUploading] = useState(false);
+  const [previewModal, setPreviewModal] = useState({ open: false, item: null });
   
   // Category management states
   const [categories, setCategories] = useState([]);
@@ -82,6 +84,7 @@ function MaterielView() {
     purchase_price: null,
     observations: '',
     photo_url: '',
+    photos: [],
     youtube_url: '',
     catalogue_description: '',
     publier_catalogue: false,
@@ -127,29 +130,37 @@ function MaterielView() {
   };
 
   const addCategory = async () => {
-    if (!newCategoryName.trim()) {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) {
       toast.error('Le nom de la catégorie est requis');
+      return;
+    }
+
+    if (categories.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error(`La catégorie "${trimmed}" existe déjà`);
       return;
     }
     
     try {
       setIsSavingCategory(true);
       const response = await axios.post(`${BACKEND_URL}/api/location/categories`, {
-        name: newCategoryName.trim(),
+        name: trimmed,
         icon: newCategoryIcon,
         visible_catalogue: true
       });
       
-      if (response.data.success) {
-        toast.success('Catégorie créée !');
-        fetchCategories();
+      if (response.data.success || response.data.id || response.status === 200 || response.status === 201) {
+        toast.success(`Catégorie "${trimmed}" créée avec succès !`);
+        await fetchCategories();
         setShowAddCategory(false);
         setNewCategoryName('');
         setNewCategoryIcon('📁');
+      } else {
+        toast.error("Erreur lors de la création de la catégorie");
       }
     } catch (error) {
       console.error('Error adding category:', error);
-      toast.error(error.response?.data?.detail || 'Erreur lors de la création');
+      toast.error(error.response?.data?.detail || error.response?.data?.error || 'Erreur lors de la création');
     } finally {
       setIsSavingCategory(false);
     }
@@ -160,14 +171,16 @@ function MaterielView() {
       setIsSavingCategory(true);
       const response = await axios.put(`${BACKEND_URL}/api/location/categories/${categoryId}`, updates);
       
-      if (response.data.success) {
+      if (response.data.success || response.data.id || response.status === 200) {
         toast.success('Catégorie mise à jour !');
-        fetchCategories();
+        await fetchCategories();
         setEditingCategory(null);
+      } else {
+        toast.error('Erreur lors de la mise à jour');
       }
     } catch (error) {
       console.error('Error updating category:', error);
-      toast.error(error.response?.data?.detail || 'Erreur lors de la mise à jour');
+      toast.error(error.response?.data?.detail || error.response?.data?.error || 'Erreur lors de la mise à jour');
     } finally {
       setIsSavingCategory(false);
     }
@@ -187,13 +200,13 @@ function MaterielView() {
       setIsSavingCategory(true);
       const response = await axios.delete(`${BACKEND_URL}/api/location/categories/${categoryId}`);
       
-      if (response.data.success) {
+      if (response.data.success || response.status === 200) {
         toast.success('Catégorie supprimée !');
-        fetchCategories();
+        await fetchCategories();
       }
     } catch (error) {
       console.error('Error deleting category:', error);
-      toast.error(error.response?.data?.detail || 'Erreur lors de la suppression');
+      toast.error(error.response?.data?.detail || error.response?.data?.error || 'Erreur lors de la suppression');
     } finally {
       setIsSavingCategory(false);
     }
@@ -207,9 +220,9 @@ function MaterielView() {
         visible_catalogue: !isVisibleNow 
       });
       
-      if (response.data.success) {
+      if (response.data.success || response.data.id || response.status === 200) {
         toast.success(!isVisibleNow ? 'Catégorie rendue visible sur le catalogue' : 'Catégorie masquée du catalogue');
-        fetchCategories();
+        await fetchCategories();
       }
     } catch (error) {
       console.error('Error toggling category visibility:', error);
@@ -272,6 +285,7 @@ function MaterielView() {
       purchase_price: null,
       observations: '',
       photo_url: '',
+      photos: [],
       youtube_url: '',
       catalogue_description: '',
       publier_catalogue: false,
@@ -322,15 +336,23 @@ function MaterielView() {
     try {
       setIsLoading(true);
       
-      // DEBUG: Log formData to see if purchase_price is included
-      console.log('Sending equipment data:', formData);
-      console.log('purchase_price value:', formData.purchase_price);
+      // Assurer la cohérence entre photos et photo_url
+      const finalPhotos = Array.isArray(formData.photos) && formData.photos.length > 0
+        ? formData.photos
+        : (formData.photo_url ? [formData.photo_url] : []);
+      const finalPayload = {
+        ...formData,
+        photos: finalPhotos,
+        photo_url: finalPhotos[0] || ''
+      };
+
+      console.log('Sending equipment data:', finalPayload);
       
       if (editingEquipment) {
-        await axios.put(`${API}/equipment/${editingEquipment.id}`, formData);
+        await axios.put(`${API}/equipment/${editingEquipment.id}`, finalPayload);
         toast.success(formData.is_pack ? 'Pack mis à jour avec succès' : 'Matériel mis à jour avec succès');
       } else {
-        await axios.post(`${API}/equipment`, formData);
+        await axios.post(`${API}/equipment`, finalPayload);
         toast.success(formData.is_pack ? 'Pack créé avec succès !' : 'Matériel ajouté avec succès ! Description générée automatiquement.');
       }
       
@@ -362,6 +384,9 @@ function MaterielView() {
 
   const handleEdit = (item) => {
     setEditingEquipment(item);
+    const itemPhotos = Array.isArray(item.photos) && item.photos.length > 0
+      ? item.photos
+      : (item.photo_url ? [item.photo_url] : []);
     setFormData({
       name: item.name || '',
       reference: item.reference || '',
@@ -370,7 +395,8 @@ function MaterielView() {
       daily_price: item.daily_price || 0,
       purchase_price: item.purchase_price || null,
       observations: item.observations || '',
-      photo_url: item.photo_url || '',
+      photo_url: itemPhotos[0] || item.photo_url || '',
+      photos: itemPhotos,
       youtube_url: item.youtube_url || '',
       catalogue_description: item.catalogue_description || '',
       publier_catalogue: item.publier_catalogue || false,
@@ -404,6 +430,9 @@ function MaterielView() {
       reference: `${item.reference}-COPY`,
       id: undefined // Remove ID so it gets a new one
     };
+    const itemPhotos = Array.isArray(duplicatedItem.photos) && duplicatedItem.photos.length > 0
+      ? duplicatedItem.photos
+      : (duplicatedItem.photo_url ? [duplicatedItem.photo_url] : []);
     setFormData({
       name: duplicatedItem.name,
       reference: duplicatedItem.reference,
@@ -412,7 +441,8 @@ function MaterielView() {
       daily_price: duplicatedItem.daily_price || 0,
       purchase_price: duplicatedItem.purchase_price || null,
       observations: duplicatedItem.observations || '',
-      photo_url: duplicatedItem.photo_url || '',
+      photo_url: itemPhotos[0] || duplicatedItem.photo_url || '',
+      photos: itemPhotos,
       youtube_url: duplicatedItem.youtube_url || '',
       catalogue_description: duplicatedItem.catalogue_description || '',
       publier_catalogue: false, // Don't duplicate the publish status
@@ -552,41 +582,83 @@ function MaterielView() {
   };
 
   const handleImageUpload = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+    const rawFiles = Array.from(event.target.files || []);
+    if (rawFiles.length === 0) return;
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image trop volumineuse (max 5 Mo)');
-      return;
-    }
+    // Validation de taille (max 5 Mo par photo)
+    const validFiles = rawFiles.filter(file => {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`"${file.name}" dépasse la taille maximale autorisée (5 Mo)`);
+        return false;
+      }
+      return true;
+    });
+
+    if (validFiles.length === 0) return;
 
     setIsUploading(true);
     try {
       const formDataUpload = new FormData();
-      formDataUpload.append('file', file);
+      validFiles.forEach(file => {
+        formDataUpload.append('files', file);
+      });
 
-      const response = await axios.post(`${BACKEND_URL}/api/upload/equipment-image`, formDataUpload, {
+      const response = await axios.post(`${BACKEND_URL}/api/upload/equipment-images`, formDataUpload, {
         headers: {
           'Content-Type': 'multipart/form-data',
           'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
 
-      // L'URL est maintenant un data URL base64 qui fonctionne partout
-      const imageUrl = response.data.url;
-      console.log('Image uploaded successfully, size:', response.data.size);
-      
-      setFormData(prev => ({ ...prev, photo_url: imageUrl }));
-      toast.success('Image importée avec succès !');
+      const newUrls = response.data?.urls || [];
+      if (newUrls.length > 0) {
+        setFormData(prev => {
+          const currentPhotos = Array.isArray(prev.photos) ? prev.photos : (prev.photo_url ? [prev.photo_url] : []);
+          const updated = [...currentPhotos, ...newUrls];
+          return {
+            ...prev,
+            photos: updated,
+            photo_url: updated[0] || ''
+          };
+        });
+        toast.success(newUrls.length === 1 ? 'Image ajoutée avec succès !' : `${newUrls.length} images ajoutées avec succès !`);
+      }
     } catch (error) {
       console.error('Upload error:', error);
-      toast.error('Erreur lors de l\'import de l\'image');
+      toast.error('Erreur lors de l\'import des images');
     } finally {
       setIsUploading(false);
-      // Reset l'input file pour permettre de re-sélectionner le même fichier
       event.target.value = '';
     }
+  };
+
+  const handleRemovePhoto = (indexToRemove) => {
+    setFormData(prev => {
+      const currentPhotos = Array.isArray(prev.photos) ? prev.photos : (prev.photo_url ? [prev.photo_url] : []);
+      const updated = currentPhotos.filter((_, idx) => idx !== indexToRemove);
+      return {
+        ...prev,
+        photos: updated,
+        photo_url: updated[0] || ''
+      };
+    });
+    toast.info('Image retirée du produit');
+  };
+
+  const handleSetCoverPhoto = (indexToCover) => {
+    setFormData(prev => {
+      const currentPhotos = Array.isArray(prev.photos) ? [...prev.photos] : (prev.photo_url ? [prev.photo_url] : []);
+      if (indexToCover >= 0 && indexToCover < currentPhotos.length) {
+        const [selected] = currentPhotos.splice(indexToCover, 1);
+        currentPhotos.unshift(selected);
+      }
+      return {
+        ...prev,
+        photos: currentPhotos,
+        photo_url: currentPhotos[0] || ''
+      };
+    });
+    toast.success('Photo définie comme couverture principale !');
   };
 
   const closeDescriptionModal = () => {
@@ -850,7 +922,19 @@ function MaterielView() {
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <Label htmlFor="equipment-category">Catégorie</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label htmlFor="equipment-category">Catégorie</Label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCategoryManager(true);
+                        setShowAddCategory(true);
+                      }}
+                      className="text-xs text-purple-600 hover:text-purple-800 hover:underline flex items-center gap-1 font-medium"
+                    >
+                      <Plus className="w-3 h-3" /> Nouvelle
+                    </button>
+                  </div>
                   <CategorySelect 
                     value={formData.category}
                     onChange={(value) => setFormData({...formData, category: value})}
@@ -963,61 +1047,100 @@ function MaterielView() {
                 />
               </div>
 
-              {/* Photo et Publier sur le catalogue */}
+              {/* Photos et Publier sur le catalogue */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label>Photo du matériel (catalogue)</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="font-semibold text-slate-800">Photos du matériel (catalogue)</Label>
+                    {formData.photos && formData.photos.length > 0 && (
+                      <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-200">
+                        {formData.photos.length} photo{formData.photos.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Sélectionnez plusieurs photos. Diaporama automatique (3s) et navigation par petites boules.
+                  </p>
+
                   <div className="mt-2 space-y-3">
-                    {/* Preview de l'image */}
-                    {formData.photo_url && (
-                      <div className="relative w-full h-32 rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
-                        <img 
-                          src={getImageUrl(formData.photo_url)} 
-                          alt="Aperçu"
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            console.error('Image load error:', formData.photo_url);
-                            e.target.onerror = null;
-                            e.target.src = '';
-                            e.target.alt = 'Erreur de chargement';
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setFormData({...formData, photo_url: ''})}
-                          className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
-                          title="Supprimer l'image"
-                        >
-                          ✕
-                        </button>
+                    {/* Preview du Diaporama avec petites boules */}
+                    {((formData.photos && formData.photos.length > 0) || formData.photo_url) && (
+                      <div className="space-y-2">
+                        <div className="relative rounded-lg overflow-hidden border border-slate-200 shadow-xs bg-slate-950/5">
+                          <ImageSlideshow 
+                            images={formData.photos && formData.photos.length > 0 ? formData.photos : [formData.photo_url]} 
+                            alt={formData.name || "Aperçu matériel"}
+                            className="w-full h-44 rounded-lg"
+                            interval={3000}
+                          />
+                        </div>
+
+                        {/* Liste des miniatures gérables */}
+                        {formData.photos && formData.photos.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pt-1 max-h-32 overflow-y-auto p-1 bg-slate-50 rounded-lg border">
+                            {formData.photos.map((photo, pIdx) => (
+                              <div key={pIdx} className="relative group w-14 h-14 rounded-md overflow-hidden border border-slate-300 bg-white shrink-0">
+                                <img 
+                                  src={getImageUrl(photo)} 
+                                  alt={`Miniature ${pIdx + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
+                                {pIdx === 0 ? (
+                                  <span className="absolute top-0.5 left-0.5 bg-orange-600 text-white text-[8px] font-bold px-1 rounded shadow-xs">
+                                    1ère
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetCoverPhoto(pIdx)}
+                                    title="Mettre en photo principale"
+                                    className="absolute bottom-0.5 left-0.5 text-[8px] bg-slate-900/75 hover:bg-orange-600 text-white px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    ★
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemovePhoto(pIdx)}
+                                  className="absolute top-0.5 right-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] shadow-xs opacity-80 group-hover:opacity-100 transition"
+                                  title="Supprimer cette photo"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
-                    {/* Bouton d'upload */}
+
+                    {/* Bouton d'upload multiple */}
                     <div className="flex gap-2">
-                      <label className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-orange-500 hover:bg-orange-50 transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                      <label className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-orange-500 hover:bg-orange-50/50 transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                         <input
                           type="file"
                           accept="image/*"
+                          multiple
                           onChange={handleImageUpload}
                           disabled={isUploading || isLoading}
                           className="hidden"
                         />
                         {isUploading ? (
                           <>
-                            <RefreshCw className="w-5 h-5 animate-spin text-orange-500" />
-                            <span className="text-sm text-gray-600">Import en cours...</span>
+                            <RefreshCw className="w-4 h-4 animate-spin text-orange-500" />
+                            <span className="text-xs font-medium text-slate-600">Importation des images...</span>
                           </>
                         ) : (
                           <>
-                            <Upload className="w-5 h-5 text-orange-500" />
-                            <span className="text-sm text-gray-600">
-                              {formData.photo_url ? 'Changer l\'image' : 'Importer une image'}
+                            <Upload className="w-4 h-4 text-orange-500" />
+                            <span className="text-xs font-medium text-slate-700">
+                              {formData.photos && formData.photos.length > 0 ? '+ Ajouter d\'autres photos' : 'Importer des photos (sélection multiple)'}
                             </span>
                           </>
                         )}
                       </label>
                     </div>
-                    <p className="text-xs text-gray-500">JPG, PNG, WebP ou GIF (max 5 Mo)</p>
+                    <p className="text-[11px] text-slate-400">JPG, PNG, WebP ou GIF (max 5 Mo par photo)</p>
                   </div>
                 </div>
 
@@ -1363,6 +1486,7 @@ function MaterielView() {
                       <Table>
                         <TableHeader>
                           <TableRow>
+                            <TableHead className="w-20">Visuel</TableHead>
                             <TableHead>Nom</TableHead>
                             <TableHead>Référence</TableHead>
                             <TableHead>Prix/jour</TableHead>
@@ -1373,66 +1497,100 @@ function MaterielView() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {categoryEquipment.map((item) => (
-                            <TableRow key={`equipment-${item.id}-${item.reference}`}>
-                              <TableCell className="font-semibold">
-                                <div className="flex items-center gap-2">
-                                  {item.name || 'N/A'}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <span className="font-mono text-sm font-semibold text-blue-600">
-                                  {item.reference || 'N/A'}
-                                </span>
-                              </TableCell>
-                              <TableCell className="font-semibold text-green-600">
-                                {item.daily_price ? `${item.daily_price}€` : '0€'}
-                              </TableCell>
-                              <TableCell>{item.quantity >= 999999 ? '∞' : (item.quantity || 0)}</TableCell>
-                              <TableCell>
-                                <div className="max-w-xs truncate" title={item.observations || ''}>
-                                  {item.observations || '-'}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {item.publier_catalogue ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
-                                    <CheckCircle className="w-3 h-3" />
-                                    Publié
+                          {categoryEquipment.map((item) => {
+                            const itemPhotos = Array.isArray(item.photos) && item.photos.length > 0
+                              ? item.photos
+                              : (item.photo_url ? [item.photo_url] : []);
+                            return (
+                              <TableRow key={`equipment-${item.id}-${item.reference}`}>
+                                <TableCell className="p-2">
+                                  {itemPhotos.length > 0 ? (
+                                    <div 
+                                      className="w-16 h-12 rounded-md overflow-hidden border border-slate-200 shadow-xs cursor-pointer hover:ring-2 hover:ring-orange-400 transition relative"
+                                      onClick={() => setPreviewModal({ open: true, item })}
+                                      title="Cliquer pour voir le diaporama en grand format"
+                                    >
+                                      <ImageSlideshow
+                                        images={itemPhotos}
+                                        alt={item.name || "Matériel"}
+                                        className="w-full h-full"
+                                        imageClassName="w-full h-full object-cover"
+                                        interval={3000}
+                                        showDots={itemPhotos.length > 1}
+                                        showArrows={false}
+                                        showCountBadge={false}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="w-16 h-12 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-300">
+                                      <Package className="w-5 h-5 opacity-40" />
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="font-semibold">
+                                  <div className="flex items-center gap-2">
+                                    <span>{item.name || 'N/A'}</span>
+                                    {itemPhotos.length > 1 && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-semibold border border-orange-200">
+                                        {itemPhotos.length} photos
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="font-mono text-sm font-semibold text-blue-600">
+                                    {item.reference || 'N/A'}
                                   </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
-                                    Non
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex gap-2">
-                                  <Button 
-                                    type="button"
-                                    variant="outline" 
-                                    size="sm" 
-                                    onClick={() => handleEdit(item)}
-                                    disabled={isLoading}
-                                    className="border-blue-500 hover:bg-blue-50"
-                                    title="Modifier cet équipement"
-                                  >
-                                    <Edit className="w-4 h-4 text-blue-600" />
-                                  </Button>
-                                  <Button 
-                                    type="button"
-                                    variant="outline" 
-                                    size="sm" 
-                                    onClick={() => handleDuplicate(item)}
-                                    disabled={isLoading}
-                                    title="Dupliquer"
-                                  >
-                                    <Copy className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                </TableCell>
+                                <TableCell className="font-semibold text-green-600">
+                                  {item.daily_price ? `${item.daily_price}€` : '0€'}
+                                </TableCell>
+                                <TableCell>{item.quantity >= 999999 ? '∞' : (item.quantity || 0)}</TableCell>
+                                <TableCell>
+                                  <div className="max-w-xs truncate" title={item.observations || ''}>
+                                    {item.observations || '-'}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {item.publier_catalogue ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                                      <CheckCircle className="w-3 h-3" />
+                                      Publié
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                                      Non
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      type="button"
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => handleEdit(item)}
+                                      disabled={isLoading}
+                                      className="border-blue-500 hover:bg-blue-50"
+                                      title="Modifier cet équipement"
+                                    >
+                                      <Edit className="w-4 h-4 text-blue-600" />
+                                    </Button>
+                                    <Button 
+                                      type="button"
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => handleDuplicate(item)}
+                                      disabled={isLoading}
+                                      title="Dupliquer"
+                                    >
+                                      <Copy className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>
@@ -1569,7 +1727,10 @@ function MaterielView() {
               >
                 {editingCategory?.id === category.id ? (
                   // Editing mode
-                  <div className="flex items-center gap-2 flex-1">
+                  <form 
+                    onSubmit={(e) => { e.preventDefault(); saveEditCategory(); }}
+                    className="flex items-center gap-2 flex-1"
+                  >
                     <div className="relative">
                       <select 
                         value={editingCategory.icon}
@@ -1585,16 +1746,28 @@ function MaterielView() {
                       type="text"
                       value={editingCategory.name}
                       onChange={(e) => setEditingCategory({...editingCategory, name: e.target.value})}
-                      className="flex-1 px-3 py-2 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          saveEditCategory();
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
                       placeholder="Nom de la catégorie"
                     />
-                    <Button size="sm" onClick={saveEditCategory} disabled={isSavingCategory} className="bg-green-600 hover:bg-green-700">
+                    <Button 
+                      type="submit" 
+                      size="sm" 
+                      disabled={isSavingCategory || !editingCategory.name.trim()} 
+                      className="bg-green-600 hover:bg-green-700 text-white font-medium flex items-center gap-1.5 px-3 shrink-0"
+                    >
                       <Check className="w-4 h-4" />
+                      <span>Valider</span>
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditingCategory(null)}>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setEditingCategory(null)}>
                       <X className="w-4 h-4" />
                     </Button>
-                  </div>
+                  </form>
                 ) : (
                   // Display mode
                   <>
@@ -1671,7 +1844,10 @@ function MaterielView() {
             
             {/* Add new category form */}
             {showAddCategory ? (
-              <div className="flex items-center gap-2 p-3 bg-purple-50 rounded-lg border border-purple-200">
+              <form 
+                onSubmit={(e) => { e.preventDefault(); addCategory(); }}
+                className="flex items-center gap-2 p-3 bg-purple-50 rounded-lg border border-purple-200"
+              >
                 <div className="relative">
                   <select 
                     value={newCategoryIcon}
@@ -1687,21 +1863,38 @@ function MaterielView() {
                   type="text"
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
-                  className="flex-1 px-3 py-2 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCategory();
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 border rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500 bg-white"
                   placeholder="Nom de la nouvelle catégorie"
                   autoFocus
                 />
-                <Button size="sm" onClick={addCategory} disabled={isSavingCategory} className="bg-green-600 hover:bg-green-700">
+                <Button 
+                  type="submit" 
+                  size="sm" 
+                  disabled={isSavingCategory || !newCategoryName.trim()} 
+                  className="bg-green-600 hover:bg-green-700 text-white font-medium flex items-center gap-1.5 px-3 shrink-0"
+                >
                   <Check className="w-4 h-4" />
+                  <span>Valider</span>
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => {
-                  setShowAddCategory(false);
-                  setNewCategoryName('');
-                  setNewCategoryIcon('📁');
-                }}>
+                <Button 
+                  type="button" 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={() => {
+                    setShowAddCategory(false);
+                    setNewCategoryName('');
+                    setNewCategoryIcon('📁');
+                  }}
+                >
                   <X className="w-4 h-4" />
                 </Button>
-              </div>
+              </form>
             ) : (
               <Button
                 variant="outline"
@@ -1723,6 +1916,60 @@ function MaterielView() {
                 Fermer
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal d'Aperçu Grand Format du Diaporama Équipement */}
+      <Dialog open={previewModal.open} onOpenChange={(open) => setPreviewModal(prev => ({ ...prev, open }))}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between text-lg font-bold pr-6">
+              <span>{previewModal.item?.name || 'Aperçu du matériel'}</span>
+              {previewModal.item?.daily_price && (
+                <span className="text-sm font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                  {previewModal.item.daily_price}€ / jour
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription className="flex items-center gap-3 text-xs text-slate-500 pt-1">
+              <span>Réf : <strong className="text-blue-600">{previewModal.item?.reference}</strong></span>
+              <span>•</span>
+              <span>Catégorie : <strong>{previewModal.item?.category || 'Non classé'}</strong></span>
+            </DialogDescription>
+          </DialogHeader>
+
+          {previewModal.item && (
+            <div className="space-y-3 py-2">
+              <div className="rounded-xl overflow-hidden border border-slate-200 shadow-md bg-black/5">
+                <ImageSlideshow
+                  images={
+                    Array.isArray(previewModal.item.photos) && previewModal.item.photos.length > 0
+                      ? previewModal.item.photos
+                      : (previewModal.item.photo_url ? [previewModal.item.photo_url] : [])
+                  }
+                  alt={previewModal.item.name || 'Visuel'}
+                  className="w-full h-80 sm:h-96"
+                  imageClassName="w-full h-full object-contain bg-slate-900/90"
+                  interval={3000}
+                  showDots={true}
+                  showArrows={true}
+                  showCountBadge={true}
+                />
+              </div>
+
+              {previewModal.item.observations && (
+                <p className="text-xs text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  {previewModal.item.observations}
+                </p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPreviewModal({ open: false, item: null })}>
+              Fermer
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

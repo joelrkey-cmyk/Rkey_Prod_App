@@ -2544,7 +2544,7 @@ async function generateContentWithRetry(ai, params, modelsToTry = ["gemini-3.1-f
   throw lastException || new Error("All model fallback attempts exhausted.");
 }
 
-const ALL_APPS = ["devis","contracts","contracts2","location","agenda-prestation","rental","delivery","crm","billetterie","formulaires","dj-profiles","mp3-downloader","parametres"];
+const ALL_APPS = ["devis","contracts","contracts2","location","agenda-prestation","rental","delivery","crm","billetterie","formulaires","dj-profiles","parametres"];
 function getDefaultApps(role) {
   if (role === 'location') return ['rental', 'delivery'];
   return [...ALL_APPS];
@@ -4179,6 +4179,7 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     // Highly targeted, accent-insensitive query for Clients
     const parts = slug.split('-');
     const clientParts = parts.slice(1).filter(p => p.length >= 3);
+    const orClientConditions = [{ id: slug }];
     if (clientParts.length > 0) {
       const conditions = clientParts.map(part => {
         const pattern = makeAccentInsensitivePattern(part);
@@ -4190,8 +4191,9 @@ api.get('/public/dj-client/:slug', async (req, res) => {
           ]
         };
       });
-      contractsQuery = { $and: conditions };
+      orClientConditions.push({ $and: conditions });
     }
+    contractsQuery = { $or: orClientConditions };
   }
 
   // Filter only active contracts (sent, archived, completed)
@@ -4298,11 +4300,15 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   } else {
     // Check if it's a Client slug
     const clientEvents = mappedEvents.filter(e => {
-      return normalizeString(e.clientSlug) === normalizedRequestedSlug;
+      return normalizeString(e.clientSlug) === normalizedRequestedSlug ||
+             normalizeString(e.id) === normalizedRequestedSlug ||
+             (e.clientName && normalizeString(e.clientName) === normalizedRequestedSlug);
     });
 
-    if (clientEvents.length > 0) {
-      const cleanedClientEvents = clientEvents.map(event => {
+    const activeClientEvents = clientEvents.length > 0 ? clientEvents : (mappedEvents.length === 1 ? mappedEvents : []);
+
+    if (activeClientEvents.length > 0) {
+      const cleanedClientEvents = activeClientEvents.map(event => {
         const cloned = { ...event };
         if (cloned.event_documents) {
           cloned.event_documents = cloned.event_documents.filter(d => !d.hiddenForClient);
@@ -4962,7 +4968,7 @@ async function syncVenueToContracts(venueId) {
 api.get('/public/venues', async (req, res) => {
   try {
     const venues = await db.collection('reception_venues').find({ is_complete: true }).toArray();
-    const contracts = await db.collection('contracts2').find({}).toArray();
+    const contracts = await db.collection('contracts2').find({}, { projection: { _id: 0, 'client_info.event_location': 1, event_location: 1, 'client_info.venue_id': 1 } }).toArray();
     
     const resolved = venues.map(v => {
       let resolvedCity = v.city || 'À préciser';
@@ -5016,7 +5022,7 @@ api.get('/public/venues', async (req, res) => {
 
 api.post('/venues/import-all', authMiddleware, async (req, res) => {
   try {
-    const contracts = await db.collection('contracts2').find({}).toArray();
+    const contracts = await db.collection('contracts2').find({}, { projection: { _id: 0, 'client_info.event_location': 1, event_location: 1, 'client_info.venue_id': 1 } }).toArray();
     const existingVenues = await db.collection('reception_venues').find({}).toArray();
     
     const normalize = (str) => str ? str.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
@@ -5214,7 +5220,7 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
 api.get('/venues', async (req, res) => {
   try {
     const venues = await db.collection('reception_venues').find({}).toArray();
-    const contracts = await db.collection('contracts2').find({}).toArray();
+    const contracts = await db.collection('contracts2').find({}, { projection: { _id: 0, 'client_info.event_location': 1, event_location: 1, 'client_info.venue_id': 1 } }).toArray();
     
     const resolved = venues.map(v => {
       let resolvedCity = v.city || 'À préciser';
@@ -5301,7 +5307,7 @@ api.get('/venues/:id', async (req, res) => {
     let resolvedDept = venue.department || 'À préciser';
     
     if (resolvedCity === 'À préciser' || resolvedDept === 'À préciser') {
-      const contracts = await db.collection('contracts2').find({}).toArray();
+      const contracts = await db.collection('contracts2').find({}, { projection: { _id: 0, 'client_info.event_location': 1, event_location: 1, 'client_info.venue_id': 1 } }).toArray();
       const associatedContracts = contracts.filter(c => {
         if (c.client_info?.venue_id === venue.id) return true;
         const loc = (c.client_info?.event_location || c.event_location || '').toLowerCase();
@@ -6178,6 +6184,137 @@ api.delete('/freelance-email-templates/:id', authMiddleware, async (req, res) =>
     res.status(500).json({ detail: error.message });
   }
 });
+
+// Helper to convert HTML to clean plain text
+function cleanToPlainText(str) {
+  if (!str) return '';
+  return str
+    .replace(/<br\s*[\/]?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// ══════════ CLIENT CONFIRMATION / ACCESS EMAIL TEMPLATES ══════════
+const DEFAULT_CLIENT_EMAIL_TEMPLATES = [
+  {
+    id: "default-contrat-acompte",
+    name: "Contrat signé & Acompte reçu (Complet)",
+    category: "contrat_acompte",
+    subject: "Confirmation de votre contrat et acompte - Accès Espace DJ / Client : {{client_name}}",
+    body: `Bonjour {{client_name}},
+
+Nous vous confirmons avoir bien reçu votre contrat signé ainsi que votre acompte pour votre prestation du {{event_date}}.
+
+Votre réservation est désormais officiellement confirmée et enregistrée !
+
+Vous pouvez dès à présent accéder à votre Espace DJ / Client personnalisé afin de préparer tous les détails de votre événement (choix musicaux, déroulement, moments forts, échanges avec votre DJ) :
+
+Lien direct vers votre Espace DJ :
+{{client_dj_link}}
+
+Nous restons à votre entière disposition pour tout renseignement complémentaire.
+
+Musicalement,
+L'équipe R'Key Production`,
+    is_default: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: "default-contrat-seul",
+    name: "Contrat signé uniquement",
+    category: "contrat_seul",
+    subject: "Confirmation de réception de votre contrat signé - Accès Espace DJ / Client : {{client_name}}",
+    body: `Bonjour {{client_name}},
+
+Nous vous confirmons avoir bien reçu votre contrat signé pour votre prestation du {{event_date}}.
+
+Votre date est bien réservée dans notre planning. Nous finaliserons définitivement votre dossier dès la bonne réception de votre acompte.
+
+Vous pouvez d'ores et déjà commencer à préparer votre soirée sur votre Espace DJ / Client personnalisé :
+
+Lien direct vers votre Espace DJ :
+{{client_dj_link}}
+
+À très bientôt,
+L'équipe R'Key Production`,
+    is_default: false,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: "default-lien-espace-dj",
+    name: "Lien Espace DJ / Client uniquement",
+    category: "lien_espace_dj",
+    subject: "Votre lien d'accès à l'Espace DJ / Client : {{client_name}}",
+    body: `Bonjour {{client_name}},
+
+Voici votre lien d'accès direct à votre Espace DJ / Client pour votre événement du {{event_date}} :
+
+Lien direct vers votre Espace DJ :
+{{client_dj_link}}
+
+Sur cette interface en ligne, vous pouvez à tout moment renseigner vos musiques préférées, la timeline de la soirée et préparer les temps forts de votre événement avec votre DJ.
+
+Musicalement,
+L'équipe R'Key Production`,
+    is_default: false,
+    created_at: new Date().toISOString()
+  }
+];
+
+api.get('/client-email-templates', authMiddleware, async (req, res) => {
+  try {
+    let list = await db.collection('client_email_templates').find({}, { projection: { _id: 0 } }).toArray();
+    if (list.length === 0) {
+      await db.collection('client_email_templates').insertMany(DEFAULT_CLIENT_EMAIL_TEMPLATES);
+      list = DEFAULT_CLIENT_EMAIL_TEMPLATES;
+    } else {
+      // Nettoyer automatiquement les balises HTML si des modèles existants en comportent
+      let hasHtml = false;
+      for (const t of list) {
+        if (t.body && (t.body.includes('<p>') || t.body.includes('<strong>') || t.body.includes('<a '))) {
+          hasHtml = true;
+          t.body = cleanToPlainText(t.body);
+          await db.collection('client_email_templates').updateOne({ id: t.id }, { $set: { body: t.body } });
+        }
+      }
+    }
+    res.json({ templates: cleanList(list) });
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+api.post('/client-email-templates', authMiddleware, async (req, res) => {
+  try {
+    const t = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
+    await db.collection('client_email_templates').insertOne(t);
+    res.json(clean(t));
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+api.put('/client-email-templates/:id', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('client_email_templates').updateOne({ id: req.params.id }, { $set: req.body });
+    const updated = await db.collection('client_email_templates').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    res.json(clean(updated));
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+api.delete('/client-email-templates/:id', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('client_email_templates').deleteOne({ id: req.params.id });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
 api.post('/contract-emails/send', authMiddleware, async (req, res) => {
   try {
     const { recipient_email, email_subject, email_body, pdf_base64, pdf_filename, pdfs } = req.body;
@@ -6205,9 +6342,13 @@ api.post('/contract-emails/send', authMiddleware, async (req, res) => {
       });
     }
     
-    let formattedBody = email_body || '<p>Veuillez trouver ci-joint votre contrat.</p>';
-    if (typeof formattedBody === 'string' && !formattedBody.includes('<p>') && !formattedBody.includes('<div') && !formattedBody.includes('<br')) {
-      formattedBody = formattedBody.replace(/\n/g, '<br />');
+    let formattedBody = email_body || 'Veuillez trouver ci-joint votre contrat.';
+    if (typeof formattedBody === 'string') {
+      if (!formattedBody.includes('<p>') && !formattedBody.includes('<div') && !formattedBody.includes('<br')) {
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const linkedBody = formattedBody.replace(urlRegex, (url) => `<a href="${url}" target="_blank" style="color: #059669; font-weight: bold; text-decoration: underline;">${url}</a>`);
+        formattedBody = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; color: #1e293b; line-height: 1.6;">${linkedBody.replace(/\n/g, '<br />')}</div>`;
+      }
     }
 
     const { html: finalHtml, attachments } = convertDataUriToCid(
@@ -7146,11 +7287,12 @@ api.post('/upload/material-option-image', authMiddleware, upload.single('file'),
   if (!req.file) return res.status(400).json({ detail: 'Aucune image reçue' });
   
   try {
-    if (bucket) {
+    const activeBucket = getGcsBucket() || bucket;
+    if (activeBucket) {
       const ext = path.extname(req.file.originalname) || '.png';
       const imageId = uuidv4();
       const gcsPath = `material-options-images/${imageId}${ext}`;
-      const file = bucket.file(gcsPath);
+      const file = activeBucket.file(gcsPath);
       
       try {
         await file.save(req.file.buffer, {
@@ -7170,6 +7312,48 @@ api.post('/upload/material-option-image', authMiddleware, upload.single('file'),
   } catch (error) {
     console.error('Error uploading material option image:', error);
     res.status(500).json({ detail: 'Erreur lors de l\'upload de l\'image d\'infographie' });
+  }
+});
+
+api.post('/upload/material-option-images', authMiddleware, upload.array('files', 20), async (req, res) => {
+  const files = req.files || (req.file ? [req.file] : []);
+  if (!files || files.length === 0) return res.status(400).json({ detail: 'Aucune image reçue' });
+
+  try {
+    const activeBucket = getGcsBucket() || bucket;
+    const urls = [];
+
+    for (const f of files) {
+      let uploadedUrl = null;
+      if (activeBucket) {
+        const ext = path.extname(f.originalname) || '.png';
+        const imageId = uuidv4();
+        const gcsPath = `material-options-images/${imageId}${ext}`;
+        const gcsFile = activeBucket.file(gcsPath);
+        try {
+          await gcsFile.save(f.buffer, {
+            metadata: { contentType: f.mimetype }
+          });
+          uploadedUrl = `/api/gcs/${gcsPath}`;
+        } catch (gcsErr) {
+          console.warn('GCS Upload Failed for /upload/material-option-images file, falling back to MongoDB:', gcsErr.message);
+        }
+      }
+
+      if (!uploadedUrl) {
+        const imageId = uuidv4();
+        const b64 = f.buffer.toString('base64');
+        const doc = { upload_id: imageId, data: b64, content_type: f.mimetype, created_at: new Date().toISOString() };
+        await db.collection('event_uploads').insertOne(doc);
+        uploadedUrl = `/api/uploads/events/${imageId}`;
+      }
+      urls.push(uploadedUrl);
+    }
+
+    return res.json({ urls });
+  } catch (error) {
+    console.error('Error uploading material option images:', error);
+    res.status(500).json({ detail: 'Erreur lors de l\'upload des images d\'options' });
   }
 });
 
@@ -7517,11 +7701,12 @@ api.post('/upload/equipment-image', authMiddleware, upload.single('file'), async
   if (!req.file) return res.status(400).json({ detail: 'No image' });
   
   try {
-    if (bucket) {
+    const activeBucket = getGcsBucket() || bucket;
+    if (activeBucket) {
       const ext = path.extname(req.file.originalname) || '';
       const imageId = uuidv4();
       const gcsPath = `location-photos/${imageId}${ext}`;
-      const file = bucket.file(gcsPath);
+      const file = activeBucket.file(gcsPath);
       
       try {
         await file.save(req.file.buffer, {
@@ -7542,6 +7727,48 @@ api.post('/upload/equipment-image', authMiddleware, upload.single('file'), async
   } catch (error) {
     console.error('Error uploading equipment image:', error);
     res.status(500).json({ detail: 'Erreur lors de l\'upload de l\'image' });
+  }
+});
+
+api.post('/upload/equipment-images', authMiddleware, upload.array('files', 20), async (req, res) => {
+  const files = req.files || (req.file ? [req.file] : []);
+  if (!files || files.length === 0) return res.status(400).json({ detail: 'Aucune image reçue' });
+
+  try {
+    const activeBucket = getGcsBucket() || bucket;
+    const urls = [];
+
+    for (const f of files) {
+      let uploadedUrl = null;
+      if (activeBucket) {
+        const ext = path.extname(f.originalname) || '';
+        const imageId = uuidv4();
+        const gcsPath = `location-photos/${imageId}${ext}`;
+        const gcsFile = activeBucket.file(gcsPath);
+        try {
+          await gcsFile.save(f.buffer, {
+            metadata: { contentType: f.mimetype }
+          });
+          uploadedUrl = `/api/gcs/${gcsPath}`;
+        } catch (gcsErr) {
+          console.warn('GCS Upload Failed for /upload/equipment-images file, falling back to MongoDB:', gcsErr.message);
+        }
+      }
+
+      if (!uploadedUrl) {
+        const imageId = uuidv4();
+        const b64 = f.buffer.toString('base64');
+        const doc = { upload_id: imageId, data: b64, content_type: f.mimetype, created_at: new Date().toISOString() };
+        await db.collection('event_uploads').insertOne(doc);
+        uploadedUrl = `/api/uploads/events/${imageId}`;
+      }
+      urls.push(uploadedUrl);
+    }
+
+    return res.json({ urls });
+  } catch (error) {
+    console.error('Error uploading equipment images:', error);
+    res.status(500).json({ detail: 'Erreur lors de l\'upload des images' });
   }
 });
 
@@ -7603,32 +7830,180 @@ api.post('/location/equipment/migrate-to-gcs', authMiddleware, async (req, res) 
 api.post('/location/equipment/cleanup-copies', authMiddleware, (req, res) => res.json({ removed: 0 }));
 
 // Location Categories
+const DEFAULT_LOCATION_CATEGORIES = [
+  { name: 'Sonorisation', icon: '🔊', order: 0, sort_order: 0, visible_catalogue: true },
+  { name: 'Lumière', icon: '💡', order: 1, sort_order: 1, visible_catalogue: true },
+  { name: 'Vidéo', icon: '🎬', order: 2, sort_order: 2, visible_catalogue: true },
+  { name: 'Câbles', icon: '🔌', order: 3, sort_order: 3, visible_catalogue: false },
+  { name: 'Machine FX', icon: '🌫️', order: 4, sort_order: 4, visible_catalogue: true },
+  { name: 'Structure et pieds', icon: '🏗️', order: 5, sort_order: 5, visible_catalogue: true },
+  { name: 'DJ', icon: '🎧', order: 6, sort_order: 6, visible_catalogue: true },
+  { name: 'Packs', icon: '📦', order: 7, sort_order: 7, visible_catalogue: true },
+  { name: 'Divers', icon: '📦', order: 8, sort_order: 8, visible_catalogue: true }
+];
+
 api.get('/location/categories', authMiddleware, async (req, res) => {
-  const cats = cleanList(await db.collection('location_categories').find({}, { projection: { _id: 0 } }).sort({ order: 1, sort_order: 1, name: 1 }).toArray());
-  res.json({ categories: cats, success: true });
+  try {
+    let count = await db.collection('location_categories').countDocuments();
+    if (count === 0) {
+      const now = new Date().toISOString();
+      const initialDocs = DEFAULT_LOCATION_CATEGORIES.map((c, idx) => ({
+        id: uuidv4(),
+        ...c,
+        order: idx,
+        sort_order: idx,
+        created_at: now
+      }));
+      await db.collection('location_categories').insertMany(initialDocs);
+    }
+    const cats = cleanList(await db.collection('location_categories').find({}, { projection: { _id: 0 } }).sort({ order: 1, sort_order: 1, name: 1 }).toArray());
+    res.json({ categories: cats, success: true });
+  } catch (err) {
+    console.error('Error fetching location categories:', err);
+    res.status(500).json({ error: 'Erreur lors du chargement des catégories', success: false });
+  }
 });
+
 api.get('/location/categories/public', async (req, res) => {
-  const cats = cleanList(await db.collection('location_categories').find({ visible_catalogue: { $ne: false } }, { projection: { _id: 0 } }).sort({ order: 1, sort_order: 1, name: 1 }).toArray());
-  res.json({ categories: cats });
+  try {
+    const cats = cleanList(await db.collection('location_categories').find({ visible_catalogue: { $ne: false } }, { projection: { _id: 0 } }).sort({ order: 1, sort_order: 1, name: 1 }).toArray());
+    res.json({ categories: cats, success: true });
+  } catch (err) {
+    res.json({ categories: [] });
+  }
 });
+
 api.post('/location/categories', authMiddleware, async (req, res) => {
-  const cat = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
-  await db.collection('location_categories').insertOne(cat);
-  res.json(clean(cat));
+  try {
+    const { name, icon = '📁', visible_catalogue = true } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Le nom de la catégorie est obligatoire.', detail: 'Le nom de la catégorie est obligatoire.', success: false });
+    }
+    const trimmedName = name.trim();
+    
+    // Check if category name already exists (case-insensitive)
+    const existing = await db.collection('location_categories').findOne({ 
+      name: { $regex: new RegExp(`^${trimmedName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i') } 
+    });
+    if (existing) {
+      return res.status(409).json({ 
+        error: `Une catégorie nommée "${existing.name}" existe déjà.`, 
+        detail: `Une catégorie nommée "${existing.name}" existe déjà.`,
+        category: clean(existing),
+        success: false 
+      });
+    }
+
+    const maxOrderDoc = await db.collection('location_categories').find({}).sort({ order: -1, sort_order: -1 }).limit(1).toArray();
+    const nextOrder = (maxOrderDoc[0]?.order != null ? maxOrderDoc[0].order : (maxOrderDoc[0]?.sort_order || 0)) + 1;
+
+    const cat = { 
+      id: uuidv4(), 
+      name: trimmedName,
+      icon: icon || '📁',
+      visible_catalogue: visible_catalogue !== false,
+      order: nextOrder,
+      sort_order: nextOrder,
+      created_at: new Date().toISOString() 
+    };
+    await db.collection('location_categories').insertOne(cat);
+    res.status(201).json({ ...clean(cat), success: true });
+  } catch (err) {
+    console.error('Error creating location category:', err);
+    res.status(500).json({ error: 'Erreur lors de la création de la catégorie', detail: err.message, success: false });
+  }
 });
+
 api.put('/location/categories/:id', authMiddleware, async (req, res) => {
-  await db.collection('location_categories').updateOne({ id: req.params.id }, { $set: req.body });
-  res.json(await db.collection('location_categories').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  try {
+    const { id } = req.params;
+    const updates = { ...req.body };
+    delete updates._id;
+    delete updates.id;
+
+    if (updates.name) {
+      updates.name = updates.name.trim();
+    }
+
+    await db.collection('location_categories').updateOne({ id }, { $set: updates });
+    const updated = await db.collection('location_categories').findOne({ id }, { projection: { _id: 0 } });
+    if (!updated) {
+      return res.status(404).json({ error: 'Catégorie introuvable', detail: 'Catégorie introuvable', success: false });
+    }
+    res.json({ ...clean(updated), success: true });
+  } catch (err) {
+    console.error('Error updating location category:', err);
+    res.status(500).json({ error: 'Erreur lors de la mise à jour de la catégorie', detail: err.message, success: false });
+  }
 });
+
 api.delete('/location/categories/:id', authMiddleware, async (req, res) => {
-  await db.collection('location_categories').deleteOne({ id: req.params.id });
-  res.json({ success: true });
+  try {
+    const { id } = req.params;
+    const cat = await db.collection('location_categories').findOne({ id });
+    if (cat) {
+      // Check if equipment is using this category
+      const usedByCount = await db.collection('location_equipment').countDocuments({ category: cat.name });
+      if (usedByCount > 0) {
+        return res.status(400).json({
+          error: `Impossible de supprimer : ${usedByCount} équipement(s) utilisent cette catégorie`,
+          detail: `Impossible de supprimer : ${usedByCount} équipement(s) utilisent cette catégorie`,
+          success: false
+        });
+      }
+    }
+    await db.collection('location_categories').deleteOne({ id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting location category:', err);
+    res.status(500).json({ error: 'Erreur lors de la suppression de la catégorie', detail: err.message, success: false });
+  }
 });
+
 api.put('/location/categories/reorder', authMiddleware, async (req, res) => {
-  for (const item of (req.body.categories || [])) await db.collection('location_categories').updateOne({ id: item.id }, { $set: { sort_order: item.sort_order } });
-  res.json({ success: true });
+  try {
+    if (req.body.category_ids && Array.isArray(req.body.category_ids)) {
+      for (let i = 0; i < req.body.category_ids.length; i++) {
+        await db.collection('location_categories').updateOne(
+          { id: req.body.category_ids[i] }, 
+          { $set: { order: i, sort_order: i } }
+        );
+      }
+    } else if (req.body.categories && Array.isArray(req.body.categories)) {
+      for (let i = 0; i < req.body.categories.length; i++) {
+        const item = req.body.categories[i];
+        const orderVal = item.sort_order != null ? item.sort_order : i;
+        await db.collection('location_categories').updateOne(
+          { id: item.id }, 
+          { $set: { sort_order: orderVal, order: orderVal } }
+        );
+      }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error reordering location categories:', err);
+    res.status(500).json({ error: 'Erreur lors de la réorganisation', success: false });
+  }
 });
-api.post('/location/categories/reset', authMiddleware, (req, res) => res.json({ success: true }));
+
+api.post('/location/categories/reset', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('location_categories').deleteMany({});
+    const now = new Date().toISOString();
+    const initialDocs = DEFAULT_LOCATION_CATEGORIES.map((c, idx) => ({
+      id: uuidv4(),
+      ...c,
+      order: idx,
+      sort_order: idx,
+      created_at: now
+    }));
+    await db.collection('location_categories').insertMany(initialDocs);
+    const cats = cleanList(await db.collection('location_categories').find({}, { projection: { _id: 0 } }).sort({ order: 1, sort_order: 1 }).toArray());
+    res.json({ categories: cats, success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur lors de la réinitialisation', success: false });
+  }
+});
 api.get('/location/catalogue/products-order', authMiddleware, async (req, res) => {
   const doc = await db.collection('location_settings').findOne({ type: 'products_order' }, { projection: { _id: 0 } });
   res.json(doc || { product_ids: [] });
@@ -10563,2046 +10938,6 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════
-// TÉLÉCHARGER MP3 & PLAYLISTS TIDAL (MP3 320k ENGINE)
-// ═══════════════════════════════════════════
-const AdmZip = require('adm-zip');
-const mp3StorageDir = path.join('/tmp', 'mp3_downloads');
-if (!fs.existsSync(mp3StorageDir)) {
-  try { fs.mkdirSync(mp3StorageDir, { recursive: true }); } catch (e) {}
-}
-
-// In-memory jobs tracking
-const activeMp3Jobs = new Map();
-const activeMultiJobs = new Map();
-
-// Helper: extract clean token from various formats (raw, JSON, cookie, Bearer)
-function extractCleanTidalToken(rawInput) {
-  if (!rawInput || typeof rawInput !== 'string') return '';
-  let str = rawInput.trim();
-  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
-    str = str.slice(1, -1).trim();
-  }
-  if (str.startsWith('{') && str.endsWith('}')) {
-    try {
-      const parsed = JSON.parse(str);
-      const val = parsed.token || parsed.accessToken || parsed.access_token || parsed.sessionId || parsed.session_id;
-      if (val) return String(val).trim();
-    } catch (e) {}
-  }
-  const mSession = str.match(/sessionId[:=]\s*["']?([a-zA-Z0-9_-]+)["']?/i);
-  if (mSession) return mSession[1];
-  const mBearer = str.match(/Bearer\s+([a-zA-Z0-9._-]+)/i);
-  if (mBearer) return mBearer[1];
-  return str;
-}
-
-function buildTidalHeaders(token) {
-  const clean = extractCleanTidalToken(token);
-  const baseHeaders = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'x-tidal-token': '0jTR49MPo79CqbDQ'
-  };
-  if (!clean) return baseHeaders;
-
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
-  if (isUuid) {
-    return {
-      ...baseHeaders,
-      'sessionId': clean,
-      'x-tidal-token': clean
-    };
-  }
-
-  return {
-    ...baseHeaders,
-    'Authorization': clean.startsWith('Bearer ') ? clean : `Bearer ${clean}`
-  };
-}
-
-// Helper: Fetch tracks for a Tidal playlist or user favorites
-async function fetchPlaylistTracksHelper(playlistId, customToken) {
-  const cleanId = String(playlistId || '').trim();
-  const headers = buildTidalHeaders(customToken);
-
-  // 1. User favorites
-  if (cleanId === 'user_favorites' || cleanId.includes('favorites/tracks') || cleanId.includes('my-collection/tracks')) {
-    let userId = null;
-    let countryCode = 'FR';
-    try {
-      const sessRes = await fetch("https://api.tidal.com/v1/sessions", { headers });
-      if (sessRes.ok) {
-        const sessData = await sessRes.json();
-        userId = sessData.userId;
-        countryCode = sessData.countryCode || 'FR';
-      }
-    } catch (e) {}
-
-    if (userId) {
-      try {
-        const favRes = await fetch(`https://api.tidal.com/v1/users/${userId}/favorites/tracks?limit=100&offset=0&countryCode=${countryCode}`, { headers });
-        if (favRes.ok) {
-          const favData = await favRes.json();
-          const items = Array.isArray(favData.items) ? favData.items : [];
-          return items.map((item, idx) => {
-            const track = item.item || item;
-            return {
-              id: String(track.id || `fav_${idx}`),
-              trackNumber: idx + 1,
-              title: track.title || 'Titre inconnu',
-              artist: track.artist?.name || (track.artists && track.artists.map(a => a.name).join(', ')) || 'Artiste inconnu',
-              album: track.album?.title || 'Coups de cœur Tidal',
-              duration: track.duration || 180,
-              year: track.album?.releaseDate ? new Date(track.album.releaseDate).getFullYear() : new Date().getFullYear(),
-              coverUrl: track.album?.cover ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/640x640.jpg` : "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=60",
-              status: 'pending'
-            };
-          });
-        }
-      } catch (e) {}
-    }
-  }
-
-  // 2. Standard playlist UUID
-  const endpoints = [
-    `https://api.tidal.com/v1/playlists/${cleanId}/items?countryCode=FR&limit=100`,
-    `https://listen.tidal.com/v1/playlists/${cleanId}/items?countryCode=FR&limit=100`,
-    `https://api.tidalhifi.com/v1/playlists/${cleanId}/items?countryCode=FR&limit=100`
-  ];
-
-  for (const ep of endpoints) {
-    try {
-      const res = await fetch(ep, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.items && Array.isArray(data.items) && data.items.length > 0) {
-          return data.items.map((item, idx) => {
-            const track = item.item || item;
-            return {
-              id: String(track.id || `${cleanId}_${idx}`),
-              trackNumber: idx + 1,
-              title: track.title || 'Titre inconnu',
-              artist: track.artist?.name || (track.artists && track.artists.map(a => a.name).join(', ')) || 'Artiste inconnu',
-              album: track.album?.title || 'Playlist Tidal',
-              duration: track.duration || 180,
-              year: track.album?.releaseDate ? new Date(track.album.releaseDate).getFullYear() : (track.streamStartDate ? new Date(track.streamStartDate).getFullYear() : new Date().getFullYear()),
-              coverUrl: track.album?.cover ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/640x640.jpg` : "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-              status: 'pending'
-            };
-          });
-        }
-      }
-    } catch (err) {}
-  }
-
-  return [];
-}
-
-// Helper: Ensure yt-dlp is executable
-function getYtDlpPath() {
-  const localBin = path.join(__dirname, 'bin', 'yt-dlp');
-  if (fs.existsSync(localBin)) {
-    try { fs.chmodSync(localBin, 0o755); } catch(e) {}
-    return localBin;
-  }
-  const tmpBin = '/tmp/yt-dlp';
-  if (fs.existsSync(tmpBin)) {
-    try { fs.chmodSync(tmpBin, 0o755); } catch(e) {}
-    return tmpBin;
-  }
-  return 'yt-dlp';
-}
-
-// Helper: Run yt-dlp safely and detect successful download even when exit code is 101 (--max-downloads reached)
-function executeYtDlpDownload(ytDlpBin, query, outputPath, bitrate = '320k', matchFilter = null) {
-  const { spawnSync } = require('child_process');
-  const args = [
-    query,
-    '--max-downloads', '1',
-    '--extract-audio',
-    '--audio-format', 'mp3',
-    '--audio-quality', (bitrate || '320k').replace('k', 'K'),
-    '-o', outputPath,
-    '--no-playlist'
-  ];
-  if (matchFilter) {
-    args.push('--match-filter', matchFilter);
-  }
-
-  if (fs.existsSync(outputPath)) {
-    try { fs.unlinkSync(outputPath); } catch (e) {}
-  }
-
-  const res = spawnSync(ytDlpBin, args, { stdio: 'pipe', timeout: 90000 });
-
-  // yt-dlp exits with 0 on normal exit, or 101 when stopping due to --max-downloads 1.
-  // Both are successful if the resulting file is valid.
-  const possiblePaths = [outputPath, `${outputPath}.mp3`, outputPath.replace(/\.mp3$/, '') + '.mp3'];
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      try {
-        const stats = fs.statSync(p);
-        if (stats.size > 50000) {
-          if (p !== outputPath) {
-            fs.copyFileSync(p, outputPath);
-            try { fs.unlinkSync(p); } catch (e) {}
-          }
-          return { success: true, size: stats.size };
-        }
-      } catch (e) {}
-    }
-  }
-
-  const errMsg = res.stderr ? res.stderr.toString().trim() : (res.error ? res.error.message : `Exit code ${res.status}`);
-  return { success: false, error: errMsg };
-}
-
-// Helper: Clean filename for DJ filesystem
-function sanitizeFilename(str) {
-  if (!str) return 'track';
-  return str.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
-}
-
-// Helper: Format Content-Disposition header conforming to RFC 5987 / 6266
-function makeSafeContentDisposition(filename) {
-  const safeAscii = (filename || 'download')
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(filename || 'download')}`;
-}
-
-// Helper: Fetch direct audio stream URL from Tidal API if session token is provided
-async function getTidalTrackStreamUrl(trackId, customToken) {
-  if (!trackId || !customToken) return null;
-  const cleanToken = customToken.trim();
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'x-tidal-token': cleanToken,
-    'sessionId': cleanToken,
-    'Authorization': cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`
-  };
-
-  // 1. Try playbackinfopostpaywall (HIGH / LOSSLESS)
-  try {
-    const res = await fetch(`https://api.tidal.com/v1/tracks/${trackId}/playbackinfopostpaywall?audioquality=HIGH&playbackmode=STREAM&assetpresentation=FULL`, { headers });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.manifest && data.manifestMimeType === 'application/vnd.tidal.bts') {
-        const decoded = JSON.parse(Buffer.from(data.manifest, 'base64').toString('utf8'));
-        if (decoded.urls && Array.isArray(decoded.urls) && decoded.urls.length > 0) {
-          return decoded.urls[0];
-        }
-      } else if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
-        return data.urls[0];
-      } else if (data.url) {
-        return data.url;
-      }
-    }
-  } catch (e) {}
-
-  // 2. Try urlpostpaywall
-  try {
-    const res2 = await fetch(`https://api.tidal.com/v1/tracks/${trackId}/urlpostpaywall?urlusagemode=STREAM&audioquality=HIGH&assetpresentation=FULL&countryCode=FR`, { headers });
-    if (res2.ok) {
-      const data2 = await res2.json();
-      if (data2.url) return data2.url;
-    }
-  } catch (e) {}
-
-  return null;
-}
-
-// 1. Parse Tidal URL / UUID
-api.post('/mp3/tidal/parse', optionalAuth, async (req, res) => {
-  try {
-    const { url, customToken } = req.body;
-    if (!url || typeof url !== 'string' || !url.trim()) {
-      return res.status(400).json({ error: "URL de la playlist Tidal requise" });
-    }
-
-    const trimmed = url.trim();
-    // Regex for Tidal playlist, album, track, mix
-    // e.g. https://tidal.com/browse/playlist/779339e8-46cb-4076-a080-60b540fbe19e
-    // or https://listen.tidal.com/playlist/779339e8-...
-    const playlistMatch = trimmed.match(/playlist\/([a-zA-Z0-9-]+)/i);
-    const albumMatch = trimmed.match(/album\/([0-9]+)/i);
-    const trackMatch = trimmed.match(/track\/([0-9]+)/i);
-    const mixMatch = trimmed.match(/mix\/([a-zA-Z0-9-]+)/i);
-
-    let type = 'playlist';
-    let id = '';
-
-    // 1. Support Spotify links (Playlist & Album)
-    const spotifyMatch = trimmed.match(/spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album|track)\/([a-zA-Z0-9]+)/i);
-    if (spotifyMatch) {
-      const spType = spotifyMatch[1].toLowerCase();
-      const spId = spotifyMatch[2];
-      try {
-        const embedUrl = `https://open.spotify.com/embed/${spType}/${spId}`;
-        const spRes = await fetch(embedUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
-        });
-        if (spRes.ok) {
-          const spHtml = await spRes.text();
-          const nextDataMatch = spHtml.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
-          if (nextDataMatch) {
-            const nextData = JSON.parse(nextDataMatch[1]);
-            const entity = nextData.props?.pageProps?.state?.data?.entity;
-            if (entity) {
-              const rawTracks = entity.trackList || (entity.track ? [entity.track] : []);
-              const tracks = rawTracks.map((t, idx) => ({
-                id: `sp_${t.id || idx}_${Date.now()}`,
-                trackNumber: idx + 1,
-                title: t.title || 'Titre',
-                artist: t.subtitle || (t.artists && t.artists.map(a => a.name).join(', ')) || 'Artiste',
-                album: entity.name || entity.title || 'Spotify Playlist',
-                duration: Math.round((t.duration || 180000) / 1000),
-                year: entity.releaseDate ? new Date(entity.releaseDate).getFullYear() : new Date().getFullYear(),
-                coverUrl: entity.coverArt?.sources?.[0]?.url || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-                status: 'pending'
-              }));
-
-              return res.json({
-                id: spId,
-                type: spType,
-                provider: 'spotify',
-                title: entity.name || entity.title || 'Playlist Spotify',
-                description: entity.subtitle || entity.description || 'Playlist importée depuis Spotify',
-                creator: entity.subtitle || 'Spotify',
-                coverUrl: entity.coverArt?.sources?.[0]?.url || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-                tracksCount: tracks.length,
-                tracks: tracks
-              });
-            }
-          }
-        }
-      } catch (spErr) {
-        console.error("[SPOTIFY PARSE ERROR]:", spErr.message);
-      }
-    }
-
-    // 2. Support Deezer links (Playlist & Album)
-    const deezerMatch = trimmed.match(/deezer\.com\/(?:[a-z]{2}\/)?(playlist|album|track)\/([0-9]+)/i);
-    if (deezerMatch) {
-      const dzType = deezerMatch[1].toLowerCase();
-      const dzId = deezerMatch[2];
-      try {
-        const dzRes = await fetch(`https://api.deezer.com/${dzType}/${dzId}`);
-        if (dzRes.ok) {
-          const dzData = await dzRes.json();
-          const rawTracks = dzData.tracks?.data || (dzType === 'track' ? [dzData] : []);
-          const tracks = rawTracks.map((t, idx) => ({
-            id: `dz_${t.id || idx}_${Date.now()}`,
-            trackNumber: idx + 1,
-            title: t.title || 'Titre',
-            artist: t.artist?.name || 'Artiste',
-            album: t.album?.title || dzData.title || 'Deezer',
-            duration: t.duration || 180,
-            year: dzData.release_date ? new Date(dzData.release_date).getFullYear() : new Date().getFullYear(),
-            coverUrl: dzData.picture_xl || dzData.picture_medium || dzData.cover_xl || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-            status: 'pending'
-          }));
-
-          return res.json({
-            id: dzId,
-            type: dzType,
-            provider: 'deezer',
-            title: dzData.title || 'Playlist Deezer',
-            description: dzData.description || `Playlist Deezer de ${dzData.creator?.name || 'Deezer'}`,
-            creator: dzData.creator?.name || dzData.artist?.name || 'Deezer',
-            coverUrl: dzData.picture_xl || dzData.picture_medium || dzData.cover_xl || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-            tracksCount: tracks.length,
-            tracks: tracks
-          });
-        }
-      } catch (dzErr) {
-        console.error("[DEEZER PARSE ERROR]:", dzErr.message);
-      }
-    }
-
-    if (playlistMatch) {
-      type = 'playlist';
-      id = playlistMatch[1];
-    } else if (albumMatch) {
-      type = 'album';
-      id = albumMatch[1];
-    } else if (trackMatch) {
-      type = 'track';
-      id = trackMatch[1];
-    } else if (mixMatch) {
-      type = 'mix';
-      id = mixMatch[1];
-    } else if (/^[a-zA-Z0-9-]{16,}$/.test(trimmed)) {
-      type = 'playlist';
-      id = trimmed;
-    } else {
-      type = 'link';
-      id = `custom_${Date.now()}`;
-    }
-
-    // Try fetching playlist / album data with Tidal public APIs or headers
-    let playlistInfo = {
-      id: id,
-      type: type,
-      provider: 'tidal',
-      title: type === 'album' ? `Album Tidal #${id}` : (type === 'track' ? `Titre Tidal #${id}` : `Playlist Tidal`),
-      description: "Playlist importée depuis Tidal",
-      creator: "Tidal",
-      coverUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-      tracksCount: 0,
-      totalDuration: 0,
-      tracks: []
-    };
-
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    };
-    if (customToken && customToken.trim()) {
-      const cleanCustomToken = customToken.trim();
-      headers['Authorization'] = cleanCustomToken.startsWith('Bearer ') ? cleanCustomToken : `Bearer ${cleanCustomToken}`;
-      headers['x-tidal-token'] = cleanCustomToken;
-      headers['sessionId'] = cleanCustomToken;
-    } else {
-      headers['x-tidal-token'] = '0jTR49MPo79CqbDQ';
-    }
-
-    // Attempt direct Tidal API query
-    try {
-      const endpointsToTry = type === 'playlist' 
-        ? [
-            `https://api.tidal.com/v1/playlists/${id}/items?countryCode=FR&limit=100`,
-            `https://listen.tidal.com/v1/playlists/${id}/items?countryCode=FR&limit=100`,
-            `https://api.tidalhifi.com/v1/playlists/${id}/items?countryCode=FR&limit=100`
-          ]
-        : type === 'album'
-        ? [
-            `https://api.tidal.com/v1/albums/${id}/tracks?countryCode=FR&limit=100`,
-            `https://listen.tidal.com/v1/albums/${id}/tracks?countryCode=FR&limit=100`
-          ]
-        : [`https://api.tidal.com/v1/tracks/${id}?countryCode=FR`];
-
-      for (const apiEndpoint of endpointsToTry) {
-        if (playlistInfo.tracks.length > 0) break;
-        try {
-          const tidalRes = await fetch(apiEndpoint, { headers });
-          if (tidalRes.ok) {
-            const data = await tidalRes.json();
-            if (data.items && Array.isArray(data.items)) {
-              playlistInfo.tracks = data.items.map((item, idx) => {
-                const track = item.item || item;
-                return {
-                  id: String(track.id || `${id}_${idx}`),
-                  trackNumber: idx + 1,
-                  title: track.title || 'Titre inconnu',
-                  artist: track.artist?.name || (track.artists && track.artists.map(a => a.name).join(', ')) || 'Artiste inconnu',
-                  album: track.album?.title || playlistInfo.title,
-                  duration: track.duration || 180,
-                  year: track.album?.releaseDate ? new Date(track.album.releaseDate).getFullYear() : (track.streamStartDate ? new Date(track.streamStartDate).getFullYear() : new Date().getFullYear()),
-                  coverUrl: track.album?.cover ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/640x640.jpg` : playlistInfo.coverUrl,
-                  isrc: track.isrc || '',
-                  status: 'pending'
-                };
-              });
-              playlistInfo.tracksCount = playlistInfo.tracks.length;
-              break;
-            } else if (type === 'track' && data && data.title) {
-              playlistInfo.tracks = [{
-                id: String(data.id || id),
-                trackNumber: 1,
-                title: data.title,
-                artist: data.artist?.name || (data.artists && data.artists.map(a => a.name).join(', ')) || 'Artiste inconnu',
-                album: data.album?.title || playlistInfo.title,
-                duration: data.duration || 180,
-                year: data.album?.releaseDate ? new Date(data.album.releaseDate).getFullYear() : new Date().getFullYear(),
-                coverUrl: data.album?.cover ? `https://resources.tidal.com/images/${data.album.cover.replace(/-/g, '/')}/640x640.jpg` : playlistInfo.coverUrl,
-                isrc: data.isrc || '',
-                status: 'pending'
-              }];
-              playlistInfo.tracksCount = 1;
-              break;
-            }
-          }
-        } catch (subErr) {
-          // continue next endpoint
-        }
-      }
-    } catch (e) {
-      console.log("[TIDAL PARSE] API fetch note:", e.message);
-    }
-
-    // Attempt to extract title/cover from Tidal HTML page
-    try {
-      const targetFetchUrl = trimmed.startsWith('http') ? trimmed : `https://tidal.com/browse/playlist/${id}`;
-      const pageRes = await fetch(targetFetchUrl, { headers });
-      if (pageRes.ok) {
-        const html = await pageRes.text();
-        const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-        if (titleMatch && titleMatch[1]) {
-          playlistInfo.title = titleMatch[1].replace(/\s*-\s*TIDAL\s*$/i, '').replace(/\s*\|\s*TIDAL\s*$/i, '').trim();
-        }
-        const ogImageMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["'](.*?)["']/i);
-        if (ogImageMatch && ogImageMatch[1]) {
-          playlistInfo.coverUrl = ogImageMatch[1];
-        }
-        const ogDescMatch = html.match(/<meta\s+property=["']og:description["']\s+content=["'](.*?)["']/i) || html.match(/<meta\s+name=["']description["']\s+content=["'](.*?)["']/i);
-        if (ogDescMatch && ogDescMatch[1]) {
-          playlistInfo.description = ogDescMatch[1];
-          const countMatch = ogDescMatch[1].match(/(\d+)\s*(?:items|titres|morceaux|tracks)/i);
-          if (countMatch) {
-            playlistInfo.expectedCount = parseInt(countMatch[1], 10);
-          }
-        }
-      }
-    } catch (pageErr) {
-      console.log("[TIDAL PARSE] HTML fetch note:", pageErr.message);
-    }
-
-    // If Tidal tracks could not be loaded yet, try via helper
-    if (playlistInfo.tracks.length === 0) {
-      try {
-        const helperTracks = await fetchPlaylistTracksHelper(id, customToken);
-        if (helperTracks && helperTracks.length > 0) {
-          playlistInfo.tracks = helperTracks;
-          playlistInfo.tracksCount = helperTracks.length;
-          playlistInfo.isProtected = false;
-        }
-      } catch (hErr) {}
-    }
-
-    // Try playlist metadata directly from Tidal API
-    if (type === 'playlist' && id && (!playlistInfo.title || playlistInfo.title === 'Playlist Tidal')) {
-      try {
-        const metaRes = await fetch(`https://api.tidal.com/v1/playlists/${id}?countryCode=FR`, { headers });
-        if (metaRes.ok) {
-          const meta = await metaRes.json();
-          if (meta.title) playlistInfo.title = meta.title;
-          if (meta.description) playlistInfo.description = meta.description;
-          if (meta.squareImage || meta.image) {
-            const h = meta.squareImage || meta.image;
-            playlistInfo.coverUrl = `https://resources.tidal.com/images/${h.replace(/-/g, '/')}/640x640.jpg`;
-          }
-          if (meta.creator?.name) playlistInfo.creator = meta.creator.name;
-        }
-      } catch (mErr) {}
-    }
-
-    // If Tidal tracks still could not be loaded because Tidal protects playlist items behind private login:
-    if (playlistInfo.tracks.length === 0) {
-      playlistInfo.isProtected = true;
-      playlistInfo.message = "Tidal protège l'accès à la liste des titres des playlists personnelles sans compte connecté.";
-    }
-
-    res.json(playlistInfo);
-  } catch (err) {
-    console.error("[TIDAL PARSE ERROR]:", err);
-    res.status(500).json({ error: err.message || "Erreur lors de l'analyse du lien" });
-  }
-});
-
-// Helper for escaping HTML strings
-function escapeHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-// In-memory PKCE state storage for Tidal OAuth
-const tidalPkceStore = new Map();
-
-function generateTidalPKCE() {
-  const verifier = crypto.randomBytes(32).toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-  const challenge = crypto.createHash('sha256').update(verifier).digest('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-  return { verifier, challenge };
-}
-
-function getAppBaseUrl(req) {
-  if (process.env.APP_URL) {
-    return process.env.APP_URL.replace(/\/+$/, '');
-  }
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}`;
-}
-
-// 1. Tidal OAuth Status endpoint
-api.get('/mp3/tidal/oauth-status', (req, res) => {
-  const clientId = process.env.TIDAL_CLIENT_ID ? process.env.TIDAL_CLIENT_ID.trim() : '';
-  const appUrl = getAppBaseUrl(req);
-  const redirectUri = `${appUrl}/api/mp3/tidal/callback`;
-
-  res.json({
-    configured: !!clientId,
-    clientIdPreview: clientId ? `${clientId.slice(0, 4)}...${clientId.slice(-4)}` : null,
-    redirectUri,
-    appUrl
-  });
-});
-
-// 2. Tidal OAuth Authorization URL generator (opens Tidal popup)
-api.get('/mp3/tidal/auth-url', (req, res) => {
-  const clientId = process.env.TIDAL_CLIENT_ID ? process.env.TIDAL_CLIENT_ID.trim() : '';
-  const appUrl = getAppBaseUrl(req);
-  const redirectUri = `${appUrl}/api/mp3/tidal/callback`;
-
-  if (!clientId) {
-    return res.status(400).json({
-      error: "TIDAL_CLIENT_ID non configuré dans les variables d'environnement.",
-      configured: false,
-      redirectUri
-    });
-  }
-
-  const { verifier, challenge } = generateTidalPKCE();
-  const state = `st_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
-  // Store in map, cleanup states older than 15 minutes
-  tidalPkceStore.set(state, {
-    verifier,
-    redirectUri,
-    createdAt: Date.now()
-  });
-
-  for (const [k, v] of tidalPkceStore.entries()) {
-    if (Date.now() - v.createdAt > 15 * 60 * 1000) {
-      tidalPkceStore.delete(k);
-    }
-  }
-
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    scope: 'r_usr w_usr',
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    state: state
-  });
-
-  const authUrl = `https://login.tidal.com/authorize?${params.toString()}`;
-  res.json({ url: authUrl, state, redirectUri });
-});
-
-// 3. Tidal OAuth Callback handler
-const handleTidalOAuthCallback = async (req, res) => {
-  const { code, state, error, error_description } = req.query;
-  const clientId = process.env.TIDAL_CLIENT_ID ? process.env.TIDAL_CLIENT_ID.trim() : '';
-  const clientSecret = process.env.TIDAL_CLIENT_SECRET ? process.env.TIDAL_CLIENT_SECRET.trim() : '';
-
-  if (error) {
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head><title>Connexion Tidal</title></head>
-        <body style="font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box;">
-          <div style="text-align: center; max-width: 440px; background: #1e293b; padding: 28px; border-radius: 16px; border: 1px solid #334155;">
-            <div style="font-size: 32px; margin-bottom: 12px;">⚠️</div>
-            <h2 style="margin: 0 0 8px 0; color: #f87171; font-size: 18px;">Autorisation annulée</h2>
-            <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin-bottom: 16px;">${escapeHtml(error_description || error || "L'autorisation Tidal a été annulée ou a expiré.")}</p>
-            <script>
-              if (window.opener) {
-                window.opener.postMessage({ type: 'TIDAL_OAUTH_ERROR', error: ${JSON.stringify(error_description || error)} }, '*');
-                setTimeout(() => window.close(), 2500);
-              }
-            </script>
-          </div>
-        </body>
-      </html>
-    `);
-  }
-
-  if (!code || !state) {
-    return res.status(400).send("Paramètres code ou state manquants.");
-  }
-
-  const pkceData = tidalPkceStore.get(state);
-  const verifier = pkceData?.verifier;
-  const redirectUri = pkceData?.redirectUri || `${getAppBaseUrl(req)}/api/mp3/tidal/callback`;
-  if (state) tidalPkceStore.delete(state);
-
-  try {
-    const tokenParams = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: clientId,
-      code: String(code),
-      redirect_uri: redirectUri
-    });
-    if (verifier) {
-      tokenParams.append('code_verifier', verifier);
-    }
-    if (clientSecret) {
-      tokenParams.append('client_secret', clientSecret);
-    }
-
-    const tokenRes = await fetch("https://auth.tidal.com/v1/oauth2/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: tokenParams
-    });
-
-    if (!tokenRes.ok) {
-      const errText = await tokenRes.text();
-      console.warn("Tidal token exchange error:", tokenRes.status, errText);
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-          <body style="font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
-            <div style="text-align: center; max-width: 440px; background: #1e293b; padding: 24px; border-radius: 16px;">
-              <h2 style="color: #f87171; font-size: 18px;">Échec d'échange de token</h2>
-              <p style="color: #94a3b8; font-size: 13px;">Code retour : ${tokenRes.status}. Vérifiez votre TIDAL_CLIENT_ID et TIDAL_CLIENT_SECRET.</p>
-              <script>
-                if (window.opener) {
-                  window.opener.postMessage({ type: 'TIDAL_OAUTH_ERROR', error: "Erreur lors de l'échange de token Tidal" }, '*');
-                  setTimeout(() => window.close(), 3000);
-                }
-              </script>
-            </div>
-          </body>
-        </html>
-      `);
-    }
-
-    const tokenData = await tokenRes.json();
-    const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token || null;
-    const userId = tokenData.user_id || tokenData.user?.userId || 'Utilisateur Tidal';
-
-    let countryCode = 'FR';
-    let username = String(userId);
-
-    // Retrieve user session info
-    try {
-      const uRes = await fetch("https://api.tidal.com/v1/sessions", {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      if (uRes.ok) {
-        const uData = await uRes.json();
-        countryCode = uData.countryCode || countryCode;
-        if (uData.userId) username = String(uData.userId);
-      }
-    } catch (e) {}
-
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-        <head><title>Connexion Tidal réussie</title></head>
-        <body style="font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box;">
-          <div style="text-align: center; max-width: 440px; background: #1e293b; padding: 28px; border-radius: 16px; border: 1px solid #0284c7; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
-            <div style="width: 48px; height: 48px; border-radius: 50%; background: #0284c7; display: inline-flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 24px;">✓</div>
-            <h2 style="margin: 0 0 6px 0; color: #38bdf8; font-size: 20px;">Connexion Tidal réussie !</h2>
-            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 16px;">Votre compte Tidal et vos playlists privées sont maintenant synchronisés.</p>
-            <p style="color: #64748b; font-size: 11px;">Fermeture automatique...</p>
-            <script>
-              try {
-                if (window.opener) {
-                  window.opener.postMessage({
-                    type: 'TIDAL_OAUTH_SUCCESS',
-                    token: ${JSON.stringify(accessToken)},
-                    refreshToken: ${JSON.stringify(refreshToken)},
-                    user: {
-                      userId: ${JSON.stringify(username)},
-                      countryCode: ${JSON.stringify(countryCode)}
-                    }
-                  }, '*');
-                  setTimeout(() => window.close(), 1200);
-                } else {
-                  window.location.href = '/';
-                }
-              } catch (e) {
-                console.error(e);
-              }
-            </script>
-          </div>
-        </body>
-      </html>
-    `);
-  } catch (err) {
-    console.warn("Tidal callback handler error:", err.message);
-    res.status(500).send("Erreur lors de la finalisation de l'authentification Tidal.");
-  }
-};
-
-api.get(['/mp3/tidal/callback', '/mp3/tidal/callback/'], handleTidalOAuthCallback);
-app.get(['/api/mp3/tidal/callback', '/api/mp3/tidal/callback/', '/auth/tidal/callback'], handleTidalOAuthCallback);
-
-// Verify Tidal custom token / session
-api.post('/mp3/tidal/verify-token', optionalAuth, async (req, res) => {
-  try {
-    const { token } = req.body;
-    if (!token || typeof token !== 'string' || !token.trim()) {
-      return res.status(400).json({ error: "Token de session Tidal requis" });
-    }
-    const cleanToken = extractCleanTidalToken(token);
-    const headers = buildTidalHeaders(cleanToken);
-
-    let data = null;
-    try {
-      const tidalRes = await fetch("https://api.tidal.com/v1/sessions", { headers });
-      if (tidalRes.ok) {
-        data = await tidalRes.json();
-      }
-    } catch (e) {}
-
-    if (data) {
-      return res.json({
-        valid: true,
-        userId: data.userId || 'Utilisateur Tidal',
-        sessionId: data.sessionId,
-        countryCode: data.countryCode || 'FR'
-      });
-    }
-
-    // Secondary check on user/me endpoint
-    try {
-      const userRes = await fetch("https://api.tidal.com/v1/users/me", { headers });
-      if (userRes.ok) {
-        const userData = await userRes.json();
-        return res.json({
-          valid: true,
-          userId: userData.id || userData.username || 'Compte Tidal',
-          countryCode: userData.countryCode || 'FR'
-        });
-      }
-    } catch (e) {}
-
-    // Fallback: try inverted header format (sessionId vs Bearer)
-    const altHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'x-tidal-token': cleanToken,
-      'sessionId': cleanToken,
-      'Authorization': cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`
-    };
-
-    try {
-      const altRes = await fetch("https://api.tidal.com/v1/sessions", { headers: altHeaders });
-      if (altRes.ok) {
-        const altData = await altRes.json();
-        return res.json({
-          valid: true,
-          userId: altData.userId || 'Utilisateur Tidal',
-          sessionId: altData.sessionId,
-          countryCode: altData.countryCode || 'FR'
-        });
-      }
-    } catch (e) {}
-
-    return res.status(400).json({
-      error: "Token Tidal non reconnu ou expiré. Assurez-vous de copier le token valide depuis listen.tidal.com."
-    });
-  } catch (err) {
-    console.warn("Verify Tidal token error:", err.message);
-    res.status(500).json({ error: "Erreur lors de la vérification du token Tidal" });
-  }
-});
-
-// Fetch user's personal Tidal library & playlists
-api.post('/mp3/tidal/my-playlists', optionalAuth, async (req, res) => {
-  try {
-    const { token } = req.body;
-    if (!token || typeof token !== 'string' || !token.trim()) {
-      return res.json({ playlists: [], expired: false, total: 0 });
-    }
-    const cleanToken = extractCleanTidalToken(token);
-    if (!cleanToken) {
-      return res.json({ playlists: [], expired: true, error: "Token Tidal invalide" });
-    }
-
-    let headers = buildTidalHeaders(cleanToken);
-
-    // 1. Retrieve user ID & country
-    let userId = null;
-    let countryCode = 'FR';
-
-    try {
-      const sessRes = await fetch("https://api.tidal.com/v1/sessions", { headers });
-      if (sessRes.ok) {
-        const sessData = await sessRes.json();
-        userId = sessData.userId;
-        countryCode = sessData.countryCode || 'FR';
-      }
-    } catch (e) {}
-
-    if (!userId) {
-      try {
-        const userRes = await fetch("https://api.tidal.com/v1/users/me", { headers });
-        if (userRes.ok) {
-          const uData = await userRes.json();
-          userId = uData.id || uData.userId;
-          countryCode = uData.countryCode || countryCode;
-        }
-      } catch (e) {}
-    }
-
-    // Secondary attempt with combined fallback headers
-    if (!userId) {
-      const fallbackHeaders = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'x-tidal-token': cleanToken,
-        'sessionId': cleanToken,
-        'Authorization': cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`
-      };
-      try {
-        const sessRes = await fetch("https://api.tidal.com/v1/sessions", { headers: fallbackHeaders });
-        if (sessRes.ok) {
-          const sessData = await sessRes.json();
-          userId = sessData.userId;
-          countryCode = sessData.countryCode || 'FR';
-          headers = fallbackHeaders;
-        }
-      } catch (e) {}
-    }
-
-    if (!userId) {
-      return res.json({
-        playlists: [],
-        expired: true,
-        error: "Session Tidal expirée ou token invalide. Veuillez reconnecter votre compte Tidal."
-      });
-    }
-
-    // 2. Query Tidal playlist endpoints
-    const allPlaylistsMap = new Map();
-    const playlistEndpoints = [
-      `https://api.tidal.com/v1/users/${userId}/playlistsAndFavoritePlaylists?limit=50&offset=0&countryCode=${countryCode}`,
-      `https://listen.tidal.com/v1/users/${userId}/playlistsAndFavoritePlaylists?limit=50&offset=0&countryCode=${countryCode}`,
-      `https://api.tidal.com/v1/users/${userId}/playlists?limit=50&offset=0&countryCode=${countryCode}`,
-      `https://listen.tidal.com/v1/users/${userId}/playlists?limit=50&offset=0&countryCode=${countryCode}`,
-      `https://api.tidal.com/v1/users/${userId}/favorites/playlists?limit=50&offset=0&countryCode=${countryCode}`
-    ];
-
-    for (const ep of playlistEndpoints) {
-      try {
-        const resp = await fetch(ep, { headers });
-        if (resp.ok) {
-          const data = await resp.json();
-          const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : []);
-          for (const rawItem of items) {
-            const pl = rawItem.playlist || rawItem;
-            const uuid = pl.uuid || pl.id;
-            if (uuid && !allPlaylistsMap.has(uuid)) {
-              const coverHash = pl.squareImage || pl.image;
-              const coverUrl = coverHash 
-                ? `https://resources.tidal.com/images/${coverHash.replace(/-/g, '/')}/640x640.jpg`
-                : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60';
-
-              allPlaylistsMap.set(uuid, {
-                id: uuid,
-                uuid: uuid,
-                title: pl.title || 'Playlist sans titre',
-                description: pl.description || '',
-                numberOfTracks: pl.numberOfTracks || 0,
-                duration: pl.duration || 0,
-                type: pl.type || 'USER',
-                coverUrl: coverUrl,
-                url: `https://tidal.com/browse/playlist/${uuid}`,
-                created: pl.created || null,
-                lastUpdated: pl.lastUpdated || null,
-                creator: pl.creator?.name || 'Moi'
-              });
-            }
-          }
-        }
-      } catch (err) {}
-    }
-
-    // 3. User favorites (Coups de cœur)
-    try {
-      const favTracksRes = await fetch(`https://api.tidal.com/v1/users/${userId}/favorites/tracks?limit=100&offset=0&countryCode=${countryCode}`, { headers });
-      if (favTracksRes.ok) {
-        const favData = await favTracksRes.json();
-        const totalTracks = favData.totalNumberOfItems || (Array.isArray(favData.items) ? favData.items.length : 0);
-        if (totalTracks > 0) {
-          allPlaylistsMap.set('user_favorites', {
-            id: 'user_favorites',
-            uuid: 'user_favorites',
-            title: '⭐ Mes Titres Favoris (Coups de cœur)',
-            description: 'Morceaux ajoutés à vos favoris Tidal',
-            numberOfTracks: totalTracks,
-            duration: 0,
-            type: 'FAVORITES',
-            coverUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=60',
-            url: `https://listen.tidal.com/my-collection/tracks`,
-            isFavorites: true,
-            creator: 'Moi'
-          });
-        }
-      }
-    } catch (e) {}
-
-    const playlists = Array.from(allPlaylistsMap.values());
-    res.json({
-      userId,
-      countryCode,
-      total: playlists.length,
-      playlists
-    });
-  } catch (err) {
-    console.warn("Fetch user playlists warning:", err.message);
-    res.status(200).json({ playlists: [], expired: true, error: "Impossible de récupérer les playlists Tidal" });
-  }
-});
-
-// Search track endpoint (Deezer & Tidal fallback)
-api.get('/mp3/search-track', optionalAuth, async (req, res) => {
-  try {
-    const q = (req.query.q || '').trim();
-    if (!q) return res.json({ results: [] });
-
-    const deezerRes = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=10`);
-    if (deezerRes.ok) {
-      const data = await deezerRes.json();
-      if (data.data && Array.isArray(data.data)) {
-        const results = data.data.map((t, idx) => ({
-          id: `search_${t.id || idx}`,
-          title: t.title,
-          artist: t.artist?.name || 'Artiste inconnu',
-          album: t.album?.title || '',
-          duration: t.duration || 180,
-          coverUrl: t.album?.cover_medium || t.album?.cover_small || '',
-          year: new Date().getFullYear(),
-          previewUrl: t.preview || null,
-          status: 'pending'
-        }));
-        return res.json({ results });
-      }
-    }
-    res.json({ results: [] });
-  } catch (e) {
-    console.error("Search track error:", e);
-    res.status(500).json({ error: "Erreur recherche" });
-  }
-});
-
-// 2. Parse raw text / Tracklist with Gemini AI
-api.post('/mp3/tidal/parse-text', optionalAuth, async (req, res) => {
-  try {
-    const { rawText, playlistTitle } = req.body;
-    if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
-      return res.status(400).json({ error: "Texte ou liste de morceaux requis" });
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(503).json({ error: "Clé API Gemini non configurée pour l'analyse intelligente" });
-    }
-
-    const { GoogleGenAI, Type } = require('@google/genai');
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-    });
-
-    const prompt = `Tu es un expert audio & DJing spécialisé dans l'analyse de tracklists musicales (Tidal, Spotify, Rekordbox, CSV, Soundiiz, texte copié-collé).
-L'utilisateur te fournit le contenu brut d'une playlist musicale.
-Extrais TOUS les morceaux sous forme structurée avec :
-- title : Titre propre et complet du morceau (ex: "Des milliers de je t'aime", "Sarà perché ti amo (feat. Ricchi E Poveri) (Anthem Mix)")
-- artist : Nom de l'artiste ou des artistes principaux (ex: "Slimane", "DJ Matrix, Carolina Marquez, Ricchi E Poveri")
-- album : Nom de l'album si présent, sinon inventer un nom cohérent ou laisser vide
-- duration : Durée estimée en secondes (ex: 213)
-- year : Année de sortie estimée si connue
-- trackNumber : Numéro d'ordre (1, 2, 3...)
-
-Titre suggéré de la playlist : ${playlistTitle || "Playlist Musicale"}
-
-Contenu brut à analyser :
-${rawText.substring(0, 30000)}`;
-
-    const response = await generateContentWithRetry(ai, {
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            playlistTitle: { type: Type.STRING },
-            creator: { type: Type.STRING },
-            totalTracks: { type: Type.INTEGER },
-            tracks: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  trackNumber: { type: Type.INTEGER },
-                  title: { type: Type.STRING },
-                  artist: { type: Type.STRING },
-                  album: { type: Type.STRING },
-                  duration: { type: Type.INTEGER },
-                  year: { type: Type.INTEGER }
-                },
-                required: ["trackNumber", "title", "artist"]
-              }
-            }
-          },
-          required: ["tracks"]
-        }
-      }
-    }, ["gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"]);
-
-    const text = typeof response?.text === 'function' ? response.text() : response?.text;
-    if (!text) {
-      return res.status(500).json({ error: "Réponse vide du modèle d'analyse" });
-    }
-
-    const parsed = JSON.parse(text);
-    const tracks = (parsed.tracks || []).map((t, idx) => ({
-      id: `text_${Date.now()}_${idx + 1}`,
-      trackNumber: t.trackNumber || (idx + 1),
-      title: t.title || 'Titre inconnu',
-      artist: t.artist || 'Artiste inconnu',
-      album: t.album || (parsed.playlistTitle || 'Playlist'),
-      duration: t.duration || 180,
-      year: t.year || new Date().getFullYear(),
-      coverUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=60",
-      status: 'pending'
-    }));
-
-    res.json({
-      title: parsed.playlistTitle || playlistTitle || "Playlist Importée",
-      creator: parsed.creator || "Utilisateur",
-      tracksCount: tracks.length,
-      tracks: tracks
-    });
-  } catch (err) {
-    console.error("[MP3 PARSE TEXT ERROR]:", err);
-    res.status(500).json({ error: err.message || "Erreur lors de l'analyse intelligente des titres" });
-  }
-});
-
-// 2b. Parse screenshot / image with Gemini Vision OCR
-api.post('/mp3/tidal/parse-image', optionalAuth, async (req, res) => {
-  try {
-    const { imageBase64, mimeType = 'image/png', playlistTitle } = req.body;
-    if (!imageBase64 || typeof imageBase64 !== 'string') {
-      return res.status(400).json({ error: "Image requise pour l'analyse OCR" });
-    }
-
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(503).json({ error: "Clé API Gemini non configurée pour l'analyse d'image" });
-    }
-
-    const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
-
-    const { GoogleGenAI, Type } = require('@google/genai');
-    const ai = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-    });
-
-    const prompt = `Tu es un expert en reconnaissance de tracklists musicales et OCR visuel d'interfaces DJ / Streaming (Tidal, Rekordbox, Spotify, Serato, Traktor, VirtualDJ).
-Analyse minutieusement cette capture d'écran de playlist.
-Extrais CHAQUE ligne de morceau avec une fidélité absolue :
-- title : Le titre exact de la chanson (ex: "Des milliers de je t'aime", "Sarà perché ti amo (feat. Ricchi E Poveri) (Anthem Mix)", "Atemlos durch die Nacht", "Tornerò")
-- artist : Le nom exact de l'artiste ou des artistes (ex: "Slimane", "DJ Matrix, Carolina Marquez, Ricchi E Poveri", "Helene Fischer", "Ciao Italia !, The Italians")
-- album : Le nom de l'album visible sur la ligne (ex: "Chroniques d'un cupidon", "Farbenspiel", etc.)
-- duration : Durée en secondes convertie depuis le format MM:SS affiché (ex: 3:33 = 213s, 2:41 = 161s, 3:40 = 220s, 4:13 = 253s)
-- trackNumber : Le numéro de la piste (1, 2, 3...) visible dans la colonne #`;
-
-    const response = await generateContentWithRetry(ai, {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                data: cleanBase64,
-                mimeType: mimeType || 'image/png'
-              }
-            }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            playlistTitle: { type: Type.STRING },
-            tracks: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  trackNumber: { type: Type.INTEGER },
-                  title: { type: Type.STRING },
-                  artist: { type: Type.STRING },
-                  album: { type: Type.STRING },
-                  duration: { type: Type.INTEGER },
-                  year: { type: Type.INTEGER }
-                },
-                required: ["trackNumber", "title", "artist"]
-              }
-            }
-          },
-          required: ["tracks"]
-        }
-      }
-    }, ["gemini-2.5-flash", "gemini-flash-latest"]);
-
-    const text = typeof response?.text === 'function' ? response.text() : response?.text;
-    if (!text) {
-      return res.status(500).json({ error: "Réponse vide de la vision IA" });
-    }
-
-    const parsed = JSON.parse(text);
-    const tracks = (parsed.tracks || []).map((t, idx) => ({
-      id: `ocr_${Date.now()}_${idx + 1}`,
-      trackNumber: t.trackNumber || (idx + 1),
-      title: t.title || 'Titre inconnu',
-      artist: t.artist || 'Artiste inconnu',
-      album: t.album || (parsed.playlistTitle || 'Tidal Playlist'),
-      duration: t.duration || 200,
-      year: t.year || new Date().getFullYear(),
-      coverUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=60",
-      status: 'pending'
-    }));
-
-    res.json({
-      title: parsed.playlistTitle || playlistTitle || "Playlist Capturée",
-      creator: "Tidal OCR",
-      tracksCount: tracks.length,
-      tracks: tracks
-    });
-  } catch (err) {
-    console.error("[MP3 PARSE IMAGE ERROR]:", err);
-    res.status(500).json({ error: err.message || "Erreur lors de l'analyse visuelle de la capture d'écran" });
-  }
-});
-
-// Helper: Download a single track to MP3 320k with ID3 tags
-async function processTrackDownload(track, jobDir, options = {}) {
-  const bitrate = options.bitrate || '320k';
-  const namingPattern = options.namingPattern || 'number_artist_title'; // 'number_artist_title' | 'artist_title' | 'title_artist'
-  
-  let baseFilename = '';
-  const numPadded = String(track.trackNumber || 1).padStart(2, '0');
-  const cleanTitle = sanitizeFilename(track.title || 'Track');
-  const cleanArtist = sanitizeFilename(track.artist || 'Artist');
-  const cleanAlbum = sanitizeFilename(track.album || 'Tidal Playlist');
-
-  if (namingPattern === 'artist_title') {
-    baseFilename = `${cleanArtist} - ${cleanTitle}`;
-  } else if (namingPattern === 'title_artist') {
-    baseFilename = `${cleanTitle} - ${cleanArtist}`;
-  } else {
-    baseFilename = `${numPadded}. ${cleanArtist} - ${cleanTitle}`;
-  }
-
-  const rawAudioPath = path.join(jobDir, `raw_${track.id}.mp3`);
-  const finalAudioPath = path.join(jobDir, `${baseFilename}.mp3`);
-  const coverPath = path.join(jobDir, `cover_${track.id}.jpg`);
-
-  const ytDlpBin = getYtDlpPath();
-  const { execSync } = require('child_process');
-  
-  try {
-    // Step 1: Download cover art (or find high-res cover art from public iTunes/Deezer API)
-    let hasCover = false;
-    let coverToFetch = track.coverUrl;
-
-    if (!coverToFetch || coverToFetch.includes('unsplash.com')) {
-      try {
-        const itunesRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(`${track.artist} ${track.title}`)}&media=music&limit=1`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }
-        });
-        if (itunesRes.ok) {
-          const itunesData = await itunesRes.json();
-          if (itunesData.results && itunesData.results.length > 0 && itunesData.results[0].artworkUrl100) {
-            coverToFetch = itunesData.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
-          }
-        }
-      } catch (e) {
-        // ignore cover search errors
-      }
-    }
-
-    if (coverToFetch && coverToFetch.startsWith('http')) {
-      try {
-        const imgRes = await fetch(coverToFetch);
-        if (imgRes.ok) {
-          const arrayBuffer = await imgRes.arrayBuffer();
-          fs.writeFileSync(coverPath, Buffer.from(arrayBuffer));
-          hasCover = true;
-        }
-      } catch (imgErr) {
-        console.log(`[COVER FETCH] Error for ${track.title}:`, imgErr.message);
-      }
-    }
-
-    // Step 2: Obtain audio stream
-    let downloadSuccess = false;
-    let lastError = null;
-
-    // 2.A: Try direct Tidal stream if customToken is provided and track has a numeric ID
-    if (options.customToken && track.id) {
-      try {
-        const directTidalUrl = await getTidalTrackStreamUrl(track.id, options.customToken);
-        if (directTidalUrl) {
-          console.log(`[TIDAL DIRECT STREAM] Found stream for "${track.artist} - ${track.title}"`);
-          if (fs.existsSync(rawAudioPath)) {
-            try { fs.unlinkSync(rawAudioPath); } catch (e) {}
-          }
-          const { spawnSync } = require('child_process');
-          spawnSync('ffmpeg', [
-            '-y',
-            '-i', directTidalUrl,
-            '-vn',
-            '-c:a', 'libmp3lame',
-            '-b:a', bitrate,
-            rawAudioPath
-          ], { timeout: 30000, stdio: 'pipe' });
-
-          if (fs.existsSync(rawAudioPath) && fs.statSync(rawAudioPath).size > 50000) {
-            downloadSuccess = true;
-          }
-        }
-      } catch (tErr) {
-        console.log(`[TIDAL DIRECT ERROR] ${track.title}:`, tErr.message);
-      }
-    }
-
-    // 2.B: Search via SoundCloud with duration filter (>= 45s to avoid 30s clips)
-    if (!downloadSuccess) {
-      const searchArtist = (track.artist || 'Artist').replace(/["'\\]/g, ' ').replace(/\s+/g, ' ').trim();
-      const rawTitle = (track.title || 'Track').replace(/["'\\]/g, ' ').replace(/\s+/g, ' ').trim();
-      const noFeatTitle = rawTitle
-        .replace(/\s*\([^)]*(feat|ft\.)[^)]*\)/gi, '')
-        .replace(/\s*\[[^\]]*(feat|ft\.)[^\]]*\]/gi, '')
-        .trim();
-      const baseTitle = noFeatTitle
-        .replace(/\s*\([^)]*(remix|mix|edit|version)[^)]*\)/gi, '')
-        .replace(/\s*\[[^\]]*(remix|mix|edit|version)[^\]]*\]/gi, '')
-        .trim();
-
-      const candidateQueries = [
-        `scsearch5:${searchArtist} ${noFeatTitle}`,
-        `scsearch5:${noFeatTitle}`,
-        `scsearch5:${searchArtist} ${baseTitle}`,
-        `scsearch5:${baseTitle}`,
-        `scsearch5:${searchArtist} ${rawTitle}`,
-        `scsearch3:${rawTitle}`
-      ];
-      const uniqueQueries = [...new Set(candidateQueries.filter(Boolean))];
-
-      // Pass 1: Try with duration filter >= 45s (guarantees full song)
-      for (const q of uniqueQueries) {
-        const res = executeYtDlpDownload(ytDlpBin, q, rawAudioPath, bitrate, "duration >= 45");
-        if (res.success) {
-          downloadSuccess = true;
-          break;
-        } else {
-          lastError = new Error(res.error || `Échec pour ${q}`);
-        }
-      }
-
-      // Pass 2: Fallback without strict duration filter if needed
-      if (!downloadSuccess) {
-        for (const q of uniqueQueries) {
-          const res = executeYtDlpDownload(ytDlpBin, q, rawAudioPath, bitrate, null);
-          if (res.success) {
-            downloadSuccess = true;
-            break;
-          } else {
-            lastError = new Error(res.error || `Échec pour ${q}`);
-          }
-        }
-      }
-    }
-
-    if (!downloadSuccess || !fs.existsSync(rawAudioPath)) {
-      throw lastError || new Error(`Le fichier audio pour "${track.artist} - ${track.title}" n'a pas pu être extrait.`);
-    }
-
-    // Step 3: Fast ID3v2 metadata & artwork embedding via ffmpeg streamcopy (no slow CPU re-encoding)
-    const titleMeta = String(track.title || 'Titre');
-    const artistMeta = String(track.artist || 'Artiste');
-    const albumMeta = String(track.album || 'Tidal Playlist');
-    const yearMeta = String(track.year || new Date().getFullYear());
-    const trackNumMeta = String(track.trackNumber || 1);
-
-    const { spawnSync } = require('child_process');
-    let taggingSucceeded = false;
-
-    if (hasCover && fs.existsSync(coverPath)) {
-      const tagArgs = [
-        '-y',
-        '-i', rawAudioPath,
-        '-i', coverPath,
-        '-map', '0:a',
-        '-map', '1:v',
-        '-c:a', 'copy',
-        '-c:v', 'copy',
-        '-id3v2_version', '3',
-        '-metadata:s:v', 'title=Album cover',
-        '-metadata:s:v', 'comment=Cover (front)',
-        '-metadata', `title=${titleMeta}`,
-        '-metadata', `artist=${artistMeta}`,
-        '-metadata', `album=${albumMeta}`,
-        '-metadata', `year=${yearMeta}`,
-        '-metadata', `track=${trackNumMeta}`,
-        finalAudioPath
-      ];
-      spawnSync('ffmpeg', tagArgs, { timeout: 30000, stdio: 'pipe' });
-      if (fs.existsSync(finalAudioPath) && fs.statSync(finalAudioPath).size > 50000) {
-        taggingSucceeded = true;
-      }
-    }
-
-    if (!taggingSucceeded) {
-      const tagArgsAudioOnly = [
-        '-y',
-        '-i', rawAudioPath,
-        '-c:a', 'copy',
-        '-id3v2_version', '3',
-        '-metadata', `title=${titleMeta}`,
-        '-metadata', `artist=${artistMeta}`,
-        '-metadata', `album=${albumMeta}`,
-        '-metadata', `year=${yearMeta}`,
-        '-metadata', `track=${trackNumMeta}`,
-        finalAudioPath
-      ];
-      spawnSync('ffmpeg', tagArgsAudioOnly, { timeout: 30000, stdio: 'pipe' });
-      if (fs.existsSync(finalAudioPath) && fs.statSync(finalAudioPath).size > 50000) {
-        taggingSucceeded = true;
-      }
-    }
-
-    // Safety fallback: if metadata tagging fails, copy raw MP3 to destination so download always succeeds
-    if (!taggingSucceeded || !fs.existsSync(finalAudioPath)) {
-      fs.copyFileSync(rawAudioPath, finalAudioPath);
-    }
-
-    // Clean temp raw files
-    try { if (fs.existsSync(rawAudioPath)) fs.unlinkSync(rawAudioPath); } catch (e) {}
-    try { if (fs.existsSync(coverPath)) fs.unlinkSync(coverPath); } catch (e) {}
-
-    const stats = fs.statSync(finalAudioPath);
-    return {
-      success: true,
-      filename: `${baseFilename}.mp3`,
-      filePath: finalAudioPath,
-      size: stats.size
-    };
-  } catch (err) {
-    // Cleanup on error
-    try { if (fs.existsSync(rawAudioPath)) fs.unlinkSync(rawAudioPath); } catch (e) {}
-    try { if (fs.existsSync(coverPath)) fs.unlinkSync(coverPath); } catch (e) {}
-    throw err;
-  }
-}
-
-// 3. Start batch download of playlist
-api.post('/mp3/download/start-batch', optionalAuth, async (req, res) => {
-  try {
-    const { playlistTitle, playlistId, tracks, bitrate = '320k', namingPattern = 'number_artist_title', customToken } = req.body;
-    if (!tracks || !Array.isArray(tracks) || tracks.length === 0) {
-      return res.status(400).json({ error: "Aucun morceau sélectionné pour le téléchargement" });
-    }
-
-    const effectiveToken = customToken || req.headers['x-tidal-token'] || undefined;
-
-    const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const jobDir = path.join(mp3StorageDir, jobId);
-    fs.mkdirSync(jobDir, { recursive: true });
-
-    const job = {
-      id: jobId,
-      playlistTitle: playlistTitle || 'Playlist Tidal',
-      playlistId: playlistId || jobId,
-      bitrate,
-      namingPattern,
-      totalTracks: tracks.length,
-      completedTracks: 0,
-      failedTracks: 0,
-      status: 'processing', // 'processing' | 'completed' | 'error'
-      startedAt: new Date().toISOString(),
-      completedAt: null,
-      tracks: tracks.map((t, idx) => ({
-        ...t,
-        trackNumber: t.trackNumber || (idx + 1),
-        status: 'queued', // 'queued' | 'downloading' | 'completed' | 'error'
-        error: null,
-        filename: null,
-        size: 0
-      })),
-      zipReady: false,
-      zipSize: 0
-    };
-
-    activeMp3Jobs.set(jobId, job);
-
-    // Run queue in background (async worker)
-    (async () => {
-      try {
-        const concurrency = 2; // Process 2 tracks simultaneously
-        const queue = [...job.tracks];
-        let currentIndex = 0;
-
-        async function worker() {
-          while (currentIndex < queue.length) {
-            const trackIndex = currentIndex++;
-            const trackItem = job.tracks[trackIndex];
-            trackItem.status = 'downloading';
-
-            try {
-              const result = await processTrackDownload(trackItem, jobDir, { bitrate, namingPattern, customToken: effectiveToken });
-              trackItem.status = 'completed';
-              trackItem.filename = result.filename;
-              trackItem.size = result.size;
-              job.completedTracks++;
-            } catch (err) {
-              console.error(`[DOWNLOAD ERROR] Track "${trackItem.title}":`, err.message);
-              trackItem.status = 'error';
-              trackItem.error = err.message || "Erreur de téléchargement";
-              job.failedTracks++;
-            }
-          }
-        }
-
-        const workers = Array(Math.min(concurrency, queue.length)).fill(null).map(() => worker());
-        await Promise.all(workers);
-
-        // Build M3U8 Playlist file (stored on disk for dedicated export)
-        try {
-          let m3uContent = `#EXTM3U\n#PLAYLIST:${job.playlistTitle}\n`;
-          job.tracks.filter(t => t.status === 'completed' && t.filename).forEach(t => {
-            m3uContent += `#EXTINF:${t.duration || 180},${t.artist} - ${t.title}\n${t.filename}\n`;
-          });
-          fs.writeFileSync(path.join(jobDir, `${sanitizeFilename(job.playlistTitle)}.m3u8`), m3uContent, 'utf8');
-        } catch (m3uErr) {
-          console.log("[M3U BUILD ERROR]:", m3uErr.message);
-        }
-
-        // Build ZIP file with AdmZip (Contains ONLY MP3 files, no extraneous playlist files)
-        try {
-          const zip = new AdmZip();
-          const files = fs.readdirSync(jobDir);
-          for (const file of files) {
-            if (file.endsWith('.mp3')) {
-              zip.addLocalFile(path.join(jobDir, file));
-            }
-          }
-          const zipPath = path.join(jobDir, `${sanitizeFilename(job.playlistTitle)}_MP3_${bitrate}.zip`);
-          zip.writeZip(zipPath);
-          const zipStats = fs.statSync(zipPath);
-          job.zipReady = true;
-          job.zipSize = zipStats.size;
-        } catch (zipErr) {
-          console.error("[ZIP BUILD ERROR]:", zipErr.message);
-        }
-
-        job.status = 'completed';
-        job.completedAt = new Date().toISOString();
-
-        // Persist to MongoDB
-        if (db) {
-          try {
-            await db.collection('mp3_downloads').updateOne(
-              { id: jobId },
-              { $set: { ...job } },
-              { upsert: true }
-            );
-          } catch (dbErr) {
-            console.error("[DB PERSIST ERROR MP3]:", dbErr.message);
-          }
-        }
-      } catch (batchErr) {
-        console.error("[BATCH PROCESSING FATAL]:", batchErr);
-        job.status = 'error';
-        job.error = batchErr.message;
-      }
-    })();
-
-    res.json({
-      success: true,
-      jobId: jobId,
-      status: job.status,
-      totalTracks: job.totalTracks
-    });
-  } catch (err) {
-    console.error("[START BATCH ERROR]:", err);
-    res.status(500).json({ error: err.message || "Erreur lors du lancement du téléchargement" });
-  }
-});
-
-// 4. Check status of download job
-api.get('/mp3/download/status/:jobId', optionalAuth, async (req, res) => {
-  const { jobId } = req.params;
-  const memoryJob = activeMp3Jobs.get(jobId);
-  if (memoryJob) {
-    return res.json(memoryJob);
-  }
-
-  // Check MongoDB
-  if (db) {
-    const dbJob = await db.collection('mp3_downloads').findOne({ id: jobId }, { projection: { _id: 0 } });
-    if (dbJob) return res.json(dbJob);
-  }
-
-  res.status(404).json({ error: "Session de téléchargement introuvable" });
-});
-
-// 5. Download single track MP3 file
-api.get('/mp3/download/file/:jobId/:trackId', async (req, res) => {
-  try {
-    const { jobId, trackId } = req.params;
-    let job = activeMp3Jobs.get(jobId);
-    if (!job && db) {
-      job = await db.collection('mp3_downloads').findOne({ id: jobId });
-    }
-
-    if (!job) return res.status(404).json({ error: "Job introuvable" });
-    const track = (job.tracks || []).find(t => String(t.id) === String(trackId));
-    if (!track || !track.filename) return res.status(404).json({ error: "Morceau non trouvé ou non encore téléchargé" });
-
-    const filePath = path.join(mp3StorageDir, jobId, track.filename);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "Fichier audio introuvable sur le serveur" });
-    }
-
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Disposition', makeSafeContentDisposition(track.filename));
-    res.setHeader('Content-Length', fs.statSync(filePath).size);
-    fs.createReadStream(filePath).pipe(res);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 6. Download complete ZIP archive (Contains exclusively MP3 audio tracks)
-api.get('/mp3/download/zip/:jobId', async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    let job = activeMp3Jobs.get(jobId);
-    if (!job && db) {
-      job = await db.collection('mp3_downloads').findOne({ id: jobId });
-    }
-
-    if (!job) return res.status(404).json({ error: "Archive introuvable" });
-    const jobDir = path.join(mp3StorageDir, jobId);
-    const expectedZipName = `${sanitizeFilename(job.playlistTitle)}_MP3_${job.bitrate || '320k'}.zip`;
-    const zipPath = path.join(jobDir, expectedZipName);
-
-    if (!fs.existsSync(zipPath)) {
-      // Re-generate zip containing only MP3s
-      const zip = new AdmZip();
-      const files = fs.readdirSync(jobDir);
-      for (const file of files) {
-        if (file.endsWith('.mp3')) {
-          zip.addLocalFile(path.join(jobDir, file));
-        }
-      }
-      zip.writeZip(zipPath);
-    }
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', makeSafeContentDisposition(expectedZipName));
-    res.setHeader('Content-Length', fs.statSync(zipPath).size);
-    fs.createReadStream(zipPath).pipe(res);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 6.B Download standalone DJ M3U8 Playlist file
-api.get('/mp3/download/m3u/:jobId', async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    let job = activeMp3Jobs.get(jobId);
-    if (!job && db) {
-      job = await db.collection('mp3_downloads').findOne({ id: jobId });
-    }
-    if (!job) return res.status(404).json({ error: "Session introuvable" });
-    const jobDir = path.join(mp3StorageDir, jobId);
-    const m3uFilename = `${sanitizeFilename(job.playlistTitle)}.m3u8`;
-    const m3uPath = path.join(jobDir, m3uFilename);
-
-    if (!fs.existsSync(m3uPath)) {
-      let m3uContent = `#EXTM3U\n#PLAYLIST:${job.playlistTitle}\n`;
-      (job.tracks || []).filter(t => t.status === 'completed' && t.filename).forEach(t => {
-        m3uContent += `#EXTINF:${t.duration || 180},${t.artist} - ${t.title}\n${t.filename}\n`;
-      });
-      fs.writeFileSync(m3uPath, m3uContent, 'utf8');
-    }
-
-    res.setHeader('Content-Type', 'audio/x-mpegurl; charset=utf-8');
-    res.setHeader('Content-Disposition', makeSafeContentDisposition(m3uFilename));
-    res.setHeader('Content-Length', fs.statSync(m3uPath).size);
-    fs.createReadStream(m3uPath).pipe(res);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 7. Stream audio preview for in-app player
-api.get('/mp3/download/stream/:jobId/:trackId', async (req, res) => {
-  try {
-    const { jobId, trackId } = req.params;
-    let job = activeMp3Jobs.get(jobId);
-    if (!job && db) {
-      job = await db.collection('mp3_downloads').findOne({ id: jobId });
-    }
-
-    if (!job) return res.status(404).send("Not found");
-    const track = (job.tracks || []).find(t => String(t.id) === String(trackId));
-    if (!track || !track.filename) return res.status(404).send("Audio not ready");
-
-    const filePath = path.join(mp3StorageDir, jobId, track.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).send("File missing");
-
-    const stat = fs.statSync(filePath);
-    const range = req.headers.range;
-
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-      const chunksize = (end - start) + 1;
-      const file = fs.createReadStream(filePath, { start, end });
-      const head = {
-        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': 'audio/mpeg',
-      };
-      res.writeHead(206, head);
-      file.pipe(res);
-    } else {
-      const head = {
-        'Content-Length': stat.size,
-        'Content-Type': 'audio/mpeg',
-      };
-      res.writeHead(200, head);
-      fs.createReadStream(filePath).pipe(res);
-    }
-  } catch (err) {
-    res.status(500).send(err.message);
-  }
-});
-
-// 8. Library of past downloaded playlists
-api.get('/mp3/library', optionalAuth, async (req, res) => {
-  try {
-    if (!db) return res.json([]);
-    const items = await db.collection('mp3_downloads').find({}, { projection: { _id: 0 } }).sort({ startedAt: -1 }).limit(30).toArray();
-    res.json(items);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 9. Delete downloaded playlist from library and disk
-api.delete('/mp3/library/:jobId', optionalAuth, async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    activeMp3Jobs.delete(jobId);
-    if (db) {
-      await db.collection('mp3_downloads').deleteOne({ id: jobId });
-    }
-    const jobDir = path.join(mp3StorageDir, jobId);
-    if (fs.existsSync(jobDir)) {
-      try { fs.rmSync(jobDir, { recursive: true, force: true }); } catch (e) {}
-    }
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 10. Start batch download of multiple playlists
-api.post('/mp3/download/start-multi-playlists', optionalAuth, async (req, res) => {
-  try {
-    const { playlists, customToken, bitrate = '320k', namingPattern = 'number_artist_title' } = req.body;
-    if (!playlists || !Array.isArray(playlists) || playlists.length === 0) {
-      return res.status(400).json({ error: "Veuillez sélectionner au moins une playlist." });
-    }
-
-    const multiJobId = `multi_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const multiDir = path.join(mp3StorageDir, multiJobId);
-    fs.mkdirSync(multiDir, { recursive: true });
-
-    const multiJob = {
-      id: multiJobId,
-      bitrate,
-      namingPattern,
-      status: 'processing', // 'processing' | 'completed' | 'error'
-      startedAt: new Date().toISOString(),
-      completedAt: null,
-      totalPlaylists: playlists.length,
-      completedPlaylists: 0,
-      totalTracks: 0,
-      completedTracks: 0,
-      currentPlaylistIndex: 0,
-      currentPlaylistTitle: playlists[0].title || 'Playlist 1',
-      playlists: playlists.map((p) => ({
-        id: p.id || p.uuid,
-        title: p.title || 'Playlist',
-        coverUrl: p.coverUrl,
-        numberOfTracks: p.numberOfTracks || 0,
-        status: 'queued', // 'queued' | 'fetching' | 'downloading' | 'completed' | 'error'
-        totalTracks: 0,
-        completedTracks: 0,
-        error: null,
-        zipReady: false
-      })),
-      zipReady: false,
-      zipSize: 0,
-      error: null
-    };
-
-    activeMultiJobs.set(multiJobId, multiJob);
-
-    // Background asynchronous worker
-    (async () => {
-      try {
-        // Step 1: Pre-fetch tracks for all playlists
-        for (let i = 0; i < multiJob.playlists.length; i++) {
-          const pl = multiJob.playlists[i];
-          multiJob.currentPlaylistIndex = i;
-          multiJob.currentPlaylistTitle = pl.title;
-          pl.status = 'fetching';
-
-          try {
-            const tracks = await fetchPlaylistTracksHelper(pl.id, customToken);
-            pl.tracks = tracks;
-            pl.totalTracks = tracks.length;
-            multiJob.totalTracks += tracks.length;
-            pl.status = 'queued';
-          } catch (fetchErr) {
-            console.error(`[MULTI FETCH ERROR] ${pl.title}:`, fetchErr.message);
-            pl.error = fetchErr.message;
-            pl.tracks = [];
-          }
-        }
-
-        // Step 2: Download each playlist sequentially
-        for (let i = 0; i < multiJob.playlists.length; i++) {
-          const pl = multiJob.playlists[i];
-          if (!pl.tracks || pl.tracks.length === 0) {
-            pl.status = pl.error ? 'error' : 'completed';
-            multiJob.completedPlaylists++;
-            continue;
-          }
-
-          pl.status = 'downloading';
-          multiJob.currentPlaylistIndex = i;
-          multiJob.currentPlaylistTitle = pl.title;
-
-          const playlistSubDir = path.join(multiDir, sanitizeFilename(pl.title));
-          fs.mkdirSync(playlistSubDir, { recursive: true });
-
-          const concurrency = 2;
-          const queue = [...pl.tracks];
-          let trackIdx = 0;
-
-          async function trackWorker() {
-            while (trackIdx < queue.length) {
-              const currentTrack = queue[trackIdx++];
-              currentTrack.status = 'downloading';
-              try {
-                const res = await processTrackDownload(currentTrack, playlistSubDir, { bitrate, namingPattern, customToken });
-                currentTrack.status = 'completed';
-                currentTrack.filename = res.filename;
-                pl.completedTracks++;
-                multiJob.completedTracks++;
-              } catch (err) {
-                currentTrack.status = 'error';
-                currentTrack.error = err.message;
-              }
-            }
-          }
-
-          const workers = Array(Math.min(concurrency, queue.length)).fill(null).map(() => trackWorker());
-          await Promise.all(workers);
-
-          // Build M3U for this playlist (saved on disk for standalone export)
-          try {
-            let m3u = `#EXTM3U\n#PLAYLIST:${pl.title}\n`;
-            pl.tracks.filter(t => t.status === 'completed' && t.filename).forEach(t => {
-              m3u += `#EXTINF:${t.duration || 180},${t.artist} - ${t.title}\n${t.filename}\n`;
-            });
-            fs.writeFileSync(path.join(playlistSubDir, `${sanitizeFilename(pl.title)}.m3u8`), m3u, 'utf8');
-          } catch (e) {}
-
-          // Build individual ZIP for this playlist (Contains ONLY MP3s)
-          try {
-            const plZip = new AdmZip();
-            const pFiles = fs.readdirSync(playlistSubDir);
-            for (const pf of pFiles) {
-              if (pf.endsWith('.mp3')) {
-                plZip.addLocalFile(path.join(playlistSubDir, pf));
-              }
-            }
-            const plZipPath = path.join(playlistSubDir, `${sanitizeFilename(pl.title)}_MP3_${bitrate}.zip`);
-            plZip.writeZip(plZipPath);
-            pl.zipReady = true;
-          } catch (zErr) {
-            console.error("[MULTI INDIVIDUAL ZIP ERROR]:", zErr.message);
-          }
-
-          pl.status = 'completed';
-          multiJob.completedPlaylists++;
-        }
-
-        // Step 3: Build master ZIP containing only MP3 tracks inside playlist subfolders
-        try {
-          const masterZip = new AdmZip();
-          for (const pl of multiJob.playlists) {
-            const playlistSubDir = path.join(multiDir, sanitizeFilename(pl.title));
-            if (fs.existsSync(playlistSubDir)) {
-              const files = fs.readdirSync(playlistSubDir);
-              for (const f of files) {
-                if (f.endsWith('.mp3')) {
-                  masterZip.addLocalFile(path.join(playlistSubDir, f), sanitizeFilename(pl.title));
-                }
-              }
-            }
-          }
-          const masterZipPath = path.join(multiDir, `Toutes_Mes_Playlists_Tidal_MP3_${bitrate}.zip`);
-          masterZip.writeZip(masterZipPath);
-          const stats = fs.statSync(masterZipPath);
-          multiJob.zipReady = true;
-          multiJob.zipSize = stats.size;
-        } catch (mZipErr) {
-          console.error("[MASTER ZIP ERROR]:", mZipErr.message);
-        }
-
-        multiJob.status = 'completed';
-        multiJob.completedAt = new Date().toISOString();
-
-        // Also save to MongoDB
-        if (db) {
-          try {
-            await db.collection('mp3_downloads').updateOne(
-              { id: multiJobId },
-              { $set: { ...multiJob, playlistTitle: `Pack: ${multiJob.totalPlaylists} Playlists Tidal` } },
-              { upsert: true }
-            );
-          } catch (dbErr) {}
-        }
-      } catch (fatalErr) {
-        console.error("[MULTI BATCH FATAL ERROR]:", fatalErr);
-        multiJob.status = 'error';
-        multiJob.error = fatalErr.message;
-      }
-    })();
-
-    res.json({
-      success: true,
-      multiJobId,
-      status: multiJob.status,
-      totalPlaylists: multiJob.totalPlaylists
-    });
-  } catch (err) {
-    console.error("[START MULTI PLAYLISTS ERROR]:", err);
-    res.status(500).json({ error: err.message || "Erreur lors du lancement du téléchargement multi-playlists" });
-  }
-});
-
-// Check status of multi-playlist download job
-api.get('/mp3/download/multi-status/:multiJobId', optionalAuth, async (req, res) => {
-  const { multiJobId } = req.params;
-  const memoryJob = activeMultiJobs.get(multiJobId);
-  if (memoryJob) {
-    return res.json(memoryJob);
-  }
-  if (db) {
-    const dbJob = await db.collection('mp3_downloads').findOne({ id: multiJobId }, { projection: { _id: 0 } });
-    if (dbJob) return res.json(dbJob);
-  }
-  res.status(404).json({ error: "Session multi-playlists introuvable" });
-});
-
-// Download master ZIP with all playlists (Contains ONLY MP3s in organized folders)
-api.get('/mp3/download/multi-zip/:multiJobId', async (req, res) => {
-  try {
-    const { multiJobId } = req.params;
-    let job = activeMultiJobs.get(multiJobId);
-    if (!job && db) {
-      job = await db.collection('mp3_downloads').findOne({ id: multiJobId });
-    }
-    if (!job) return res.status(404).json({ error: "Archive introuvable" });
-
-    const multiDir = path.join(mp3StorageDir, multiJobId);
-    const masterZipName = `Toutes_Mes_Playlists_Tidal_MP3_${job.bitrate || '320k'}.zip`;
-    const zipPath = path.join(multiDir, masterZipName);
-
-    if (!fs.existsSync(zipPath)) {
-      // Rebuild if needed
-      const masterZip = new AdmZip();
-      for (const pl of job.playlists || []) {
-        const playlistSubDir = path.join(multiDir, sanitizeFilename(pl.title));
-        if (fs.existsSync(playlistSubDir)) {
-          const files = fs.readdirSync(playlistSubDir);
-          for (const f of files) {
-            if (f.endsWith('.mp3')) {
-              masterZip.addLocalFile(path.join(playlistSubDir, f), sanitizeFilename(pl.title));
-            }
-          }
-        }
-      }
-      masterZip.writeZip(zipPath);
-    }
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', makeSafeContentDisposition(masterZipName));
-    res.setHeader('Content-Length', fs.statSync(zipPath).size);
-    fs.createReadStream(zipPath).pipe(res);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Download individual playlist ZIP inside a multi-job (Contains exclusively MP3 files)
-api.get('/mp3/download/multi-zip/:multiJobId/:playlistId', async (req, res) => {
-  try {
-    const { multiJobId, playlistId } = req.params;
-    let job = activeMultiJobs.get(multiJobId);
-    if (!job && db) {
-      job = await db.collection('mp3_downloads').findOne({ id: multiJobId });
-    }
-    if (!job) return res.status(404).json({ error: "Session introuvable" });
-
-    const pl = (job.playlists || []).find(p => String(p.id) === String(playlistId));
-    if (!pl) return res.status(404).json({ error: "Playlist non trouvée" });
-
-    const multiDir = path.join(mp3StorageDir, multiJobId);
-    const playlistSubDir = path.join(multiDir, sanitizeFilename(pl.title));
-    const plZipName = `${sanitizeFilename(pl.title)}_MP3_${job.bitrate || '320k'}.zip`;
-    const plZipPath = path.join(playlistSubDir, plZipName);
-
-    if (!fs.existsSync(plZipPath)) {
-      const plZip = new AdmZip();
-      if (fs.existsSync(playlistSubDir)) {
-        const pFiles = fs.readdirSync(playlistSubDir);
-        for (const pf of pFiles) {
-          if (pf.endsWith('.mp3')) {
-            plZip.addLocalFile(path.join(playlistSubDir, pf));
-          }
-        }
-        plZip.writeZip(plZipPath);
-      }
-    }
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', makeSafeContentDisposition(plZipName));
-    res.setHeader('Content-Length', fs.statSync(plZipPath).size);
-    fs.createReadStream(plZipPath).pipe(res);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ═══════════════════════════════════════════
 // Catch unregistered API routes
 api.use((req, res) => {
   res.status(404).json({ detail: `Endpoint API non trouvé: ${req.method} ${req.originalUrl}` });
@@ -12617,7 +10952,6 @@ api.use((err, req, res, next) => {
 });
 
 app.use('/api', api);
-app.use('/mp3', api);
 
 // Serve frontend build
 let frontendPath = path.join(__dirname, 'frontend', 'build');

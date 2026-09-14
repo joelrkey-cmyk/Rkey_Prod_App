@@ -40,6 +40,7 @@ import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { Toaster } from '../ui/sonner';
 import { API, BACKEND_URL, formatDateLocal, axios, getImageUrl } from './helpers';
+import ImageSlideshow from '../ui/ImageSlideshow';
 
 function CatalogueView() {
   const [equipment, setEquipment] = useState([]);
@@ -91,7 +92,7 @@ function CatalogueView() {
         visible_catalogue: !category.visible_catalogue 
       });
       
-      if (response.data.success) {
+      if (response.data.success || response.data.id || response.status === 200) {
         toast.success(category.visible_catalogue ? 'Catégorie masquée' : 'Catégorie visible');
         fetchCategories();
       }
@@ -413,34 +414,44 @@ function CatalogueView() {
                         </Button>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {categoryEquipment.map(item => (
-                          <div 
-                            key={item.id} 
-                            className="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow"
-                          >
-                            {item.photo_url && (
-                              <img 
-                                src={getImageUrl(item.photo_url)} 
-                                alt={item.name}
-                                className="w-full h-32 object-cover rounded-lg mb-3"
-                                onError={(e) => e.target.style.display = 'none'}
-                              />
-                            )}
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <h3 className="font-semibold text-gray-900">
-                                  {item.is_pack && <span className="text-orange-500 mr-1">📦</span>}
-                                  {item.name}
-                                </h3>
-                                <p className="text-xs text-gray-500">{item.category}</p>
+                        {categoryEquipment.map(item => {
+                          const itemPhotos = Array.isArray(item.photos) && item.photos.length > 0
+                            ? item.photos
+                            : (item.photo_url ? [item.photo_url] : []);
+                          return (
+                            <div 
+                              key={item.id} 
+                              className="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow flex flex-col justify-between"
+                            >
+                              <div>
+                                {itemPhotos.length > 0 && (
+                                  <ImageSlideshow
+                                    images={itemPhotos}
+                                    alt={item.name}
+                                    className="w-full h-44 rounded-lg mb-3"
+                                    interval={3000}
+                                    showDots={true}
+                                    showArrows={true}
+                                    showCountBadge={true}
+                                  />
+                                )}
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <h3 className="font-semibold text-gray-900">
+                                      {item.is_pack && <span className="text-orange-500 mr-1">📦</span>}
+                                      {item.name}
+                                    </h3>
+                                    <p className="text-xs text-gray-500">{item.category}</p>
+                                  </div>
+                                  <span className="text-sm font-bold text-orange-600">{item.daily_price}€/j</span>
+                                </div>
+                                {item.observations && (
+                                  <p className="text-xs text-gray-600 mt-2 line-clamp-2">{item.observations}</p>
+                                )}
                               </div>
-                              <span className="text-sm font-bold text-orange-600">{item.daily_price}€/j</span>
                             </div>
-                            {item.observations && (
-                              <p className="text-xs text-gray-600 mt-2 line-clamp-2">{item.observations}</p>
-                            )}
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -525,9 +536,9 @@ function CatalogueView() {
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <span className="text-sm text-gray-400 w-6">{index + 1}.</span>
-                    {product.photo_url ? (
+                    {((product.photos && product.photos.length > 0) || product.photo_url) ? (
                       <img 
-                        src={getImageUrl(product.photo_url)} 
+                        src={getImageUrl((product.photos && product.photos[0]) || product.photo_url)} 
                         alt={product.name}
                         className="w-10 h-10 object-cover rounded"
                         onError={(e) => e.target.style.display = 'none'}

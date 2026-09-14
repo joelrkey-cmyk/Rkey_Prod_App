@@ -80,6 +80,28 @@ const apiService = {
     });
     return res.data;
   },
+  uploadMaterialOptionImages: async (files) => {
+    const formData = new FormData();
+    const fileList = Array.isArray(files) ? files : Array.from(files);
+    fileList.forEach(file => {
+      formData.append("files", file);
+    });
+    const res = await axios.post("/upload/material-option-images", formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+    return res.data;
+  },
+  uploadEquipmentImages: async (files) => {
+    const formData = new FormData();
+    const fileList = Array.isArray(files) ? files : Array.from(files);
+    fileList.forEach(file => {
+      formData.append("files", file);
+    });
+    const res = await axios.post("/upload/equipment-images", formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+    return res.data;
+  },
 
   // Contract PDF notes
   getContractPdfNotes: async () => {

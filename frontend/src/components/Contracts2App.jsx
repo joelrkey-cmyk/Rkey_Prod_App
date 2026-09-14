@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "./ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Separator } from "./ui/separator";
-import { X, Search, Users, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus, Paperclip, Upload, Loader2, Eye, AlertCircle } from "lucide-react";
+import { X, Search, Users, FileSignature, FileText, Euro, Calendar, MapPin, User, Phone, Mail, Building, Download, Printer, Edit, Trash2, Plus, FileCheck, Archive, RotateCcw, Send, Settings, Save, XCircle, Copy, ArrowLeft, Utensils, Coffee, Soup, Minus, Paperclip, Upload, Loader2, Eye, AlertCircle, ExternalLink, Check, CheckCircle2, ArrowRight } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import { toast } from "sonner";
 import apiService from "../services/api";
@@ -151,6 +151,20 @@ function Contracts2App() {
   const [notifRecipientEmail, setNotifRecipientEmail] = useState("");
   const [notifIsSending, setNotifIsSending] = useState(false);
 
+  // Signing workflow state & client notification modal states
+  const [pendingSigningContractId, setPendingSigningContractId] = useState(null);
+  const [pendingSigningContractObj, setPendingSigningContractObj] = useState(null);
+  const [isClientNotifOpen, setIsClientNotifOpen] = useState(false);
+  const [clientNotifTemplates, setClientNotifTemplates] = useState([]);
+  const [clientNotifCategory, setClientNotifCategory] = useState("contrat_acompte");
+  const [clientNotifSelectedTemplateId, setClientNotifSelectedTemplateId] = useState("");
+  const [clientNotifRecipientEmail, setClientNotifRecipientEmail] = useState("");
+  const [clientNotifEmailSubject, setClientNotifEmailSubject] = useState("");
+  const [clientNotifEmailBody, setClientNotifEmailBody] = useState("");
+  const [clientNotifPortalLink, setClientNotifPortalLink] = useState("");
+  const [clientNotifIsSending, setClientNotifIsSending] = useState(false);
+  const [hasCopiedPortalLink, setHasCopiedPortalLink] = useState(false);
+
   const [basePrice, setBasePrice] = useState(0);
   // ── CONTRATS 2: Mode Mandat/Agence ──
   const [contractMode, setContractMode] = useState('entreprise'); // 'entreprise' ou 'mandataire' par défaut
@@ -179,6 +193,7 @@ function Contracts2App() {
   const [generatedContract, setGeneratedContract] = useState(null);
   const [editingContract, setEditingContract] = useState(null);
   const [showConfiguration, setShowConfiguration] = useState(false);
+  const [configInitialTab, setConfigInitialTab] = useState("options");
   const [selectedNotes, setSelectedNotes] = useState([]);
   const [selectedMusicStyles, setSelectedMusicStyles] = useState([]);
   const [djNotes, setDjNotes] = useState("");
@@ -1124,6 +1139,238 @@ function Contracts2App() {
     }
   };
 
+  const generateClientDjPortalLink = (contract) => {
+    if (!contract) return "https://rkeyprodapp.fr/";
+    const info = contract.client_info || {};
+    const rawEventType = info.event_type || contract.event_type || contract.name || "evenement";
+    const rawClientName = info.name || contract.client_name || "client";
+
+    const eventTypeFirstWord = rawEventType
+      .trim()
+      .split(/\s+/)[0]
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+
+    const clientNameClean = rawClientName
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    const slug = `${eventTypeFirstWord || 'evenement'}-${clientNameClean || 'client'}`;
+    return `https://rkeyprodapp.fr/${slug}`;
+  };
+
+  const cleanPlainText = (str) => {
+    if (!str) return "";
+    return str
+      .replace(/<br\s*[\/]?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  };
+
+  const applyClientTemplateVariables = (tpl, contract, portalLink = "") => {
+    if (!tpl || !contract) return { subject: "", body: "" };
+    const info = contract.client_info || {};
+    const clientName = info.name || contract.client_name || "Client";
+    const eventDate = info.event_date || contract.event_date || "";
+    const eventType = info.event_type || contract.event_type || "";
+    const eventLocation = info.event_location || contract.event_location || "";
+    
+    let djName = "Votre DJ";
+    if (contract.dj_profile) {
+      const p = getProfileData(contract.dj_profile);
+      if (p) djName = p.nom_artistique || p.nom_complet || djName;
+    }
+
+    const totalAmount = contract.total_amount ? `${contract.total_amount} €` : "";
+    const acompteAmount = contract.acompte_amount ? `${contract.acompte_amount} €` : "";
+    const link = portalLink || generateClientDjPortalLink(contract);
+
+    let subject = tpl.subject || "";
+    let body = cleanPlainText(tpl.body || "");
+
+    const replacements = {
+      "{{client_name}}": clientName,
+      "{{client_dj_link}}": link,
+      "{{lien_espace_dj}}": link,
+      "{{event_date}}": eventDate,
+      "{{event_type}}": eventType,
+      "{{event_location}}": eventLocation,
+      "{{dj_name}}": djName,
+      "{{total_amount}}": totalAmount,
+      "{{acompte_amount}}": acompteAmount
+    };
+
+    Object.entries(replacements).forEach(([key, val]) => {
+      subject = subject.replaceAll(key, val);
+      body = body.replaceAll(key, val);
+    });
+
+    return { subject, body };
+  };
+
+  const handleClientCategoryChange = (category, templates = clientNotifTemplates, contract = pendingSigningContractObj, currentLink = clientNotifPortalLink) => {
+    setClientNotifCategory(category);
+    const matching = templates.filter(t => t.category === category);
+    const chosenTpl = matching.find(t => t.is_default) || matching[0] || templates[0];
+    if (chosenTpl) {
+      setClientNotifSelectedTemplateId(chosenTpl.id);
+      const { subject, body } = applyClientTemplateVariables(chosenTpl, contract, currentLink);
+      setClientNotifEmailSubject(subject);
+      setClientNotifEmailBody(body);
+    }
+  };
+
+  const handleClientTemplateSelect = (templateId, templates = clientNotifTemplates, contract = pendingSigningContractObj, currentLink = clientNotifPortalLink) => {
+    setClientNotifSelectedTemplateId(templateId);
+    const chosenTpl = templates.find(t => t.id === templateId);
+    if (chosenTpl) {
+      if (chosenTpl.category) setClientNotifCategory(chosenTpl.category);
+      const { subject, body } = applyClientTemplateVariables(chosenTpl, contract, currentLink);
+      setClientNotifEmailSubject(subject);
+      setClientNotifEmailBody(body);
+    }
+  };
+
+  const openClientNotificationDialog = async (contract) => {
+    try {
+      const link = generateClientDjPortalLink(contract);
+      setClientNotifPortalLink(link);
+      setHasCopiedPortalLink(false);
+
+      const recipient = contract?.client_info?.email || contract?.client_email || "";
+      setClientNotifRecipientEmail(recipient);
+
+      const res = await axios.get(`${API}/client-email-templates`);
+      const list = res.data?.templates || [];
+      setClientNotifTemplates(list);
+
+      const defaultCat = "contrat_acompte";
+      setClientNotifCategory(defaultCat);
+
+      const matching = list.filter(t => t.category === defaultCat);
+      const chosenTpl = matching.find(t => t.is_default) || matching[0] || list[0];
+
+      if (chosenTpl) {
+        setClientNotifSelectedTemplateId(chosenTpl.id);
+        const { subject, body } = applyClientTemplateVariables(chosenTpl, contract, link);
+        setClientNotifEmailSubject(subject);
+        setClientNotifEmailBody(body);
+      } else {
+        setClientNotifSelectedTemplateId("");
+        setClientNotifEmailSubject(`Confirmation de votre contrat & Espace DJ : ${contract?.client_info?.name || "Client"}`);
+        setClientNotifEmailBody(`Bonjour ${contract?.client_info?.name || "Client"},\n\nNous vous confirmons avoir bien reçu votre contrat signé ainsi que votre acompte.\n\nVous pouvez dès à présent accéder à votre Espace DJ / Client personnalisé :\n${link}\n\nMusicalement,\nL'équipe R'Key Production`);
+      }
+
+      setIsClientNotifOpen(true);
+    } catch (err) {
+      console.error("Error opening client notification dialog:", err);
+      toast.error("Erreur lors de la préparation de la notification client");
+    }
+  };
+
+  const cancelSigningFlow = () => {
+    setIsArtistNotifOpen(false);
+    setIsClientNotifOpen(false);
+    setNotifContract(null);
+    setNotifArtistProfile(null);
+    setPendingSigningContractId(null);
+    setPendingSigningContractObj(null);
+    toast.info("Signature annulée. Le contrat reste non signé.");
+  };
+
+  const skipArtistNotification = () => {
+    setIsArtistNotifOpen(false);
+    toast.info("Notification DJ sautée.");
+    if (pendingSigningContractObj) {
+      setTimeout(() => {
+        openClientNotificationDialog(pendingSigningContractObj);
+      }, 300);
+    }
+  };
+
+  const sendArtistNotificationAndProceed = async () => {
+    if (!notifRecipientEmail.trim() || !notifEmailSubject.trim() || !notifEmailBody.trim()) {
+      toast.error("Veuillez remplir le destinataire, l'objet et le message pour le DJ.");
+      return;
+    }
+    try {
+      setNotifIsSending(true);
+      await axios.post(`${API}/contract-emails/send`, {
+        recipient_email: notifRecipientEmail.trim(),
+        email_subject: notifEmailSubject.trim(),
+        email_body: notifEmailBody
+      });
+      toast.success("Notification par email envoyée à l'artiste avec succès !");
+      setIsArtistNotifOpen(false);
+      if (pendingSigningContractObj) {
+        setTimeout(() => {
+          openClientNotificationDialog(pendingSigningContractObj);
+        }, 300);
+      }
+    } catch (err) {
+      console.error("Error sending artist notification email:", err);
+      toast.error("Erreur d'envoi. Veuillez vérifier la configuration SMTP et l'adresse email.");
+    } finally {
+      setNotifIsSending(false);
+    }
+  };
+
+  const finalizeContractAsSigned = async (contractId, emailWasSent = false) => {
+    try {
+      await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'archived' });
+      await loadContracts();
+      await loadArchivedContracts();
+      setIsClientNotifOpen(false);
+      setPendingSigningContractId(null);
+      setPendingSigningContractObj(null);
+      if (emailWasSent) {
+        toast.success("Email envoyé au client & contrat validé comme signé !");
+      } else {
+        toast.success("Contrat validé comme signé et archivé avec succès !");
+      }
+    } catch (err) {
+      console.error("Error archiving contract:", err);
+      toast.error("Erreur lors de l'archivage du contrat");
+    }
+  };
+
+  const skipClientNotificationAndSign = async () => {
+    if (!pendingSigningContractId) return;
+    await finalizeContractAsSigned(pendingSigningContractId, false);
+  };
+
+  const sendClientNotificationAndSign = async () => {
+    if (!clientNotifRecipientEmail.trim() || !clientNotifEmailSubject.trim() || !clientNotifEmailBody.trim()) {
+      toast.error("Veuillez remplir le destinataire, l'objet et le message pour le client.");
+      return;
+    }
+    try {
+      setClientNotifIsSending(true);
+      await axios.post(`${API}/contract-emails/send`, {
+        recipient_email: clientNotifRecipientEmail.trim(),
+        email_subject: clientNotifEmailSubject.trim(),
+        email_body: clientNotifEmailBody
+      });
+      await finalizeContractAsSigned(pendingSigningContractId, true);
+    } catch (err) {
+      console.error("Error sending client notification email:", err);
+      toast.error("Erreur d'envoi de l'email client. Veuillez vérifier l'adresse email.");
+    } finally {
+      setClientNotifIsSending(false);
+    }
+  };
+
   const openArtistNotificationDialog = async (contract, artistProfile) => {
     try {
       setNotifContract(contract);
@@ -1175,35 +1422,8 @@ function Contracts2App() {
     }
   };
 
-  const sendArtistNotification = async () => {
-    if (!notifRecipientEmail.trim() || !notifEmailSubject.trim() || !notifEmailBody.trim()) {
-      toast.error("Veuillez remplir le destinataire, l'objet et le message.");
-      return;
-    }
-    try {
-      setNotifIsSending(true);
-      await axios.post(`${API}/contract-emails/send`, {
-        recipient_email: notifRecipientEmail.trim(),
-        email_subject: notifEmailSubject.trim(),
-        email_body: notifEmailBody
-      });
-      toast.success("Notification par email envoyée à l'artiste avec succès !");
-      setIsArtistNotifOpen(false);
-      setNotifContract(null);
-      setNotifArtistProfile(null);
-    } catch (err) {
-      console.error("Error sending artist notification email:", err);
-      toast.error("Erreur d'envoi. Veuillez vérifier la configuration SMTP et l'adresse email.");
-    } finally {
-      setNotifIsSending(false);
-    }
-  };
-
   const markContractAsSigned = async (contractId) => {
-    try { 
-      await axios.put(`${API}/contracts2/${contractId}/status`, { status: 'archived' }); 
-      toast.success("Contrat archivé avec succès !"); 
-      
+    try {
       let contractObj = contracts.find(c => c.id === contractId);
       if (!contractObj) {
         try {
@@ -1213,24 +1433,29 @@ function Contracts2App() {
           console.error("Could not load contract object:", e);
         }
       }
-      
-      loadContracts(); 
-      loadArchivedContracts(); 
-      
-      if (contractObj) {
-        const pKey = contractObj.dj_profile;
-        if (pKey) {
-          const profile = getProfileData(pKey);
-          const isFreelance = profile && (profile.statut_artiste === 'freelance' || (isArtistFreelance && isArtistFreelance(profile)));
-          if (isFreelance) {
-            setTimeout(() => {
-              openArtistNotificationDialog(contractObj, profile);
-            }, 600);
-          }
-        }
+
+      if (!contractObj) {
+        toast.error("Impossible de charger les données du contrat.");
+        return;
       }
+
+      setPendingSigningContractId(contractId);
+      setPendingSigningContractObj(contractObj);
+
+      const pKey = contractObj.dj_profile;
+      const profile = pKey ? getProfileData(pKey) : null;
+      const hasArtistEmail = profile?.email || contractObj.dj_profile_data?.email;
+      const isFreelance = profile && (profile.statut_artiste === 'freelance' || (isArtistFreelance && isArtistFreelance(profile)) || hasArtistEmail);
+
+      if (profile && isFreelance && hasArtistEmail) {
+        openArtistNotificationDialog(contractObj, profile);
+      } else {
+        openClientNotificationDialog(contractObj);
+      }
+    } catch (error) {
+      console.error("Error initiating signature:", error);
+      toast.error("Erreur lors de la préparation de la signature");
     }
-    catch (error) { toast.error("Erreur lors de l'archivage du contrat"); console.error(error); }
   };
 
   const moveContractToTrash = async (contractId) => {
@@ -2670,6 +2895,7 @@ function Contracts2App() {
         setCgvTemplates={setCgvTemplates}
         apiService={apiService}
         setShowConfiguration={setShowConfiguration}
+        initialTab={configInitialTab}
       />
     );
   }
@@ -5356,22 +5582,27 @@ function Contracts2App() {
       )}
 
       {/* Dialogue d'envoi de notification email à l'artiste/freelance */}
-      <Dialog open={isArtistNotifOpen} onOpenChange={setIsArtistNotifOpen}>
-        <DialogContent className="max-w-2xl bg-white rounded-xl shadow-2xl border border-indigo-105">
+      <Dialog open={isArtistNotifOpen} onOpenChange={(open) => { if (!open) cancelSigningFlow(); }}>
+        <DialogContent className="max-w-2xl bg-white rounded-xl shadow-2xl border border-indigo-100">
           <DialogHeader className="border-b pb-4">
-            <DialogTitle className="flex items-center gap-2 text-indigo-900 font-bold text-xl">
-              <Mail className="h-6 w-6 text-indigo-600" />
-              <span>Informer l'artiste freelance du contrat signé</span>
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2 text-indigo-950 font-bold text-xl">
+                <Mail className="h-6 w-6 text-indigo-600" />
+                <span>Étape 1/2 : Informer l'artiste freelance du contrat signé</span>
+              </DialogTitle>
+              <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 border-indigo-200">
+                1 / 2 : Artiste
+              </Badge>
+            </div>
             <DialogDescription className="text-slate-500 text-sm mt-1">
-              Félicitations pour la signature ! Voulez-vous envoyer une notification par email à <strong>{notifArtistProfile?.nom_artistique || notifArtistProfile?.nom_complet}</strong> pour confirmer sa prestation ?
+              Félicitations pour la signature ! Voulez-vous envoyer une notification par email à <strong>{notifArtistProfile?.nom_artistique || notifArtistProfile?.nom_complet || "l'artiste"}</strong> pour lui confirmer sa prestation ?
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1 col-span-1">
-                <Label className="text-xs font-bold text-slate-700">Adresse e-mail destinataire</Label>
+                <Label className="text-xs font-bold text-slate-700">Adresse e-mail destinataire (Artiste)</Label>
                 <Input 
                   type="email" 
                   value={notifRecipientEmail} 
@@ -5384,7 +5615,7 @@ function Contracts2App() {
               <div className="space-y-1 col-span-1">
                 <Label className="text-xs font-bold text-slate-700">Choisir un modèle d'email</Label>
                 <select
-                  className="w-full h-10 px-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-505 cursor-pointer"
+                  className="w-full h-10 px-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                   value={notifSelectedTemplateId}
                   onChange={(e) => handleNotifTemplateChange(e.target.value)}
                 >
@@ -5416,27 +5647,380 @@ function Contracts2App() {
             </div>
           </div>
 
-          <DialogFooter className="border-t pt-4 flex gap-2 justify-end">
+          <DialogFooter className="border-t pt-4 flex flex-col sm:flex-row gap-2 justify-between items-center">
             <Button 
+              type="button"
               variant="outline" 
-              onClick={() => {
-                setIsArtistNotifOpen(false);
-                setNotifContract(null);
-                setNotifArtistProfile(null);
-                toast.info("Notification sautée, contrat signé avec succès.");
-              }} 
+              onClick={cancelSigningFlow} 
               disabled={notifIsSending}
-              className="text-slate-600 border-slate-300 hover:bg-slate-50 transition-colors"
+              className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 transition-colors w-full sm:w-auto"
             >
-              Passer sans envoyer
+              <XCircle className="h-4 w-4 mr-1.5" />
+              Annuler
             </Button>
+
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+              <Button 
+                type="button"
+                variant="outline" 
+                onClick={skipArtistNotification} 
+                disabled={notifIsSending}
+                className="text-slate-600 border-slate-300 hover:bg-slate-50 transition-colors w-full sm:w-auto"
+              >
+                Passer sans envoyer au DJ
+                <ArrowRight className="h-4 w-4 ml-1.5 text-slate-400" />
+              </Button>
+              <Button 
+                type="button"
+                onClick={sendArtistNotificationAndProceed} 
+                disabled={notifIsSending || !notifRecipientEmail.trim()}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[150px] transition-colors w-full sm:w-auto font-medium"
+              >
+                {notifIsSending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Envoi...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4 mr-1.5" />
+                    Envoyer au DJ & Étape 2
+                    <ArrowRight className="h-4 w-4 ml-1.5" />
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialogue d'envoi de confirmation email au client / mariés avec lien Espace DJ */}
+      <Dialog open={isClientNotifOpen} onOpenChange={(open) => { if (!open) cancelSigningFlow(); }}>
+        <DialogContent className="max-w-3xl bg-white rounded-xl shadow-2xl border border-emerald-100 max-h-[95vh] overflow-y-auto">
+          <DialogHeader className="border-b pb-4">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2 text-emerald-950 font-bold text-xl">
+                <FileCheck className="h-6 w-6 text-emerald-600" />
+                <span>Confirmation Client & Accès Espace DJ</span>
+              </DialogTitle>
+              <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-300">
+                {notifContract?.dj_profile ? "Étape 2 / 2 : Client" : "Confirmation Client"}
+              </Badge>
+            </div>
+            <DialogDescription className="text-slate-600 text-sm mt-1">
+              Envoyez un email de confirmation aux mariés / clients pour accuser réception de leurs éléments et leur transmettre leur lien d'accès personnalisé à l'interface DJ / Client.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-4">
+            {/* Sélection rapide du modèle par catégorie */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                  1. Choisissez le type de message à envoyer :
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsClientNotifOpen(false);
+                    setConfigInitialTab('client_emails');
+                    setShowConfiguration(true);
+                  }}
+                  className="text-xs text-emerald-700 hover:text-emerald-900 underline flex items-center gap-1 font-medium"
+                >
+                  <Settings className="h-3 w-3" />
+                  Paramétrer les modèles
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* Modèle 1: Contrat & Acompte reçus */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleClientCategoryChange("contrat_acompte")}
+                  className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
+                    clientNotifCategory === "contrat_acompte"
+                      ? "border-emerald-500 bg-emerald-50/80 ring-2 ring-emerald-400/20 shadow-sm"
+                      : "border-slate-200 bg-slate-50/60 hover:bg-slate-100/70"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
+                        clientNotifCategory === "contrat_acompte" ? "bg-emerald-600 text-white font-bold" : "border border-slate-400"
+                      }`}>
+                        {clientNotifCategory === "contrat_acompte" ? "✓" : ""}
+                      </span>
+                      Contrat & Acompte
+                    </span>
+                    <Badge className="bg-emerald-100 text-emerald-800 text-[10px] py-0 px-1.5 border-emerald-200">Reçus</Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                    Confirmation complète : contrat signé + acompte encaissé + lien Espace DJ.
+                  </p>
+                </div>
+
+                {/* Modèle 2: Contrat signé uniquement */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleClientCategoryChange("contrat_seul")}
+                  className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
+                    clientNotifCategory === "contrat_seul"
+                      ? "border-amber-500 bg-amber-50/80 ring-2 ring-amber-400/20 shadow-sm"
+                      : "border-slate-200 bg-slate-50/60 hover:bg-slate-100/70"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
+                        clientNotifCategory === "contrat_seul" ? "bg-amber-600 text-white font-bold" : "border border-slate-400"
+                      }`}>
+                        {clientNotifCategory === "contrat_seul" ? "✓" : ""}
+                      </span>
+                      Contrat seul
+                    </span>
+                    <Badge className="bg-amber-100 text-amber-800 text-[10px] py-0 px-1.5 border-amber-200">En attente acompte</Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                    Contrat bien reçu, rappel de l'acompte à régler + lien Espace DJ.
+                  </p>
+                </div>
+
+                {/* Modèle 3: Lien Espace DJ seul */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleClientCategoryChange("lien_espace_dj")}
+                  className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
+                    clientNotifCategory === "lien_espace_dj"
+                      ? "border-indigo-500 bg-indigo-50/80 ring-2 ring-indigo-400/20 shadow-sm"
+                      : "border-slate-200 bg-slate-50/60 hover:bg-slate-100/70"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
+                        clientNotifCategory === "lien_espace_dj" ? "bg-indigo-600 text-white font-bold" : "border border-slate-400"
+                      }`}>
+                        {clientNotifCategory === "lien_espace_dj" ? "✓" : ""}
+                      </span>
+                      Lien Espace DJ seul
+                    </span>
+                    <Badge className="bg-indigo-100 text-indigo-800 text-[10px] py-0 px-1.5 border-indigo-200">Accès</Badge>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                    Transmet l'adresse et le lien d'accès à l'interface DJ de personnalisation.
+                  </p>
+                </div>
+              </div>
+
+              {/* Sélection d'un modèle précis dans la liste si multiple */}
+              {clientNotifTemplates.length > 3 && (
+                <div className="pt-1 flex items-center gap-2">
+                  <span className="text-xs text-slate-500">Ou sélectionner un modèle précis :</span>
+                  <select
+                    className="h-8 px-2 py-1 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                    value={clientNotifSelectedTemplateId}
+                    onChange={(e) => handleClientTemplateSelect(e.target.value)}
+                  >
+                    {clientNotifTemplates.map(t => (
+                      <option key={t.id} value={t.id}>{t.name} {t.is_default ? "(Par défaut)" : ""}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Lien dynamique Espace DJ / Client */}
+            <div className="p-3.5 bg-gradient-to-r from-emerald-50/90 to-teal-50/80 border border-emerald-200 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                  <ExternalLink className="h-4 w-4 text-emerald-600" />
+                  <span>Lien dynamique d'accès Espace DJ / Client :</span>
+                </Label>
+                <span className="text-[11px] text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full font-medium">
+                  Généré automatiquement
+                </span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                <Input 
+                  value={clientNotifPortalLink}
+                  onChange={(e) => {
+                    const newLink = e.target.value;
+                    setClientNotifPortalLink(newLink);
+                    const chosen = clientNotifTemplates.find(t => t.id === clientNotifSelectedTemplateId);
+                    if (chosen) {
+                      const { subject, body } = applyClientTemplateVariables(chosen, pendingSigningContractObj, newLink);
+                      setClientNotifEmailSubject(subject);
+                      setClientNotifEmailBody(body);
+                    }
+                  }}
+                  className="border-emerald-300 bg-white text-emerald-900 font-mono text-xs shadow-sm flex-1"
+                  placeholder="https://rkeyprodapp.fr/mariage-dupont"
+                />
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(clientNotifPortalLink);
+                      setHasCopiedPortalLink(true);
+                      toast.success("Lien de l'Espace DJ copié dans le presse-papier !");
+                      setTimeout(() => setHasCopiedPortalLink(false), 2500);
+                    }}
+                    className="border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs bg-white"
+                  >
+                    {hasCopiedPortalLink ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 mr-1 text-emerald-600" />
+                        Copié !
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5 mr-1" />
+                        Copier
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (clientNotifPortalLink) {
+                        window.open(clientNotifPortalLink, '_blank', 'noopener,noreferrer');
+                      }
+                    }}
+                    className="border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs bg-white"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                    Tester / Ouvrir
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Formulaire destinataire et objet */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">Adresse e-mail du client / des mariés</Label>
+                <Input 
+                  type="email" 
+                  value={clientNotifRecipientEmail} 
+                  onChange={(e) => setClientNotifRecipientEmail(e.target.value)}
+                  className="border-slate-300 shadow-sm"
+                  placeholder="contact@client.com"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">Objet du message</Label>
+                <Input 
+                  value={clientNotifEmailSubject} 
+                  onChange={(e) => setClientNotifEmailSubject(e.target.value)}
+                  className="border-slate-300 shadow-sm font-medium"
+                />
+              </div>
+            </div>
+
+            {/* Variable helpers & Clean Plain Textarea */}
+            <div className="space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                <div>
+                  <Label className="text-xs font-bold text-slate-800 block">
+                    Message au client (Texte simple, clair et modifiable)
+                  </Label>
+                  <span className="text-[11px] text-slate-500">
+                    Modifiez le texte à votre convenance en toute clarté. Les retours à la ligne sont respectés à l'envoi.
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+                  <span className="text-[11px] text-slate-400 font-medium">Insérer :</span>
+                  <button
+                    type="button"
+                    onClick={() => setClientNotifEmailBody(prev => `${prev}\n\nLien direct vers votre Espace DJ :\n${clientNotifPortalLink || '{{client_dj_link}}'}`)}
+                    className="text-xs bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300 px-2 py-1 rounded font-medium transition-colors"
+                    title="Ajoute le lien d'accès à l'Espace DJ"
+                  >
+                    + Lien Espace DJ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClientNotifEmailBody(prev => `${prev} {{client_name}}`)}
+                    className="text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 px-2 py-1 rounded font-medium transition-colors"
+                  >
+                    + Nom client
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClientNotifEmailBody(prev => `${prev} {{event_date}}`)}
+                    className="text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300 px-2 py-1 rounded font-medium transition-colors"
+                  >
+                    + Date
+                  </button>
+                </div>
+              </div>
+
+              <Textarea 
+                value={clientNotifEmailBody} 
+                onChange={(e) => setClientNotifEmailBody(e.target.value)}
+                rows={12}
+                disabled={clientNotifIsSending}
+                className="w-full text-sm font-sans leading-relaxed border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 bg-white p-3.5 shadow-sm min-h-[250px] text-slate-800 rounded-lg placeholder:text-slate-400"
+                placeholder="Rédigez votre message simplement..."
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="border-t pt-4 flex flex-col sm:flex-row gap-2 justify-between items-center">
+            {/* Bouton Annuler la signature (sécurisé, ne signe rien) */}
             <Button 
-              onClick={sendArtistNotification} 
-              disabled={notifIsSending || !notifRecipientEmail.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[120px] transition-colors"
+              type="button"
+              variant="outline" 
+              onClick={cancelSigningFlow} 
+              disabled={clientNotifIsSending}
+              className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 transition-colors w-full sm:w-auto"
             >
-              {notifIsSending ? "Envoi..." : <><Mail className="h-4 w-4 mr-2" />Envoyer le mail</>}
+              <XCircle className="h-4 w-4 mr-1.5" />
+              Annuler la signature
             </Button>
+
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+              {/* Bouton Passer sans envoyer */}
+              <Button 
+                type="button"
+                variant="outline" 
+                onClick={skipClientNotificationAndSign} 
+                disabled={clientNotifIsSending}
+                className="text-slate-600 border-slate-300 hover:bg-slate-50 transition-colors w-full sm:w-auto"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1.5 text-slate-500" />
+                Passer sans envoyer au client
+              </Button>
+
+              {/* Bouton Envoyer & Valider */}
+              <Button 
+                type="button"
+                onClick={sendClientNotificationAndSign} 
+                disabled={clientNotifIsSending || !clientNotifRecipientEmail.trim()}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition-colors shadow-sm w-full sm:w-auto min-w-[170px]"
+              >
+                {clientNotifIsSending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Envoi & Validation...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-1.5" />
+                    Envoyer le mail & Valider
+                  </>
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

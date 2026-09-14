@@ -10,6 +10,7 @@ import { Textarea } from '../ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Music, FileText, Edit, Trash2, Plus, ChevronUp, ChevronDown, Save, UploadCloud, FileDown, FileCheck, Mail, Bold, Italic, Underline, List, Link, Eye, EyeOff, Image as ImageIcon, Info, X, Upload, Maximize2, ZoomIn, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import ImageSlideshow from '../ui/ImageSlideshow';
 
 // Composant autocomplétion intelligente et de recherche pour l'équipement de location
 const EquipmentSearchSelector = ({ equipmentList, value, onChange, placeholder = "Tapez pour rechercher (nom, référence, catégorie)..." }) => {
@@ -156,6 +157,18 @@ const EquipmentSearchSelector = ({ equipmentList, value, onChange, placeholder =
       )}
     </div>
   );
+};
+
+// Nettoyeur universel de texte pour garantir un affichage texte simple sans balises HTML
+export const cleanPlainText = (str) => {
+  if (!str) return '';
+  return str
+    .replace(/<br\s*[\/]?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 };
 
 // Assistant d'édition riche avec boutons de mise en forme et de variables pour les courriels
@@ -369,13 +382,14 @@ export const ConfigurationPage = ({
   cgvTemplates,
   setCgvTemplates,
   apiService,
-  setShowConfiguration
+  setShowConfiguration,
+  initialTab = "options"
 }) => {
-  const [activeConfigTab, setActiveConfigTab] = useState("options");
+  const [activeConfigTab, setActiveConfigTab] = useState(initialTab);
   const [editingOptionIndex, setEditingOptionIndex] = useState(null);
-  const [newOption, setNewOption] = useState({ name: "", price: 0, event_categories: [], linked_equipment_id: "", image_url: "", description: "" });
+  const [newOption, setNewOption] = useState({ name: "", price: 0, event_categories: [], linked_equipment_id: "", image_url: "", image_urls: [], description: "" });
   const [isUploadingOptionImage, setIsUploadingOptionImage] = useState(false);
-  const [previewOptionImageModal, setPreviewOptionImageModal] = useState({ open: false, title: "", imageUrl: "", price: null, description: "" });
+  const [previewOptionImageModal, setPreviewOptionImageModal] = useState({ open: false, title: "", imageUrl: "", imageUrls: [], price: null, description: "" });
   const newOptionFileInputRef = useRef(null);
   const editOptionFileInputRef = useRef(null);
 
@@ -397,6 +411,12 @@ export const ConfigurationPage = ({
   const [newFreelanceTemplate, setNewFreelanceTemplate] = useState({ name: "", subject: "", body: "" });
   const [editingFreelanceTemplate, setEditingFreelanceTemplate] = useState(null);
   const [isFreelanceModalOpen, setIsFreelanceModalOpen] = useState(false);
+
+  // Modèles d'emails pour les Clients / Mariés (Contrat & Acompte, Contrat seul, Lien interface DJ)
+  const [clientTemplates, setClientTemplates] = useState([]);
+  const [newClientTemplate, setNewClientTemplate] = useState({ name: "", category: "contrat_acompte", subject: "", body: "" });
+  const [editingClientTemplate, setEditingClientTemplate] = useState(null);
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
 
   const [equipmentList, setEquipmentList] = useState([]);
 
@@ -441,45 +461,119 @@ export const ConfigurationPage = ({
         console.error("Error loading freelance templates:", error);
       }
     };
+    const loadClientTemplates = async () => {
+      try {
+        const response = await apiService.get('/client-email-templates');
+        const list = response.data.templates || [];
+        setClientTemplates(list.map(t => ({ ...t, body: cleanPlainText(t.body) })));
+      } catch (error) {
+        console.error("Error loading client templates:", error);
+      }
+    };
     loadOrderedNotes();
     loadEquipmentList();
     loadFreelanceTemplates();
+    loadClientTemplates();
   }, [apiService]);
 
   // --- Options Matériel ---
-  const handleUploadImageForNewOption = async (file) => {
-    if (!file) return;
+  const handleUploadImagesForNewOption = async (files) => {
+    const fileArray = Array.from(files || []);
+    if (fileArray.length === 0) return;
+    const validFiles = fileArray.filter(file => {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`"${file.name}" dépasse la taille maximale autorisée (5 Mo)`);
+        return false;
+      }
+      return true;
+    });
+    if (validFiles.length === 0) return;
+
     try {
       setIsUploadingOptionImage(true);
-      const res = await apiService.uploadMaterialOptionImage(file);
-      if (res && res.url) {
-        setNewOption(prev => ({ ...prev, image_url: res.url }));
-        toast.success("Infographie / Image téléchargée avec succès !");
+      const res = await apiService.uploadMaterialOptionImages(validFiles);
+      if (res && res.urls && res.urls.length > 0) {
+        setNewOption(prev => {
+          const current = Array.isArray(prev.image_urls) ? prev.image_urls : (prev.image_url ? [prev.image_url] : []);
+          const updated = [...current, ...res.urls];
+          return {
+            ...prev,
+            image_urls: updated,
+            image_url: updated[0] || ""
+          };
+        });
+        toast.success(res.urls.length === 1 ? "Image ajoutée avec succès !" : `${res.urls.length} images ajoutées avec succès !`);
       }
     } catch (error) {
-      console.error("Error uploading image for new option:", error);
-      toast.error("Erreur lors du téléchargement de l'image.");
+      console.error("Error uploading images for new option:", error);
+      toast.error("Erreur lors du téléchargement des images.");
     } finally {
       setIsUploadingOptionImage(false);
     }
   };
 
-  const handleUploadImageForEditOption = async (file, index) => {
-    if (!file) return;
+  const handleUploadImagesForEditOption = async (files, index) => {
+    const fileArray = Array.from(files || []);
+    if (fileArray.length === 0) return;
+    const validFiles = fileArray.filter(file => {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`"${file.name}" dépasse la taille maximale autorisée (5 Mo)`);
+        return false;
+      }
+      return true;
+    });
+    if (validFiles.length === 0) return;
+
     try {
       setIsUploadingOptionImage(true);
-      const res = await apiService.uploadMaterialOptionImage(file);
-      if (res && res.url) {
+      const res = await apiService.uploadMaterialOptionImages(validFiles);
+      if (res && res.urls && res.urls.length > 0) {
         const updated = [...selectedOptions];
-        updated[index] = { ...updated[index], image_url: res.url };
+        const current = Array.isArray(updated[index].image_urls) 
+          ? updated[index].image_urls 
+          : (updated[index].image_url ? [updated[index].image_url] : []);
+        const combined = [...current, ...res.urls];
+        updated[index] = { 
+          ...updated[index], 
+          image_urls: combined, 
+          image_url: combined[0] || "" 
+        };
         setSelectedOptions(updated);
-        toast.success("Infographie / Image mise à jour pour cette option !");
+        toast.success(res.urls.length === 1 ? "Image ajoutée !" : `${res.urls.length} images ajoutées !`);
       }
     } catch (error) {
-      console.error("Error uploading image for edited option:", error);
-      toast.error("Erreur lors du téléchargement de l'image.");
+      console.error("Error uploading images for edited option:", error);
+      toast.error("Erreur lors du téléchargement des images.");
     } finally {
       setIsUploadingOptionImage(false);
+    }
+  };
+
+  const handleRemoveOptionImage = (imgIndex, optionIndex = null) => {
+    if (optionIndex === null) {
+      setNewOption(prev => {
+        const current = Array.isArray(prev.image_urls) ? prev.image_urls : (prev.image_url ? [prev.image_url] : []);
+        const filtered = current.filter((_, i) => i !== imgIndex);
+        return {
+          ...prev,
+          image_urls: filtered,
+          image_url: filtered[0] || ""
+        };
+      });
+      toast.info("Image retirée");
+    } else {
+      const updated = [...selectedOptions];
+      const current = Array.isArray(updated[optionIndex].image_urls) 
+        ? updated[optionIndex].image_urls 
+        : (updated[optionIndex].image_url ? [updated[optionIndex].image_url] : []);
+      const filtered = current.filter((_, i) => i !== imgIndex);
+      updated[optionIndex] = {
+        ...updated[optionIndex],
+        image_urls: filtered,
+        image_url: filtered[0] || ""
+      };
+      setSelectedOptions(updated);
+      toast.info("Image retirée");
     }
   };
 
@@ -487,16 +581,21 @@ export const ConfigurationPage = ({
     if (newOption.name.trim() && newOption.price >= 0) {
       try {
         setIsSaving(true);
+        const finalImages = (Array.isArray(newOption.image_urls) && newOption.image_urls.length > 0)
+          ? newOption.image_urls
+          : (newOption.image_url ? [newOption.image_url] : []);
+
         const savedOption = await apiService.createMaterialOption({
           name: newOption.name.trim(),
           price: newOption.price,
           description: newOption.description || "",
           event_categories: newOption.event_categories || [],
           linked_equipment_id: newOption.linked_equipment_id || null,
-          image_url: newOption.image_url || null
+          image_url: finalImages[0] || null,
+          image_urls: finalImages
         });
-        setSelectedOptions([...selectedOptions, { ...savedOption, selected: false }]);
-        setNewOption({ name: "", price: 0, description: "", event_categories: [], linked_equipment_id: "", image_url: "" });
+        setSelectedOptions([...selectedOptions, { ...savedOption, image_urls: finalImages, selected: false }]);
+        setNewOption({ name: "", price: 0, description: "", event_categories: [], linked_equipment_id: "", image_url: "", image_urls: [] });
         if (newOptionFileInputRef.current) newOptionFileInputRef.current.value = "";
         toast.success("Option matériel ajoutée et sauvegardée définitivement !");
       } catch (error) {
@@ -527,13 +626,18 @@ export const ConfigurationPage = ({
     const option = selectedOptions[index];
     try {
       setIsSaving(true);
+      const optImages = (Array.isArray(option.image_urls) && option.image_urls.length > 0)
+        ? option.image_urls
+        : (option.image_url ? [option.image_url] : []);
+
       await apiService.updateMaterialOption(option.id, { 
         name: option.name, 
         price: option.price,
         description: option.description || "",
         event_categories: option.event_categories || [],
         linked_equipment_id: option.linked_equipment_id || null,
-        image_url: option.image_url || null
+        image_url: optImages[0] || null,
+        image_urls: optImages
       });
       setEditingOptionIndex(null);
       toast.success("Option modifiée et sauvegardée !");
@@ -848,6 +952,82 @@ export const ConfigurationPage = ({
     }
   };
 
+  // ── Méthodes pour les modèles d'emails clients ──
+  const addClientTemplate = async () => {
+    if (!newClientTemplate.name.trim() || !newClientTemplate.subject.trim() || !newClientTemplate.body.trim()) {
+      toast.error("Veuillez remplir le nom, l'objet et le message du modèle.");
+      return;
+    }
+    try {
+      setIsSaving(true);
+      const res = await apiService.post('/client-email-templates', {
+        name: newClientTemplate.name.trim(),
+        category: newClientTemplate.category || 'contrat_acompte',
+        subject: newClientTemplate.subject.trim(),
+        body: newClientTemplate.body.trim(),
+        is_default: clientTemplates.length === 0
+      });
+      setClientTemplates([...clientTemplates, res.data]);
+      setNewClientTemplate({ name: "", category: "contrat_acompte", subject: "", body: "" });
+      toast.success("Modèle d'email client ajouté avec succès !");
+    } catch (err) {
+      console.error("Error adding client template:", err);
+      toast.error("Erreur lors de l'ajout du modèle client");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteClientTemplate = async (id) => {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce modèle d'email client ?")) return;
+    try {
+      await apiService.delete(`/client-email-templates/${id}`);
+      setClientTemplates(clientTemplates.filter(t => t.id !== id));
+      toast.success("Modèle client supprimé !");
+    } catch (err) {
+      console.error("Error deleting client template:", err);
+      toast.error("Erreur lors de la suppression");
+    }
+  };
+
+  const saveEditedClientTemplate = async () => {
+    if (!editingClientTemplate.name.trim() || !editingClientTemplate.subject.trim() || !editingClientTemplate.body.trim()) {
+      toast.error("Veuillez remplir tous les champs obligatoires");
+      return;
+    }
+    try {
+      setIsSaving(true);
+      const res = await apiService.put(`/client-email-templates/${editingClientTemplate.id}`, editingClientTemplate);
+      setClientTemplates(clientTemplates.map(t => t.id === editingClientTemplate.id ? res.data : t));
+      setIsClientModalOpen(false);
+      setEditingClientTemplate(null);
+      toast.success("Modèle d'email client mis à jour !");
+    } catch (err) {
+      console.error("Error updating client template:", err);
+      toast.error("Erreur lors de la mise à jour");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const setClientTemplateAsDefault = async (id) => {
+    try {
+      const updatedList = await Promise.all(clientTemplates.map(async (t) => {
+        const isTarget = t.id === id;
+        if (t.is_default !== isTarget) {
+          const res = await apiService.put(`/client-email-templates/${t.id}`, { ...t, is_default: isTarget });
+          return res.data;
+        }
+        return t;
+      }));
+      setClientTemplates(updatedList);
+      toast.success("Modèle client par défaut mis à jour !");
+    } catch (e) {
+      console.error(e);
+      toast.error("Erreur lors de la mise à jour");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6" data-testid="configuration-page">
       <div className="max-w-6xl mx-auto">
@@ -870,7 +1050,7 @@ export const ConfigurationPage = ({
         </div>
 
         <Tabs value={activeConfigTab} onValueChange={setActiveConfigTab}>
-          <TabsList className="grid w-full grid-cols-5 mb-8">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-6 mb-8 h-auto p-1 gap-1">
             <TabsTrigger value="options" className="flex items-center space-x-2">
               <Music className="h-4 w-4" />
               <span>Options Matériel</span>
@@ -881,15 +1061,19 @@ export const ConfigurationPage = ({
             </TabsTrigger>
             <TabsTrigger value="pdf_notes" className="flex items-center space-x-2">
               <UploadCloud className="h-4 w-4" />
-              <span>PDF Notes Techniques</span>
+              <span>PDF Notes</span>
             </TabsTrigger>
             <TabsTrigger value="cgv" className="flex items-center space-x-2">
               <FileCheck className="h-4 w-4" />
               <span>Modèles CGV</span>
             </TabsTrigger>
             <TabsTrigger value="freelance_emails" className="flex items-center space-x-2">
-              <Mail className="h-4 w-4" />
+              <Mail className="h-4 w-4 text-indigo-600" />
               <span>Mails Freelances</span>
+            </TabsTrigger>
+            <TabsTrigger value="client_emails" className="flex items-center space-x-2">
+              <Mail className="h-4 w-4 text-emerald-600" />
+              <span>Mails Clients</span>
             </TabsTrigger>
           </TabsList>
 
@@ -934,80 +1118,105 @@ export const ConfigurationPage = ({
 
                             {/* Image / Infographie pour l'édition */}
                             <div className="p-3 bg-slate-50 border rounded-lg space-y-2">
-                              <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                                <ImageIcon className="w-4 h-4 text-indigo-600" />
-                                Infographie / Visuel de l'option (PNG, JPG, WebP)
-                              </Label>
-                              {option.image_url ? (
-                                <div className="flex items-center gap-3 bg-white p-2 border rounded-md">
-                                  <img 
-                                    src={option.image_url} 
-                                    alt={option.name} 
-                                    className="w-16 h-16 object-cover rounded border cursor-pointer hover:opacity-80 transition"
-                                    onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })}
-                                  />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-medium text-slate-800 truncate">Infographie associée</p>
-                                    <div className="flex items-center gap-2 mt-1.5">
-                                      <Button 
-                                        type="button" 
-                                        size="sm" 
-                                        variant="outline" 
-                                        className="h-7 text-xs flex items-center gap-1 text-indigo-600"
-                                        onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })}
-                                      >
-                                        <Eye className="w-3.5 h-3.5" /> Voir
-                                      </Button>
-                                      <label className="cursor-pointer">
+                              {(() => {
+                                const editOptionImages = (Array.isArray(option.image_urls) && option.image_urls.length > 0)
+                                  ? option.image_urls
+                                  : (option.image_url ? [option.image_url] : []);
+                                
+                                return (
+                                  <>
+                                    <div className="flex items-center justify-between">
+                                      <Label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                                        <ImageIcon className="w-4 h-4 text-indigo-600" />
+                                        Images / Infographies ({editOptionImages.length})
+                                      </Label>
+                                      {editOptionImages.length > 0 && (
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-6 text-[11px] text-indigo-600 hover:bg-indigo-50 px-2 flex items-center gap-1"
+                                          onClick={() => setPreviewOptionImageModal({
+                                            open: true,
+                                            title: option.name,
+                                            imageUrl: editOptionImages[0],
+                                            imageUrls: editOptionImages,
+                                            price: option.price,
+                                            description: option.description
+                                          })}
+                                        >
+                                          <Eye className="w-3 h-3" /> Diaporama
+                                        </Button>
+                                      )}
+                                    </div>
+
+                                    {editOptionImages.length > 0 && (
+                                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 my-2">
+                                        {editOptionImages.map((img, imgIdx) => (
+                                          <div key={imgIdx} className="relative group rounded-md border border-slate-200 overflow-hidden bg-white aspect-square">
+                                            <img
+                                              src={img}
+                                              alt={`Image ${imgIdx + 1}`}
+                                              className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition"
+                                              onClick={() => setPreviewOptionImageModal({
+                                                open: true,
+                                                title: option.name,
+                                                imageUrl: img,
+                                                imageUrls: editOptionImages,
+                                                price: option.price,
+                                                description: option.description
+                                              })}
+                                            />
+                                            <button
+                                              type="button"
+                                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-700 shadow"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleRemoveOptionImage(imgIdx, index);
+                                              }}
+                                              title="Supprimer cette image"
+                                            >
+                                              <X className="w-3 h-3" />
+                                            </button>
+                                            {imgIdx === 0 && (
+                                              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1 py-0.2 rounded font-medium">
+                                                Principale
+                                              </span>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    <div>
+                                      <label className="flex items-center justify-center gap-2 p-2.5 border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-lg cursor-pointer bg-white transition-colors">
                                         <input 
                                           type="file" 
+                                          multiple
                                           accept="image/png,image/jpeg,image/jpg,image/webp" 
                                           className="hidden" 
                                           disabled={isUploadingOptionImage}
                                           onChange={(e) => {
-                                            if (e.target.files?.[0]) handleUploadImageForEditOption(e.target.files[0], index);
+                                            if (e.target.files?.length) handleUploadImagesForEditOption(e.target.files, index);
                                           }} 
                                         />
-                                        <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border transition">
-                                          {isUploadingOptionImage ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                                          Remplacer
+                                        {isUploadingOptionImage ? (
+                                          <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                                        ) : (
+                                          <UploadCloud className="w-4 h-4 text-indigo-600" />
+                                        )}
+                                        <span className="text-xs font-medium text-slate-700">
+                                          {isUploadingOptionImage 
+                                            ? "Téléchargement..." 
+                                            : editOptionImages.length > 0 
+                                              ? "Ajouter d'autres images (plusieurs sélectionnables)" 
+                                              : "Sélectionner des images (plusieurs sélectionnables)"}
                                         </span>
                                       </label>
-                                      <Button 
-                                        type="button" 
-                                        size="sm" 
-                                        variant="ghost" 
-                                        className="h-7 text-xs text-rose-600 hover:bg-rose-50 p-1"
-                                        onClick={() => {
-                                          const updated = [...selectedOptions];
-                                          updated[index].image_url = null;
-                                          setSelectedOptions(updated);
-                                        }}
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </Button>
                                     </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div>
-                                  <label className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-lg cursor-pointer bg-white transition-colors">
-                                    <input 
-                                      type="file" 
-                                      accept="image/png,image/jpeg,image/jpg,image/webp" 
-                                      className="hidden" 
-                                      disabled={isUploadingOptionImage}
-                                      onChange={(e) => {
-                                        if (e.target.files?.[0]) handleUploadImageForEditOption(e.target.files[0], index);
-                                      }} 
-                                    />
-                                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                                      {isUploadingOptionImage ? <Loader2 className="w-4 h-4 animate-spin text-indigo-600" /> : <UploadCloud className="w-4 h-4 text-indigo-600" />}
-                                      <span>{isUploadingOptionImage ? "Téléchargement..." : "Cliquer pour ajouter une infographie PNG"}</span>
-                                    </div>
-                                  </label>
-                                </div>
-                              )}
+                                  </>
+                                );
+                              })()}
                             </div>
 
                             <div className="space-y-1.5">
@@ -1078,41 +1287,77 @@ export const ConfigurationPage = ({
                         ) : (
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-start gap-3">
-                              {option.image_url ? (
-                                <div 
-                                  className="relative group shrink-0 cursor-pointer"
-                                  onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })}
-                                  title="Cliquez pour agrandir l'infographie"
-                                >
-                                  <img 
-                                    src={option.image_url} 
-                                    alt={option.name} 
-                                    className="w-14 h-14 object-cover rounded-lg border border-slate-200 group-hover:scale-105 transition-transform"
-                                  />
-                                  <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                    <ZoomIn className="w-4 h-4 text-white" />
+                              {(() => {
+                                const optPhotos = (Array.isArray(option.image_urls) && option.image_urls.length > 0)
+                                  ? option.image_urls
+                                  : (option.image_url ? [option.image_url] : []);
+
+                                if (optPhotos.length === 0) {
+                                  return (
+                                    <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex flex-col items-center justify-center text-slate-400 shrink-0">
+                                      <ImageIcon className="w-5 h-5" />
+                                      <span className="text-[9px] mt-0.5">Sans visuel</span>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div 
+                                    className="relative group shrink-0 cursor-pointer"
+                                    onClick={() => setPreviewOptionImageModal({ 
+                                      open: true, 
+                                      title: option.name, 
+                                      imageUrl: optPhotos[0], 
+                                      imageUrls: optPhotos, 
+                                      price: option.price, 
+                                      description: option.description 
+                                    })}
+                                    title={optPhotos.length > 1 ? `Voir le diaporama (${optPhotos.length} photos)` : "Cliquez pour agrandir l'image"}
+                                  >
+                                    <img 
+                                      src={optPhotos[0]} 
+                                      alt={option.name} 
+                                      className="w-14 h-14 object-cover rounded-lg border border-slate-200 group-hover:scale-105 transition-transform"
+                                    />
+                                    {optPhotos.length > 1 && (
+                                      <span className="absolute bottom-0.5 right-0.5 bg-black/75 text-white text-[9px] px-1 py-0.2 rounded font-bold shadow">
+                                        {optPhotos.length}
+                                      </span>
+                                    )}
+                                    <div className="absolute inset-0 bg-black/40 rounded-lg opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                      <ZoomIn className="w-4 h-4 text-white" />
+                                    </div>
                                   </div>
-                                </div>
-                              ) : (
-                                <div className="w-14 h-14 rounded-lg bg-slate-100 border border-slate-200 flex flex-col items-center justify-center text-slate-400 shrink-0">
-                                  <ImageIcon className="w-5 h-5" />
-                                  <span className="text-[9px] mt-0.5">Sans visuel</span>
-                                </div>
-                              )}
+                                );
+                              })()}
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <h3 className="font-semibold text-slate-900">{option.name}</h3>
                                   <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200 font-bold">
                                     {option.price} €
                                   </Badge>
-                                  {option.image_url && (
-                                    <Badge 
-                                      className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] cursor-pointer hover:bg-emerald-100 flex items-center gap-1"
-                                      onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })}
-                                    >
-                                      <Info className="w-3 h-3" /> Infographie active
-                                    </Badge>
-                                  )}
+                                  {(() => {
+                                    const optPhotos = (Array.isArray(option.image_urls) && option.image_urls.length > 0)
+                                      ? option.image_urls
+                                      : (option.image_url ? [option.image_url] : []);
+                                    if (optPhotos.length === 0) return null;
+                                    return (
+                                      <Badge 
+                                        className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] cursor-pointer hover:bg-emerald-100 flex items-center gap-1"
+                                        onClick={() => setPreviewOptionImageModal({ 
+                                          open: true, 
+                                          title: option.name, 
+                                          imageUrl: optPhotos[0], 
+                                          imageUrls: optPhotos, 
+                                          price: option.price, 
+                                          description: option.description 
+                                        })}
+                                      >
+                                        <Info className="w-3 h-3" />
+                                        {optPhotos.length > 1 ? `${optPhotos.length} photos (Diaporama)` : "Visuel actif"}
+                                      </Badge>
+                                    );
+                                  })()}
                                 </div>
 
                                 {option.description && (
@@ -1149,17 +1394,30 @@ export const ConfigurationPage = ({
                         )}
                       </div>
                       <div className="flex items-center space-x-1.5 self-end md:self-center shrink-0">
-                        {option.image_url && editingOptionIndex !== index && (
-                          <Button 
-                            onClick={() => setPreviewOptionImageModal({ open: true, title: option.name, imageUrl: option.image_url, price: option.price, description: option.description })} 
-                            size="sm" 
-                            variant="ghost" 
-                            className="text-indigo-600 hover:bg-indigo-50"
-                            title="Voir l'infographie en plein écran"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        )}
+                        {(() => {
+                          const optPhotos = (Array.isArray(option.image_urls) && option.image_urls.length > 0)
+                            ? option.image_urls
+                            : (option.image_url ? [option.image_url] : []);
+                          if (optPhotos.length === 0 || editingOptionIndex === index) return null;
+                          return (
+                            <Button 
+                              onClick={() => setPreviewOptionImageModal({ 
+                                open: true, 
+                                title: option.name, 
+                                imageUrl: optPhotos[0], 
+                                imageUrls: optPhotos, 
+                                price: option.price, 
+                                description: option.description 
+                              })} 
+                              size="sm" 
+                              variant="ghost" 
+                              className="text-indigo-600 hover:bg-indigo-50"
+                              title={optPhotos.length > 1 ? "Voir le diaporama des photos (3s)" : "Voir l'infographie en plein écran"}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          );
+                        })()}
                         <Button onClick={() => moveOption(index, 'up')} disabled={index === 0 || isSaving} size="sm" variant="ghost" title="Monter"><ChevronUp className="h-4 w-4" /></Button>
                         <Button onClick={() => moveOption(index, 'down')} disabled={index === selectedOptions.length - 1 || isSaving} size="sm" variant="ghost" title="Descendre"><ChevronDown className="h-4 w-4" /></Button>
                         <Button onClick={() => setEditingOptionIndex(editingOptionIndex === index ? null : index)} size="sm" variant="outline" disabled={isSaving} title="Modifier"><Edit className="h-4 w-4" /></Button>
@@ -1199,82 +1457,106 @@ export const ConfigurationPage = ({
                       />
                     </div>
 
-                    {/* Section Image Infographie pour la nouvelle option */}
+                    {/* Section Images pour la nouvelle option */}
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
-                        <ImageIcon className="w-4 h-4 text-indigo-600" />
-                        Infographie de l'option (PNG, JPG, WebP)
-                      </Label>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium text-slate-700 flex items-center gap-1.5">
+                          <ImageIcon className="w-4 h-4 text-indigo-600" />
+                          Images / Infographies ({newOption.image_urls && newOption.image_urls.length > 0 ? newOption.image_urls.length : (newOption.image_url ? 1 : 0)})
+                        </Label>
+                        {(newOption.image_urls && newOption.image_urls.length > 0 || newOption.image_url) && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-[11px] text-indigo-600 hover:bg-indigo-50 px-2 flex items-center gap-1"
+                            onClick={() => setPreviewOptionImageModal({
+                              open: true,
+                              title: newOption.name || "Aperçu Option",
+                              imageUrl: newOption.image_urls && newOption.image_urls.length > 0 ? newOption.image_urls[0] : newOption.image_url,
+                              imageUrls: newOption.image_urls && newOption.image_urls.length > 0 ? newOption.image_urls : (newOption.image_url ? [newOption.image_url] : []),
+                              price: newOption.price,
+                              description: newOption.description
+                            })}
+                          >
+                            <Eye className="w-3 h-3" /> Diaporama
+                          </Button>
+                        )}
+                      </div>
                       <p className="text-[11px] text-slate-500">
-                        Cette infographie sera affichée en plein écran au client lorsqu'il cliquera sur l'icône <Info className="w-3 h-3 inline text-indigo-600" /> dans son espace DJ Client.
+                        Ces infographies/images seront affichées en diaporama au client lorsqu'il cliquera sur l'icône <Info className="w-3 h-3 inline text-indigo-600" /> dans son espace.
                       </p>
 
-                      {newOption.image_url ? (
-                        <div className="flex items-center gap-3 bg-white p-3 border rounded-lg">
-                          <img 
-                            src={newOption.image_url} 
-                            alt="Infographie aperçu" 
-                            className="w-16 h-16 object-cover rounded-md border cursor-pointer hover:opacity-80 transition"
-                            onClick={() => setPreviewOptionImageModal({ open: true, title: newOption.name || "Aperçu Option", imageUrl: newOption.image_url, price: newOption.price, description: newOption.description })}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
-                              <FileCheck className="w-3.5 h-3.5" /> Infographie téléchargée avec succès
-                            </p>
-                            <div className="flex items-center gap-2 mt-2">
-                              <Button 
-                                type="button" 
-                                size="sm" 
-                                variant="outline" 
-                                className="h-7 text-xs flex items-center gap-1"
-                                onClick={() => setPreviewOptionImageModal({ open: true, title: newOption.name || "Aperçu Option", imageUrl: newOption.image_url, price: newOption.price, description: newOption.description })}
-                              >
-                                <Eye className="w-3 h-3" /> Voir
-                              </Button>
-                              <Button 
-                                type="button" 
-                                size="sm" 
-                                variant="ghost" 
-                                className="h-7 text-xs text-rose-600 hover:bg-rose-50"
-                                onClick={() => {
-                                  setNewOption(prev => ({ ...prev, image_url: "" }));
-                                  if (newOptionFileInputRef.current) newOptionFileInputRef.current.value = "";
+                      {((newOption.image_urls && newOption.image_urls.length > 0) || newOption.image_url) && (
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 my-2 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          {(newOption.image_urls && newOption.image_urls.length > 0 ? newOption.image_urls : [newOption.image_url]).map((img, imgIdx) => (
+                            <div key={imgIdx} className="relative group rounded-md border border-slate-200 overflow-hidden bg-white aspect-square">
+                              <img
+                                src={img}
+                                alt={`Image ${imgIdx + 1}`}
+                                className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition"
+                                onClick={() => setPreviewOptionImageModal({
+                                  open: true,
+                                  title: newOption.name || "Aperçu Option",
+                                  imageUrl: img,
+                                  imageUrls: newOption.image_urls && newOption.image_urls.length > 0 ? newOption.image_urls : [newOption.image_url],
+                                  price: newOption.price,
+                                  description: newOption.description
+                                })}
+                              />
+                              <button
+                                type="button"
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-rose-700 shadow"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveOptionImage(imgIdx);
                                 }}
+                                title="Supprimer cette image"
                               >
-                                <Trash2 className="w-3 h-3 mr-1" /> Supprimer
-                              </Button>
+                                <X className="w-3 h-3" />
+                              </button>
+                              {imgIdx === 0 && (
+                                <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] px-1 py-0.2 rounded font-medium">
+                                  Principale
+                                </span>
+                              )}
                             </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-white p-4 border border-dashed rounded-lg flex flex-col sm:flex-row items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                              <UploadCloud className="w-5 h-5" />
-                            </div>
-                            <div>
-                              <p className="text-xs font-medium text-slate-800">Ajouter l'infographie PNG / JPG</p>
-                              <p className="text-[11px] text-slate-400">Formats acceptés : PNG, JPG, JPEG, WebP</p>
-                            </div>
-                          </div>
-                          <label className="cursor-pointer shrink-0">
-                            <input 
-                              ref={newOptionFileInputRef}
-                              type="file" 
-                              accept="image/png,image/jpeg,image/jpg,image/webp" 
-                              className="hidden" 
-                              disabled={isUploadingOptionImage || isSaving}
-                              onChange={(e) => {
-                                if (e.target.files?.[0]) handleUploadImageForNewOption(e.target.files[0]);
-                              }} 
-                            />
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-medium transition">
-                              {isUploadingOptionImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                              {isUploadingOptionImage ? "Téléchargement..." : "Sélectionner une image"}
-                            </span>
-                          </label>
+                          ))}
                         </div>
                       )}
+
+                      <div className="bg-white p-4 border border-dashed border-slate-300 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-3 hover:border-indigo-400 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                            {isUploadingOptionImage ? <Loader2 className="w-5 h-5 animate-spin" /> : <UploadCloud className="w-5 h-5" />}
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-slate-800">
+                              {((newOption.image_urls && newOption.image_urls.length > 0) || newOption.image_url) 
+                                ? "Ajouter d'autres images" 
+                                : "Ajouter des infographies / images"}
+                            </p>
+                            <p className="text-[11px] text-slate-400">Formats: PNG, JPG, WebP (sélection multiple)</p>
+                          </div>
+                        </div>
+                        <label className="cursor-pointer shrink-0">
+                          <input 
+                            ref={newOptionFileInputRef}
+                            type="file" 
+                            multiple
+                            accept="image/png,image/jpeg,image/jpg,image/webp" 
+                            className="hidden" 
+                            disabled={isUploadingOptionImage || isSaving}
+                            onChange={(e) => {
+                              if (e.target.files?.length) handleUploadImagesForNewOption(e.target.files);
+                            }} 
+                          />
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-medium transition">
+                            {isUploadingOptionImage ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                            {isUploadingOptionImage ? "En cours..." : "Parcourir"}
+                          </span>
+                        </label>
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -1638,6 +1920,162 @@ export const ConfigurationPage = ({
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Mails Clients */}
+          <TabsContent value="client_emails">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-emerald-600" />
+                  <span>Modèles d'Emails de Confirmation & Accès pour les Clients / Mariés</span>
+                </CardTitle>
+                <CardDescription>
+                  Gérez les modèles de courriels proposés lors de la signature d'un contrat pour confirmer la réception du contrat signé, de l'acompte et donner l'accès à l'Espace DJ / Client.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4 mb-6">
+                  {clientTemplates.map((t) => (
+                    <div key={t.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 border rounded-lg bg-white shadow-sm hover:border-emerald-200 transition-colors gap-4">
+                      <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-slate-800">{t.name}</h3>
+                          {t.is_default && (
+                            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-300">
+                              Par défaut
+                            </Badge>
+                          )}
+                          {t.category === 'contrat_acompte' && (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 font-normal">
+                              Contrat & Acompte
+                            </Badge>
+                          )}
+                          {t.category === 'contrat_seul' && (
+                            <Badge className="bg-amber-50 text-amber-700 border-amber-200 font-normal">
+                              Contrat seul
+                            </Badge>
+                          )}
+                          {t.category === 'lien_espace_dj' && (
+                            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 font-normal">
+                              Lien Espace DJ
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-emerald-700 font-medium mt-1">Sujet : {t.subject}</p>
+                        <p className="text-xs text-slate-600 mt-1.5 line-clamp-3 whitespace-pre-line font-sans bg-slate-50 p-2 rounded border border-slate-100">{cleanPlainText(t.body)}</p>
+                      </div>
+                      <div className="flex items-center space-x-2 shrink-0">
+                        {!t.is_default && (
+                          <Button 
+                            onClick={() => setClientTemplateAsDefault(t.id)} 
+                            size="sm" 
+                            variant="outline"
+                            className="text-slate-600 text-xs border-slate-300 hover:bg-slate-50"
+                          >
+                            Par défaut
+                          </Button>
+                        )}
+                        <Button 
+                          onClick={() => {
+                            setEditingClientTemplate({ ...t, body: cleanPlainText(t.body) });
+                            setIsClientModalOpen(true);
+                          }} 
+                          size="sm" 
+                          variant="outline"
+                          className="border-slate-300 hover:bg-slate-50"
+                        >
+                          <Edit className="h-4 w-4 text-slate-600" />
+                        </Button>
+                        <Button 
+                          onClick={() => deleteClientTemplate(t.id)} 
+                          size="sm" 
+                          variant="destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {clientTemplates.length === 0 && (
+                    <div className="text-center py-8 text-slate-500 border-2 border-dashed rounded-lg">
+                      Aucun modèle client configuré
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t pt-6">
+                  <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+                    <Plus className="h-5 w-5 text-emerald-600" />
+                    <span>Créer un nouveau modèle pour les clients</span>
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label className="text-slate-700 text-xs font-semibold">Nom interne du modèle</Label>
+                        <Input 
+                          placeholder="Ex: Contrat & Acompte reçus" 
+                          value={newClientTemplate.name}
+                          onChange={(e) => setNewClientTemplate({...newClientTemplate, name: e.target.value})}
+                          className="border-slate-300 bg-white text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-slate-700 text-xs font-semibold">Catégorie / Utilisation</Label>
+                        <select
+                          className="w-full h-10 px-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          value={newClientTemplate.category || "contrat_acompte"}
+                          onChange={(e) => setNewClientTemplate({...newClientTemplate, category: e.target.value})}
+                        >
+                          <option value="contrat_acompte">Contrat signé et acompte reçu</option>
+                          <option value="contrat_seul">Contrat signé uniquement</option>
+                          <option value="lien_espace_dj">Lien d'accès à l'Espace DJ uniquement</option>
+                          <option value="autre">Autre modèle client</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-slate-700 text-xs font-semibold">Sujet de l'email</Label>
+                        <Input 
+                          placeholder="Ex: Confirmation de votre contrat & Espace DJ : {{client_name}}" 
+                          value={newClientTemplate.subject}
+                          onChange={(e) => setNewClientTemplate({...newClientTemplate, subject: e.target.value})}
+                          className="border-slate-300 bg-white text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex flex-wrap items-center gap-2">
+                      <span className="font-semibold">Variables disponibles :</span>
+                      <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{client_name}}"}</code>
+                      <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{client_dj_link}}"}</code>
+                      <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{event_date}}"}</code>
+                      <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{event_type}}"}</code>
+                      <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{event_location}}"}</code>
+                      <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{dj_name}}"}</code>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-slate-700 text-xs font-semibold">Contenu du message (Texte simple, clair et sans code HTML)</Label>
+                      <Textarea 
+                        placeholder="Bonjour {{client_name}}, nous vous confirmons avoir bien reçu votre contrat signé et votre acompte..." 
+                        rows={10}
+                        value={newClientTemplate.body}
+                        onChange={(e) => setNewClientTemplate({...newClientTemplate, body: e.target.value})}
+                        disabled={isSaving}
+                        className="w-full text-sm font-sans leading-relaxed border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 bg-white p-3.5 shadow-sm min-h-[200px] text-slate-800 rounded-lg placeholder:text-slate-400"
+                      />
+                    </div>
+                    <Button 
+                      onClick={addClientTemplate} 
+                      disabled={!newClientTemplate.name.trim() || !newClientTemplate.subject.trim() || !newClientTemplate.body.trim() || isSaving}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      {isSaving ? "Création..." : <><Plus className="h-4 w-4 mr-2" />Ajouter le modèle de mail client</>}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
 
         {/* Modal d'édition CGV */}
@@ -1740,6 +2178,85 @@ export const ConfigurationPage = ({
           </DialogContent>
         </Dialog>
 
+        {/* Modal d'édition Modèle Client */}
+        <Dialog open={isClientModalOpen} onOpenChange={setIsClientModalOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Modifier le modèle client</DialogTitle>
+              <DialogDescription>Modifiez le contenu du modèle d'email destiné aux mariés / clients.</DialogDescription>
+            </DialogHeader>
+            {editingClientTemplate && (
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="client-tpl-name" className="text-slate-700 font-medium text-xs">Nom du modèle</Label>
+                    <Input 
+                      id="client-tpl-name" 
+                      value={editingClientTemplate.name || ""} 
+                      onChange={(e) => setEditingClientTemplate({...editingClientTemplate, name: e.target.value})} 
+                      disabled={isSaving} 
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="client-tpl-category" className="text-slate-700 font-medium text-xs">Catégorie</Label>
+                    <select
+                      id="client-tpl-category"
+                      className="w-full h-10 px-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      value={editingClientTemplate.category || "contrat_acompte"}
+                      onChange={(e) => setEditingClientTemplate({...editingClientTemplate, category: e.target.value})}
+                      disabled={isSaving}
+                    >
+                      <option value="contrat_acompte">Contrat signé et acompte reçu</option>
+                      <option value="contrat_seul">Contrat signé uniquement</option>
+                      <option value="lien_espace_dj">Lien d'accès à l'Espace DJ uniquement</option>
+                      <option value="autre">Autre modèle client</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="client-tpl-subject" className="text-slate-700 font-medium text-xs">Sujet du courriel</Label>
+                  <Input 
+                    id="client-tpl-subject" 
+                    value={editingClientTemplate.subject || ""} 
+                    onChange={(e) => setEditingClientTemplate({...editingClientTemplate, subject: e.target.value})} 
+                    disabled={isSaving} 
+                  />
+                </div>
+
+                <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">Variables disponibles :</span>
+                  <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{client_name}}"}</code>
+                  <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{client_dj_link}}"}</code>
+                  <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{event_date}}"}</code>
+                  <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{event_type}}"}</code>
+                  <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{event_location}}"}</code>
+                  <code className="bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-800">{"{{dj_name}}"}</code>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="client-tpl-body" className="text-slate-700 font-semibold text-xs">Contenu du message (Texte simple, clair et sans code HTML)</Label>
+                  <Textarea 
+                    id="client-tpl-body"
+                    placeholder="Bonjour {{client_name}}, ..." 
+                    rows={12}
+                    value={editingClientTemplate.body || ""}
+                    onChange={(e) => setEditingClientTemplate({...editingClientTemplate, body: e.target.value})}
+                    disabled={isSaving}
+                    className="w-full text-sm font-sans leading-relaxed border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 bg-white p-3.5 shadow-sm min-h-[220px] text-slate-800 rounded-lg placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setIsClientModalOpen(false); setEditingClientTemplate(null); }} disabled={isSaving}>Annuler</Button>
+              <Button onClick={saveEditedClientTemplate} disabled={isSaving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                <Save className="h-4 w-4 mr-2" />{isSaving ? "Enregistrement..." : "Enregistrer"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Modal d'aperçu d'infographie plein écran pour Option Matériel */}
         <Dialog open={previewOptionImageModal.open} onOpenChange={(open) => setPreviewOptionImageModal(prev => ({ ...prev, open }))}>
           <DialogContent className="max-w-4xl max-h-[95vh] p-0 overflow-hidden bg-slate-950 border-slate-800 text-white">
@@ -1765,7 +2282,16 @@ export const ConfigurationPage = ({
             </div>
 
             <div className="p-6 flex flex-col items-center justify-center overflow-y-auto max-h-[75vh] bg-slate-950/50">
-              {previewOptionImageModal.imageUrl ? (
+              {previewOptionImageModal.imageUrls && previewOptionImageModal.imageUrls.length > 0 ? (
+                <div className="w-full max-w-3xl aspect-[4/3] relative">
+                  <ImageSlideshow 
+                    images={previewOptionImageModal.imageUrls}
+                    autoPlay={true}
+                    interval={3000}
+                    className="w-full h-full rounded-lg shadow-2xl border border-slate-800"
+                  />
+                </div>
+              ) : previewOptionImageModal.imageUrl ? (
                 <div className="relative group max-w-full">
                   <img 
                     src={previewOptionImageModal.imageUrl} 

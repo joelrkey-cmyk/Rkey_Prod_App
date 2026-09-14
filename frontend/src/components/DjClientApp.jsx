@@ -15,6 +15,7 @@ import CameraCaptureModal from './CameraCaptureModal';
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
+import ImageSlideshow from './ui/ImageSlideshow';
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
 
@@ -114,7 +115,7 @@ const DjClientApp = ({ isPublic = false }) => {
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
   // Option Material Infographic Preview Modal
-  const [optionInfographicModal, setOptionInfographicModal] = useState({ open: false, title: "", price: null, imageUrl: "", description: "" });
+  const [optionInfographicModal, setOptionInfographicModal] = useState({ open: false, title: "", price: null, imageUrl: "", imageUrls: [], description: "" });
 
   const resolveOptionImageUrl = (rawUrl) => {
     if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -145,7 +146,7 @@ const DjClientApp = ({ isPublic = false }) => {
   };
 
   const getOptionVisualData = (opt) => {
-    if (!opt) return { image_url: '', description: '' };
+    if (!opt) return { image_url: '', image_urls: [], description: '' };
     const normalize = (s) => (s || '')
       .toString()
       .toLowerCase()
@@ -167,6 +168,7 @@ const DjClientApp = ({ isPublic = false }) => {
 
     return {
       image_url: opt.image_url || matched.image_url || "",
+      image_urls: (opt.image_urls && opt.image_urls.length > 0) ? opt.image_urls : ((matched.image_urls && matched.image_urls.length > 0) ? matched.image_urls : []),
       description: opt.description || matched.description || ""
     };
   };
@@ -5618,7 +5620,7 @@ function urlBase64ToUint8Array(base64String) {
                   <ul className="space-y-2">
                     {contractOptions.map((opt, idx) => {
                       const visual = getOptionVisualData(opt);
-                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
+                      const hasDetails = Boolean(visual.image_url || (visual.image_urls && visual.image_urls.length > 0) || visual.description || opt.description);
                       return (
                         <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
                           <div className="flex items-center gap-2 font-medium">
@@ -5634,6 +5636,7 @@ function urlBase64ToUint8Array(base64String) {
                                     title: opt.name,
                                     price: opt.price,
                                     imageUrl: visual.image_url || "",
+                                    imageUrls: visual.image_urls || [],
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -5904,7 +5907,7 @@ function urlBase64ToUint8Array(base64String) {
                     </div>
                     {additions.map((opt, index) => {
                       const visual = getOptionVisualData(opt);
-                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
+                      const hasDetails = Boolean(visual.image_url || (visual.image_urls && visual.image_urls.length > 0) || visual.description || opt.description);
                       return (
                         <div key={index} className="flex justify-between items-center text-[11px] text-slate-600 font-medium">
                           <div className="flex items-center gap-1.5 truncate max-w-[140px]">
@@ -5919,6 +5922,7 @@ function urlBase64ToUint8Array(base64String) {
                                     title: opt.name,
                                     price: opt.price,
                                     imageUrl: visual.image_url || "",
+                                    imageUrls: visual.image_urls || [],
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -6029,7 +6033,7 @@ function urlBase64ToUint8Array(base64String) {
                   <ul className="space-y-2">
                     {contractOptions.map((opt, idx) => {
                       const visual = getOptionVisualData(opt);
-                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
+                      const hasDetails = Boolean(visual.image_url || (visual.image_urls && visual.image_urls.length > 0) || visual.description || opt.description);
                       return (
                         <li key={idx} className="flex items-center justify-between text-gray-700 bg-gray-50 px-3 py-2 rounded-lg border hover:bg-slate-100/60 transition-colors">
                           <div className="flex items-center gap-2">
@@ -6045,6 +6049,7 @@ function urlBase64ToUint8Array(base64String) {
                                     title: opt.name,
                                     price: opt.price,
                                     imageUrl: visual.image_url || "",
+                                    imageUrls: visual.image_urls || [],
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -6090,7 +6095,7 @@ function urlBase64ToUint8Array(base64String) {
                   <ul className="space-y-2">
                     {requestedOptions.map((opt, idx) => {
                       const visual = getOptionVisualData(opt);
-                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
+                      const hasDetails = Boolean(visual.image_url || (visual.image_urls && visual.image_urls.length > 0) || visual.description || opt.description);
                       return (
                         <li key={idx} className="flex items-center justify-between text-orange-800 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200 shadow-sm">
                           <div className="flex items-center gap-2">
@@ -6105,6 +6110,7 @@ function urlBase64ToUint8Array(base64String) {
                                     title: opt.name,
                                     price: opt.price,
                                     imageUrl: visual.image_url || "",
+                                    imageUrls: visual.image_urls || [],
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -6164,7 +6170,7 @@ function urlBase64ToUint8Array(base64String) {
                     {nonSelectedOptions.map((opt, idx) => {
                       const isSelected = optionsBasket.some(o => o.id === opt.id);
                       const visual = getOptionVisualData(opt);
-                      const hasDetails = Boolean(visual.image_url || visual.description || opt.description);
+                      const hasDetails = Boolean(visual.image_url || (visual.image_urls && visual.image_urls.length > 0) || visual.description || opt.description);
                       return (
                         <li 
                           key={idx} 
@@ -6193,6 +6199,7 @@ function urlBase64ToUint8Array(base64String) {
                                     title: opt.name,
                                     price: opt.price,
                                     imageUrl: visual.image_url || "",
+                                    imageUrls: visual.image_urls || [],
                                     description: visual.description || opt.description || ""
                                   });
                                 }}
@@ -7938,7 +7945,7 @@ function urlBase64ToUint8Array(base64String) {
       {optionInfographicModal.open && (
         <div 
           className="fixed inset-0 z-[10000] flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/85 backdrop-blur-md animate-fade-in"
-          onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", description: "" })}
+          onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", imageUrls: [], description: "" })}
         >
           <div 
             className="relative bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl text-white animate-scale-up"
@@ -7965,7 +7972,7 @@ function urlBase64ToUint8Array(base64String) {
                 </div>
               </div>
               <button
-                onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", description: "" })}
+                onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", imageUrls: [], description: "" })}
                 className="w-9 h-9 rounded-full bg-slate-800 hover:bg-rose-600/90 text-slate-300 hover:text-white transition flex items-center justify-center shrink-0 border border-slate-700 focus:outline-none"
                 title="Fermer"
               >
@@ -7975,11 +7982,24 @@ function urlBase64ToUint8Array(base64String) {
 
             {/* Content / Image Preview */}
             {(() => {
+              const modalImageUrls = optionInfographicModal.imageUrls && optionInfographicModal.imageUrls.length > 0 
+                ? optionInfographicModal.imageUrls.map(resolveOptionImageUrl)
+                : [];
               const modalImageUrl = resolveOptionImageUrl(optionInfographicModal.imageUrl);
+              
               return (
                 <>
                   <div className="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col items-center justify-center bg-slate-950/50 min-h-[300px]">
-                    {modalImageUrl ? (
+                    {modalImageUrls.length > 0 ? (
+                      <div className="w-full max-w-3xl aspect-[4/3] relative">
+                        <ImageSlideshow 
+                          images={modalImageUrls}
+                          autoPlay={true}
+                          interval={3000}
+                          className="w-full h-full max-h-[62vh] rounded-xl shadow-2xl border border-slate-800/80"
+                        />
+                      </div>
+                    ) : modalImageUrl ? (
                       <div className="relative max-w-full flex items-center justify-center">
                         <img 
                           src={modalImageUrl} 
@@ -8032,7 +8052,7 @@ function urlBase64ToUint8Array(base64String) {
                       </a>
                     ) : <div />}
                     <button
-                      onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", description: "" })}
+                      onClick={() => setOptionInfographicModal({ open: false, title: "", price: null, imageUrl: "", imageUrls: [], description: "" })}
                       className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition focus:outline-none"
                     >
                       Fermer
