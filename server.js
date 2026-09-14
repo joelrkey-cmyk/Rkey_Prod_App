@@ -2070,7 +2070,10 @@ app.use((req, res, next) => {
 });
 
 // ─── Middleware ───
-app.use(cors({ origin: '*' }));
+app.use(cors({
+  origin: '*',
+  exposedHeaders: ['Content-Disposition', 'Content-Length', 'Content-Type']
+}));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
@@ -10572,20 +10575,54 @@ if (!fs.existsSync(mp3StorageDir)) {
 const activeMp3Jobs = new Map();
 const activeMultiJobs = new Map();
 
+// Helper: extract clean token from various formats (raw, JSON, cookie, Bearer)
+function extractCleanTidalToken(rawInput) {
+  if (!rawInput || typeof rawInput !== 'string') return '';
+  let str = rawInput.trim();
+  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
+    str = str.slice(1, -1).trim();
+  }
+  if (str.startsWith('{') && str.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(str);
+      const val = parsed.token || parsed.accessToken || parsed.access_token || parsed.sessionId || parsed.session_id;
+      if (val) return String(val).trim();
+    } catch (e) {}
+  }
+  const mSession = str.match(/sessionId[:=]\s*["']?([a-zA-Z0-9_-]+)["']?/i);
+  if (mSession) return mSession[1];
+  const mBearer = str.match(/Bearer\s+([a-zA-Z0-9._-]+)/i);
+  if (mBearer) return mBearer[1];
+  return str;
+}
+
+function buildTidalHeaders(token) {
+  const clean = extractCleanTidalToken(token);
+  const baseHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'x-tidal-token': '0jTR49MPo79CqbDQ'
+  };
+  if (!clean) return baseHeaders;
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+  if (isUuid) {
+    return {
+      ...baseHeaders,
+      'sessionId': clean,
+      'x-tidal-token': clean
+    };
+  }
+
+  return {
+    ...baseHeaders,
+    'Authorization': clean.startsWith('Bearer ') ? clean : `Bearer ${clean}`
+  };
+}
+
 // Helper: Fetch tracks for a Tidal playlist or user favorites
 async function fetchPlaylistTracksHelper(playlistId, customToken) {
   const cleanId = String(playlistId || '').trim();
-  const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  };
-  if (customToken && customToken.trim()) {
-    const cleanToken = customToken.trim();
-    headers['Authorization'] = cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`;
-    headers['x-tidal-token'] = cleanToken;
-    headers['sessionId'] = cleanToken;
-  } else {
-    headers['x-tidal-token'] = '0jTR49MPo79CqbDQ';
-  }
+  const headers = buildTidalHeaders(customToken);
 
   // 1. User favorites
   if (cleanId === 'user_favorites' || cleanId.includes('favorites/tracks') || cleanId.includes('my-collection/tracks')) {
@@ -10675,14 +10712,108 @@ function getYtDlpPath() {
   return 'yt-dlp';
 }
 
+// Helper: Run yt-dlp safely and detect successful download even when exit code is 101 (--max-downloads reached)
+function executeYtDlpDownload(ytDlpBin, query, outputPath, bitrate = '320k', matchFilter = null) {
+  const { spawnSync } = require('child_process');
+  const args = [
+    query,
+    '--max-downloads', '1',
+    '--extract-audio',
+    '--audio-format', 'mp3',
+    '--audio-quality', (bitrate || '320k').replace('k', 'K'),
+    '-o', outputPath,
+    '--no-playlist'
+  ];
+  if (matchFilter) {
+    args.push('--match-filter', matchFilter);
+  }
+
+  if (fs.existsSync(outputPath)) {
+    try { fs.unlinkSync(outputPath); } catch (e) {}
+  }
+
+  const res = spawnSync(ytDlpBin, args, { stdio: 'pipe', timeout: 90000 });
+
+  // yt-dlp exits with 0 on normal exit, or 101 when stopping due to --max-downloads 1.
+  // Both are successful if the resulting file is valid.
+  const possiblePaths = [outputPath, `${outputPath}.mp3`, outputPath.replace(/\.mp3$/, '') + '.mp3'];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const stats = fs.statSync(p);
+        if (stats.size > 50000) {
+          if (p !== outputPath) {
+            fs.copyFileSync(p, outputPath);
+            try { fs.unlinkSync(p); } catch (e) {}
+          }
+          return { success: true, size: stats.size };
+        }
+      } catch (e) {}
+    }
+  }
+
+  const errMsg = res.stderr ? res.stderr.toString().trim() : (res.error ? res.error.message : `Exit code ${res.status}`);
+  return { success: false, error: errMsg };
+}
+
 // Helper: Clean filename for DJ filesystem
 function sanitizeFilename(str) {
   if (!str) return 'track';
   return str.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
 }
 
+// Helper: Format Content-Disposition header conforming to RFC 5987 / 6266
+function makeSafeContentDisposition(filename) {
+  const safeAscii = (filename || 'download')
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(filename || 'download')}`;
+}
+
+// Helper: Fetch direct audio stream URL from Tidal API if session token is provided
+async function getTidalTrackStreamUrl(trackId, customToken) {
+  if (!trackId || !customToken) return null;
+  const cleanToken = customToken.trim();
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'x-tidal-token': cleanToken,
+    'sessionId': cleanToken,
+    'Authorization': cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`
+  };
+
+  // 1. Try playbackinfopostpaywall (HIGH / LOSSLESS)
+  try {
+    const res = await fetch(`https://api.tidal.com/v1/tracks/${trackId}/playbackinfopostpaywall?audioquality=HIGH&playbackmode=STREAM&assetpresentation=FULL`, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.manifest && data.manifestMimeType === 'application/vnd.tidal.bts') {
+        const decoded = JSON.parse(Buffer.from(data.manifest, 'base64').toString('utf8'));
+        if (decoded.urls && Array.isArray(decoded.urls) && decoded.urls.length > 0) {
+          return decoded.urls[0];
+        }
+      } else if (data.urls && Array.isArray(data.urls) && data.urls.length > 0) {
+        return data.urls[0];
+      } else if (data.url) {
+        return data.url;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Try urlpostpaywall
+  try {
+    const res2 = await fetch(`https://api.tidal.com/v1/tracks/${trackId}/urlpostpaywall?urlusagemode=STREAM&audioquality=HIGH&assetpresentation=FULL&countryCode=FR`, { headers });
+    if (res2.ok) {
+      const data2 = await res2.json();
+      if (data2.url) return data2.url;
+    }
+  } catch (e) {}
+
+  return null;
+}
+
 // 1. Parse Tidal URL / UUID
-api.post('/mp3/tidal/parse', authMiddleware, async (req, res) => {
+api.post('/mp3/tidal/parse', optionalAuth, async (req, res) => {
   try {
     const { url, customToken } = req.body;
     if (!url || typeof url !== 'string' || !url.trim()) {
@@ -10968,24 +11099,261 @@ api.post('/mp3/tidal/parse', authMiddleware, async (req, res) => {
   }
 });
 
+// Helper for escaping HTML strings
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// In-memory PKCE state storage for Tidal OAuth
+const tidalPkceStore = new Map();
+
+function generateTidalPKCE() {
+  const verifier = crypto.randomBytes(32).toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  return { verifier, challenge };
+}
+
+function getAppBaseUrl(req) {
+  if (process.env.APP_URL) {
+    return process.env.APP_URL.replace(/\/+$/, '');
+  }
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return `${proto}://${host}`;
+}
+
+// 1. Tidal OAuth Status endpoint
+api.get('/mp3/tidal/oauth-status', (req, res) => {
+  const clientId = process.env.TIDAL_CLIENT_ID ? process.env.TIDAL_CLIENT_ID.trim() : '';
+  const appUrl = getAppBaseUrl(req);
+  const redirectUri = `${appUrl}/api/mp3/tidal/callback`;
+
+  res.json({
+    configured: !!clientId,
+    clientIdPreview: clientId ? `${clientId.slice(0, 4)}...${clientId.slice(-4)}` : null,
+    redirectUri,
+    appUrl
+  });
+});
+
+// 2. Tidal OAuth Authorization URL generator (opens Tidal popup)
+api.get('/mp3/tidal/auth-url', (req, res) => {
+  const clientId = process.env.TIDAL_CLIENT_ID ? process.env.TIDAL_CLIENT_ID.trim() : '';
+  const appUrl = getAppBaseUrl(req);
+  const redirectUri = `${appUrl}/api/mp3/tidal/callback`;
+
+  if (!clientId) {
+    return res.status(400).json({
+      error: "TIDAL_CLIENT_ID non configuré dans les variables d'environnement.",
+      configured: false,
+      redirectUri
+    });
+  }
+
+  const { verifier, challenge } = generateTidalPKCE();
+  const state = `st_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  // Store in map, cleanup states older than 15 minutes
+  tidalPkceStore.set(state, {
+    verifier,
+    redirectUri,
+    createdAt: Date.now()
+  });
+
+  for (const [k, v] of tidalPkceStore.entries()) {
+    if (Date.now() - v.createdAt > 15 * 60 * 1000) {
+      tidalPkceStore.delete(k);
+    }
+  }
+
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    scope: 'r_usr w_usr',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state: state
+  });
+
+  const authUrl = `https://login.tidal.com/authorize?${params.toString()}`;
+  res.json({ url: authUrl, state, redirectUri });
+});
+
+// 3. Tidal OAuth Callback handler
+const handleTidalOAuthCallback = async (req, res) => {
+  const { code, state, error, error_description } = req.query;
+  const clientId = process.env.TIDAL_CLIENT_ID ? process.env.TIDAL_CLIENT_ID.trim() : '';
+  const clientSecret = process.env.TIDAL_CLIENT_SECRET ? process.env.TIDAL_CLIENT_SECRET.trim() : '';
+
+  if (error) {
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>Connexion Tidal</title></head>
+        <body style="font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box;">
+          <div style="text-align: center; max-width: 440px; background: #1e293b; padding: 28px; border-radius: 16px; border: 1px solid #334155;">
+            <div style="font-size: 32px; margin-bottom: 12px;">⚠️</div>
+            <h2 style="margin: 0 0 8px 0; color: #f87171; font-size: 18px;">Autorisation annulée</h2>
+            <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin-bottom: 16px;">${escapeHtml(error_description || error || "L'autorisation Tidal a été annulée ou a expiré.")}</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'TIDAL_OAUTH_ERROR', error: ${JSON.stringify(error_description || error)} }, '*');
+                setTimeout(() => window.close(), 2500);
+              }
+            </script>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  if (!code || !state) {
+    return res.status(400).send("Paramètres code ou state manquants.");
+  }
+
+  const pkceData = tidalPkceStore.get(state);
+  const verifier = pkceData?.verifier;
+  const redirectUri = pkceData?.redirectUri || `${getAppBaseUrl(req)}/api/mp3/tidal/callback`;
+  if (state) tidalPkceStore.delete(state);
+
+  try {
+    const tokenParams = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      code: String(code),
+      redirect_uri: redirectUri
+    });
+    if (verifier) {
+      tokenParams.append('code_verifier', verifier);
+    }
+    if (clientSecret) {
+      tokenParams.append('client_secret', clientSecret);
+    }
+
+    const tokenRes = await fetch("https://auth.tidal.com/v1/oauth2/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: tokenParams
+    });
+
+    if (!tokenRes.ok) {
+      const errText = await tokenRes.text();
+      console.warn("Tidal token exchange error:", tokenRes.status, errText);
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+            <div style="text-align: center; max-width: 440px; background: #1e293b; padding: 24px; border-radius: 16px;">
+              <h2 style="color: #f87171; font-size: 18px;">Échec d'échange de token</h2>
+              <p style="color: #94a3b8; font-size: 13px;">Code retour : ${tokenRes.status}. Vérifiez votre TIDAL_CLIENT_ID et TIDAL_CLIENT_SECRET.</p>
+              <script>
+                if (window.opener) {
+                  window.opener.postMessage({ type: 'TIDAL_OAUTH_ERROR', error: "Erreur lors de l'échange de token Tidal" }, '*');
+                  setTimeout(() => window.close(), 3000);
+                }
+              </script>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+    const refreshToken = tokenData.refresh_token || null;
+    const userId = tokenData.user_id || tokenData.user?.userId || 'Utilisateur Tidal';
+
+    let countryCode = 'FR';
+    let username = String(userId);
+
+    // Retrieve user session info
+    try {
+      const uRes = await fetch("https://api.tidal.com/v1/sessions", {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      if (uRes.ok) {
+        const uData = await uRes.json();
+        countryCode = uData.countryCode || countryCode;
+        if (uData.userId) username = String(uData.userId);
+      }
+    } catch (e) {}
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>Connexion Tidal réussie</title></head>
+        <body style="font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box;">
+          <div style="text-align: center; max-width: 440px; background: #1e293b; padding: 28px; border-radius: 16px; border: 1px solid #0284c7; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
+            <div style="width: 48px; height: 48px; border-radius: 50%; background: #0284c7; display: inline-flex; align-items: center; justify-content: center; margin: 0 auto 12px; font-size: 24px;">✓</div>
+            <h2 style="margin: 0 0 6px 0; color: #38bdf8; font-size: 20px;">Connexion Tidal réussie !</h2>
+            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 16px;">Votre compte Tidal et vos playlists privées sont maintenant synchronisés.</p>
+            <p style="color: #64748b; font-size: 11px;">Fermeture automatique...</p>
+            <script>
+              try {
+                if (window.opener) {
+                  window.opener.postMessage({
+                    type: 'TIDAL_OAUTH_SUCCESS',
+                    token: ${JSON.stringify(accessToken)},
+                    refreshToken: ${JSON.stringify(refreshToken)},
+                    user: {
+                      userId: ${JSON.stringify(username)},
+                      countryCode: ${JSON.stringify(countryCode)}
+                    }
+                  }, '*');
+                  setTimeout(() => window.close(), 1200);
+                } else {
+                  window.location.href = '/';
+                }
+              } catch (e) {
+                console.error(e);
+              }
+            </script>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (err) {
+    console.warn("Tidal callback handler error:", err.message);
+    res.status(500).send("Erreur lors de la finalisation de l'authentification Tidal.");
+  }
+};
+
+api.get(['/mp3/tidal/callback', '/mp3/tidal/callback/'], handleTidalOAuthCallback);
+app.get(['/api/mp3/tidal/callback', '/api/mp3/tidal/callback/', '/auth/tidal/callback'], handleTidalOAuthCallback);
+
 // Verify Tidal custom token / session
-api.post('/mp3/tidal/verify-token', authMiddleware, async (req, res) => {
+api.post('/mp3/tidal/verify-token', optionalAuth, async (req, res) => {
   try {
     const { token } = req.body;
     if (!token || typeof token !== 'string' || !token.trim()) {
       return res.status(400).json({ error: "Token de session Tidal requis" });
     }
-    const cleanToken = token.trim();
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-      'x-tidal-token': cleanToken,
-      'sessionId': cleanToken
-    };
-    headers['Authorization'] = cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`;
+    const cleanToken = extractCleanTidalToken(token);
+    const headers = buildTidalHeaders(cleanToken);
 
-    const tidalRes = await fetch("https://api.tidal.com/v1/sessions", { headers });
-    if (tidalRes.ok) {
-      const data = await tidalRes.json();
+    let data = null;
+    try {
+      const tidalRes = await fetch("https://api.tidal.com/v1/sessions", { headers });
+      if (tidalRes.ok) {
+        data = await tidalRes.json();
+      }
+    } catch (e) {}
+
+    if (data) {
       return res.json({
         valid: true,
         userId: data.userId || 'Utilisateur Tidal',
@@ -10995,39 +11363,61 @@ api.post('/mp3/tidal/verify-token', authMiddleware, async (req, res) => {
     }
 
     // Secondary check on user/me endpoint
-    const userRes = await fetch("https://api.tidal.com/v1/users/me", { headers });
-    if (userRes.ok) {
-      const userData = await userRes.json();
-      return res.json({
-        valid: true,
-        userId: userData.id || userData.username || 'Compte Tidal',
-        countryCode: userData.countryCode || 'FR'
-      });
-    }
+    try {
+      const userRes = await fetch("https://api.tidal.com/v1/users/me", { headers });
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        return res.json({
+          valid: true,
+          userId: userData.id || userData.username || 'Compte Tidal',
+          countryCode: userData.countryCode || 'FR'
+        });
+      }
+    } catch (e) {}
 
-    return res.status(400).json({
-      error: "Token Tidal non reconnu ou expiré. Assurez-vous de copier le token valide depuis listen.tidal.com."
-    });
-  } catch (err) {
-    console.error("Verify Tidal token error:", err);
-    res.status(500).json({ error: "Erreur lors de la vérification du token Tidal" });
-  }
-});
-
-// Fetch user's personal Tidal library & playlists
-api.post('/mp3/tidal/my-playlists', authMiddleware, async (req, res) => {
-  try {
-    const { token } = req.body;
-    if (!token || typeof token !== 'string' || !token.trim()) {
-      return res.status(400).json({ error: "Token Tidal manquant. Veuillez connecter votre compte Tidal dans les paramètres." });
-    }
-    const cleanToken = token.trim();
-    const headers = {
+    // Fallback: try inverted header format (sessionId vs Bearer)
+    const altHeaders = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'x-tidal-token': cleanToken,
       'sessionId': cleanToken,
       'Authorization': cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`
     };
+
+    try {
+      const altRes = await fetch("https://api.tidal.com/v1/sessions", { headers: altHeaders });
+      if (altRes.ok) {
+        const altData = await altRes.json();
+        return res.json({
+          valid: true,
+          userId: altData.userId || 'Utilisateur Tidal',
+          sessionId: altData.sessionId,
+          countryCode: altData.countryCode || 'FR'
+        });
+      }
+    } catch (e) {}
+
+    return res.status(400).json({
+      error: "Token Tidal non reconnu ou expiré. Assurez-vous de copier le token valide depuis listen.tidal.com."
+    });
+  } catch (err) {
+    console.warn("Verify Tidal token error:", err.message);
+    res.status(500).json({ error: "Erreur lors de la vérification du token Tidal" });
+  }
+});
+
+// Fetch user's personal Tidal library & playlists
+api.post('/mp3/tidal/my-playlists', optionalAuth, async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== 'string' || !token.trim()) {
+      return res.json({ playlists: [], expired: false, total: 0 });
+    }
+    const cleanToken = extractCleanTidalToken(token);
+    if (!cleanToken) {
+      return res.json({ playlists: [], expired: true, error: "Token Tidal invalide" });
+    }
+
+    let headers = buildTidalHeaders(cleanToken);
 
     // 1. Retrieve user ID & country
     let userId = null;
@@ -11053,8 +11443,31 @@ api.post('/mp3/tidal/my-playlists', authMiddleware, async (req, res) => {
       } catch (e) {}
     }
 
+    // Secondary attempt with combined fallback headers
     if (!userId) {
-      return res.status(401).json({ error: "Session Tidal expirée ou token invalide. Veuillez reconnecter votre compte Tidal." });
+      const fallbackHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'x-tidal-token': cleanToken,
+        'sessionId': cleanToken,
+        'Authorization': cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`
+      };
+      try {
+        const sessRes = await fetch("https://api.tidal.com/v1/sessions", { headers: fallbackHeaders });
+        if (sessRes.ok) {
+          const sessData = await sessRes.json();
+          userId = sessData.userId;
+          countryCode = sessData.countryCode || 'FR';
+          headers = fallbackHeaders;
+        }
+      } catch (e) {}
+    }
+
+    if (!userId) {
+      return res.json({
+        playlists: [],
+        expired: true,
+        error: "Session Tidal expirée ou token invalide. Veuillez reconnecter votre compte Tidal."
+      });
     }
 
     // 2. Query Tidal playlist endpoints
@@ -11134,13 +11547,13 @@ api.post('/mp3/tidal/my-playlists', authMiddleware, async (req, res) => {
       playlists
     });
   } catch (err) {
-    console.error("Fetch user playlists error:", err);
-    res.status(500).json({ error: "Erreur lors de la récupération des playlists Tidal" });
+    console.warn("Fetch user playlists warning:", err.message);
+    res.status(200).json({ playlists: [], expired: true, error: "Impossible de récupérer les playlists Tidal" });
   }
 });
 
 // Search track endpoint (Deezer & Tidal fallback)
-api.get('/mp3/search-track', authMiddleware, async (req, res) => {
+api.get('/mp3/search-track', optionalAuth, async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
     if (!q) return res.json({ results: [] });
@@ -11171,7 +11584,7 @@ api.get('/mp3/search-track', authMiddleware, async (req, res) => {
 });
 
 // 2. Parse raw text / Tracklist with Gemini AI
-api.post('/mp3/tidal/parse-text', authMiddleware, async (req, res) => {
+api.post('/mp3/tidal/parse-text', optionalAuth, async (req, res) => {
   try {
     const { rawText, playlistTitle } = req.body;
     if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
@@ -11265,7 +11678,7 @@ ${rawText.substring(0, 30000)}`;
 });
 
 // 2b. Parse screenshot / image with Gemini Vision OCR
-api.post('/mp3/tidal/parse-image', authMiddleware, async (req, res) => {
+api.post('/mp3/tidal/parse-image', optionalAuth, async (req, res) => {
   try {
     const { imageBase64, mimeType = 'image/png', playlistTitle } = req.body;
     if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -11425,33 +11838,83 @@ async function processTrackDownload(track, jobDir, options = {}) {
       }
     }
 
-    // Step 2: Download audio stream using yt-dlp with multiple search fallbacks
-    const searchQueries = [
-      `ytsearch1:${track.artist} - ${track.title} audio`,
-      `ytsearch1:${track.artist} ${track.title}`,
-      `scsearch1:${track.artist} - ${track.title}`
-    ];
-
+    // Step 2: Obtain audio stream
     let downloadSuccess = false;
     let lastError = null;
 
-    for (const q of searchQueries) {
+    // 2.A: Try direct Tidal stream if customToken is provided and track has a numeric ID
+    if (options.customToken && track.id) {
       try {
-        if (fs.existsSync(rawAudioPath)) {
-          try { fs.unlinkSync(rawAudioPath); } catch (e) {}
+        const directTidalUrl = await getTidalTrackStreamUrl(track.id, options.customToken);
+        if (directTidalUrl) {
+          console.log(`[TIDAL DIRECT STREAM] Found stream for "${track.artist} - ${track.title}"`);
+          if (fs.existsSync(rawAudioPath)) {
+            try { fs.unlinkSync(rawAudioPath); } catch (e) {}
+          }
+          const { spawnSync } = require('child_process');
+          spawnSync('ffmpeg', [
+            '-y',
+            '-i', directTidalUrl,
+            '-vn',
+            '-c:a', 'libmp3lame',
+            '-b:a', bitrate,
+            rawAudioPath
+          ], { timeout: 30000, stdio: 'pipe' });
+
+          if (fs.existsSync(rawAudioPath) && fs.statSync(rawAudioPath).size > 50000) {
+            downloadSuccess = true;
+          }
         }
+      } catch (tErr) {
+        console.log(`[TIDAL DIRECT ERROR] ${track.title}:`, tErr.message);
+      }
+    }
 
-        execSync(`"${ytDlpBin}" "${q}" --extract-audio --audio-format mp3 --audio-quality ${bitrate.replace('k', 'K')} -o "${rawAudioPath}" --no-playlist`, {
-          timeout: 90000,
-          stdio: 'pipe'
-        });
+    // 2.B: Search via SoundCloud with duration filter (>= 45s to avoid 30s clips)
+    if (!downloadSuccess) {
+      const searchArtist = (track.artist || 'Artist').replace(/["'\\]/g, ' ').replace(/\s+/g, ' ').trim();
+      const rawTitle = (track.title || 'Track').replace(/["'\\]/g, ' ').replace(/\s+/g, ' ').trim();
+      const noFeatTitle = rawTitle
+        .replace(/\s*\([^)]*(feat|ft\.)[^)]*\)/gi, '')
+        .replace(/\s*\[[^\]]*(feat|ft\.)[^\]]*\]/gi, '')
+        .trim();
+      const baseTitle = noFeatTitle
+        .replace(/\s*\([^)]*(remix|mix|edit|version)[^)]*\)/gi, '')
+        .replace(/\s*\[[^\]]*(remix|mix|edit|version)[^\]]*\]/gi, '')
+        .trim();
 
-        if (fs.existsSync(rawAudioPath) && fs.statSync(rawAudioPath).size > 10000) {
+      const candidateQueries = [
+        `scsearch5:${searchArtist} ${noFeatTitle}`,
+        `scsearch5:${noFeatTitle}`,
+        `scsearch5:${searchArtist} ${baseTitle}`,
+        `scsearch5:${baseTitle}`,
+        `scsearch5:${searchArtist} ${rawTitle}`,
+        `scsearch3:${rawTitle}`
+      ];
+      const uniqueQueries = [...new Set(candidateQueries.filter(Boolean))];
+
+      // Pass 1: Try with duration filter >= 45s (guarantees full song)
+      for (const q of uniqueQueries) {
+        const res = executeYtDlpDownload(ytDlpBin, q, rawAudioPath, bitrate, "duration >= 45");
+        if (res.success) {
           downloadSuccess = true;
           break;
+        } else {
+          lastError = new Error(res.error || `Échec pour ${q}`);
         }
-      } catch (dlErr) {
-        lastError = dlErr;
+      }
+
+      // Pass 2: Fallback without strict duration filter if needed
+      if (!downloadSuccess) {
+        for (const q of uniqueQueries) {
+          const res = executeYtDlpDownload(ytDlpBin, q, rawAudioPath, bitrate, null);
+          if (res.success) {
+            downloadSuccess = true;
+            break;
+          } else {
+            lastError = new Error(res.error || `Échec pour ${q}`);
+          }
+        }
       }
     }
 
@@ -11459,21 +11922,64 @@ async function processTrackDownload(track, jobDir, options = {}) {
       throw lastError || new Error(`Le fichier audio pour "${track.artist} - ${track.title}" n'a pas pu être extrait.`);
     }
 
-    // Step 3: Encode and apply clean ID3v2 metadata with FFmpeg
-    const titleMeta = (track.title || 'Titre').replace(/"/g, '\\"');
-    const artistMeta = (track.artist || 'Artiste').replace(/"/g, '\\"');
-    const albumMeta = (track.album || 'Playlist Tidal').replace(/"/g, '\\"');
+    // Step 3: Fast ID3v2 metadata & artwork embedding via ffmpeg streamcopy (no slow CPU re-encoding)
+    const titleMeta = String(track.title || 'Titre');
+    const artistMeta = String(track.artist || 'Artiste');
+    const albumMeta = String(track.album || 'Tidal Playlist');
     const yearMeta = String(track.year || new Date().getFullYear());
-    const trackNumMeta = `${track.trackNumber || 1}`;
+    const trackNumMeta = String(track.trackNumber || 1);
 
-    let ffmpegCmd = '';
+    const { spawnSync } = require('child_process');
+    let taggingSucceeded = false;
+
     if (hasCover && fs.existsSync(coverPath)) {
-      ffmpegCmd = `ffmpeg -y -i "${rawAudioPath}" -i "${coverPath}" -map 0:a -map 1:v -c:a libmp3lame -b:a ${bitrate} -c:v copy -id3v2_version 3 -metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" -metadata title="${titleMeta}" -metadata artist="${artistMeta}" -metadata album="${albumMeta}" -metadata year="${yearMeta}" -metadata track="${trackNumMeta}" "${finalAudioPath}"`;
-    } else {
-      ffmpegCmd = `ffmpeg -y -i "${rawAudioPath}" -codec:a libmp3lame -b:a ${bitrate} -id3v2_version 3 -metadata title="${titleMeta}" -metadata artist="${artistMeta}" -metadata album="${albumMeta}" -metadata year="${yearMeta}" -metadata track="${trackNumMeta}" "${finalAudioPath}"`;
+      const tagArgs = [
+        '-y',
+        '-i', rawAudioPath,
+        '-i', coverPath,
+        '-map', '0:a',
+        '-map', '1:v',
+        '-c:a', 'copy',
+        '-c:v', 'copy',
+        '-id3v2_version', '3',
+        '-metadata:s:v', 'title=Album cover',
+        '-metadata:s:v', 'comment=Cover (front)',
+        '-metadata', `title=${titleMeta}`,
+        '-metadata', `artist=${artistMeta}`,
+        '-metadata', `album=${albumMeta}`,
+        '-metadata', `year=${yearMeta}`,
+        '-metadata', `track=${trackNumMeta}`,
+        finalAudioPath
+      ];
+      spawnSync('ffmpeg', tagArgs, { timeout: 30000, stdio: 'pipe' });
+      if (fs.existsSync(finalAudioPath) && fs.statSync(finalAudioPath).size > 50000) {
+        taggingSucceeded = true;
+      }
     }
 
-    execSync(ffmpegCmd, { timeout: 60000, stdio: 'pipe' });
+    if (!taggingSucceeded) {
+      const tagArgsAudioOnly = [
+        '-y',
+        '-i', rawAudioPath,
+        '-c:a', 'copy',
+        '-id3v2_version', '3',
+        '-metadata', `title=${titleMeta}`,
+        '-metadata', `artist=${artistMeta}`,
+        '-metadata', `album=${albumMeta}`,
+        '-metadata', `year=${yearMeta}`,
+        '-metadata', `track=${trackNumMeta}`,
+        finalAudioPath
+      ];
+      spawnSync('ffmpeg', tagArgsAudioOnly, { timeout: 30000, stdio: 'pipe' });
+      if (fs.existsSync(finalAudioPath) && fs.statSync(finalAudioPath).size > 50000) {
+        taggingSucceeded = true;
+      }
+    }
+
+    // Safety fallback: if metadata tagging fails, copy raw MP3 to destination so download always succeeds
+    if (!taggingSucceeded || !fs.existsSync(finalAudioPath)) {
+      fs.copyFileSync(rawAudioPath, finalAudioPath);
+    }
 
     // Clean temp raw files
     try { if (fs.existsSync(rawAudioPath)) fs.unlinkSync(rawAudioPath); } catch (e) {}
@@ -11495,12 +12001,14 @@ async function processTrackDownload(track, jobDir, options = {}) {
 }
 
 // 3. Start batch download of playlist
-api.post('/mp3/download/start-batch', authMiddleware, async (req, res) => {
+api.post('/mp3/download/start-batch', optionalAuth, async (req, res) => {
   try {
-    const { playlistTitle, playlistId, tracks, bitrate = '320k', namingPattern = 'number_artist_title' } = req.body;
+    const { playlistTitle, playlistId, tracks, bitrate = '320k', namingPattern = 'number_artist_title', customToken } = req.body;
     if (!tracks || !Array.isArray(tracks) || tracks.length === 0) {
       return res.status(400).json({ error: "Aucun morceau sélectionné pour le téléchargement" });
     }
+
+    const effectiveToken = customToken || req.headers['x-tidal-token'] || undefined;
 
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const jobDir = path.join(mp3StorageDir, jobId);
@@ -11546,7 +12054,7 @@ api.post('/mp3/download/start-batch', authMiddleware, async (req, res) => {
             trackItem.status = 'downloading';
 
             try {
-              const result = await processTrackDownload(trackItem, jobDir, { bitrate, namingPattern });
+              const result = await processTrackDownload(trackItem, jobDir, { bitrate, namingPattern, customToken: effectiveToken });
               trackItem.status = 'completed';
               trackItem.filename = result.filename;
               trackItem.size = result.size;
@@ -11563,7 +12071,7 @@ api.post('/mp3/download/start-batch', authMiddleware, async (req, res) => {
         const workers = Array(Math.min(concurrency, queue.length)).fill(null).map(() => worker());
         await Promise.all(workers);
 
-        // Build M3U8 Playlist file
+        // Build M3U8 Playlist file (stored on disk for dedicated export)
         try {
           let m3uContent = `#EXTM3U\n#PLAYLIST:${job.playlistTitle}\n`;
           job.tracks.filter(t => t.status === 'completed' && t.filename).forEach(t => {
@@ -11574,12 +12082,12 @@ api.post('/mp3/download/start-batch', authMiddleware, async (req, res) => {
           console.log("[M3U BUILD ERROR]:", m3uErr.message);
         }
 
-        // Build ZIP file with AdmZip
+        // Build ZIP file with AdmZip (Contains ONLY MP3 files, no extraneous playlist files)
         try {
           const zip = new AdmZip();
           const files = fs.readdirSync(jobDir);
           for (const file of files) {
-            if (file.endsWith('.mp3') || file.endsWith('.m3u8')) {
+            if (file.endsWith('.mp3')) {
               zip.addLocalFile(path.join(jobDir, file));
             }
           }
@@ -11627,7 +12135,7 @@ api.post('/mp3/download/start-batch', authMiddleware, async (req, res) => {
 });
 
 // 4. Check status of download job
-api.get('/mp3/download/status/:jobId', authMiddleware, async (req, res) => {
+api.get('/mp3/download/status/:jobId', optionalAuth, async (req, res) => {
   const { jobId } = req.params;
   const memoryJob = activeMp3Jobs.get(jobId);
   if (memoryJob) {
@@ -11662,14 +12170,15 @@ api.get('/mp3/download/file/:jobId/:trackId', async (req, res) => {
     }
 
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(track.filename)}"`);
+    res.setHeader('Content-Disposition', makeSafeContentDisposition(track.filename));
+    res.setHeader('Content-Length', fs.statSync(filePath).size);
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 6. Download complete ZIP archive
+// 6. Download complete ZIP archive (Contains exclusively MP3 audio tracks)
 api.get('/mp3/download/zip/:jobId', async (req, res) => {
   try {
     const { jobId } = req.params;
@@ -11684,11 +12193,11 @@ api.get('/mp3/download/zip/:jobId', async (req, res) => {
     const zipPath = path.join(jobDir, expectedZipName);
 
     if (!fs.existsSync(zipPath)) {
-      // Re-generate zip if not found
+      // Re-generate zip containing only MP3s
       const zip = new AdmZip();
       const files = fs.readdirSync(jobDir);
       for (const file of files) {
-        if (file.endsWith('.mp3') || file.endsWith('.m3u8')) {
+        if (file.endsWith('.mp3')) {
           zip.addLocalFile(path.join(jobDir, file));
         }
       }
@@ -11696,8 +12205,39 @@ api.get('/mp3/download/zip/:jobId', async (req, res) => {
     }
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(expectedZipName)}"`);
+    res.setHeader('Content-Disposition', makeSafeContentDisposition(expectedZipName));
+    res.setHeader('Content-Length', fs.statSync(zipPath).size);
     fs.createReadStream(zipPath).pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6.B Download standalone DJ M3U8 Playlist file
+api.get('/mp3/download/m3u/:jobId', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    let job = activeMp3Jobs.get(jobId);
+    if (!job && db) {
+      job = await db.collection('mp3_downloads').findOne({ id: jobId });
+    }
+    if (!job) return res.status(404).json({ error: "Session introuvable" });
+    const jobDir = path.join(mp3StorageDir, jobId);
+    const m3uFilename = `${sanitizeFilename(job.playlistTitle)}.m3u8`;
+    const m3uPath = path.join(jobDir, m3uFilename);
+
+    if (!fs.existsSync(m3uPath)) {
+      let m3uContent = `#EXTM3U\n#PLAYLIST:${job.playlistTitle}\n`;
+      (job.tracks || []).filter(t => t.status === 'completed' && t.filename).forEach(t => {
+        m3uContent += `#EXTINF:${t.duration || 180},${t.artist} - ${t.title}\n${t.filename}\n`;
+      });
+      fs.writeFileSync(m3uPath, m3uContent, 'utf8');
+    }
+
+    res.setHeader('Content-Type', 'audio/x-mpegurl; charset=utf-8');
+    res.setHeader('Content-Disposition', makeSafeContentDisposition(m3uFilename));
+    res.setHeader('Content-Length', fs.statSync(m3uPath).size);
+    fs.createReadStream(m3uPath).pipe(res);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -11750,7 +12290,7 @@ api.get('/mp3/download/stream/:jobId/:trackId', async (req, res) => {
 });
 
 // 8. Library of past downloaded playlists
-api.get('/mp3/library', authMiddleware, async (req, res) => {
+api.get('/mp3/library', optionalAuth, async (req, res) => {
   try {
     if (!db) return res.json([]);
     const items = await db.collection('mp3_downloads').find({}, { projection: { _id: 0 } }).sort({ startedAt: -1 }).limit(30).toArray();
@@ -11761,7 +12301,7 @@ api.get('/mp3/library', authMiddleware, async (req, res) => {
 });
 
 // 9. Delete downloaded playlist from library and disk
-api.delete('/mp3/library/:jobId', authMiddleware, async (req, res) => {
+api.delete('/mp3/library/:jobId', optionalAuth, async (req, res) => {
   try {
     const { jobId } = req.params;
     activeMp3Jobs.delete(jobId);
@@ -11779,7 +12319,7 @@ api.delete('/mp3/library/:jobId', authMiddleware, async (req, res) => {
 });
 
 // 10. Start batch download of multiple playlists
-api.post('/mp3/download/start-multi-playlists', authMiddleware, async (req, res) => {
+api.post('/mp3/download/start-multi-playlists', optionalAuth, async (req, res) => {
   try {
     const { playlists, customToken, bitrate = '320k', namingPattern = 'number_artist_title' } = req.body;
     if (!playlists || !Array.isArray(playlists) || playlists.length === 0) {
@@ -11869,7 +12409,7 @@ api.post('/mp3/download/start-multi-playlists', authMiddleware, async (req, res)
               const currentTrack = queue[trackIdx++];
               currentTrack.status = 'downloading';
               try {
-                const res = await processTrackDownload(currentTrack, playlistSubDir, { bitrate, namingPattern });
+                const res = await processTrackDownload(currentTrack, playlistSubDir, { bitrate, namingPattern, customToken });
                 currentTrack.status = 'completed';
                 currentTrack.filename = res.filename;
                 pl.completedTracks++;
@@ -11884,7 +12424,7 @@ api.post('/mp3/download/start-multi-playlists', authMiddleware, async (req, res)
           const workers = Array(Math.min(concurrency, queue.length)).fill(null).map(() => trackWorker());
           await Promise.all(workers);
 
-          // Build M3U for this playlist
+          // Build M3U for this playlist (saved on disk for standalone export)
           try {
             let m3u = `#EXTM3U\n#PLAYLIST:${pl.title}\n`;
             pl.tracks.filter(t => t.status === 'completed' && t.filename).forEach(t => {
@@ -11893,12 +12433,12 @@ api.post('/mp3/download/start-multi-playlists', authMiddleware, async (req, res)
             fs.writeFileSync(path.join(playlistSubDir, `${sanitizeFilename(pl.title)}.m3u8`), m3u, 'utf8');
           } catch (e) {}
 
-          // Build individual ZIP for this playlist
+          // Build individual ZIP for this playlist (Contains ONLY MP3s)
           try {
             const plZip = new AdmZip();
             const pFiles = fs.readdirSync(playlistSubDir);
             for (const pf of pFiles) {
-              if (pf.endsWith('.mp3') || pf.endsWith('.m3u8')) {
+              if (pf.endsWith('.mp3')) {
                 plZip.addLocalFile(path.join(playlistSubDir, pf));
               }
             }
@@ -11913,13 +12453,18 @@ api.post('/mp3/download/start-multi-playlists', authMiddleware, async (req, res)
           multiJob.completedPlaylists++;
         }
 
-        // Step 3: Build master ZIP containing all playlist subfolders
+        // Step 3: Build master ZIP containing only MP3 tracks inside playlist subfolders
         try {
           const masterZip = new AdmZip();
           for (const pl of multiJob.playlists) {
             const playlistSubDir = path.join(multiDir, sanitizeFilename(pl.title));
             if (fs.existsSync(playlistSubDir)) {
-              masterZip.addLocalFolder(playlistSubDir, sanitizeFilename(pl.title));
+              const files = fs.readdirSync(playlistSubDir);
+              for (const f of files) {
+                if (f.endsWith('.mp3')) {
+                  masterZip.addLocalFile(path.join(playlistSubDir, f), sanitizeFilename(pl.title));
+                }
+              }
             }
           }
           const masterZipPath = path.join(multiDir, `Toutes_Mes_Playlists_Tidal_MP3_${bitrate}.zip`);
@@ -11964,7 +12509,7 @@ api.post('/mp3/download/start-multi-playlists', authMiddleware, async (req, res)
 });
 
 // Check status of multi-playlist download job
-api.get('/mp3/download/multi-status/:multiJobId', authMiddleware, async (req, res) => {
+api.get('/mp3/download/multi-status/:multiJobId', optionalAuth, async (req, res) => {
   const { multiJobId } = req.params;
   const memoryJob = activeMultiJobs.get(multiJobId);
   if (memoryJob) {
@@ -11977,7 +12522,7 @@ api.get('/mp3/download/multi-status/:multiJobId', authMiddleware, async (req, re
   res.status(404).json({ error: "Session multi-playlists introuvable" });
 });
 
-// Download master ZIP with all playlists
+// Download master ZIP with all playlists (Contains ONLY MP3s in organized folders)
 api.get('/mp3/download/multi-zip/:multiJobId', async (req, res) => {
   try {
     const { multiJobId } = req.params;
@@ -11997,21 +12542,27 @@ api.get('/mp3/download/multi-zip/:multiJobId', async (req, res) => {
       for (const pl of job.playlists || []) {
         const playlistSubDir = path.join(multiDir, sanitizeFilename(pl.title));
         if (fs.existsSync(playlistSubDir)) {
-          masterZip.addLocalFolder(playlistSubDir, sanitizeFilename(pl.title));
+          const files = fs.readdirSync(playlistSubDir);
+          for (const f of files) {
+            if (f.endsWith('.mp3')) {
+              masterZip.addLocalFile(path.join(playlistSubDir, f), sanitizeFilename(pl.title));
+            }
+          }
         }
       }
       masterZip.writeZip(zipPath);
     }
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(masterZipName)}"`);
+    res.setHeader('Content-Disposition', makeSafeContentDisposition(masterZipName));
+    res.setHeader('Content-Length', fs.statSync(zipPath).size);
     fs.createReadStream(zipPath).pipe(res);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Download individual playlist ZIP inside a multi-job
+// Download individual playlist ZIP inside a multi-job (Contains exclusively MP3 files)
 api.get('/mp3/download/multi-zip/:multiJobId/:playlistId', async (req, res) => {
   try {
     const { multiJobId, playlistId } = req.params;
@@ -12034,7 +12585,7 @@ api.get('/mp3/download/multi-zip/:multiJobId/:playlistId', async (req, res) => {
       if (fs.existsSync(playlistSubDir)) {
         const pFiles = fs.readdirSync(playlistSubDir);
         for (const pf of pFiles) {
-          if (pf.endsWith('.mp3') || pf.endsWith('.m3u8')) {
+          if (pf.endsWith('.mp3')) {
             plZip.addLocalFile(path.join(playlistSubDir, pf));
           }
         }
@@ -12043,7 +12594,8 @@ api.get('/mp3/download/multi-zip/:multiJobId/:playlistId', async (req, res) => {
     }
 
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(plZipName)}"`);
+    res.setHeader('Content-Disposition', makeSafeContentDisposition(plZipName));
+    res.setHeader('Content-Length', fs.statSync(plZipPath).size);
     fs.createReadStream(plZipPath).pipe(res);
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -7,7 +7,8 @@ import {
   Headphones, Info, CheckSquare, Square,
   Edit2, Plus, X, Music, RotateCcw, Search, ShieldAlert,
   Key, ShieldCheck, HelpCircle, ExternalLink, UserCheck,
-  Layers, FolderArchive, Clock
+  Layers, FolderArchive, Clock, ChevronDown, ChevronUp,
+  Copy, LogIn, Globe
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -31,6 +32,13 @@ export default function Mp3DownloaderApp() {
   const [loadingUserPlaylists, setLoadingUserPlaylists] = useState(false);
   const [playlistSearchFilter, setPlaylistSearchFilter] = useState('');
   const [selectedPlaylistsForBatch, setSelectedPlaylistsForBatch] = useState(new Set());
+
+  // Tidal OAuth & Session state
+  const [oauthStatus, setOauthStatus] = useState({ configured: false, redirectUri: '' });
+  const [startingOAuth, setStartingOAuth] = useState(false);
+  const [showOAuthSetupGuide, setShowOAuthSetupGuide] = useState(false);
+  const [showManualTokenSection, setShowManualTokenSection] = useState(false);
+  const [copiedRedirectUri, setCopiedRedirectUri] = useState(false);
 
   // Multi-Playlists Download State
   const [multiJobId, setMultiJobId] = useState(null);
@@ -154,12 +162,31 @@ export default function Mp3DownloaderApp() {
     setLoadingUserPlaylists(true);
     try {
       const res = await axios.post('/mp3/tidal/my-playlists', { token });
+      if (res.data?.expired) {
+        setCustomToken('');
+        setTidalTokenInput('');
+        setTidalAccountInfo(null);
+        setUserPlaylists([]);
+        setImportSource('link');
+        localStorage.removeItem('tidal_custom_token');
+        localStorage.removeItem('tidal_account_info');
+        toast.info("Votre session Tidal a expiré. Vous pouvez continuer par lien ou reconnecter votre compte.");
+        return;
+      }
       const pls = res.data?.playlists || [];
       setUserPlaylists(pls);
     } catch (err) {
-      console.error("Load user playlists error:", err);
-      if (err.response?.status === 401) {
-        toast.error("Session Tidal expirée. Veuillez reconnecter votre compte.");
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        setCustomToken('');
+        setTidalTokenInput('');
+        setTidalAccountInfo(null);
+        setUserPlaylists([]);
+        setImportSource('link');
+        localStorage.removeItem('tidal_custom_token');
+        localStorage.removeItem('tidal_account_info');
+        toast.info("Session Tidal expirée. Vous pouvez continuer par lien ou reconnecter votre compte.");
+      } else {
+        console.warn("Load user playlists warning:", err.message);
       }
     } finally {
       setLoadingUserPlaylists(false);
@@ -171,6 +198,91 @@ export default function Mp3DownloaderApp() {
       loadUserPlaylists(customToken);
     }
   }, [customToken]);
+
+  // Fetch Tidal OAuth status on mount
+  useEffect(() => {
+    const fetchOAuthStatus = async () => {
+      try {
+        const res = await axios.get('/mp3/tidal/oauth-status');
+        if (res.data) {
+          setOauthStatus(res.data);
+        }
+      } catch (err) {
+        console.warn("Tidal OAuth status fetch error:", err.message);
+      }
+    };
+    fetchOAuthStatus();
+  }, []);
+
+  // Listen to OAuth popup postMessage events
+  useEffect(() => {
+    const handleOAuthMessage = (event) => {
+      const origin = event.origin;
+      if (!origin.endsWith('.run.app') && !origin.includes('localhost') && origin !== window.location.origin) {
+        return;
+      }
+      if (event.data?.type === 'TIDAL_OAUTH_SUCCESS') {
+        const { token, refreshToken, user } = event.data;
+        if (token) {
+          setCustomToken(token);
+          setTidalTokenInput(token);
+          localStorage.setItem('tidal_custom_token', token);
+          if (refreshToken) {
+            localStorage.setItem('tidal_refresh_token', refreshToken);
+          }
+          const info = {
+            userId: user?.userId || 'Utilisateur Tidal',
+            countryCode: user?.countryCode || 'FR',
+            connectedAt: new Date().toISOString()
+          };
+          setTidalAccountInfo(info);
+          localStorage.setItem('tidal_account_info', JSON.stringify(info));
+          setShowTidalModal(false);
+          toast.success(`Compte Tidal connecté avec succès ! (${info.userId})`);
+          loadUserPlaylists(token);
+          setImportSource('tidal_library');
+          if (tidalUrl.trim()) {
+            handleAnalyzeLinkWithToken(token);
+          }
+        }
+      } else if (event.data?.type === 'TIDAL_OAUTH_ERROR') {
+        toast.error(event.data.error || "La connexion Tidal a été annulée ou a échoué.");
+      }
+    };
+    window.addEventListener('message', handleOAuthMessage);
+    return () => window.removeEventListener('message', handleOAuthMessage);
+  }, [tidalUrl]);
+
+  const handleStartTidalOAuth = async () => {
+    setStartingOAuth(true);
+    try {
+      const res = await axios.get('/mp3/tidal/auth-url');
+      if (res.data?.url) {
+        const popup = window.open(
+          res.data.url,
+          'tidal_oauth_popup',
+          'width=600,height=750,menubar=no,toolbar=no,location=no,status=no'
+        );
+        if (!popup) {
+          toast.error("Veuillez autoriser les fenêtres pop-up dans votre navigateur pour vous connecter à Tidal.");
+        }
+      }
+    } catch (err) {
+      if (err.response?.status === 400 && !err.response?.data?.configured) {
+        setOauthStatus(prev => ({
+          ...prev,
+          configured: false,
+          redirectUri: err.response?.data?.redirectUri || prev.redirectUri
+        }));
+        setShowOAuthSetupGuide(true);
+        toast.info("Connexion en 1 clic : ajoutez votre TIDAL_CLIENT_ID gratuit dans les paramètres.");
+      } else {
+        toast.error(err.response?.data?.error || "Impossible d'initier la connexion Tidal.");
+      }
+    } finally {
+      setStartingOAuth(false);
+    }
+  };
 
   const loadLibrary = async () => {
     setLoadingLibrary(true);
@@ -226,7 +338,7 @@ export default function Mp3DownloaderApp() {
         }
       }
     } catch (err) {
-      console.error("Tidal verify error:", err);
+      console.warn("Tidal verify warning:", err.message);
       toast.error(err.response?.data?.error || "Token Tidal non reconnu ou expiré.");
     } finally {
       setVerifyingTidal(false);
@@ -374,6 +486,73 @@ export default function Mp3DownloaderApp() {
     setSelectedPlaylistsForBatch(new Set());
   };
 
+  // Secure Blob-based File Downloader to avoid proxy HTML interception and guarantee valid MP3 / ZIP downloads
+  const downloadFileViaBlob = async (url, fallbackFilename, loadingMessage) => {
+    const toastId = toast.loading(loadingMessage || "Téléchargement en cours...");
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        let errMessage = "Erreur lors du téléchargement";
+        try {
+          const errData = await response.json();
+          errMessage = errData.error || errData.detail || errMessage;
+        } catch {
+          errMessage = `Erreur HTTP ${response.status}`;
+        }
+        toast.dismiss(toastId);
+        toast.error(errMessage);
+        return;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        toast.dismiss(toastId);
+        toast.error("Le serveur a renvoyé une page d'authentification ou d'erreur HTML au lieu du fichier binaire. Veuillez rafraîchir la page.");
+        return;
+      }
+
+      // Determine clean filename from Content-Disposition header
+      let filename = fallbackFilename;
+      const disposition = response.headers.get('content-disposition');
+      if (disposition) {
+        const matchUtf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+        if (matchUtf8 && matchUtf8[1]) {
+          filename = decodeURIComponent(matchUtf8[1]);
+        } else {
+          const matchRegular = disposition.match(/filename="?([^";]+)"?/i);
+          if (matchRegular && matchRegular[1]) {
+            filename = matchRegular[1];
+          }
+        }
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+      }, 2000);
+
+      toast.dismiss(toastId);
+      toast.success(`Fichier ${filename} téléchargé avec succès !`);
+    } catch (err) {
+      toast.dismiss(toastId);
+      console.error("Download error:", err);
+      toast.error("Erreur de connexion lors de la récupération du fichier.");
+    }
+  };
+
   const handleDownloadMasterZip = (mJobId) => {
     const target = mJobId || multiJobId || multiJobStatus?.id;
     if (!target) {
@@ -382,7 +561,7 @@ export default function Mp3DownloaderApp() {
     }
     const token = localStorage.getItem('access_token');
     const url = `${API_BASE_URL}/api/mp3/download/multi-zip/${target}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-    window.location.href = url;
+    downloadFileViaBlob(url, `Playlists_MP3_${target}.zip`, "Téléchargement de l'archive ZIP principale en cours...");
   };
 
   const handleDownloadMultiSubZip = (mJobId, playlistId) => {
@@ -390,7 +569,7 @@ export default function Mp3DownloaderApp() {
     if (!target || !playlistId) return;
     const token = localStorage.getItem('access_token');
     const url = `${API_BASE_URL}/api/mp3/download/multi-zip/${target}/${playlistId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-    window.location.href = url;
+    downloadFileViaBlob(url, `Playlist_${playlistId}_MP3.zip`, "Téléchargement de l'archive ZIP en cours...");
   };
 
   const handleAnalyzeLinkWithToken = async (forcedToken) => {
@@ -605,12 +784,14 @@ export default function Mp3DownloaderApp() {
 
     setDownloading(true);
     try {
+      const activeTok = customToken?.trim() || localStorage.getItem('tidal_custom_token')?.trim() || undefined;
       const res = await axios.post('/mp3/download/start-batch', {
         playlistTitle: playlist.title || 'Playlist Tidal',
         playlistId: playlist.id || `pl_${Date.now()}`,
         tracks: tracksToDownload,
         bitrate: bitrate,
-        namingPattern: namingPattern
+        namingPattern: namingPattern,
+        customToken: activeTok
       });
 
       if (res.data.jobId) {
@@ -631,13 +812,15 @@ export default function Mp3DownloaderApp() {
       toast.error("Veuillez lancer le téléchargement d'abord.");
       return;
     }
+    const track = jobStatus?.tracks?.find(t => String(t.id) === String(trackId));
     const token = localStorage.getItem('access_token');
     const url = `${API_BASE_URL}/api/mp3/download/file/${jobId}/${trackId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-    window.location.href = url;
+    const fallback = track?.filename || `track_${trackId}.mp3`;
+    downloadFileViaBlob(url, fallback, `Téléchargement de ${fallback}...`);
   };
 
-  // Download Complete ZIP
-  const handleDownloadZip = (jobId) => {
+  // Download Complete ZIP (Exclusively MP3 audio files)
+  const handleDownloadZip = (jobId, explicitTitle) => {
     const targetJob = jobId || activeJobId || jobStatus?.id;
     if (!targetJob) {
       toast.error("Archive ZIP non disponible.");
@@ -645,7 +828,27 @@ export default function Mp3DownloaderApp() {
     }
     const token = localStorage.getItem('access_token');
     const url = `${API_BASE_URL}/api/mp3/download/zip/${targetJob}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-    window.location.href = url;
+    const libItem = library.find(l => l.id === targetJob);
+    const title = explicitTitle || libItem?.playlistTitle || jobStatus?.playlistTitle || 'Playlist';
+    const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fallback = `${cleanTitle}_MP3_${jobStatus?.bitrate || libItem?.bitrate || '320k'}.zip`;
+    downloadFileViaBlob(url, fallback, "Téléchargement de l'archive ZIP MP3 en cours...");
+  };
+
+  // Download Standalone DJ M3U8 Playlist file
+  const handleDownloadM3u = (jobId, explicitTitle) => {
+    const targetJob = jobId || activeJobId || jobStatus?.id;
+    if (!targetJob) {
+      toast.error("Fichier M3U8 non disponible.");
+      return;
+    }
+    const token = localStorage.getItem('access_token');
+    const url = `${API_BASE_URL}/api/mp3/download/m3u/${targetJob}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const libItem = library.find(l => l.id === targetJob);
+    const title = explicitTitle || libItem?.playlistTitle || jobStatus?.playlistTitle || 'Playlist';
+    const cleanTitle = title.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fallback = `${cleanTitle}.m3u8`;
+    downloadFileViaBlob(url, fallback, "Téléchargement de la playlist M3U8...");
   };
 
   // Audio Playback
@@ -1387,15 +1590,29 @@ export default function Mp3DownloaderApp() {
                       )}
                     </Button>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {(jobStatus?.zipReady || jobStatus?.status === 'completed') && (
-                        <Button
-                          onClick={() => handleDownloadZip()}
-                          className="flex-1 h-10 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-sm text-xs animate-bounce"
-                        >
-                          <FileArchive className="w-4 h-4 mr-1.5" />
-                          ZIP Complet (.ZIP + .M3U8)
-                        </Button>
+                        <>
+                          <Button
+                            type="button"
+                            onClick={() => handleDownloadZip()}
+                            className="flex-1 min-w-[170px] h-10 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md text-xs transition-all flex items-center justify-center gap-1.5 animate-bounce"
+                            title="Télécharger l'archive ZIP contenant tous vos morceaux en MP3 320 kbps"
+                          >
+                            <FileArchive className="w-4 h-4 mr-1 text-white" />
+                            Télécharger les MP3 (.ZIP)
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleDownloadM3u()}
+                            className="h-10 px-3 bg-white/10 hover:bg-white/20 border-white/20 text-white text-xs font-medium rounded-xl transition-all flex items-center gap-1"
+                            title="Exporter la playlist M3U8 pour logiciels DJ (Rekordbox, VirtualDJ, Serato)"
+                          >
+                            <ListMusic className="w-3.5 h-3.5" />
+                            M3U8
+                          </Button>
+                        </>
                       )}
                       <Button
                         type="button"
@@ -1801,7 +2018,7 @@ export default function Mp3DownloaderApp() {
 
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                       <Button
-                        onClick={() => handleDownloadZip(item.id)}
+                        onClick={() => handleDownloadZip(item.id, item.playlistTitle)}
                         className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9"
                       >
                         <FileArchive className="w-3.5 h-3.5 mr-1.5" />
@@ -2116,32 +2333,32 @@ export default function Mp3DownloaderApp() {
 
       {/* TIDAL AUTHENTICATION MODAL */}
       {showTidalModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] flex flex-col overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] flex flex-col overflow-y-auto">
             
             {/* Header */}
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-sky-100 text-sky-700 rounded-xl">
+                <div className="p-2.5 bg-sky-100 text-sky-700 rounded-2xl">
                   <Key className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">Connexion au Compte Tidal</h3>
-                  <p className="text-xs text-slate-500">Accédez en lecture directe à vos playlists privées sans restriction</p>
+                  <p className="text-xs text-slate-500">Accédez directement à vos playlists privées sans copier de token</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowTidalModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Current Status */}
-            {customToken ? (
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+            {/* Current Status if already connected */}
+            {customToken && (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-emerald-900 font-bold text-sm">
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -2158,125 +2375,254 @@ export default function Mp3DownloaderApp() {
                   </div>
                 )}
                 <div className="pt-2 flex items-center justify-between border-t border-emerald-200/60">
-                  <span className="text-[11px] text-emerald-700">Vous pouvez recharger vos playlists privées Tidal à tout moment.</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      loadUserPlaylists(customToken);
+                      toast.success("Playlists rechargées !");
+                    }}
+                    className="text-xs h-7 border-emerald-300 text-emerald-800 hover:bg-emerald-100/60 rounded-lg"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                    Actualiser mes playlists
+                  </Button>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={handleDisconnectTidal}
-                    className="text-xs h-7 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                    className="text-xs h-7 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 rounded-lg"
                   >
                     Se déconnecter
                   </Button>
                 </div>
               </div>
-            ) : (
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed">
-                <strong>Pourquoi se connecter ?</strong> Tidal protège les listes de titres des playlists créées par les utilisateurs. En renseignant votre session active, l'application peut lire et charger l'intégralité des titres de vos playlists privées.
-              </div>
             )}
 
-            {/* Input & Actions */}
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-800">
-                Token d'accès ou Session Tidal
-              </label>
-              <div className="space-y-2">
-                <div className="relative">
-                  <Input
-                    type="text"
-                    value={tidalTokenInput}
-                    onChange={(e) => setTidalTokenInput(e.target.value)}
-                    placeholder="Collez ici votre token (ex: eyJhbGciOiJIUzI1Ni... ou token de session)"
-                    className="font-mono text-xs h-11 pr-20 rounded-xl border-slate-300"
-                  />
-                  {navigator.clipboard && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const text = await navigator.clipboard.readText();
-                          if (text) {
-                            setTidalTokenInput(text.trim());
-                            toast.success("Token collé depuis le presse-papier !");
-                          }
-                        } catch {
-                          toast.error("Impossible de lire le presse-papier.");
-                        }
-                      }}
-                      className="absolute right-2 top-2 px-2.5 py-1 text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-                    >
-                      Coller
-                    </button>
+            {/* MÉTHODE 1: CONNEXION EN 1 CLIC (GOOGLE / TIDAL SSO) */}
+            <div className="p-4 sm:p-5 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl text-white space-y-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-bold text-white">
+                  <LogIn className="w-4 h-4 text-sky-400" />
+                  <span>Connexion en 1 clic (via Google / Tidal)</span>
+                </div>
+                <span className="text-[10px] font-semibold px-2 py-0.5 bg-sky-500/20 text-sky-300 border border-sky-400/30 rounded-full">
+                  Automatique
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Connectez-vous directement via la fenêtre sécurisée de Tidal. Vous pouvez cliquer sur <strong>« Continuer avec Google »</strong> comme d'habitude. L'application récupère automatiquement votre session sans manipulation manuelle !
+              </p>
+
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  onClick={handleStartTidalOAuth}
+                  disabled={startingOAuth}
+                  className="w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold h-11 rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                >
+                  {startingOAuth ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Ouverture de Tidal en cours...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="w-4 h-4 text-slate-950" />
+                      <span>Se connecter à Tidal avec Google</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Developer / Setup toggle if OAuth credentials not yet in .env */}
+              {!oauthStatus.configured && (
+                <div className="pt-2 border-t border-slate-700/60">
+                  <button
+                    type="button"
+                    onClick={() => setShowOAuthSetupGuide(!showOAuthSetupGuide)}
+                    className="w-full flex items-center justify-between text-[11px] text-sky-300 hover:text-sky-200 transition-colors py-1"
+                  >
+                    <span>Configuration de l'accès direct Tidal OAuth (2 min)</span>
+                    {showOAuthSetupGuide ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {showOAuthSetupGuide && (
+                    <div className="mt-2.5 p-3.5 bg-slate-800/90 rounded-xl border border-slate-700 text-xs text-slate-300 space-y-2.5 animate-in fade-in duration-150">
+                      <p className="leading-relaxed">
+                        Pour lier le bouton à votre compte, Tidal requiert un identifiant d'application gratuit sur leur portail développeur :
+                      </p>
+                      <ol className="list-decimal list-inside space-y-1.5 text-slate-300 pl-1 leading-relaxed text-[11px]">
+                        <li>
+                          Ouvrez <a href="https://developer.tidal.com" target="_blank" rel="noreferrer" className="text-sky-400 underline font-semibold inline-flex items-center gap-0.5">developer.tidal.com <ExternalLink className="w-3 h-3" /></a> et créez une application.
+                        </li>
+                        <li>
+                          Renseignez comme <strong>Redirect URI</strong> l'adresse exacte suivante :
+                        </li>
+                      </ol>
+
+                      <div className="flex items-center gap-2 bg-slate-950/80 p-2 rounded-lg border border-slate-700">
+                        <code className="text-[11px] font-mono text-sky-300 truncate flex-1 select-all">
+                          {oauthStatus.redirectUri || `${window.location.origin}/api/mp3/tidal/callback`}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const uri = oauthStatus.redirectUri || `${window.location.origin}/api/mp3/tidal/callback`;
+                            navigator.clipboard.writeText(uri);
+                            setCopiedRedirectUri(true);
+                            toast.success("URL de redirection copiée !");
+                            setTimeout(() => setCopiedRedirectUri(false), 2500);
+                          }}
+                          className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-medium flex items-center gap-1 shrink-0"
+                        >
+                          {copiedRedirectUri ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedRedirectUri ? "Copié !" : "Copier"}</span>
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-slate-400">
+                        3. Ajoutez ensuite le <code className="text-sky-300 font-mono">TIDAL_CLIENT_ID</code> obtenu dans les paramètres d'environnement pour activer la connexion instantanée.
+                      </p>
+                    </div>
                   )}
                 </div>
+              )}
+            </div>
 
-                <div className="flex gap-2 pt-1">
-                  <Button
-                    type="button"
-                    disabled={verifyingTidal || !tidalTokenInput.trim()}
-                    onClick={() => handleVerifyAndSaveTidalToken(tidalTokenInput)}
-                    className="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold h-10 rounded-xl shadow-xs"
-                  >
-                    {verifyingTidal ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                        Vérification en cours...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Vérifier & Activer la session Tidal
-                      </>
-                    )}
-                  </Button>
-                </div>
+            {/* MÉTHODE 2: ASTUCE ZÉRO TOKEN & ZÉRO CONNEXION (100% IMMÉDIAT) */}
+            <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 uppercase tracking-wide">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  Astuce : Téléchargez sans aucun compte ni token !
+                </span>
+                <span className="text-[10px] font-bold bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full">
+                  100% Direct
+                </span>
+              </div>
+              <p className="text-xs text-emerald-900 leading-relaxed">
+                Si vous souhaitez télécharger les MP3 d'une playlist Tidal spécifique, <strong>vous n'avez pas besoin de connecter votre compte</strong> :
+              </p>
+              <ul className="list-disc list-inside text-xs text-emerald-900/90 space-y-1 pl-1">
+                <li>Dans Tidal, cliquez sur <strong>Partager ➜ Copier le lien</strong> de votre playlist.</li>
+                <li>Collez simplement ce lien dans l'onglet <strong>Lien URL</strong> de cette application.</li>
+              </ul>
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowTidalModal(false);
+                    setImportSource('link');
+                  }}
+                  className="text-xs font-semibold h-8 bg-white border-emerald-300 text-emerald-800 hover:bg-emerald-100 rounded-xl shadow-2xs"
+                >
+                  <LinkIcon className="w-3.5 h-3.5 mr-1.5 text-emerald-600" />
+                  Utiliser un lien Tidal sans connexion
+                </Button>
               </div>
             </div>
 
-            {/* Step-by-Step Instructions */}
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 text-xs text-slate-700">
-              <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm">
-                <HelpCircle className="w-4 h-4 text-sky-600 shrink-0" />
-                <span>Procédure exacte pour récupérer votre token en 20 secondes :</span>
-              </div>
-              <ol className="list-decimal list-inside space-y-2 text-slate-600 pl-1 leading-relaxed">
-                <li>
-                  Connectez-vous sur <a href="https://tidal.com" target="_blank" rel="noreferrer" className="text-sky-600 font-semibold underline inline-flex items-center gap-0.5">tidal.com <ExternalLink className="w-3 h-3" /></a> (ou <em>listen.tidal.com</em>).
-                </li>
-                <li>
-                  Appuyez sur <kbd className="px-1.5 py-0.5 bg-white border rounded text-[10px] font-mono shadow-2xs font-bold text-slate-800">F12</kbd> (ou clic droit n'importe où ➜ <strong>Inspecter</strong>).
-                </li>
-                <li>
-                  En haut du volet d'inspection, cliquez sur l'onglet <strong>Network</strong> (<em>Réseau</em>, situé à côté de <em>Console</em>).
-                </li>
-                <li>
-                  Dans la petite case de recherche / filtre en haut à gauche, tapez <code className="bg-slate-200/80 px-1 py-0.5 rounded text-[11px] font-mono font-bold text-slate-900">api</code>, puis rafraîchissez votre page Tidal (<kbd className="px-1 py-0.5 bg-white border rounded text-[10px] font-mono">F5</kbd> ou <kbd className="px-1 py-0.5 bg-white border rounded text-[10px] font-mono">Cmd + R</kbd>).
-                </li>
-                <li>
-                  Dans la liste sous la colonne <strong>Name</strong>, cliquez sur une ligne (par exemple <code className="bg-slate-200/80 px-1 py-0.5 rounded text-[11px] font-mono text-slate-800">items?...</code> ou une ligne contenant des chiffres).
-                </li>
-                <li>
-                  Dans le panneau qui s'ouvre à droite, restez sur <strong>Headers</strong>, descendez jusqu'à la section <strong>Request Headers</strong> (<em>En-têtes de requête</em>), et repérez la ligne <strong>Authorization:</strong>.
-                </li>
-                <li>
-                  Sélectionnez et <strong>copiez tout le texte</strong> commençant par <code className="bg-sky-100 text-sky-900 px-1 py-0.5 rounded text-[11px] font-mono font-bold">eyJ...</code> (qui se trouve juste après le mot <em>Bearer</em>).
-                </li>
-                <li>
-                  Revenez ici, collez ce texte dans le champ ci-dessus et cliquez sur <strong>Vérifier & Activer</strong>.
-                </li>
-              </ol>
+            {/* MÉTHODE 3 (OPTIONNELLE): SAISIE MANUELLE DU TOKEN */}
+            <div className="border border-slate-200 rounded-2xl p-4 space-y-3 bg-slate-50/50">
+              <button
+                type="button"
+                onClick={() => setShowManualTokenSection(!showManualTokenSection)}
+                className="w-full flex items-center justify-between text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Key className="w-3.5 h-3.5 text-slate-500" />
+                  Option alternative : Saisie manuelle d'un token de session
+                </span>
+                {showManualTokenSection ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+              </button>
+
+              {showManualTokenSection && (
+                <div className="space-y-4 pt-2 animate-in fade-in duration-150">
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Token de session Tidal (copié depuis listen.tidal.com)
+                    </label>
+                    <div className="relative">
+                      <Input
+                        type="text"
+                        value={tidalTokenInput}
+                        onChange={(e) => setTidalTokenInput(e.target.value)}
+                        placeholder="Collez ici votre token (ex: eyJhbGciOiJIUzI1Ni...)"
+                        className="font-mono text-xs h-10 pr-20 rounded-xl border-slate-300 bg-white"
+                      />
+                      {navigator.clipboard && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const text = await navigator.clipboard.readText();
+                              if (text) {
+                                setTidalTokenInput(text.trim());
+                                toast.success("Token collé depuis le presse-papier !");
+                              }
+                            } catch {
+                              toast.error("Impossible de lire le presse-papier.");
+                            }
+                          }}
+                          className="absolute right-2 top-1.5 px-2 py-1 text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                        >
+                          Coller
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="pt-1">
+                      <Button
+                        type="button"
+                        disabled={verifyingTidal || !tidalTokenInput.trim()}
+                        onClick={() => handleVerifyAndSaveTidalToken(tidalTokenInput)}
+                        className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold h-9 rounded-xl text-xs"
+                      >
+                        {verifyingTidal ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                            Vérification du token...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                            Vérifier & Enregistrer ce token
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Step-by-Step Instructions */}
+                  <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-2 text-xs text-slate-600">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                      <HelpCircle className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                      <span>Rappel pour trouver ce token sur votre navigateur :</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-slate-500 pl-1 leading-relaxed text-[11px]">
+                      <li>Allez sur <a href="https://tidal.com" target="_blank" rel="noreferrer" className="text-sky-600 underline font-medium">tidal.com</a> et ouvrez les outils développeur (<kbd className="px-1 py-0.2 bg-slate-100 border rounded text-[10px] font-mono">F12</kbd>).</li>
+                      <li>Cliquez sur l'onglet <strong>Network</strong> (Réseau) et filtrez sur <code className="bg-slate-100 px-1 rounded text-[10px] font-mono">api</code>.</li>
+                      <li>Rechargez la page (<kbd className="px-1 py-0.2 bg-slate-100 border rounded text-[10px] font-mono">F5</kbd>), cliquez sur une requête et copiez la valeur de l'en-tête <strong>Authorization</strong> (commençant par <code className="font-mono text-slate-800">eyJ...</code>).</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
             <div className="pt-2 flex items-center justify-between border-t border-slate-100 text-[11px] text-slate-400">
-              <span>🔒 Votre session est conservée localement dans votre navigateur.</span>
+              <span>🔒 Données sécurisées et stockées exclusivement dans votre navigateur.</span>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowTidalModal(false)}
-                className="text-xs text-slate-600"
+                className="text-xs text-slate-600 rounded-xl"
               >
                 Fermer
               </Button>
@@ -2374,15 +2720,12 @@ export default function Mp3DownloaderApp() {
                     Grand Pack ZIP Tout-en-un
                   </h4>
                   <p className="text-xs text-emerald-800">
-                    Contient chaque playlist rangée dans son propre sous-dossier avec tous les fichiers MP3 320 kbps.
+                    Contient chaque playlist rangée dans son propre sous-dossier avec exclusivement vos fichiers MP3 320 kbps.
                   </p>
                 </div>
                 <Button
                   type="button"
-                  onClick={() => {
-                    const downloadUrl = `/mp3/download/multi-zip/${multiJobStatus.multiJobId}`;
-                    window.location.href = downloadUrl;
-                  }}
+                  onClick={() => handleDownloadMasterZip(multiJobStatus.multiJobId || multiJobId)}
                   className="w-full sm:w-auto bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs h-10 px-5 rounded-xl shadow-sm shrink-0"
                 >
                   <Download className="w-4 h-4 mr-2" />
@@ -2410,27 +2753,26 @@ export default function Mp3DownloaderApp() {
                         </h5>
                       </div>
                       <p className="text-[11px] text-slate-400">
-                        {pl.trackCount || 0} morceau{(pl.trackCount || 0) > 1 ? 'x' : ''}
+                        {pl.trackCount || pl.totalTracks || 0} morceau{(pl.trackCount || pl.totalTracks || 0) > 1 ? 'x' : ''}
                       </p>
                     </div>
 
                     {/* Status Pill & Action */}
                     <div className="flex items-center gap-2">
-                      {pl.status === 'done' ? (
+                      {(pl.status === 'done' || pl.status === 'completed') ? (
                         <div className="flex items-center gap-1.5">
                           <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] flex items-center gap-1">
                             <Check className="w-3 h-3 text-emerald-600" /> Prête
                           </span>
-                          {pl.jobId && (
-                            <a
-                              href={`/mp3/download/zip/${pl.jobId}`}
-                              className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition-colors"
-                              title="Télécharger cette playlist seule"
-                            >
-                              <Download className="w-3 h-3 mr-1 text-slate-500" />
-                              ZIP
-                            </a>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadMultiSubZip(multiJobStatus.multiJobId || multiJobId, pl.id)}
+                            className="inline-flex items-center px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold text-[11px] transition-colors"
+                            title="Télécharger cette playlist seule en MP3"
+                          >
+                            <Download className="w-3 h-3 mr-1 text-emerald-600" />
+                            ZIP MP3
+                          </button>
                         </div>
                       ) : pl.status === 'downloading' ? (
                         <span className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 font-bold text-[10px] flex items-center gap-1 animate-pulse">
