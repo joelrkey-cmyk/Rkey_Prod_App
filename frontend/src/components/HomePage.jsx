@@ -4,10 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
-import { Textarea } from './ui/textarea';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, PenLine, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw, FileSpreadsheet, Disc3 } from 'lucide-react';
+import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw, FileSpreadsheet, Disc3, Flame, GripVertical } from 'lucide-react';
 import axios from '../services/axiosConfig';
 import { toast } from 'sonner';
 
@@ -34,16 +33,15 @@ const HomePage = () => {
   const [plannerLoading, setPlannerLoading] = useState(true);
   const [inlineAddDay, setInlineAddDay] = useState(null);
   const [inlineAddText, setInlineAddText] = useState("");
+  const [inlineAddUrgent, setInlineAddUrgent] = useState(false);
   const [editTaskDialogOpen, setEditTaskDialogOpen] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState(null);
   const [editText, setEditText] = useState("");
+  const [editIsUrgent, setEditIsUrgent] = useState(false);
   const [dragOverDay, setDragOverDay] = useState(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState(null);
+  const [dragPosition, setDragPosition] = useState(null); // 'before' | 'after'
   const [draggingTaskId, setDraggingTaskId] = useState(null);
-
-  // Notepad states
-  const [notepadContent, setNotepadContent] = useState("");
-  const [notepadLoading, setNotepadLoading] = useState(true);
-  const [notepadSavingState, setNotepadSavingState] = useState("idle");
 
   const deletionTimeoutsRef = useRef({});
 
@@ -52,7 +50,6 @@ const HomePage = () => {
     loadUnreadNotifications();
     loadDashboardStats();
     loadPlannerTasks();
-    loadNotepad();
 
     return () => {
       // Clear pending timeouts and execute deletion on unmount immediately
@@ -64,37 +61,6 @@ const HomePage = () => {
       });
     };
   }, []);
-
-  const loadNotepad = async () => {
-    try {
-      const response = await axios.get(`${API}/home-planner/notepad`);
-      setNotepadContent(response.data.content || "");
-      setNotepadLoading(false);
-    } catch (error) {
-      if (error?.response?.status !== 401) {
-        console.error("Error loading notepad:", error);
-      }
-      setNotepadLoading(false);
-    }
-  };
-
-  // Debounced auto-save notepad
-  useEffect(() => {
-    if (notepadLoading) return;
-
-    setNotepadSavingState("saving");
-    const saveTimeout = setTimeout(async () => {
-      try {
-        await axios.post(`${API}/home-planner/notepad`, { content: notepadContent });
-        setNotepadSavingState("saved");
-      } catch (error) {
-        console.error("Error auto-saving notepad:", error);
-        setNotepadSavingState("error");
-      }
-    }, 1200);
-
-    return () => clearTimeout(saveTimeout);
-  }, [notepadContent, notepadLoading]);
 
   const loadPlannerTasks = async () => {
     try {
@@ -121,20 +87,45 @@ const HomePage = () => {
     }
   };
 
+  const handleToggleUrgent = async (task, e) => {
+    if (e) e.stopPropagation();
+    const newUrgent = !task.is_urgent;
+    setPlannerTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_urgent: newUrgent } : t));
+    try {
+      await axios.put(`${API}/home-planner/tasks/${task.id}`, { is_urgent: newUrgent });
+      if (newUrgent) {
+        toast.error("Tâche marquée comme urgente (fond rouge vif, texte blanc gras)");
+      } else {
+        toast.info("Statut urgent retiré");
+      }
+    } catch (error) {
+      console.error("Error toggling urgent:", error);
+      toast.error("Impossible de modifier le statut d'urgence");
+      loadPlannerTasks();
+    }
+  };
+
   const handleAddInlineTask = async (day) => {
     if (!inlineAddText.trim()) {
       setInlineAddDay(null);
+      setInlineAddUrgent(false);
       return;
     }
+    const isUrgent = inlineAddUrgent;
     try {
+      const dayTasks = plannerTasks.filter(t => t.day === day);
+      const nextOrder = dayTasks.length;
       const response = await axios.post(`${API}/home-planner/tasks`, {
         day: day,
-        text: inlineAddText.trim()
+        text: inlineAddText.trim(),
+        is_urgent: isUrgent,
+        order: nextOrder
       });
       setPlannerTasks(prev => [...prev, response.data]);
       setInlineAddText("");
+      setInlineAddUrgent(false);
       setInlineAddDay(null);
-      toast.success("Tâche ajoutée");
+      toast.success(isUrgent ? "Tâche urgente ajoutée" : "Tâche ajoutée");
     } catch (error) {
       console.error("Error adding task:", error);
       toast.error("Erreur lors de l'ajout");
@@ -195,42 +186,151 @@ const HomePage = () => {
     });
   };
 
+  const handleMoveTaskOrder = async (taskId, direction) => {
+    const task = plannerTasks.find(t => t.id === taskId);
+    if (!task) return;
+    const dayTasks = plannerTasks
+      .filter(t => t.day === task.day)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    const currentIndex = dayTasks.findIndex(t => t.id === taskId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= dayTasks.length) return;
+
+    const newDayTasks = [...dayTasks];
+    const [moved] = newDayTasks.splice(currentIndex, 1);
+    newDayTasks.splice(targetIndex, 0, moved);
+
+    const items = newDayTasks.map((t, idx) => ({ id: t.id, day: t.day, order: idx }));
+
+    setPlannerTasks(prev => {
+      const otherTasks = prev.filter(t => t.day !== task.day);
+      const updatedDayTasks = newDayTasks.map((t, idx) => ({ ...t, order: idx }));
+      return [...otherTasks, ...updatedDayTasks];
+    });
+
+    try {
+      await axios.post(`${API}/home-planner/tasks/reorder`, { items });
+    } catch (err) {
+      console.error("Error moving task order:", err);
+      loadPlannerTasks();
+    }
+  };
+
+  const handleDropOnTask = async (e, targetTask, position) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sourceTaskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
+    setDragOverDay(null);
+    setDragOverTaskId(null);
+    setDragPosition(null);
+    setDraggingTaskId(null);
+
+    if (!sourceTaskId || sourceTaskId === targetTask.id) return;
+    const sourceTask = plannerTasks.find(t => t.id === sourceTaskId);
+    if (!sourceTask) return;
+
+    const targetDay = targetTask.day;
+    const targetDayTasks = plannerTasks
+      .filter(t => t.day === targetDay && t.id !== sourceTaskId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    const targetIndex = targetDayTasks.findIndex(t => t.id === targetTask.id);
+    const insertIndex = position === 'before' ? targetIndex : targetIndex + 1;
+    targetDayTasks.splice(insertIndex < 0 ? 0 : insertIndex, 0, { ...sourceTask, day: targetDay });
+
+    const items = targetDayTasks.map((t, idx) => ({ id: t.id, day: targetDay, order: idx }));
+
+    if (sourceTask.day !== targetDay) {
+      const sourceDayTasks = plannerTasks
+        .filter(t => t.day === sourceTask.day && t.id !== sourceTaskId)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      sourceDayTasks.forEach((t, idx) => {
+        items.push({ id: t.id, day: sourceTask.day, order: idx });
+      });
+    }
+
+    setPlannerTasks(prev => {
+      const other = prev.filter(t => t.day !== targetDay && t.day !== sourceTask.day);
+      const updatedTarget = targetDayTasks.map((t, idx) => ({ ...t, order: idx }));
+      const updatedSource = sourceTask.day !== targetDay
+        ? prev.filter(t => t.day === sourceTask.day && t.id !== sourceTaskId).map((t, idx) => ({ ...t, order: idx }))
+        : [];
+      return [...other, ...updatedTarget, ...updatedSource];
+    });
+
+    try {
+      await axios.post(`${API}/home-planner/tasks/reorder`, { items });
+      toast.success("Ordre et priorité mis à jour");
+    } catch (err) {
+      console.error("Error reordering on drop:", err);
+      loadPlannerTasks();
+    }
+  };
+
   const handleDropOnDay = async (e, targetDay) => {
     e.preventDefault();
     setDragOverDay(null);
+    setDragOverTaskId(null);
+    setDragPosition(null);
     setDraggingTaskId(null);
-    const taskId = e.dataTransfer.getData('text/plain');
+    const taskId = e.dataTransfer.getData('text/plain') || draggingTaskId;
     if (!taskId) return;
 
-    const task = plannerTasks.find(t => t.id === taskId);
-    if (!task) return;
+    const sourceTask = plannerTasks.find(t => t.id === taskId);
+    if (!sourceTask) return;
 
-    if (task.day === targetDay) return;
+    const targetDayTasks = plannerTasks
+      .filter(t => t.day === targetDay && t.id !== taskId)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    targetDayTasks.push({ ...sourceTask, day: targetDay });
+    const items = targetDayTasks.map((t, idx) => ({ id: t.id, day: targetDay, order: idx }));
+
+    if (sourceTask.day !== targetDay) {
+      const sourceDayTasks = plannerTasks
+        .filter(t => t.day === sourceTask.day && t.id !== taskId)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      sourceDayTasks.forEach((t, idx) => {
+        items.push({ id: t.id, day: sourceTask.day, order: idx });
+      });
+    }
+
+    setPlannerTasks(prev => {
+      const other = prev.filter(t => t.day !== targetDay && t.day !== sourceTask.day);
+      const updatedTarget = targetDayTasks.map((t, idx) => ({ ...t, order: idx }));
+      const updatedSource = sourceTask.day !== targetDay
+        ? prev.filter(t => t.day === sourceTask.day && t.id !== taskId).map((t, idx) => ({ ...t, order: idx }))
+        : [];
+      return [...other, ...updatedTarget, ...updatedSource];
+    });
 
     try {
-      // Optimistic update
-      setPlannerTasks(prev => prev.map(t => t.id === taskId ? { ...t, day: targetDay } : t));
-      
-      await axios.put(`${API}/home-planner/tasks/${taskId}`, { day: targetDay });
-      
+      await axios.post(`${API}/home-planner/tasks/reorder`, { items });
       const dayLabels = {
         lundi: "Lundi",
         mardi: "Mardi",
         mercredi: "Mercredi",
         jeudi: "Jeudi",
-        vendredi: "Vendredi"
+        vendredi: "Vendredi",
+        a_realiser: "À réaliser",
+        projet: "Projet"
       };
-      toast.success(`Tâche déplacée au ${dayLabels[targetDay] || targetDay}`);
+      const label = dayLabels[targetDay] || targetDay;
+      const prep = (targetDay === 'a_realiser' || targetDay === 'projet') ? `dans « ${label} »` : `au ${label}`;
+      toast.success(`Tâche déplacée ${prep}`);
     } catch (error) {
       console.error("Error moving task:", error);
       toast.error("Impossible de déplacer la tâche");
-      loadPlannerTasks(); // Revert
+      loadPlannerTasks();
     }
   };
 
   const handleOpenEditTask = (task) => {
     setTaskToEdit(task);
     setEditText(task.text);
+    setEditIsUrgent(!!task.is_urgent);
     setEditTaskDialogOpen(true);
   };
 
@@ -238,7 +338,8 @@ const HomePage = () => {
     if (!editText.trim() || !taskToEdit) return;
     try {
       const response = await axios.put(`${API}/home-planner/tasks/${taskToEdit.id}`, {
-        text: editText.trim()
+        text: editText.trim(),
+        is_urgent: editIsUrgent
       });
       setPlannerTasks(prev => prev.map(t => t.id === taskToEdit.id ? response.data : t));
       setEditTaskDialogOpen(false);
@@ -394,7 +495,7 @@ const HomePage = () => {
                   Planning Hebdomadaire
                 </CardTitle>
                 <CardDescription className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
-                  <span>Suivi des tâches de la semaine (Lundi au Vendredi)</span>
+                  <span>Suivi des tâches de la semaine & Projets (Lundi au Vendredi + À réaliser & Projet)</span>
                   <span className="hidden md:inline">•</span>
                   <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium italic flex items-center gap-1">
                     <Clock className="w-3 h-3 text-slate-500" /> Remise à zéro automatique le lundi à 01h00
@@ -403,9 +504,9 @@ const HomePage = () => {
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 <div className="text-right">
-                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Progression globale</p>
+                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider">Progression de la semaine (Lun-Ven)</p>
                   <p className="text-sm font-extrabold text-slate-800">
-                    {plannerTasks.filter(t => t.completed).length} / {plannerTasks.length} tâches ({plannerTasks.length > 0 ? Math.round((plannerTasks.filter(t => t.completed).length / plannerTasks.length) * 100) : 0}%)
+                    {plannerTasks.filter(t => ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].includes((t.day || '').toLowerCase()) && t.completed).length} / {plannerTasks.filter(t => ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].includes((t.day || '').toLowerCase())).length} tâches ({plannerTasks.filter(t => ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].includes((t.day || '').toLowerCase())).length > 0 ? Math.round((plannerTasks.filter(t => ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].includes((t.day || '').toLowerCase()) && t.completed).length / plannerTasks.filter(t => ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].includes((t.day || '').toLowerCase())).length) * 100) : 0}%)
                   </p>
                 </div>
                 <Button 
@@ -421,11 +522,13 @@ const HomePage = () => {
               </div>
             </div>
 
-            {/* Barre de progression globale */}
+            {/* Barre de progression de la semaine (hors projets et à réaliser) */}
             <div className="w-full bg-slate-100 rounded-full h-2.5 mt-4 overflow-hidden border border-slate-200/50">
               <div 
                 className="bg-emerald-500 h-full rounded-full transition-all duration-500 shadow-sm" 
-                style={{ width: `${plannerTasks.length > 0 ? Math.round((plannerTasks.filter(t => t.completed).length / plannerTasks.length) * 100) : 0}%` }}
+                style={{ 
+                  width: `${plannerTasks.filter(t => ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].includes((t.day || '').toLowerCase())).length > 0 ? Math.round((plannerTasks.filter(t => ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].includes((t.day || '').toLowerCase()) && t.completed).length / plannerTasks.filter(t => ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].includes((t.day || '').toLowerCase())).length) * 100) : 0}%` 
+                }}
               />
             </div>
           </CardHeader>
@@ -437,15 +540,19 @@ const HomePage = () => {
                 <p className="text-sm font-medium">Chargement du planning...</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
                 {[
                   { key: 'lundi', label: 'Lundi', color: 'border-blue-500 bg-blue-50/10 text-blue-800' },
                   { key: 'mardi', label: 'Mardi', color: 'border-purple-500 bg-purple-50/10 text-purple-800' },
                   { key: 'mercredi', label: 'Mercredi', color: 'border-pink-500 bg-pink-50/10 text-pink-800' },
                   { key: 'jeudi', label: 'Jeudi', color: 'border-orange-500 bg-orange-50/10 text-orange-800' },
-                  { key: 'vendredi', label: 'Vendredi', color: 'border-emerald-500 bg-emerald-50/10 text-emerald-800' }
+                  { key: 'vendredi', label: 'Vendredi', color: 'border-emerald-500 bg-emerald-50/10 text-emerald-800' },
+                  { key: 'a_realiser', label: 'À réaliser', color: 'border-amber-500 bg-amber-50/10 text-amber-800', isExtension: true },
+                  { key: 'projet', label: 'Projet', color: 'border-indigo-500 bg-indigo-50/10 text-indigo-800', isExtension: true }
                 ].map(day => {
-                  const dayTasks = plannerTasks.filter(t => t.day === day.key);
+                  const dayTasks = plannerTasks
+                    .filter(t => t.day === day.key)
+                    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
                   const completedDayTasks = dayTasks.filter(t => t.completed).length;
                   const isDayAllDone = dayTasks.length > 0 && completedDayTasks === dayTasks.length;
 
@@ -453,7 +560,7 @@ const HomePage = () => {
                     <div 
                       key={day.key} 
                       className={`flex flex-col h-full rounded-xl border border-slate-200/80 bg-white shadow-xs overflow-hidden border-t-4 ${day.color.split(' ')[0]} transition-all duration-200 ${
-                        dragOverDay === day.key 
+                        dragOverDay === day.key && !dragOverTaskId
                           ? 'ring-2 ring-emerald-500 ring-offset-1 scale-[1.01] shadow-md bg-emerald-50/20' 
                           : 'hover:shadow-md'
                       }`}
@@ -464,7 +571,9 @@ const HomePage = () => {
                         }
                       }}
                       onDragLeave={() => {
-                        setDragOverDay(null);
+                        if (dragOverDay === day.key && !dragOverTaskId) {
+                          setDragOverDay(null);
+                        }
                       }}
                       onDrop={(e) => handleDropOnDay(e, day.key)}
                     >
@@ -472,90 +581,165 @@ const HomePage = () => {
                       <div className="px-3.5 py-2.5 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <span className="font-extrabold text-sm text-slate-700 uppercase tracking-wider">{day.label}</span>
-                          {isDayAllDone && (
+                          {day.isExtension && (
+                            <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                              Notes
+                            </span>
+                          )}
+                          {!day.isExtension && isDayAllDone && (
                             <Badge className="bg-emerald-500 hover:bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow-sm">
                               <Check className="w-3.5 h-3.5 stroke-[3]" /> Fait
                             </Badge>
                           )}
                         </div>
-                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full" title={day.isExtension ? "Hors calcul de progression" : ""}>
                           {completedDayTasks}/{dayTasks.length}
                         </span>
                       </div>
 
                       {/* Liste des tâches */}
-                      <div className="p-3 flex-1 flex flex-col gap-2 min-h-[140px]">
+                      <div className="p-2.5 flex-1 flex flex-col gap-2 min-h-[140px]">
                         {dayTasks.length === 0 ? (
                           <div className="flex-1 flex items-center justify-center py-6 text-center">
                             <p className="text-xs text-slate-400 italic">Aucune tâche</p>
                           </div>
                         ) : (
-                          <div className="space-y-2 flex-1">
-                            {dayTasks.map(task => (
-                              <div 
-                                key={task.id} 
-                                draggable={true}
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData('text/plain', task.id);
-                                  e.dataTransfer.effectAllowed = 'move';
-                                  setDraggingTaskId(task.id);
-                                }}
-                                onDragEnd={() => {
-                                  setDraggingTaskId(null);
-                                }}
-                                className={`group flex items-start gap-2 p-2 rounded-lg border text-xs transition-all cursor-grab active:cursor-grabbing ${
-                                  draggingTaskId === task.id
-                                    ? 'opacity-40 border-dashed border-indigo-400 bg-indigo-50/30'
-                                    : task.completed 
-                                      ? 'bg-slate-50 border-slate-100 text-slate-400 line-through' 
-                                      : 'bg-white border-slate-150 text-slate-700 hover:bg-slate-50/50 hover:shadow-xs'
-                                }`}
-                              >
-                                {/* Checkbox Rond/Carré élégant */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTask(task)}
-                                  className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 mt-0.5 cursor-pointer ${
-                                    task.completed
-                                      ? 'bg-emerald-500 border-emerald-500 text-white'
-                                      : 'border-slate-300 hover:border-emerald-500 bg-white'
+                          <div className="space-y-1.5 flex-1">
+                            {dayTasks.map((task, index) => {
+                              const isFirstInDay = index === 0;
+                              const isLastInDay = index === dayTasks.length - 1;
+                              const isOverThisTask = dragOverTaskId === task.id;
+                              const isUrgent = !!task.is_urgent;
+
+                              return (
+                                <div 
+                                  key={task.id} 
+                                  draggable={true}
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData('text/plain', task.id);
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    setDraggingTaskId(task.id);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggingTaskId(null);
+                                    setDragOverTaskId(null);
+                                    setDragPosition(null);
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const mid = rect.top + rect.height / 2;
+                                    const pos = e.clientY < mid ? 'before' : 'after';
+                                    setDragOverDay(day.key);
+                                    setDragOverTaskId(task.id);
+                                    setDragPosition(pos);
+                                  }}
+                                  onDrop={(e) => handleDropOnTask(e, task, dragPosition)}
+                                  className={`group relative flex items-start gap-1.5 p-2 rounded-lg border text-xs transition-all cursor-grab active:cursor-grabbing ${
+                                    isOverThisTask && dragPosition === 'before' ? 'ring-2 ring-indigo-500 ring-offset-1' : ''
+                                  } ${
+                                    isOverThisTask && dragPosition === 'after' ? 'ring-2 ring-indigo-500 ring-offset-1' : ''
+                                  } ${
+                                    draggingTaskId === task.id
+                                      ? 'opacity-30 border-dashed border-indigo-400 bg-indigo-50/40'
+                                      : isUrgent
+                                        ? task.completed
+                                          ? 'bg-red-900/90 border-red-950 text-white/75 line-through font-bold shadow-xs'
+                                          : 'bg-red-600 border-red-700 text-white font-bold shadow-md ring-1 ring-red-500/50'
+                                        : task.completed 
+                                          ? 'bg-slate-50 border-slate-100 text-slate-400 line-through' 
+                                          : 'bg-white border-slate-150 text-slate-700 hover:bg-slate-50/50 hover:shadow-xs'
                                   }`}
                                 >
-                                  {task.completed && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                                </button>
+                                  {/* Poignée de drag & drop */}
+                                  <div 
+                                    className={`pt-0.5 shrink-0 select-none ${
+                                      isUrgent && !task.completed ? 'text-white/60 group-hover:text-white' : 'text-slate-300 group-hover:text-slate-500'
+                                    }`}
+                                    title="Glisser pour déplacer / réordonner"
+                                  >
+                                    <GripVertical className="w-3.5 h-3.5" />
+                                  </div>
 
-                                {/* Texte de la tâche */}
-                                <span className="flex-1 leading-tight break-words select-none pt-0.5">
-                                  {task.text}
-                                </span>
-
-                                {/* Menu action : visible au survol sur PC, accessible sur mobile */}
-                                <div className="flex items-center gap-0.5 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
+                                  {/* Checkbox */}
                                   <button
                                     type="button"
-                                    onClick={() => handleOpenEditTask(task)}
-                                    className="p-1 text-slate-400 hover:text-indigo-600 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-                                    title="Modifier la tâche"
+                                    onClick={() => handleToggleTask(task)}
+                                    className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 mt-0.5 cursor-pointer ${
+                                      isUrgent
+                                        ? task.completed
+                                          ? 'bg-white border-white text-red-700 font-extrabold'
+                                          : 'border-white/80 bg-red-700/60 hover:bg-white/20 text-white'
+                                        : task.completed
+                                          ? 'bg-emerald-500 border-emerald-500 text-white'
+                                          : 'border-slate-300 hover:border-emerald-500 bg-white'
+                                    }`}
+                                    title={task.completed ? "Marquer comme à faire" : "Marquer comme fait"}
                                   >
-                                    <Edit className="w-3 h-3" />
+                                    {task.completed && <Check className={`w-2.5 h-2.5 stroke-[3] ${isUrgent ? 'text-red-700' : 'text-white'}`} />}
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteTask(task.id)}
-                                    className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-slate-100 transition-colors cursor-pointer"
-                                    title="Supprimer la tâche"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+
+                                  {/* Texte de la tâche (police blanche et en gras si urgente) */}
+                                  <span className={`flex-1 leading-tight break-words select-none pt-0.5 ${isUrgent ? 'text-white font-bold' : ''}`}>
+                                    {task.text}
+                                  </span>
+
+                                  {/* Menu d'actions : Urgence, Ordre, Édition, Suppression */}
+                                  <div className="flex items-center gap-0.5 shrink-0 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                    {/* Bouton Urgence */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleToggleUrgent(task, e)}
+                                      className={`p-1 rounded transition-colors cursor-pointer ${
+                                        isUrgent
+                                          ? 'text-yellow-300 hover:text-white hover:bg-red-700/60'
+                                          : 'text-slate-300 hover:text-red-500 hover:bg-red-50'
+                                      }`}
+                                      title={isUrgent ? "Retirer l'urgence" : "Marquer comme urgent (fond rouge vif, texte blanc gras)"}
+                                    >
+                                      <Flame className={`w-3.5 h-3.5 ${isUrgent ? 'fill-yellow-300 text-yellow-300' : ''}`} />
+                                    </button>
+
+                                    {/* Modifier */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenEditTask(task);
+                                      }}
+                                      className={`p-1 rounded transition-colors cursor-pointer ${
+                                        isUrgent ? 'text-white/80 hover:text-white hover:bg-red-700/60' : 'text-slate-400 hover:text-indigo-600 hover:bg-slate-100'
+                                      }`}
+                                      title="Modifier la tâche"
+                                    >
+                                      <Edit className="w-3 h-3" />
+                                    </button>
+
+                                    {/* Supprimer */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteTask(task.id);
+                                      }}
+                                      className={`p-1 rounded transition-colors cursor-pointer ${
+                                        isUrgent ? 'text-white/80 hover:text-white hover:bg-red-700/60' : 'text-slate-400 hover:text-red-500 hover:bg-slate-100'
+                                      }`}
+                                      title="Supprimer la tâche"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
 
                         {/* Zone d'ajout inline */}
                         {inlineAddDay === day.key ? (
-                          <div className="mt-2 space-y-1.5 p-1.5 bg-slate-50 rounded-lg border border-slate-200">
+                          <div className="mt-2 space-y-2 p-2 bg-slate-50 rounded-lg border border-slate-200">
                             <Input
                               value={inlineAddText}
                               onChange={(e) => setInlineAddText(e.target.value)}
@@ -566,29 +750,47 @@ const HomePage = () => {
                                 if (e.key === 'Escape') {
                                   setInlineAddDay(null);
                                   setInlineAddText("");
+                                  setInlineAddUrgent(false);
                                 }
                               }}
                               autoFocus
                             />
-                            <div className="flex items-center justify-end gap-1">
-                              <Button 
-                                size="sm" 
-                                variant="ghost" 
-                                className="h-6 text-[10px] px-2 text-slate-500 hover:bg-slate-200"
-                                onClick={() => {
-                                  setInlineAddDay(null);
-                                  setInlineAddText("");
-                                }}
+                            <div className="flex items-center justify-between gap-1 pt-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setInlineAddUrgent(prev => !prev)}
+                                className={`h-6 px-1.5 rounded text-[10px] font-bold flex items-center gap-1 border transition-colors cursor-pointer ${
+                                  inlineAddUrgent
+                                    ? 'bg-red-600 text-white border-red-700 shadow-xs'
+                                    : 'text-slate-500 bg-white border-slate-200 hover:bg-slate-100'
+                                }`}
+                                title="Créer directement en mode urgent"
                               >
-                                Annuler
-                              </Button>
-                              <Button 
-                                size="sm" 
-                                className="h-6 text-[10px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-                                onClick={() => handleAddInlineTask(day.key)}
-                              >
-                                Ajouter
-                              </Button>
+                                <Flame className={`w-3 h-3 ${inlineAddUrgent ? 'fill-white text-white' : 'text-red-500'}`} />
+                                Urgent
+                              </button>
+
+                              <div className="flex items-center gap-1">
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost" 
+                                  className="h-6 text-[10px] px-2 text-slate-500 hover:bg-slate-200"
+                                  onClick={() => {
+                                    setInlineAddDay(null);
+                                    setInlineAddText("");
+                                    setInlineAddUrgent(false);
+                                  }}
+                                >
+                                  Annuler
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  className="h-6 text-[10px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  onClick={() => handleAddInlineTask(day.key)}
+                                >
+                                  Ajouter
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         ) : (
@@ -597,6 +799,7 @@ const HomePage = () => {
                             onClick={() => {
                               setInlineAddDay(day.key);
                               setInlineAddText("");
+                              setInlineAddUrgent(false);
                             }}
                             className="mt-2 w-full py-1.5 px-2 rounded-lg border border-dashed border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-[10px] font-semibold text-slate-500 hover:text-slate-700 transition-all flex items-center justify-center gap-1 cursor-pointer"
                           >
@@ -614,79 +817,6 @@ const HomePage = () => {
         </Card>
       </div>
 
-      {/* Bloc-notes / Projets */}
-      <div className="max-w-6xl mx-auto px-6 pb-16">
-        <Card className="border border-slate-200 bg-white/70 backdrop-blur shadow-sm">
-          <CardHeader className="pb-4">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div>
-                <CardTitle className="text-xl md:text-2xl font-bold flex items-center gap-2 text-slate-800">
-                  <PenLine className="w-6 h-6 text-indigo-600" />
-                  Bloc-notes & Projets
-                </CardTitle>
-                <CardDescription className="text-sm text-slate-500 mt-1">
-                  Saisissez vos projets, vos idées de tâches ou vos notes générales en toute liberté sans case à cocher.
-                </CardDescription>
-              </div>
-              
-              {/* Indicateur de sauvegarde */}
-              <div className="flex items-center gap-2 shrink-0 select-none">
-                {notepadSavingState === "saving" && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-100">
-                    <RefreshCw className="w-3 h-3 animate-spin text-amber-500" />
-                    Enregistrement...
-                  </span>
-                )}
-                {notepadSavingState === "saved" && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
-                    <Check className="w-3 h-3 text-emerald-500 stroke-[3]" />
-                    Sauvegardé
-                  </span>
-                )}
-                {notepadSavingState === "error" && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-100">
-                    ⚠️ Erreur de sauvegarde
-                  </span>
-                )}
-                {notepadSavingState === "idle" && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-50 text-slate-500 border border-slate-100">
-                    Prêt
-                  </span>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {notepadLoading ? (
-              <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
-                <RefreshCw className="w-8 h-8 animate-spin text-slate-400" />
-                <p className="text-sm font-medium">Chargement du bloc-notes...</p>
-              </div>
-            ) : (
-              <div className="relative rounded-xl border border-slate-150 overflow-hidden bg-slate-50/50 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all duration-200">
-                <Textarea
-                  value={notepadContent}
-                  onChange={(e) => setNotepadContent(e.target.value)}
-                  placeholder="Exemple :&#10;- Lancement projet billetterie R'KEY&#10;- Contacter l'artiste DJ Greg pour le contrat de samedi&#10;- Acheter des nouveaux câbles XLR pour le parc de location"
-                  className="w-full min-h-[250px] p-5 text-sm md:text-base leading-relaxed font-sans text-slate-800 bg-transparent border-0 focus-visible:ring-0 focus-visible:ring-offset-0 resize-y"
-                />
-                
-                {/* Pied de page du bloc-notes */}
-                <div className="px-5 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-semibold select-none">
-                  <span className="flex items-center gap-1.5">
-                    <span>💡</span> 
-                    <span className="italic font-medium text-slate-500">Le bloc-notes s'enregistre automatiquement dès que vous arrêtez de taper.</span>
-                  </span>
-                  <span>
-                    {notepadContent ? notepadContent.trim().split('\n').filter(Boolean).length : 0} ligne(s)
-                  </span>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Dialog d'édition de tâche */}
       <Dialog open={editTaskDialogOpen} onOpenChange={setEditTaskDialogOpen}>
         <DialogContent className="max-w-sm sm:max-w-md bg-white border border-slate-200 shadow-lg rounded-xl">
@@ -696,11 +826,11 @@ const HomePage = () => {
               Modifier la tâche
             </DialogTitle>
             <DialogDescription className="text-slate-500 text-xs">
-              Mettez à jour le libellé de votre tâche hebdomadaire.
+              Mettez à jour le libellé et l'urgence de votre tâche.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4 space-y-3">
+          <div className="py-4 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="editTaskText" className="text-slate-700 font-semibold text-xs">Texte de la tâche</Label>
               <Input
@@ -713,6 +843,22 @@ const HomePage = () => {
                   if (e.key === 'Enter') handleSaveEditTask();
                 }}
               />
+            </div>
+
+            {/* Sélecteur d'urgence rouge vif */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setEditIsUrgent(prev => !prev)}
+                className={`w-full px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border transition-all cursor-pointer ${
+                  editIsUrgent
+                    ? 'bg-red-600 border-red-700 text-white shadow-sm ring-1 ring-red-500/50'
+                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <Flame className={`w-4 h-4 ${editIsUrgent ? 'fill-white text-white' : 'text-red-500'}`} />
+                {editIsUrgent ? 'Tâche URGENTE activée (Fond rouge vif et police blanche en gras)' : 'Définir comme tâche urgente (fond rouge vif)'}
+              </button>
             </div>
           </div>
 

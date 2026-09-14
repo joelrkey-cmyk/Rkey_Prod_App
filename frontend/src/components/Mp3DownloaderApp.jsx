@@ -4,8 +4,10 @@ import {
   AlertCircle, RefreshCw, Trash2, FileArchive, 
   Link as LinkIcon, Sparkles, Sliders,
   Volume2, VolumeX, ListMusic, Check, ChevronRight,
-  Headphones, Info, CheckSquare, Square, Image as ImageIcon,
-  Edit2, Plus, Upload, X, Music, RotateCcw
+  Headphones, Info, CheckSquare, Square,
+  Edit2, Plus, X, Music, RotateCcw, Search, ShieldAlert,
+  Key, ShieldCheck, HelpCircle, ExternalLink, UserCheck,
+  Layers, FolderArchive, Clock
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -15,85 +17,53 @@ import API_BASE_URL from '../utils/apiUrl';
 
 export default function Mp3DownloaderApp() {
   const [activeTab, setActiveTab] = useState('import'); // 'import' | 'library' | 'settings'
-  const [importMode, setImportMode] = useState('image'); // 'image' | 'link' | 'text'
-  
-  // Image mode state (OCR)
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [analyzingImage, setAnalyzingImage] = useState(false);
-  const fileInputRef = useRef(null);
 
-  // Link mode state
+  // Link mode state (Exclusive URL import)
   const [tidalUrl, setTidalUrl] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [linkProtectedNotice, setLinkProtectedNotice] = useState(null);
 
-  // Text mode state
-  const [rawText, setRawText] = useState('');
-  const [textPlaylistTitle, setTextPlaylistTitle] = useState('');
-  const [parsingText, setParsingText] = useState(false);
-
-  // Playlist & Tracks Workbench
-  const [playlist, setPlaylist] = useState({
-    title: "Ma Playlist Tidal",
-    description: "Playlist prête pour encodage MP3 320 kbps",
-    creator: "Tidal",
-    coverUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-    tracks: [
-      {
-        id: "t_demo_1",
-        trackNumber: 1,
-        title: "Des milliers de je t'aime",
-        artist: "Slimane",
-        album: "Chroniques d'un cupidon",
-        duration: 213,
-        year: 2022,
-        coverUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-        status: "pending"
-      },
-      {
-        id: "t_demo_2",
-        trackNumber: 2,
-        title: "Sarà perché ti amo (feat. Ricchi E Poveri) (Anthem Mix)",
-        artist: "DJ Matrix, Carolina Marquez, Ricchi E Poveri",
-        album: "Sarà perché ti amo (feat. Ricchi E Poveri)",
-        duration: 161,
-        year: 2023,
-        coverUrl: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=500&auto=format&fit=crop&q=60",
-        status: "pending"
-      },
-      {
-        id: "t_demo_3",
-        trackNumber: 3,
-        title: "Atemlos durch die Nacht",
-        artist: "Helene Fischer",
-        album: "Farbenspiel",
-        duration: 220,
-        year: 2013,
-        coverUrl: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=500&auto=format&fit=crop&q=60",
-        status: "pending"
-      },
-      {
-        id: "t_demo_4",
-        trackNumber: 4,
-        title: "Tornerò",
-        artist: "Ciao Italia !, The Italians",
-        album: "Made in Italy: The Best of Italian Music",
-        duration: 253,
-        year: 2021,
-        coverUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-        status: "pending"
-      }
-    ]
+  // Tidal Library & Source Mode state
+  const [importSource, setImportSource] = useState(() => {
+    return localStorage.getItem('tidal_custom_token') ? 'tidal_library' : 'link';
   });
+  const [userPlaylists, setUserPlaylists] = useState([]);
+  const [loadingUserPlaylists, setLoadingUserPlaylists] = useState(false);
+  const [playlistSearchFilter, setPlaylistSearchFilter] = useState('');
+  const [selectedPlaylistsForBatch, setSelectedPlaylistsForBatch] = useState(new Set());
 
-  const [selectedTracks, setSelectedTracks] = useState(new Set(["t_demo_1", "t_demo_2", "t_demo_3", "t_demo_4"]));
+  // Multi-Playlists Download State
+  const [multiJobId, setMultiJobId] = useState(null);
+  const [multiJobStatus, setMultiJobStatus] = useState(null);
+  const [downloadingMulti, setDownloadingMulti] = useState(false);
+  const [showMultiJobModal, setShowMultiJobModal] = useState(false);
+
+  // Playlist & Tracks Workbench (Starts empty by default in simplified view)
+  const [playlist, setPlaylist] = useState(null);
+  const [selectedTracks, setSelectedTracks] = useState(new Set());
   const [editingTrackId, setEditingTrackId] = useState(null);
 
-  // Settings
+  // Track Search state
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [trackSearchQuery, setTrackSearchQuery] = useState('');
+  const [trackSearchResults, setTrackSearchResults] = useState([]);
+  const [searchingTrack, setSearchingTrack] = useState(false);
+
+  // Settings & Tidal Account
   const [bitrate, setBitrate] = useState('320k');
   const [namingPattern, setNamingPattern] = useState('number_artist_title');
   const [customToken, setCustomToken] = useState(() => localStorage.getItem('tidal_custom_token') || '');
+  const [showTidalModal, setShowTidalModal] = useState(false);
+  const [tidalTokenInput, setTidalTokenInput] = useState(() => localStorage.getItem('tidal_custom_token') || '');
+  const [verifyingTidal, setVerifyingTidal] = useState(false);
+  const [tidalAccountInfo, setTidalAccountInfo] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tidal_account_info');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Download & Job state
   const [activeJobId, setActiveJobId] = useState(null);
@@ -113,7 +83,7 @@ export default function Mp3DownloaderApp() {
   const [isMuted, setIsMuted] = useState(false);
   const audioRef = useRef(null);
 
-  // Polling for download progress
+  // Polling for download progress (single playlist)
   useEffect(() => {
     let interval = null;
     if (activeJobId && downloading) {
@@ -140,6 +110,33 @@ export default function Mp3DownloaderApp() {
     };
   }, [activeJobId, downloading]);
 
+  // Polling for multi-playlist batch download progress
+  useEffect(() => {
+    let interval = null;
+    if (multiJobId && downloadingMulti) {
+      interval = setInterval(async () => {
+        try {
+          const res = await axios.get(`/mp3/download/multi-status/${multiJobId}`);
+          setMultiJobStatus(res.data);
+          if (res.data.status === 'completed' || res.data.status === 'error') {
+            setDownloadingMulti(false);
+            if (res.data.status === 'completed') {
+              toast.success("Toutes vos playlists ont été téléchargées ! Archive groupée ZIP prête.");
+              loadLibrary();
+            } else {
+              toast.error("Le téléchargement groupé s'est terminé avec des alertes.");
+            }
+          }
+        } catch (err) {
+          console.error("Multi-job polling error:", err);
+        }
+      }, 1500);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [multiJobId, downloadingMulti]);
+
   // Load library when switching tabs
   useEffect(() => {
     if (activeTab === 'library') {
@@ -147,25 +144,33 @@ export default function Mp3DownloaderApp() {
     }
   }, [activeTab]);
 
-  // Global paste handler for screenshot capture
-  useEffect(() => {
-    const handlePaste = (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const file = items[i].getAsFile();
-          if (file) {
-            setImportMode('image');
-            handleImageSelected(file);
-            toast.info("Capture d'écran collée depuis le presse-papier ! Cliquez sur 'Extraire' pour scanner.");
-          }
-        }
+  // Auto-fetch user playlists from Tidal if account connected
+  const loadUserPlaylists = async (tokenOverride) => {
+    const token = (tokenOverride !== undefined ? tokenOverride : customToken || '').trim();
+    if (!token) {
+      setUserPlaylists([]);
+      return;
+    }
+    setLoadingUserPlaylists(true);
+    try {
+      const res = await axios.post('/mp3/tidal/my-playlists', { token });
+      const pls = res.data?.playlists || [];
+      setUserPlaylists(pls);
+    } catch (err) {
+      console.error("Load user playlists error:", err);
+      if (err.response?.status === 401) {
+        toast.error("Session Tidal expirée. Veuillez reconnecter votre compte.");
       }
-    };
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, []);
+    } finally {
+      setLoadingUserPlaylists(false);
+    }
+  };
+
+  useEffect(() => {
+    if (customToken) {
+      loadUserPlaylists(customToken);
+    }
+  }, [customToken]);
 
   const loadLibrary = async () => {
     setLoadingLibrary(true);
@@ -184,71 +189,222 @@ export default function Mp3DownloaderApp() {
     toast.success("Paramètres enregistrés !");
   };
 
-  // Image Selection & OCR Trigger
-  const handleImageSelected = (file) => {
-    if (!file) return;
-    setSelectedImage(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImagePreview(reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleAnalyzeImage = async () => {
-    if (!imagePreview) {
-      toast.error("Veuillez sélectionner ou coller une capture d'écran.");
+  const handleVerifyAndSaveTidalToken = async (candidateToken) => {
+    const token = (candidateToken !== undefined ? candidateToken : tidalTokenInput).trim();
+    if (!token) {
+      toast.error("Veuillez saisir votre token de session Tidal.");
       return;
     }
 
-    setAnalyzingImage(true);
+    setVerifyingTidal(true);
+    try {
+      const res = await axios.post('/mp3/tidal/verify-token', { token });
+      if (res.data && res.data.valid) {
+        setCustomToken(token);
+        localStorage.setItem('tidal_custom_token', token);
+        const info = {
+          userId: res.data.userId || 'Utilisateur Tidal',
+          sessionId: res.data.sessionId || null,
+          countryCode: res.data.countryCode || 'FR',
+          connectedAt: new Date().toISOString()
+        };
+        setTidalAccountInfo(info);
+        localStorage.setItem('tidal_account_info', JSON.stringify(info));
+        toast.success(`Compte Tidal connecté avec succès ! (Utilisateur: ${info.userId}, Pays: ${info.countryCode})`);
+
+        // Load user's playlist library
+        loadUserPlaylists(token);
+        setImportSource('tidal_library');
+
+        // If a private playlist was waiting, re-analyze it automatically with the new token
+        if (tidalUrl.trim()) {
+          setShowTidalModal(false);
+          toast.info("Analyse immédiate de votre playlist avec le compte Tidal connecté...");
+          handleAnalyzeLinkWithToken(token);
+        } else {
+          setShowTidalModal(false);
+        }
+      }
+    } catch (err) {
+      console.error("Tidal verify error:", err);
+      toast.error(err.response?.data?.error || "Token Tidal non reconnu ou expiré.");
+    } finally {
+      setVerifyingTidal(false);
+    }
+  };
+
+  const handleDisconnectTidal = () => {
+    setCustomToken('');
+    setTidalTokenInput('');
+    setTidalAccountInfo(null);
+    setUserPlaylists([]);
+    setSelectedPlaylistsForBatch(new Set());
+    setImportSource('link');
+    localStorage.removeItem('tidal_custom_token');
+    localStorage.removeItem('tidal_account_info');
+    toast.success("Compte Tidal déconnecté.");
+  };
+
+  // Tidal Library actions
+  const handleLoadTidalPlaylist = async (pl) => {
+    setAnalyzing(true);
+    setLinkProtectedNotice(null);
     setJobStatus(null);
     setActiveJobId(null);
+    toast.info(`Chargement des titres de « ${pl.title} »...`);
 
     try {
-      const res = await axios.post('/mp3/tidal/parse-image', {
-        imageBase64: imagePreview,
-        playlistTitle: "Playlist Tidal Extraite"
+      const res = await axios.post('/mp3/tidal/parse', {
+        url: pl.uuid || pl.id,
+        customToken: customToken.trim() || undefined
       });
 
       if (res.data && res.data.tracks && res.data.tracks.length > 0) {
         setPlaylist({
-          title: res.data.title || "Playlist Tidal Capturée",
-          description: "Extraite par Vision IA depuis votre capture d'écran",
-          creator: "Tidal OCR",
-          coverUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=500&auto=format&fit=crop&q=60",
-          tracks: res.data.tracks
+          ...res.data,
+          title: pl.title || res.data.title,
+          coverUrl: pl.coverUrl || res.data.coverUrl,
+          id: pl.uuid || pl.id
         });
         setSelectedTracks(new Set(res.data.tracks.map(t => t.id)));
-        toast.success(`Vision IA : ${res.data.tracks.length} morceaux réels extraits avec fidélité !`);
+        setLinkProtectedNotice(null);
+        toast.success(`« ${pl.title} » chargée (${res.data.tracks.length} morceaux) !`);
       } else {
-        toast.error("Aucun morceau n'a pu être reconnu sur l'image.");
+        toast.warning("Aucun morceau trouvé ou playlist protégée.");
       }
     } catch (err) {
-      console.error("OCR Error:", err);
-      toast.error(err.response?.data?.error || "Erreur lors de l'analyse visuelle de l'image.");
+      console.error("Load playlist error:", err);
+      toast.error(err.response?.data?.error || "Erreur lors du chargement des morceaux.");
     } finally {
-      setAnalyzingImage(false);
+      setAnalyzing(false);
     }
   };
 
-  // Analyze Link (Spotify, Deezer, Tidal)
-  const handleAnalyzeLink = async (e) => {
-    if (e) e.preventDefault();
-    if (!tidalUrl.trim()) {
-      toast.error("Veuillez saisir une URL de playlist (Spotify, Deezer, Tidal).");
+  // Direct single download of a Tidal playlist from library
+  const handleQuickDownloadTidalPlaylist = async (pl) => {
+    toast.info(`Préparation du téléchargement de « ${pl.title} »...`);
+    try {
+      const res = await axios.post('/mp3/tidal/parse', {
+        url: pl.uuid || pl.id,
+        customToken: customToken.trim() || undefined
+      });
+
+      if (res.data && res.data.tracks && res.data.tracks.length > 0) {
+        setPlaylist({
+          ...res.data,
+          title: pl.title || res.data.title,
+          coverUrl: pl.coverUrl || res.data.coverUrl,
+          id: pl.uuid || pl.id
+        });
+        setSelectedTracks(new Set(res.data.tracks.map(t => t.id)));
+
+        // Launch download immediately
+        setDownloading(true);
+        const batchRes = await axios.post('/mp3/download/start-batch', {
+          playlistTitle: pl.title || res.data.title || 'Playlist Tidal',
+          playlistId: pl.uuid || pl.id,
+          tracks: res.data.tracks,
+          bitrate,
+          namingPattern
+        });
+
+        if (batchRes.data?.jobId) {
+          setActiveJobId(batchRes.data.jobId);
+          toast.success(`Téléchargement de « ${pl.title} » lancé (${res.data.tracks.length} morceaux) !`);
+        }
+      } else {
+        toast.warning("Impossible de récupérer les titres de cette playlist.");
+      }
+    } catch (err) {
+      console.error("Quick download error:", err);
+      toast.error(err.response?.data?.error || "Erreur lors du lancement du téléchargement.");
+    }
+  };
+
+  // Launch multi-playlists batch download
+  const handleStartMultiDownload = async (targetPlaylists) => {
+    const list = targetPlaylists || userPlaylists.filter(p => selectedPlaylistsForBatch.has(p.id));
+    if (!list || list.length === 0) {
+      toast.error("Veuillez sélectionner au moins une playlist.");
       return;
     }
 
+    setDownloadingMulti(true);
+    setShowMultiJobModal(true);
+    try {
+      const res = await axios.post('/mp3/download/start-multi-playlists', {
+        playlists: list.map(p => ({
+          id: p.id || p.uuid,
+          title: p.title,
+          coverUrl: p.coverUrl,
+          numberOfTracks: p.numberOfTracks
+        })),
+        customToken: customToken.trim() || undefined,
+        bitrate,
+        namingPattern
+      });
+
+      if (res.data?.multiJobId) {
+        setMultiJobId(res.data.multiJobId);
+        toast.success(`Téléchargement groupé lancé pour ${list.length} playlist(s) !`);
+      }
+    } catch (err) {
+      console.error("Start multi-download error:", err);
+      setDownloadingMulti(false);
+      toast.error(err.response?.data?.error || "Erreur lors du lancement du téléchargement groupé.");
+    }
+  };
+
+  // Multi-selection helpers
+  const toggleSelectPlaylistForBatch = (id) => {
+    setSelectedPlaylistsForBatch(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllPlaylistsForBatch = (filteredList) => {
+    const list = filteredList || userPlaylists;
+    setSelectedPlaylistsForBatch(new Set(list.map(p => p.id)));
+  };
+
+  const deselectAllPlaylistsForBatch = () => {
+    setSelectedPlaylistsForBatch(new Set());
+  };
+
+  const handleDownloadMasterZip = (mJobId) => {
+    const target = mJobId || multiJobId || multiJobStatus?.id;
+    if (!target) {
+      toast.error("Archive non disponible.");
+      return;
+    }
+    const token = localStorage.getItem('access_token');
+    const url = `${API_BASE_URL}/api/mp3/download/multi-zip/${target}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    window.location.href = url;
+  };
+
+  const handleDownloadMultiSubZip = (mJobId, playlistId) => {
+    const target = mJobId || multiJobId || multiJobStatus?.id;
+    if (!target || !playlistId) return;
+    const token = localStorage.getItem('access_token');
+    const url = `${API_BASE_URL}/api/mp3/download/multi-zip/${target}/${playlistId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    window.location.href = url;
+  };
+
+  const handleAnalyzeLinkWithToken = async (forcedToken) => {
+    if (!tidalUrl.trim()) return;
     setAnalyzing(true);
     setLinkProtectedNotice(null);
     setJobStatus(null);
     setActiveJobId(null);
 
     try {
+      const activeTok = forcedToken !== undefined ? forcedToken : customToken;
       const res = await axios.post('/mp3/tidal/parse', {
         url: tidalUrl.trim(),
-        customToken: customToken.trim() || undefined
+        customToken: activeTok.trim() || undefined
       });
 
       if (res.data) {
@@ -261,9 +417,10 @@ export default function Mp3DownloaderApp() {
           setPlaylist(res.data);
           setLinkProtectedNotice({
             title: res.data.title || "Playlist Tidal",
-            provider: res.data.provider || 'tidal'
+            provider: res.data.provider || 'tidal',
+            expectedCount: res.data.expectedCount
           });
-          toast.info("Tidal protège l'accès à sa liste de titres. Utilisez la capture d'écran pour 100% de fidélité !");
+          toast.warning("Tidal protège l'accès à cette playlist. Connectez votre compte Tidal pour débloquer les morceaux.");
         }
       }
     } catch (err) {
@@ -274,36 +431,14 @@ export default function Mp3DownloaderApp() {
     }
   };
 
-  // Parse Raw Text with Gemini AI
-  const handleParseText = async (e) => {
+  // Analyze Link (Spotify, Deezer, Tidal)
+  const handleAnalyzeLink = async (e) => {
     if (e) e.preventDefault();
-    if (!rawText.trim()) {
-      toast.error("Veuillez coller le texte de votre tracklist.");
+    if (!tidalUrl.trim()) {
+      toast.error("Veuillez saisir une URL de playlist (Spotify, Deezer, Tidal).");
       return;
     }
-
-    setParsingText(true);
-    setJobStatus(null);
-    setActiveJobId(null);
-
-    try {
-      const res = await axios.post('/mp3/tidal/parse-text', {
-        rawText: rawText.trim(),
-        playlistTitle: textPlaylistTitle.trim() || "Ma Playlist"
-      });
-
-      if (res.data && res.data.tracks) {
-        setPlaylist(res.data);
-        setSelectedTracks(new Set(res.data.tracks.map(t => t.id)));
-        setLinkProtectedNotice(null);
-        toast.success(`IA : ${res.data.tracks.length} morceaux extraits avec succès !`);
-      }
-    } catch (err) {
-      console.error("Parse text error:", err);
-      toast.error(err.response?.data?.error || "Erreur lors de l'analyse intelligente.");
-    } finally {
-      setParsingText(false);
-    }
+    await handleAnalyzeLinkWithToken(customToken);
   };
 
   // Reset & Clear Playlist
@@ -311,10 +446,6 @@ export default function Mp3DownloaderApp() {
     setPlaylist(null);
     setSelectedTracks(new Set());
     setTidalUrl('');
-    setRawText('');
-    setTextPlaylistTitle('');
-    setSelectedImage(null);
-    setImagePreview(null);
     setLinkProtectedNotice(null);
     setJobStatus(null);
     setActiveJobId(null);
@@ -421,7 +552,45 @@ export default function Mp3DownloaderApp() {
     setSelectedTracks(new Set());
   };
 
-  // Start Batch Download
+  const handleSearchTrack = async (e) => {
+    if (e) e.preventDefault();
+    if (!trackSearchQuery.trim()) return;
+    setSearchingTrack(true);
+    try {
+      const res = await axios.get(`/mp3/search-track?q=${encodeURIComponent(trackSearchQuery.trim())}`);
+      setTrackSearchResults(res.data?.results || []);
+    } catch (err) {
+      console.error("Track search error:", err);
+      toast.error("Erreur lors de la recherche du morceau");
+    } finally {
+      setSearchingTrack(false);
+    }
+  };
+
+  const handleAddSearchResult = (track) => {
+    const newId = `track_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newTrack = {
+      ...track,
+      id: newId,
+      trackNumber: (playlist?.tracks?.length || 0) + 1,
+      status: 'pending'
+    };
+    setPlaylist(prev => {
+      if (!prev) {
+        return {
+          title: "Ma Playlist",
+          description: "Playlist MP3",
+          tracks: [newTrack]
+        };
+      }
+      return {
+        ...prev,
+        tracks: [...(prev.tracks || []), newTrack]
+      };
+    });
+    setSelectedTracks(prev => new Set([...prev, newId]));
+    toast.success(`« ${track.title} » ajouté à la playlist`);
+  };
   const handleStartDownload = async () => {
     if (!playlist || !playlist.tracks || playlist.tracks.length === 0) {
       toast.error("Aucune playlist chargée.");
@@ -622,6 +791,27 @@ export default function Mp3DownloaderApp() {
               <Sliders className="w-4 h-4" />
               <span>Paramètres Audio</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setTidalTokenInput(customToken || '');
+                setShowTidalModal(true);
+              }}
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all border ${
+                customToken
+                  ? 'bg-sky-50 text-sky-900 border-sky-300 hover:bg-sky-100 shadow-xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              <Key className={`w-4 h-4 ${customToken ? 'text-sky-600' : 'text-slate-400'}`} />
+              <span>{customToken ? 'Compte Tidal Connecté' : 'Connexion Compte Tidal'}</span>
+              {customToken ? (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-200 animate-pulse ml-0.5" />
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">Requis pour privé</span>
+              )}
+            </button>
           </div>
 
           <div className="hidden sm:flex items-center space-x-2 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -634,85 +824,16 @@ export default function Mp3DownloaderApp() {
         {activeTab === 'import' && (
           <div className="space-y-6">
             
-            {/* Import Mode Selector */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              
-              <button
-                type="button"
-                onClick={() => setImportMode('image')}
-                className={`p-4 rounded-xl border text-left transition-all ${
-                  importMode === 'image'
-                    ? 'border-emerald-500 bg-emerald-50/60 shadow-sm ring-1 ring-emerald-500'
-                    : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center space-x-3">
-                  <div className={`p-2.5 rounded-lg ${importMode === 'image' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                    <ImageIcon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="text-sm font-bold text-slate-900">Capture d'écran (Vision IA)</h3>
-                      <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">100% Fidèle</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">Glisser ou coller (Ctrl+V) votre écran Tidal / DJ</p>
-                  </div>
+            {/* Active Playlist Banner with Quick Reset */}
+            {playlist && (
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs">
+                <div className="flex items-center gap-2 text-emerald-900">
+                  <ListMusic className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>
+                    Playlist active en atelier : <strong className="font-bold">{playlist.title}</strong> ({playlist.tracks?.length || 0} titres)
+                  </span>
                 </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setImportMode('link')}
-                className={`p-4 rounded-xl border text-left transition-all ${
-                  importMode === 'link'
-                    ? 'border-emerald-500 bg-emerald-50/60 shadow-sm ring-1 ring-emerald-500'
-                    : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center space-x-3">
-                  <div className={`p-2.5 rounded-lg ${importMode === 'link' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                    <LinkIcon className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">Lien URL (Tidal / Web)</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Coller l'URL d'une playlist ou d'un album</p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setImportMode('text')}
-                className={`p-4 rounded-xl border text-left transition-all ${
-                  importMode === 'text'
-                    ? 'border-emerald-500 bg-emerald-50/60 shadow-sm ring-1 ring-emerald-500'
-                    : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center space-x-3">
-                  <div className={`p-2.5 rounded-lg ${importMode === 'text' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900">Copier-Coller Tracklist</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Coller une liste texte ou export Serato/VirtualDJ</p>
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            {/* INPUT PANELS */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              
-              {/* Active Playlist Banner with Quick Reset */}
-              {playlist && (
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs">
-                  <div className="flex items-center gap-2 text-emerald-900">
-                    <ListMusic className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span>
-                      Playlist chargée : <strong className="font-bold">{playlist.title}</strong> ({playlist.tracks?.length || 0} titres)
-                    </span>
-                  </div>
+                <div className="flex items-center gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -721,94 +842,367 @@ export default function Mp3DownloaderApp() {
                     className="h-7 px-2.5 text-rose-700 bg-white border-rose-200 hover:bg-rose-50 hover:border-rose-300 text-xs font-semibold rounded-lg shadow-2xs"
                   >
                     <RotateCcw className="w-3 h-3 mr-1 text-rose-600" />
-                    Réinitialiser / Remise à zéro
+                    Fermer l'atelier
                   </Button>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* IMAGE OCR MODE */}
-              {importMode === 'image' && (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            {/* SOURCE SELECTOR BAR */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setImportSource('tidal_library')}
+                  className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+                    importSource === 'tidal_library'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <Disc3 className="w-4 h-4 text-cyan-400" />
+                  <span>Ma Bibliothèque Tidal</span>
+                  {userPlaylists.length > 0 && (
+                    <span className="ml-1 px-2 py-0.5 rounded-full bg-cyan-500/25 text-cyan-300 text-[10px] font-extrabold">
+                      {userPlaylists.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setImportSource('link')}
+                  className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+                    importSource === 'link'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <LinkIcon className="w-4 h-4 text-emerald-400" />
+                  <span>Lien Direct (Spotify, Deezer, Tidal)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowSearchModal(true)}
+                  className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 transition-all"
+                >
+                  <Search className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Recherche par Titre</span>
+                </button>
+              </div>
+
+              {/* Account Quick Status */}
+              {customToken ? (
+                <div className="flex items-center gap-2">
+                  <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-medium">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Compte : <strong>{tidalAccountInfo?.userId || 'Connecté'}</strong></span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-1" />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => loadUserPlaylists()}
+                    disabled={loadingUserPlaylists}
+                    className="h-8 px-2.5 text-xs text-slate-700 border-slate-200 hover:bg-slate-50"
+                    title="Actualiser la liste de mes playlists Tidal"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingUserPlaylists ? 'animate-spin' : ''}`} />
+                    <span className="ml-1 hidden sm:inline">Actualiser</span>
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setShowTidalModal(true)}
+                  className="h-8 px-3 text-xs bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-xl"
+                >
+                  <Key className="w-3.5 h-3.5 mr-1.5" />
+                  Connecter mon compte Tidal
+                </Button>
+              )}
+            </div>
+
+            {/* SOURCE 1: TIDAL ACCOUNT LIBRARY */}
+            {importSource === 'tidal_library' && (
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+                {!customToken ? (
+                  /* Not connected card */
+                  <div className="text-center py-10 px-4 space-y-4 max-w-lg mx-auto">
+                    <div className="w-14 h-14 rounded-2xl bg-sky-50 text-sky-600 border border-sky-100 flex items-center justify-center mx-auto">
+                      <Disc3 className="w-7 h-7" />
+                    </div>
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">Extraction 100% Fidèle par Capture d'écran (Vision IA)</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Tidal protège l'accès direct aux listes de titres privées : faites simplement une capture d'écran de votre liste Tidal et collez-la avec <kbd className="px-1.5 py-0.5 text-[11px] bg-slate-100 border border-slate-300 rounded font-mono">Ctrl+V</kbd> ou glissez-la ici !
+                      <h3 className="text-base font-bold text-slate-900">Connectez votre compte Tidal</h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Accédez automatiquement à l'ensemble de vos playlists personnelles et titres favoris sans avoir à copier d'URL. Vous pourrez choisir les playlists à télécharger une par une ou toutes d'un coup !
                       </p>
                     </div>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                      <Button
+                        type="button"
+                        onClick={() => setShowTidalModal(true)}
+                        className="w-full sm:w-auto bg-sky-600 hover:bg-sky-700 text-white text-xs h-10 px-5 font-bold rounded-xl shadow-sm"
+                      >
+                        <Key className="w-4 h-4 mr-2" />
+                        Connecter mon compte Tidal
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setImportSource('link')}
+                        className="w-full sm:w-auto text-xs h-10 px-4 border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl"
+                      >
+                        <LinkIcon className="w-3.5 h-3.5 mr-1.5" />
+                        Utiliser un lien direct à la place
+                      </Button>
+                    </div>
                   </div>
-
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={(e) => handleImageSelected(e.target.files[0])}
-                    accept="image/*"
-                    className="hidden"
-                  />
-
-                  {imagePreview ? (
-                    <div className="space-y-3">
-                      <div className="relative rounded-xl border-2 border-emerald-500 overflow-hidden max-h-64 bg-slate-950 flex items-center justify-center">
-                        <img src={imagePreview} alt="Capture Tidal" className="max-h-64 object-contain w-full" />
-                        <button
-                          type="button"
-                          onClick={() => { setImagePreview(null); setSelectedImage(null); }}
-                          className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg transition"
-                          title="Supprimer l'image"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                ) : (
+                  /* Connected Library View */
+                  <div className="space-y-4">
+                    {/* Header Controls & Batch Actions */}
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-slate-900">Playlists de votre Compte Tidal</h3>
+                          <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 text-cyan-800 text-xs font-bold border border-cyan-200">
+                            {userPlaylists.length} playlist{userPlaylists.length > 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Sélectionnez les playlists que vous souhaitez télécharger en MP3 320 kbps, ou lancez un téléchargement complet.
+                        </p>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-3">
-                        <Button
-                          onClick={handleAnalyzeImage}
-                          disabled={analyzingImage}
-                          className="h-11 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm"
-                        >
-                          {analyzingImage ? (
-                            <>
-                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                              Extraction Visuelle des Titres...
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="w-4 h-4 mr-2" />
-                              Extraire les Morceaux Réels de l'Image
-                            </>
+                      {/* Filter Search Input */}
+                      <div className="relative w-full lg:w-72">
+                        <Input
+                          type="text"
+                          value={playlistSearchFilter}
+                          onChange={(e) => setPlaylistSearchFilter(e.target.value)}
+                          placeholder="Filtrer mes playlists..."
+                          className="h-9 pl-9 pr-8 text-xs rounded-xl border-slate-200 focus:border-cyan-500 focus:ring-cyan-500"
+                        />
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+                        {playlistSearchFilter && (
+                          <button
+                            type="button"
+                            onClick={() => setPlaylistSearchFilter('')}
+                            className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Batch Actions Bar */}
+                    {userPlaylists.length > 0 && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const filtered = userPlaylists.filter(pl => {
+                                if (!playlistSearchFilter.trim()) return true;
+                                const q = playlistSearchFilter.toLowerCase();
+                                return (pl.title && pl.title.toLowerCase().includes(q)) || (pl.creator && pl.creator.toLowerCase().includes(q));
+                              });
+                              if (selectedPlaylistsForBatch.size === filtered.length) {
+                                deselectAllPlaylistsForBatch();
+                              } else {
+                                selectAllPlaylistsForBatch(filtered);
+                              }
+                            }}
+                            className="flex items-center gap-1.5 font-semibold text-slate-700 hover:text-slate-900"
+                          >
+                            {selectedPlaylistsForBatch.size > 0 && selectedPlaylistsForBatch.size === userPlaylists.length ? (
+                              <CheckSquare className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-400" />
+                            )}
+                            <span>
+                              {selectedPlaylistsForBatch.size === userPlaylists.length ? "Tout désélectionner" : "Tout sélectionner"}
+                            </span>
+                          </button>
+
+                          {selectedPlaylistsForBatch.size > 0 && (
+                            <span className="text-emerald-700 font-bold bg-emerald-100/60 px-2 py-0.5 rounded-md text-[11px]">
+                              {selectedPlaylistsForBatch.size} sélectionnée{selectedPlaylistsForBatch.size > 1 ? 's' : ''}
+                            </span>
                           )}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="h-11"
-                        >
-                          Changer d'image
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-2xl p-8 text-center cursor-pointer transition-colors bg-slate-50/50 hover:bg-emerald-50/30 group"
-                    >
-                      <div className="w-12 h-12 rounded-2xl bg-white shadow-sm border border-slate-200 flex items-center justify-center mx-auto text-emerald-600 mb-3 group-hover:scale-110 transition-transform">
-                        <Upload className="w-6 h-6" />
-                      </div>
-                      <h4 className="text-sm font-bold text-slate-800">Cliquez pour importer ou glissez votre capture d'écran Tidal</h4>
-                      <p className="text-xs text-slate-500 mt-1">Vous pouvez aussi appuyer sur <kbd className="px-1.5 py-0.5 bg-slate-200 rounded font-mono text-[11px]">Ctrl+V</kbd> / <kbd className="px-1.5 py-0.5 bg-slate-200 rounded font-mono text-[11px]">Cmd+V</kbd> directement !</p>
-                    </div>
-                  )}
-                </div>
-              )}
+                        </div>
 
-              {/* LINK MODE */}
-              {importMode === 'link' && (
+                        {/* Batch Download Buttons */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {selectedPlaylistsForBatch.size > 0 && (
+                            <Button
+                              type="button"
+                              onClick={() => handleStartMultiDownload()}
+                              disabled={downloadingMulti}
+                              className="h-8 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs"
+                            >
+                              <Download className="w-3.5 h-3.5 mr-1.5" />
+                              Télécharger la sélection ({selectedPlaylistsForBatch.size})
+                            </Button>
+                          )}
+
+                          <Button
+                            type="button"
+                            onClick={() => handleStartMultiDownload(userPlaylists)}
+                            disabled={downloadingMulti}
+                            className="h-8 px-3.5 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-xs"
+                          >
+                            <FolderArchive className="w-3.5 h-3.5 mr-1.5 text-cyan-400" />
+                            Télécharger TOUTES mes playlists ({userPlaylists.length})
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Playlists Grid */}
+                    {loadingUserPlaylists ? (
+                      <div className="py-14 text-center space-y-3">
+                        <RefreshCw className="w-7 h-7 animate-spin text-cyan-600 mx-auto" />
+                        <p className="text-xs text-slate-500 font-medium">Récupération des playlists de votre compte Tidal...</p>
+                      </div>
+                    ) : userPlaylists.length === 0 ? (
+                      <div className="py-10 text-center space-y-3">
+                        <Disc3 className="w-8 h-8 text-slate-300 mx-auto" />
+                        <p className="text-sm font-semibold text-slate-700">Aucune playlist trouvée sur ce compte</p>
+                        <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                          Créez ou ajoutez des playlists dans votre application Tidal puis cliquez sur Actualiser.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-1">
+                        {userPlaylists
+                          .filter(pl => {
+                            if (!playlistSearchFilter.trim()) return true;
+                            const q = playlistSearchFilter.toLowerCase();
+                            return (pl.title && pl.title.toLowerCase().includes(q)) || (pl.creator && pl.creator.toLowerCase().includes(q));
+                          })
+                          .map((pl) => {
+                            const isSelected = selectedPlaylistsForBatch.has(pl.id);
+                            return (
+                              <div
+                                key={pl.id}
+                                className={`group relative p-4 rounded-2xl border transition-all flex flex-col justify-between ${
+                                  isSelected
+                                    ? 'bg-cyan-50/40 border-cyan-300 shadow-xs'
+                                    : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-2xs'
+                                }`}
+                              >
+                                <div className="space-y-3">
+                                  {/* Top Row: Selection Checkbox & Track count badge */}
+                                  <div className="flex items-start justify-between gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSelectPlaylistForBatch(pl.id)}
+                                      className="p-1 -ml-1 text-slate-400 hover:text-slate-600"
+                                      title={isSelected ? "Désélectionner" : "Sélectionner pour téléchargement groupé"}
+                                    >
+                                      {isSelected ? (
+                                        <CheckSquare className="w-5 h-5 text-cyan-600" />
+                                      ) : (
+                                        <Square className="w-5 h-5 text-slate-300 group-hover:text-slate-400" />
+                                      )}
+                                    </button>
+
+                                    <div className="flex items-center gap-1">
+                                      {pl.isFavorites && (
+                                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold">
+                                          ★ Favoris
+                                        </span>
+                                      )}
+                                      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-bold">
+                                        {pl.numberOfTracks || 0} titres
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Playlist Info with Cover */}
+                                  <div className="flex items-center gap-3">
+                                    {pl.coverUrl ? (
+                                      <img
+                                        src={pl.coverUrl}
+                                        alt={pl.title}
+                                        className="w-14 h-14 rounded-xl object-cover shadow-2xs border border-slate-100 flex-shrink-0"
+                                        onError={(e) => {
+                                          e.target.style.display = 'none';
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-600 to-slate-900 text-white flex items-center justify-center font-bold text-sm shadow-2xs flex-shrink-0">
+                                        <Music className="w-6 h-6 text-white/80" />
+                                      </div>
+                                    )}
+
+                                    <div className="min-w-0 flex-1">
+                                      <h4 className="font-bold text-sm text-slate-900 truncate" title={pl.title}>
+                                        {pl.title}
+                                      </h4>
+                                      <p className="text-xs text-slate-500 truncate">
+                                        {pl.creator || "Ma Playlist Tidal"}
+                                      </p>
+                                      {pl.duration > 0 && (
+                                        <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                          <Clock className="w-3 h-3" />
+                                          {Math.round(pl.duration / 60)} min
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Actions on this playlist */}
+                                <div className="pt-4 mt-3 border-t border-slate-100 flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => handleLoadTidalPlaylist(pl)}
+                                    disabled={analyzing}
+                                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs h-8 rounded-xl shadow-none"
+                                    title="Ouvrir les morceaux dans l'atelier pour écouter ou personnaliser"
+                                  >
+                                    <Sliders className="w-3.5 h-3.5 mr-1 text-slate-600" />
+                                    Ouvrir
+                                  </Button>
+
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => handleQuickDownloadTidalPlaylist(pl)}
+                                    disabled={downloading || downloadingMulti}
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 rounded-xl shadow-xs"
+                                    title="Télécharger directement cette playlist en MP3"
+                                  >
+                                    <Download className="w-3.5 h-3.5 mr-1" />
+                                    Télécharger
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SOURCE 2: EXCLUSIVE URL IMPORT */}
+            {importSource === 'link' && (
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
                 <form onSubmit={handleAnalyzeLink} className="space-y-4">
                   <div>
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center justify-between mb-1.5">
                       <label className="block text-sm font-semibold text-slate-800">
-                        URL de la Playlist ou Album (Spotify, Deezer, Tidal)
+                        Lien URL de la Playlist ou Album (Spotify, Deezer, Tidal)
                       </label>
                       <span className="text-xs text-slate-400">Spotify & Deezer supportent l'extraction 100% directe</span>
                     </div>
@@ -859,38 +1253,38 @@ export default function Mp3DownloaderApp() {
                       <div className="mt-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
                         <div className="flex items-start gap-3">
                           <div className="p-2 bg-amber-100 text-amber-800 rounded-lg shrink-0">
-                            <AlertCircle className="w-5 h-5" />
+                            <ShieldAlert className="w-5 h-5" />
                           </div>
                           <div className="space-y-2 text-xs text-amber-900">
                             <div className="font-bold text-sm text-amber-950">
-                              Tidal protège l'accès à la liste de lecture « {linkProtectedNotice.title} »
+                              Playlist Tidal privée détectée : « {linkProtectedNotice.title} » {linkProtectedNotice.expectedCount ? `(${linkProtectedNotice.expectedCount} morceaux réels)` : ''}
                             </div>
                             <p className="leading-relaxed">
-                              Tidal ne partage pas les morceaux des playlists créées par les utilisateurs sans connexion active à votre compte.
-                              Pour obtenir <strong>100% de vos vrais morceaux</strong> sans erreur :
+                              Tidal bloque l'accès public aux morceaux des playlists créées par les utilisateurs sans session active connectée.
+                              Pour débloquer directement tous les morceaux réels de votre playlist :
                             </p>
-                            <div className="flex flex-wrap gap-2 pt-1">
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
                               <Button
                                 type="button"
                                 size="sm"
                                 onClick={() => {
-                                  setImportMode('image');
-                                  fileInputRef.current?.click();
+                                  setTidalTokenInput(customToken || '');
+                                  setShowTidalModal(true);
                                 }}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3"
+                                className="bg-amber-800 hover:bg-amber-900 text-white font-bold text-xs h-8 px-3.5 shadow-xs"
                               >
-                                <ImageIcon className="w-3.5 h-3.5 mr-1" />
-                                Importer par Capture d'écran (Vision IA - Recommandé)
+                                <Key className="w-3.5 h-3.5 mr-1.5" />
+                                {customToken ? "Vérifier mon compte Tidal" : "Connecter mon compte Tidal"}
                               </Button>
                               <Button
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                onClick={() => setImportMode('text')}
-                                className="border-amber-300 hover:bg-amber-100 text-amber-950 font-semibold text-xs h-8 px-3"
+                                onClick={() => setShowSearchModal(true)}
+                                className="bg-white border-amber-300 hover:bg-amber-100 text-slate-800 font-semibold text-xs h-8 px-3"
                               >
-                                <Sparkles className="w-3.5 h-3.5 mr-1" />
-                                Copier-Coller la liste de titres
+                                <Search className="w-3.5 h-3.5 mr-1 text-amber-700" />
+                                Rechercher & Ajouter des titres
                               </Button>
                             </div>
                           </div>
@@ -901,7 +1295,7 @@ export default function Mp3DownloaderApp() {
                     {/* Quick Example & Reset Helper */}
                     <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-1 text-xs text-slate-500">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span>Exemples 100% réels :</span>
+                        <span>Exemples réels :</span>
                         <button
                           type="button"
                           onClick={() => {
@@ -922,83 +1316,11 @@ export default function Mp3DownloaderApp() {
                           Deezer (En mode 60)
                         </button>
                       </div>
-                      {playlist && (
-                        <button
-                          type="button"
-                          onClick={() => handleResetPlaylist()}
-                          className="text-rose-600 hover:text-rose-700 font-medium flex items-center gap-1"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          Vider pour une autre playlist
-                        </button>
-                      )}
                     </div>
                   </div>
                 </form>
-              )}
-
-              {/* TEXT MODE */}
-              {importMode === 'text' && (
-                <form onSubmit={handleParseText} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-800 mb-1">
-                      Titre de la Playlist
-                    </label>
-                    <Input
-                      type="text"
-                      value={textPlaylistTitle}
-                      onChange={(e) => setTextPlaylistTitle(e.target.value)}
-                      placeholder="Ex: Soirée Événement R'KEY"
-                      className="h-11 rounded-xl mb-3"
-                    />
-
-                    <label className="block text-sm font-semibold text-slate-800 mb-1">
-                      Liste des morceaux (Texte brut, export CSV ou copier-coller)
-                    </label>
-                    <textarea
-                      rows={5}
-                      value={rawText}
-                      onChange={(e) => setRawText(e.target.value)}
-                      placeholder={`1. Slimane - Des milliers de je t'aime
-2. DJ Matrix, Carolina Marquez, Ricchi E Poveri - Sarà perché ti amo (Anthem Mix)
-3. Helene Fischer - Atemlos durch die Nacht
-4. Ciao Italia !, The Italians - Tornerò`}
-                      className="w-full p-3 text-sm rounded-xl border border-slate-300 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-mono"
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Button
-                      type="submit"
-                      disabled={parsingText || !rawText.trim()}
-                      className="h-11 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition-all"
-                    >
-                      {parsingText ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                          Extraction IA en cours...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-4 h-4 mr-2" />
-                          Extraire & Préparer la Playlist
-                        </>
-                      )}
-                    </Button>
-                    {(rawText || textPlaylistTitle) && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => { setRawText(''); setTextPlaylistTitle(''); }}
-                        className="h-11 text-xs text-slate-600"
-                      >
-                        Effacer le texte
-                      </Button>
-                    )}
-                  </div>
-                </form>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* PLAYLIST WORKBENCH / TRACKS LIST */}
             {playlist ? (
@@ -1140,7 +1462,15 @@ export default function Mp3DownloaderApp() {
                       className="text-xs font-semibold text-slate-700 hover:text-slate-900 px-2.5 py-1 rounded bg-white border border-slate-200 shadow-xs flex items-center gap-1"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      Ajouter un titre
+                      Ajouter manuellement
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSearchModal(true)}
+                      className="text-xs font-semibold text-emerald-800 hover:text-emerald-900 px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-xs flex items-center gap-1 transition-colors"
+                    >
+                      <Search className="w-3.5 h-3.5 text-emerald-600" />
+                      Rechercher un morceau
                     </button>
                     <button
                       type="button"
@@ -1322,8 +1652,35 @@ export default function Mp3DownloaderApp() {
                       );
                     })
                   ) : (
-                    <div className="p-8 text-center text-slate-500">
-                      Aucun morceau dans la liste. Collez un lien Tidal ou ajoutez des morceaux manuellement.
+                    <div className="p-8 text-center bg-slate-50/50">
+                      {playlist.isProtected ? (
+                        <div className="max-w-lg mx-auto space-y-3">
+                          <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto mb-2">
+                            <ShieldAlert className="w-6 h-6" />
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900">
+                            Playlist Tidal privée : « {playlist.title} » {playlist.expectedCount ? `(${playlist.expectedCount} titres)` : ''}
+                          </h4>
+                          <p className="text-xs text-slate-600 leading-relaxed">
+                            Tidal bloque la lecture des morceaux des playlists personnelles sans connexion à votre compte.
+                            Vous pouvez ajouter des morceaux manuellement ou essayer un lien de playlist publique (Deezer, Spotify, ou album Tidal direct).
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+                            <Button
+                              type="button"
+                              onClick={() => setShowSearchModal(true)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs h-9 px-4 shadow-xs"
+                            >
+                              <Search className="w-4 h-4 mr-1.5" />
+                              Rechercher des morceaux à ajouter
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-slate-500 text-sm">
+                          Aucun morceau dans la liste. Collez l'URL d'une playlist ci-dessus ou recherchez des morceaux.
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1335,7 +1692,7 @@ export default function Mp3DownloaderApp() {
                 </div>
                 <h3 className="text-sm font-bold text-slate-800 mb-1">Aucune playlist en cours (Remise à zéro active)</h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
-                  Collez l'URL d'une playlist Tidal ci-dessus ou collez une liste de titres dans l'onglet texte pour préparer vos téléchargements MP3 320 kbps.
+                  Collez l'URL d'une playlist ou d'un album (Spotify, Deezer, Tidal) ci-dessus pour préparer vos téléchargements MP3 320 kbps.
                 </p>
                 <Button
                   type="button"
@@ -1526,6 +1883,65 @@ export default function Mp3DownloaderApp() {
                 </div>
               </div>
 
+              {/* Tidal Account Connection Section */}
+              <div className="pt-5 border-t border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-sky-600" />
+                    <label className="text-sm font-semibold text-slate-800">
+                      Compte & Authentification Tidal
+                    </label>
+                  </div>
+                  {customToken ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      Session Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
+                      Non connecté
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Permet de charger directement les morceaux de vos <strong>playlists Tidal personnelles privées</strong>.
+                  Sans compte connecté, Tidal bloque l'accès aux morceaux des playlists utilisateur.
+                </p>
+
+                {tidalAccountInfo && (
+                  <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl text-xs text-sky-900 flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold">Compte connecté : {tidalAccountInfo.userId}</p>
+                      <p className="text-[11px] text-sky-700">Région : {tidalAccountInfo.countryCode || 'FR'}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDisconnectTidal}
+                      className="text-xs h-7 border-red-200 text-red-600 hover:bg-red-50"
+                    >
+                      Déconnecter
+                    </Button>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setTidalTokenInput(customToken || '');
+                      setShowTidalModal(true);
+                    }}
+                    className="bg-sky-600 hover:bg-sky-700 text-white font-medium text-xs h-9 px-4 rounded-xl shadow-xs"
+                  >
+                    <Key className="w-3.5 h-3.5 mr-1.5" />
+                    {customToken ? "Modifier / Re-vérifier mon compte Tidal" : "Connecter mon compte Tidal"}
+                  </Button>
+                </div>
+              </div>
+
               <div className="pt-4 border-t border-slate-200">
                 <Button
                   onClick={saveSettings}
@@ -1611,6 +2027,448 @@ export default function Mp3DownloaderApp() {
                 ×
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SEARCH TRACK MODAL */}
+      {showSearchModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-50 text-emerald-700 rounded-xl">
+                  <Search className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Rechercher & Ajouter un morceau</h3>
+                  <p className="text-xs text-slate-500">Trouvez instantanément des morceaux officiels et ajoutez-les à la playlist</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowSearchModal(false); setTrackSearchResults([]); }}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSearchTrack} className="flex gap-2">
+              <Input
+                type="text"
+                autoFocus
+                value={trackSearchQuery}
+                onChange={(e) => setTrackSearchQuery(e.target.value)}
+                placeholder="Titre, artiste (ex: Daft Punk One More Time, Slimane...)"
+                className="h-11 text-sm rounded-xl"
+              />
+              <Button
+                type="submit"
+                disabled={searchingTrack || !trackSearchQuery.trim()}
+                className="h-11 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shrink-0"
+              >
+                {searchingTrack ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Chercher"}
+              </Button>
+            </form>
+
+            <div className="flex-1 overflow-y-auto space-y-2 divide-y divide-slate-100 pr-1">
+              {trackSearchResults.length > 0 ? (
+                trackSearchResults.map((track) => (
+                  <div
+                    key={track.id}
+                    className="pt-2 flex items-center justify-between gap-3 hover:bg-slate-50 p-2 rounded-xl transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={track.coverUrl || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&auto=format&fit=crop&q=60"}
+                        alt={track.title}
+                        className="w-10 h-10 rounded-lg object-cover bg-slate-100 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900 truncate">{track.title}</p>
+                        <p className="text-[11px] text-slate-500 truncate">{track.artist} {track.album ? `• ${track.album}` : ''}</p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => handleAddSearchResult(track)}
+                      className="h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1" />
+                      Ajouter
+                    </Button>
+                  </div>
+                ))
+              ) : trackSearchQuery && !searchingTrack ? (
+                <div className="text-center py-8 text-xs text-slate-400">
+                  Aucun résultat trouvé pour « {trackSearchQuery} ». Essayez d'autres mots-clés.
+                </div>
+              ) : (
+                <div className="text-center py-8 text-xs text-slate-400">
+                  Tapez le nom d'un morceau ou d'un artiste ci-dessus pour rechercher.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TIDAL AUTHENTICATION MODAL */}
+      {showTidalModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] flex flex-col overflow-y-auto">
+            
+            {/* Header */}
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-sky-100 text-sky-700 rounded-xl">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Connexion au Compte Tidal</h3>
+                  <p className="text-xs text-slate-500">Accédez en lecture directe à vos playlists privées sans restriction</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTidalModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Current Status */}
+            {customToken ? (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-900 font-bold text-sm">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    Session Tidal active et opérationnelle
+                  </div>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-800 font-semibold">
+                    Connecté
+                  </span>
+                </div>
+                {tidalAccountInfo && (
+                  <div className="text-xs text-emerald-800 flex flex-wrap gap-x-4 gap-y-1 pt-1">
+                    <span>Identifiant : <strong>{tidalAccountInfo.userId}</strong></span>
+                    <span>Pays : <strong>{tidalAccountInfo.countryCode}</strong></span>
+                  </div>
+                )}
+                <div className="pt-2 flex items-center justify-between border-t border-emerald-200/60">
+                  <span className="text-[11px] text-emerald-700">Vous pouvez recharger vos playlists privées Tidal à tout moment.</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDisconnectTidal}
+                    className="text-xs h-7 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                  >
+                    Se déconnecter
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed">
+                <strong>Pourquoi se connecter ?</strong> Tidal protège les listes de titres des playlists créées par les utilisateurs. En renseignant votre session active, l'application peut lire et charger l'intégralité des titres de vos playlists privées.
+              </div>
+            )}
+
+            {/* Input & Actions */}
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-slate-800">
+                Token d'accès ou Session Tidal
+              </label>
+              <div className="space-y-2">
+                <div className="relative">
+                  <Input
+                    type="text"
+                    value={tidalTokenInput}
+                    onChange={(e) => setTidalTokenInput(e.target.value)}
+                    placeholder="Collez ici votre token (ex: eyJhbGciOiJIUzI1Ni... ou token de session)"
+                    className="font-mono text-xs h-11 pr-20 rounded-xl border-slate-300"
+                  />
+                  {navigator.clipboard && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const text = await navigator.clipboard.readText();
+                          if (text) {
+                            setTidalTokenInput(text.trim());
+                            toast.success("Token collé depuis le presse-papier !");
+                          }
+                        } catch {
+                          toast.error("Impossible de lire le presse-papier.");
+                        }
+                      }}
+                      className="absolute right-2 top-2 px-2.5 py-1 text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                    >
+                      Coller
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    type="button"
+                    disabled={verifyingTidal || !tidalTokenInput.trim()}
+                    onClick={() => handleVerifyAndSaveTidalToken(tidalTokenInput)}
+                    className="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold h-10 rounded-xl shadow-xs"
+                  >
+                    {verifyingTidal ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Vérification en cours...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        Vérifier & Activer la session Tidal
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Step-by-Step Instructions */}
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 text-xs text-slate-700">
+              <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm">
+                <HelpCircle className="w-4 h-4 text-sky-600 shrink-0" />
+                <span>Procédure exacte pour récupérer votre token en 20 secondes :</span>
+              </div>
+              <ol className="list-decimal list-inside space-y-2 text-slate-600 pl-1 leading-relaxed">
+                <li>
+                  Connectez-vous sur <a href="https://tidal.com" target="_blank" rel="noreferrer" className="text-sky-600 font-semibold underline inline-flex items-center gap-0.5">tidal.com <ExternalLink className="w-3 h-3" /></a> (ou <em>listen.tidal.com</em>).
+                </li>
+                <li>
+                  Appuyez sur <kbd className="px-1.5 py-0.5 bg-white border rounded text-[10px] font-mono shadow-2xs font-bold text-slate-800">F12</kbd> (ou clic droit n'importe où ➜ <strong>Inspecter</strong>).
+                </li>
+                <li>
+                  En haut du volet d'inspection, cliquez sur l'onglet <strong>Network</strong> (<em>Réseau</em>, situé à côté de <em>Console</em>).
+                </li>
+                <li>
+                  Dans la petite case de recherche / filtre en haut à gauche, tapez <code className="bg-slate-200/80 px-1 py-0.5 rounded text-[11px] font-mono font-bold text-slate-900">api</code>, puis rafraîchissez votre page Tidal (<kbd className="px-1 py-0.5 bg-white border rounded text-[10px] font-mono">F5</kbd> ou <kbd className="px-1 py-0.5 bg-white border rounded text-[10px] font-mono">Cmd + R</kbd>).
+                </li>
+                <li>
+                  Dans la liste sous la colonne <strong>Name</strong>, cliquez sur une ligne (par exemple <code className="bg-slate-200/80 px-1 py-0.5 rounded text-[11px] font-mono text-slate-800">items?...</code> ou une ligne contenant des chiffres).
+                </li>
+                <li>
+                  Dans le panneau qui s'ouvre à droite, restez sur <strong>Headers</strong>, descendez jusqu'à la section <strong>Request Headers</strong> (<em>En-têtes de requête</em>), et repérez la ligne <strong>Authorization:</strong>.
+                </li>
+                <li>
+                  Sélectionnez et <strong>copiez tout le texte</strong> commençant par <code className="bg-sky-100 text-sky-900 px-1 py-0.5 rounded text-[11px] font-mono font-bold">eyJ...</code> (qui se trouve juste après le mot <em>Bearer</em>).
+                </li>
+                <li>
+                  Revenez ici, collez ce texte dans le champ ci-dessus et cliquez sur <strong>Vérifier & Activer</strong>.
+                </li>
+              </ol>
+            </div>
+
+            {/* Footer */}
+            <div className="pt-2 flex items-center justify-between border-t border-slate-100 text-[11px] text-slate-400">
+              <span>🔒 Votre session est conservée localement dans votre navigateur.</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTidalModal(false)}
+                className="text-xs text-slate-600"
+              >
+                Fermer
+              </Button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MULTI-PLAYLISTS BATCH DOWNLOAD MODAL */}
+      {showMultiJobModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl p-6 sm:p-7 space-y-5 max-h-[90vh] overflow-y-auto">
+            
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0 ${
+                  multiJobStatus?.status === 'completed'
+                    ? 'bg-emerald-600 shadow-emerald-200'
+                    : 'bg-slate-900 shadow-slate-300'
+                } shadow-md`}>
+                  {multiJobStatus?.status === 'completed' ? (
+                    <CheckCircle2 className="w-6 h-6" />
+                  ) : (
+                    <RefreshCw className="w-6 h-6 animate-spin" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    {multiJobStatus?.status === 'completed'
+                      ? 'Téléchargement Groupé Terminé !'
+                      : 'Téléchargement de vos Playlists Tidal'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {multiJobStatus?.status === 'completed'
+                      ? `${multiJobStatus.totalPlaylists} playlists converties avec succès en MP3 320 kbps avec tags ID3v2`
+                      : `Traitement de ${multiJobStatus?.totalPlaylists || 0} playlists en tâche de fond`}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowMultiJobModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Overall Progress Gauge */}
+            {multiJobStatus && (
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-slate-700">Progression Globale</span>
+                  <span className="text-emerald-700 font-mono">
+                    {Math.round(((multiJobStatus.completedTracks || 0) / Math.max(1, multiJobStatus.totalTracks || 1)) * 100)}%
+                  </span>
+                </div>
+
+                <div className="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, Math.round(((multiJobStatus.completedTracks || 0) / Math.max(1, multiJobStatus.totalTracks || 1)) * 100))}%`
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 pt-1">
+                  <span>
+                    Morceaux : <strong className="text-slate-900">{multiJobStatus.completedTracks || 0}</strong> / {multiJobStatus.totalTracks || 0}
+                  </span>
+                  <span>
+                    Playlists achevées : <strong className="text-slate-900">{multiJobStatus.completedPlaylists || 0}</strong> / {multiJobStatus.totalPlaylists || 0}
+                  </span>
+                </div>
+
+                {multiJobStatus.status !== 'completed' && multiJobStatus.currentPlaylistTitle && (
+                  <div className="pt-2 text-xs text-slate-600 border-t border-slate-200/60 flex items-center gap-2">
+                    <RefreshCw className="w-3 h-3 text-cyan-600 animate-spin shrink-0" />
+                    <span>En cours d'extraction : <strong className="text-slate-900 font-semibold">{multiJobStatus.currentPlaylistTitle}</strong></span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Grand Zip Master Download Button (When completed) */}
+            {multiJobStatus?.status === 'completed' && (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-1.5">
+                    <FolderArchive className="w-4 h-4 text-emerald-700" />
+                    Grand Pack ZIP Tout-en-un
+                  </h4>
+                  <p className="text-xs text-emerald-800">
+                    Contient chaque playlist rangée dans son propre sous-dossier avec tous les fichiers MP3 320 kbps.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const downloadUrl = `/mp3/download/multi-zip/${multiJobStatus.multiJobId}`;
+                    window.location.href = downloadUrl;
+                  }}
+                  className="w-full sm:w-auto bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs h-10 px-5 rounded-xl shadow-sm shrink-0"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Télécharger le Pack Complet (.ZIP)
+                </Button>
+              </div>
+            )}
+
+            {/* Playlists Breakdown List */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Détail des Playlists ({multiJobStatus?.playlists?.length || 0})
+              </h4>
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                {(multiJobStatus?.playlists || []).map((pl, idx) => (
+                  <div
+                    key={pl.id || idx}
+                    className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-slate-400 text-[10px]">#{idx + 1}</span>
+                        <h5 className="font-bold text-slate-900 truncate" title={pl.title}>
+                          {pl.title}
+                        </h5>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        {pl.trackCount || 0} morceau{(pl.trackCount || 0) > 1 ? 'x' : ''}
+                      </p>
+                    </div>
+
+                    {/* Status Pill & Action */}
+                    <div className="flex items-center gap-2">
+                      {pl.status === 'done' ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px] flex items-center gap-1">
+                            <Check className="w-3 h-3 text-emerald-600" /> Prête
+                          </span>
+                          {pl.jobId && (
+                            <a
+                              href={`/mp3/download/zip/${pl.jobId}`}
+                              className="inline-flex items-center px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition-colors"
+                              title="Télécharger cette playlist seule"
+                            >
+                              <Download className="w-3 h-3 mr-1 text-slate-500" />
+                              ZIP
+                            </a>
+                          )}
+                        </div>
+                      ) : pl.status === 'downloading' ? (
+                        <span className="px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 font-bold text-[10px] flex items-center gap-1 animate-pulse">
+                          <RefreshCw className="w-3 h-3 animate-spin text-cyan-600" /> En cours
+                        </span>
+                      ) : pl.status === 'error' ? (
+                        <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px] flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 text-rose-600" /> Erreur
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium text-[10px]">
+                          En file d'attente
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+              <span className="text-slate-400 text-[11px]">
+                {multiJobStatus?.status === 'completed'
+                  ? 'Toutes les archives sont prêtes au téléchargement.'
+                  : 'Vous pouvez laisser cette fenêtre ouverte ou la fermer, le téléchargement continue en tâche de fond.'}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowMultiJobModal(false)}
+                className="text-xs h-8 px-4"
+              >
+                Fermer
+              </Button>
+            </div>
+
           </div>
         </div>
       )}

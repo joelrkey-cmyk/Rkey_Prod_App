@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock, CreditCard, Play } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock, Unlock, CreditCard, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -847,15 +847,17 @@ function urlBase64ToUint8Array(base64String) {
             showGuestInterventionNotice: c.show_guest_intervention_notice !== undefined ? c.show_guest_intervention_notice : true,
             playlistAudioFiles: c.playlist_audio_files || [],
             next_appointment_date: c.next_appointment_date || null,
-            next_appointment_time: c.next_appointment_time || null
+            next_appointment_time: c.next_appointment_time || null,
+            is_client_locked_manually: !!c.is_client_locked_manually,
+            manual_lock_status: c.manual_lock_status || null
          };
       });
       
       mappedEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
       if (silent) {
         setEvents(prev => {
-          const prevSummary = prev.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${e.next_appointment_date || ''}:${e.next_appointment_time || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
-          const nextSummary = mappedEvents.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${e.next_appointment_date || ''}:${e.next_appointment_time || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
+          const prevSummary = prev.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${e.is_client_locked_manually ? '1' : '0'}:${e.manual_lock_status || ''}:${e.next_appointment_date || ''}:${e.next_appointment_time || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
+          const nextSummary = mappedEvents.map(e => `${e.id}:${e.rawContractData?.updated_at || ''}:${e.is_client_locked_manually ? '1' : '0'}:${e.manual_lock_status || ''}:${e.next_appointment_date || ''}:${e.next_appointment_time || ''}:${(e.chatMessages || []).length}:${(e.eventDocuments || []).length}`).join('|');
           if (prevSummary !== nextSummary) {
             return mappedEvents;
           }
@@ -887,6 +889,11 @@ function urlBase64ToUint8Array(base64String) {
   }, [isLoadingEvents, isPublic, slug, currentRoute.role]);
 
   const [scheduleItems, setScheduleItems] = useState([]);
+  
+  const generateDjPdfRef = useRef(null);
+  const [lockModalEvent, setLockModalEvent] = useState(null);
+  const [unlockModalEvent, setUnlockModalEvent] = useState(null);
+  const [lockIsProcessing, setLockIsProcessing] = useState(false);
   
   const [notes, setNotes] = useState("");
   const [playlistLink, setPlaylistLink] = useState("");
@@ -986,12 +993,102 @@ function urlBase64ToUint8Array(base64String) {
     return diffDays <= 2;
   };
 
+  const isClientLocked = (eventObj) => {
+    if (!eventObj) return false;
+    // 1. Verrouillage manuel par l'administrateur
+    if (eventObj.is_client_locked_manually === true || eventObj.manual_lock_status === 'locked') {
+      return true;
+    }
+    // 2. Déverrouillage manuel d'exception par l'administrateur à J-2 ou après
+    if (eventObj.manual_lock_status === 'force_unlocked') {
+      return false;
+    }
+    // 3. Règle automatique générale : verrouillage à J-2
+    return isClientLockedByJ2(eventObj.date);
+  };
+
+  const getClientLockInfo = (eventObj) => {
+    if (!eventObj) return { isLocked: false, label: 'Accès ouvert', reason: 'open' };
+    if (eventObj.is_client_locked_manually === true || eventObj.manual_lock_status === 'locked') {
+      return { isLocked: true, label: "Verrouillé par l'administrateur", reason: 'admin_locked' };
+    }
+    if (eventObj.manual_lock_status === 'force_unlocked') {
+      return { isLocked: false, label: "Déverrouillé exceptionnellement (J-2)", reason: 'admin_force_unlocked' };
+    }
+    if (isClientLockedByJ2(eventObj.date)) {
+      return { isLocked: true, label: "Verrouillé automatiquement (J-2)", reason: 'j2_locked' };
+    }
+    return { isLocked: false, label: "Accès ouvert (Verrouillage auto à J-2)", reason: 'open' };
+  };
+
+  const handleConfirmLock = async (downloadPdf = false) => {
+    const ev = lockModalEvent;
+    if (!ev) return;
+    setLockIsProcessing(true);
+    try {
+      const payload = {
+        is_client_locked_manually: true,
+        manual_lock_status: 'locked'
+      };
+
+      setEvents(prev => prev.map(e => e.id === ev.id ? { 
+        ...e, 
+        is_client_locked_manually: true, 
+        manual_lock_status: 'locked' 
+      } : e));
+
+      await updateContractDb(ev.id, payload);
+      toast.success(`L'interface client pour "${ev.name}" est désormais verrouillée.`);
+
+      if (downloadPdf) {
+        if (generateDjPdfRef.current) {
+          generateDjPdfRef.current(false);
+          toast.info("Téléchargement du PDF DJ lancé.");
+        }
+      }
+    } catch (err) {
+      console.error("Lock error:", err);
+      toast.error("Erreur lors du verrouillage de l'interface client.");
+    } finally {
+      setLockIsProcessing(false);
+      setLockModalEvent(null);
+    }
+  };
+
+  const handleConfirmUnlock = async () => {
+    const ev = unlockModalEvent;
+    if (!ev) return;
+    setLockIsProcessing(true);
+    try {
+      const isPastOrWithinJ2 = isClientLockedByJ2(ev.date);
+      const payload = {
+        is_client_locked_manually: false,
+        manual_lock_status: isPastOrWithinJ2 ? 'force_unlocked' : null
+      };
+
+      setEvents(prev => prev.map(e => e.id === ev.id ? { 
+        ...e, 
+        is_client_locked_manually: false, 
+        manual_lock_status: isPastOrWithinJ2 ? 'force_unlocked' : null 
+      } : e));
+
+      await updateContractDb(ev.id, payload);
+      toast.success(`L'interface client pour "${ev.name}" est désormais déverrouillée.`);
+    } catch (err) {
+      console.error("Unlock error:", err);
+      toast.error("Erreur lors du déverrouillage de l'interface client.");
+    } finally {
+      setLockIsProcessing(false);
+      setUnlockModalEvent(null);
+    }
+  };
+
   const updateContractDb = async (eventId, payload) => {
     try {
       const ev = events.find(e => e.id === eventId);
       const isClientView = isPublic || currentRoute.role === 'client';
-      if (isClientView && ev && isClientLockedByJ2(ev.date)) {
-        toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+      if (isClientView && ev && isClientLocked(ev)) {
+        toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
         return;
       }
       const finalPayload = { ...payload };
@@ -1060,8 +1157,8 @@ function urlBase64ToUint8Array(base64String) {
 
   const handleAddCustomWeddingEvent = () => {
     const ev = events.find(e => e.id === currentRoute.eventId);
-    if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-      toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+    if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+      toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
       return;
     }
     const newItem = {
@@ -1079,7 +1176,7 @@ function urlBase64ToUint8Array(base64String) {
 
   const handleUpdateCustomWeddingEvent = (id, field, value) => {
     const ev = events.find(e => e.id === currentRoute.eventId);
-    if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
+    if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
       return;
     }
     const updated = customWeddingEvents.map(item => {
@@ -1093,8 +1190,8 @@ function urlBase64ToUint8Array(base64String) {
 
   const handleSaveCustomWeddingEvents = () => {
     const ev = events.find(e => e.id === currentRoute.eventId);
-    if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-      toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+    if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+      toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
       return;
     }
     if (currentRoute.eventId) {
@@ -1104,8 +1201,8 @@ function urlBase64ToUint8Array(base64String) {
 
   const handleDeleteCustomWeddingEvent = (id) => {
     const ev = events.find(e => e.id === currentRoute.eventId);
-    if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-      toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+    if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+      toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
       return;
     }
     const updated = customWeddingEvents.filter(item => item.id !== id);
@@ -1299,10 +1396,38 @@ function urlBase64ToUint8Array(base64String) {
                   {/* Client Access */}
                   <div className="bg-green-50/30 p-2 rounded-lg border border-green-100/50 flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Client</span>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Client</span>
+                        {isClientLocked(ev) ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-red-100 text-red-700">
+                            <Lock className="w-2.5 h-2.5" /> Verrouillé
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-700">
+                            <Unlock className="w-2.5 h-2.5" /> Ouvert
+                          </span>
+                        )}
+                      </div>
                       <div className="font-bold text-slate-800 text-xs truncate">{ev.client?.name || 'Inconnu'}</div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      {isClientLocked(ev) ? (
+                        <button 
+                          onClick={() => setUnlockModalEvent(ev)} 
+                          className="p-1 px-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 transition text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                          title="Déverrouiller l'accès client"
+                        >
+                          <Unlock className="w-2.5 h-2.5" /> Déverrouiller
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => setLockModalEvent(ev)} 
+                          className="p-1 px-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded border border-amber-200 transition text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                          title="Verrouiller l'accès client"
+                        >
+                          <Lock className="w-2.5 h-2.5" /> Verrouiller
+                        </button>
+                      )}
                       <button 
                         onClick={() => { navigator.clipboard.writeText(`https://${getClientLink(ev)}`); toast.success("Lien Client copié"); }} 
                         className="p-1 px-2 bg-white text-green-700 hover:bg-green-50 rounded border border-green-200 transition text-[10px] font-bold flex items-center gap-1"
@@ -1383,7 +1508,26 @@ function urlBase64ToUint8Array(base64String) {
                       {ev.date ? ev.date.split('-').length === 3 ? `${ev.date.split('-')[2]}-${ev.date.split('-')[1]}-${ev.date.split('-')[0]}` : ev.date : ''}
                     </td>
                     <td className={`px-4 ${rowBg} ${lastCellBorder}`}>
-                      <div className="text-sm font-medium mb-1">{ev.client?.name || ev.contractInfo?.name || 'Inconnu'}</div>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-sm font-medium truncate">{ev.client?.name || ev.contractInfo?.name || 'Inconnu'}</span>
+                        {isClientLocked(ev) ? (
+                          <button 
+                            onClick={() => setUnlockModalEvent(ev)} 
+                            title={`Interface client verrouillée (${getClientLockInfo(ev).label}). Cliquer pour déverrouiller.`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700 hover:bg-red-200 border border-red-200 transition shrink-0 cursor-pointer"
+                          >
+                            <Lock className="w-3 h-3 text-red-600" /> Verrouillé
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => setLockModalEvent(ev)} 
+                            title="Interface client ouverte. Cliquer pour verrouiller."
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 transition shrink-0 cursor-pointer"
+                          >
+                            <Unlock className="w-3 h-3 text-emerald-600" /> Ouvert
+                          </button>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1">
                         <div className="text-xs text-green-600 bg-green-50 border border-green-100 px-2 py-1 rounded truncate max-w-[150px]">
                           {getClientLink(ev)}
@@ -1951,8 +2095,8 @@ function urlBase64ToUint8Array(base64String) {
     const audioFiles = isClient ? allAudioFiles.filter(a => !a.isSurprise) : allAudioFiles;
 
     const handleUploadAudio = async (file) => {
-      if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-        toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+      if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+        toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
         return;
       }
       const fileNameLower = (file.name || '').toLowerCase();
@@ -2026,8 +2170,8 @@ function urlBase64ToUint8Array(base64String) {
     };
 
     const handleDeleteAudio = async (audioId) => {
-      if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-        toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+      if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+        toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
         return;
       }
       if (!window.confirm("Voulez-vous vraiment supprimer ce fichier ?")) return;
@@ -3227,6 +3371,7 @@ function urlBase64ToUint8Array(base64String) {
         doc.save(`Fiche_DJ_${safeName}.pdf`);
       }
     };
+    generateDjPdfRef.current = generateDjPDF;
 
     const AppointmentBannerSection = () => {
       const hasDefinedAppointment = !!ev.next_appointment_date;
@@ -3565,8 +3710,8 @@ function urlBase64ToUint8Array(base64String) {
       if (!info) return null;
       
       const handleFileUpload = async (e) => {
-        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-          toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+          toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
           return;
         }
         const file = e.target.files[0];
@@ -3593,8 +3738,8 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       const handleDeletePhoto = () => {
-        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-          toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+          toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
           return;
         }
         if (!window.confirm("Supprimer cette photo ?")) return;
@@ -4147,8 +4292,8 @@ function urlBase64ToUint8Array(base64String) {
       };
       
       const handleDeleteEventDoc = async (docId) => {
-        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-          toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+          toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
           return;
         }
         if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce document ?")) return;
@@ -4197,8 +4342,8 @@ function urlBase64ToUint8Array(base64String) {
       };
       
       const handleFileUpload = async (event) => {
-        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-          toast.error("Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+          toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
           return;
         }
         const file = event.target.files[0];
@@ -4245,8 +4390,8 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       const handleVisitSheetUpload = async (event) => {
-        if ((isPublic || currentRoute.role === 'client') && ev && isClientLockedByJ2(ev.date)) {
-          toast.error("Les modifications ne me sont plus autorisées à moins de 2 jours de l'événement (J-2).");
+        if ((isPublic || currentRoute.role === 'client') && ev && isClientLocked(ev)) {
+          toast.error("Les modifications ne sont plus autorisées (espace client verrouillé).");
           return;
         }
         const files = Array.from(event.target.files);
@@ -6613,11 +6758,43 @@ function urlBase64ToUint8Array(base64String) {
 
         {currentRoute.role === 'admin' && (
           <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <Shield className="w-8 h-8" />
-              Espace Admin - {ev.name}
-            </h2>
-            <div className="flex gap-2 relative z-10">
+            <div>
+              <h2 className="text-2xl font-bold flex items-center gap-2">
+                <Shield className="w-8 h-8" />
+                Espace Admin - {ev.name}
+              </h2>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {isClientLocked(ev) ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-500/30 text-white border border-red-400/40">
+                    <Lock className="w-3.5 h-3.5 text-red-200" />
+                    {getClientLockInfo(ev).label}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/30 text-white border border-emerald-400/40">
+                    <Unlock className="w-3.5 h-3.5 text-emerald-200" />
+                    {getClientLockInfo(ev).label}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 relative z-10">
+              {isClientLocked(ev) ? (
+                <button 
+                  onClick={() => setUnlockModalEvent(ev)} 
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
+                  title="Déverrouiller l'interface du client"
+                >
+                  <Unlock className="w-4 h-4" /> Déverrouiller l'accès client
+                </button>
+              ) : (
+                <button 
+                  onClick={() => setLockModalEvent(ev)} 
+                  className="bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2 rounded-lg text-sm font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
+                  title="Verrouiller l'interface du client"
+                >
+                  <Lock className="w-4 h-4" /> Verrouiller l'accès client
+                </button>
+              )}
               <button onClick={generateDjPDF} className="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
                 <Download className="w-4 h-4" /> PDF DJ
               </button>
@@ -6672,13 +6849,19 @@ function urlBase64ToUint8Array(base64String) {
           </div>
         )}
 
-        {(isPublic || currentRoute.role === 'client') && isClientLockedByJ2(ev.date) && (
+        {(isPublic || currentRoute.role === 'client') && isClientLocked(ev) && (
           <div className="bg-amber-50 border border-amber-300 text-amber-900 p-4 rounded-xl shadow-sm flex items-center gap-3 animate-in fade-in duration-300">
             <Lock className="w-6 h-6 shrink-0 text-amber-600" />
             <div>
-              <h4 className="font-bold text-amber-900 text-sm md:text-base">Espace client verrouillé (J-2)</h4>
+              <h4 className="font-bold text-amber-900 text-sm md:text-base">
+                {ev.is_client_locked_manually === true || ev.manual_lock_status === 'locked'
+                  ? "Espace client verrouillé par l'administrateur"
+                  : "Espace client verrouillé (J-2)"}
+              </h4>
               <p className="text-xs md:text-sm text-amber-800 mt-0.5">
-                Votre événement ayant lieu dans moins de 2 jours (ou étant passé), les modifications en ligne ne sont plus autorisées. Pour toute mise à jour de dernière minute, veuillez contacter directement votre DJ.
+                {ev.is_client_locked_manually === true || ev.manual_lock_status === 'locked'
+                  ? "Les modifications en ligne ont été clôturées pour cet événement par votre prestataire. Votre espace reste consultable en lecture seule. Pour toute mise à jour de dernière minute, veuillez contacter directement votre DJ."
+                  : "Votre événement ayant lieu dans moins de 2 jours (ou étant passé), les modifications en ligne ne sont plus autorisées. Pour toute mise à jour de dernière minute, veuillez contacter directement votre DJ."}
               </p>
             </div>
           </div>
@@ -7358,6 +7541,176 @@ function urlBase64ToUint8Array(base64String) {
               <Eye className="w-4 h-4" /> Fermer l'aperçu Client (Admin)
             </button>
          </div>
+      )}
+
+      {/* Modal de Confirmation de Verrouillage Client */}
+      {lockModalEvent && (
+        <div 
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4 sm:p-6"
+          onClick={() => { if (!lockIsProcessing) setLockModalEvent(null); }}
+        >
+          <div 
+            className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden relative animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 shadow-xs">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-slate-900">Verrouiller l'espace client</h3>
+                  <button 
+                    onClick={() => { if (!lockIsProcessing) setLockModalEvent(null); }}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition"
+                    disabled={lockIsProcessing}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5 truncate">
+                  {lockModalEvent.name} — {lockModalEvent.contractInfo?.name || lockModalEvent.client?.name || 'Client'}
+                </p>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 py-2 space-y-4 text-sm text-slate-600">
+              <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 text-xs sm:text-sm text-amber-900 space-y-1">
+                <p className="font-semibold text-amber-950">Confirmation de verrouillage</p>
+                <p>
+                  Souhaitez-vous verrouiller l'accès de ce client ? Une fois verrouillé, l'interface client passera en <strong>lecture seule</strong> : le client ne pourra plus modifier ses choix musicaux, déroulement, fichiers ou informations.
+                </p>
+              </div>
+
+              <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 flex items-start gap-3">
+                <FileText className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                <div className="text-xs sm:text-sm text-slate-700 flex-1">
+                  <p className="font-bold text-indigo-950">Télécharger / Imprimer la Fiche DJ ?</p>
+                  <p className="text-slate-600 text-xs mt-0.5">
+                    Vous pouvez générer et télécharger automatiquement le récapitulatif PDF complet pour le DJ dès le verrouillage.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 mt-2 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setLockModalEvent(null)}
+                disabled={lockIsProcessing}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmLock(false)}
+                disabled={lockIsProcessing}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Lock className="w-4 h-4" />
+                Verrouiller uniquement
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmLock(true)}
+                disabled={lockIsProcessing}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-200 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                Verrouiller & PDF DJ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmation de Déverrouillage Client */}
+      {unlockModalEvent && (
+        <div 
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4 sm:p-6"
+          onClick={() => { if (!lockIsProcessing) setUnlockModalEvent(null); }}
+        >
+          <div 
+            className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden relative animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 shadow-xs">
+                <Unlock className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-slate-900">Déverrouiller l'espace client</h3>
+                  <button 
+                    onClick={() => { if (!lockIsProcessing) setUnlockModalEvent(null); }}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg transition"
+                    disabled={lockIsProcessing}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5 truncate">
+                  {unlockModalEvent.name} — {unlockModalEvent.contractInfo?.name || unlockModalEvent.client?.name || 'Client'}
+                </p>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 py-2 space-y-4 text-sm text-slate-600">
+              <p>
+                Confirmez-vous le déverrouillage de l'interface client ? Le client pourra de nouveau accéder à son espace et ajouter ou modifier du contenu.
+              </p>
+
+              {isClientLockedByJ2(unlockModalEvent.date) ? (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 text-xs sm:text-sm text-amber-900 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-amber-950">Événement à moins de 2 jours (J-2)</p>
+                    <p className="text-xs text-amber-800 mt-0.5">
+                      Cet événement a lieu dans moins de 2 jours (ou est passé). Le déverrouillage manuel constitue une exception pour autoriser le client à finaliser ses informations de dernière minute.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 text-xs sm:text-sm text-blue-900 flex items-start gap-2.5">
+                  <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-blue-950">Règle de verrouillage automatique J-2 conservée</p>
+                    <p className="text-xs text-blue-800 mt-0.5">
+                      L'interface redevient accessible au client dès maintenant. Elle se verrouillera automatiquement 2 jours avant l'événement (J-2) comme prévu par la règle générale.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 py-4 mt-2 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setUnlockModalEvent(null)}
+                disabled={lockIsProcessing}
+                className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmUnlock()}
+                disabled={lockIsProcessing}
+                className="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-200 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <Unlock className="w-4 h-4" />
+                Confirmer le déverrouillage
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Dynamic Document Preview Modal */}
