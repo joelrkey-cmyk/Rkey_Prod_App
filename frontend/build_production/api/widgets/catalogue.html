@@ -87,6 +87,7 @@
             position: relative;
             overflow: hidden;
             background: #ffffff;
+            height: 180px;
         }
         
         .card-image {
@@ -94,6 +95,162 @@
             height: 180px;
             object-fit: contain;
             background: #ffffff;
+            display: block;
+        }
+
+        /* Slideshow / Diaporama */
+        .slideshow-slide {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease-in-out;
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .slideshow-slide.active {
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 1;
+        }
+
+        .slideshow-slide img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #ffffff;
+        }
+
+        .slideshow-arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.45);
+            color: #ffffff;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.2s ease;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            padding: 0;
+        }
+
+        .equipment-card:hover .slideshow-arrow,
+        .card-image-container:hover .slideshow-arrow {
+            opacity: 1;
+        }
+
+        .slideshow-arrow:hover {
+            background: rgba(0, 0, 0, 0.75);
+            transform: translateY(-50%) scale(1.1);
+        }
+
+        .slideshow-arrow.prev {
+            left: 8px;
+        }
+
+        .slideshow-arrow.next {
+            right: 8px;
+        }
+
+        .slideshow-arrow svg {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .slideshow-dots {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            padding: 3px 8px;
+            border-radius: 12px;
+            pointer-events: auto;
+        }
+
+        .slideshow-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.55);
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            transition: all 0.25s ease;
+            outline: none;
+        }
+
+        .slideshow-dot:hover {
+            background: rgba(255, 255, 255, 0.95);
+        }
+
+        .slideshow-dot.active {
+            width: 9px;
+            height: 9px;
+            background: #ffffff;
+            box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
+            transform: scale(1.1);
+        }
+
+        .slideshow-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 10;
+            padding: 2px 7px;
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            color: #ffffff;
+            font-size: 10px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            pointer-events: none;
+            letter-spacing: 0.3px;
+        }
+
+        .slideshow-badge svg {
+            width: 12px;
+            height: 12px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        @media (hover: none) {
+            .slideshow-arrow {
+                opacity: 0.85;
+            }
         }
         
         .card-image-placeholder {

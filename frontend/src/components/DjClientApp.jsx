@@ -695,6 +695,7 @@ function urlBase64ToUint8Array(base64String) {
            return;
          }
          const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${encodeURIComponent(slug)}`);
+         if (!publicRes.ok) throw new Error(`HTTP Error ${publicRes.status}`);
          if (publicRes.ok) {
              const data = await publicRes.json().catch(() => ({ events: [] }));
              allContracts = data.events || [];
@@ -724,6 +725,8 @@ function urlBase64ToUint8Array(base64String) {
               fetch(`${BACKEND_URL}/api/dj-client/admin/contracts`, { headers }),
               fetch(`${BACKEND_URL}/api/material-options`, { headers })
           ]);
+
+          if (!contractsRes.ok) throw new Error(`HTTP Error ${contractsRes.status}`);
 
           if (optionsRes.ok) {
               const opts = await optionsRes.json().catch(() => ([]));

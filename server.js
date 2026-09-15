@@ -3045,7 +3045,7 @@ api.post('/home-notes', authMiddleware, async (req, res) => {
 });
 api.put('/home-notes/:id', authMiddleware, async (req, res) => {
   await db.collection('home_notes').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
-  const doc = await db.collection('home_notes').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const doc = await db.collection('home_notes').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   res.json(doc);
 });
 api.delete('/home-notes/:id', authMiddleware, async (req, res) => {
@@ -3195,7 +3195,7 @@ api.put('/home-planner/tasks/:id', authMiddleware, async (req, res) => {
     }
 
     await db.collection('weekly_tasks').updateOne({ id: req.params.id }, { $set: update });
-    const updated = await db.collection('weekly_tasks').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const updated = await db.collection('weekly_tasks').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     if (!updated) {
       return res.status(404).json({ detail: 'Tâche introuvable' });
     }
@@ -3300,7 +3300,7 @@ api.get('/dj-client/admin/contracts', authMiddleware, async (req, res) => {
     }
     const contracts = await db.collection('contracts2').find(
       { status: { $nin: ['trash', 'deleted', 'draft'] } },
-      { projection: { cgv_text: 0, predefined_notes: 0, _id: 0 } }
+      { projection: { cgv_text: 0, predefined_notes: 0, _id: 0, 'event_documents.pdf_data': 0 } }
     ).toArray();
     const result = cleanList(contracts);
     adminContractsCache.data = result;
@@ -3478,7 +3478,7 @@ api.put('/partners/reorder', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 api.get('/partners/:id', authMiddleware, async (req, res) => {
-  const p = await db.collection('partners').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const p = await db.collection('partners').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!p) return res.status(404).json({ detail: 'Not found' });
   res.json(await autoSignGcsUrlsInObject(p));
 });
@@ -3497,7 +3497,7 @@ api.put('/partners/:id', authMiddleware, async (req, res) => {
   if (body.cover_photo) body.cover_photo = await uploadBase64ToGcs(body.cover_photo, 'partners-photos');
 
   await db.collection('partners').updateOne({ id: req.params.id }, { $set: { ...body, updated_at: new Date().toISOString() } });
-  const updated = await db.collection('partners').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updated = await db.collection('partners').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.delete('/partners/:id', authMiddleware, async (req, res) => {
@@ -3591,7 +3591,7 @@ api.patch('/dj-fiches/:id/toggle-status', authMiddleware, async (req, res) => {
   if (!profile) return res.status(404).json({ detail: 'Profile not found' });
   const newStatus = profile.actif === false ? true : false;
   await db.collection('dj_profiles').updateOne({ id: req.params.id }, { $set: { actif: newStatus } });
-  const updated = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updated = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.post('/dj-fiches', authMiddleware, async (req, res) => {
@@ -3613,7 +3613,7 @@ api.put('/dj-fiches/:id', authMiddleware, async (req, res) => {
   if (body.logo_url && body.logo_url.startsWith('data:')) body.logo_url = await uploadBase64ToGcs(body.logo_url, 'dj-photos');
 
   await db.collection('dj_profiles').updateOne({ id: req.params.id }, { $set: body });
-  const updated = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updated = await db.collection('dj_profiles').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.delete('/dj-fiches/:id', authMiddleware, async (req, res) => {
@@ -3780,7 +3780,7 @@ api.patch('/billetterie/events/:id/toggle-status', authMiddleware, async (req, r
   const isOffline = event.actif === false || event.actif === 'false' || event.actif === 'OFF' || event.actif === 'off';
   const newStatus = isOffline ? true : false;
   await db.collection('events').updateOne({ id: req.params.id }, { $set: { actif: newStatus } });
-  const updated = await db.collection('events').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updated = await db.collection('events').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.post('/billetterie/events', authMiddleware, async (req, res) => {
@@ -3790,7 +3790,7 @@ api.post('/billetterie/events', authMiddleware, async (req, res) => {
 });
 api.put('/billetterie/events/:id', authMiddleware, async (req, res) => {
   await db.collection('events').updateOne({ id: req.params.id }, { $set: req.body });
-  const updated = await db.collection('events').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updated = await db.collection('events').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.delete('/billetterie/events/:id', authMiddleware, async (req, res) => {
@@ -3862,7 +3862,7 @@ api.get('/contracts', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('contracts2').find({ status: { $nin: ['trash'] } }, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/contracts/:id', authMiddleware, async (req, res) => {
-  const c = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const c = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!c) return res.status(404).json({ detail: 'Not found' });
   res.json(c);
 });
@@ -4201,14 +4201,14 @@ api.get('/public/dj-client/:slug', async (req, res) => {
 
   let contracts = [];
   try {
-    contracts = await db.collection('contracts2').find(contractsQuery, { projection: { _id: 0, cgv_text: 0, predefined_notes: 0, signatures: 0 } }).toArray();
+    contracts = await db.collection('contracts2').find(contractsQuery, { projection: { _id: 0, cgv_text: 0, predefined_notes: 0, signatures: 0, 'event_documents.pdf_data': 0 } }).toArray();
   } catch (dbErr) {
     console.error("Error executing optimized public contract search:", dbErr);
   }
 
   // Safe fallback: if nothing is matched by our targeted search, fetch all to prevent 404s
   if (contracts.length === 0) {
-    contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0, cgv_text: 0, predefined_notes: 0, signatures: 0 } }).toArray();
+    contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0, cgv_text: 0, predefined_notes: 0, signatures: 0, 'event_documents.pdf_data': 0 } }).toArray();
   }
   
   const mappedEvents = contracts.map(c => {
@@ -5495,6 +5495,9 @@ api.post('/venues/merge', async (req, res) => {
 });
 
 const CONTRACTS_LIST_PROJECTION = {
+  event_documents: 0,
+  chat_messages: 0,
+  venue_photos: 0,
   _id: 0,
   cgv_text: 0,
   predefined_notes: 0,
@@ -5515,7 +5518,7 @@ api.get('/contracts2/signatures', authMiddleware, async (req, res) => {
   res.json(contracts);
 });
 api.get('/contracts2/:id', authMiddleware, async (req, res) => {
-  const c = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const c = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!c) return res.status(404).json({ detail: 'Not found' });
   res.json(c);
 });
@@ -5540,7 +5543,7 @@ api.put('/contracts2/:id', authMiddleware, async (req, res) => {
   try {
     const cleanBody = sanitizeContractPayload(req.body);
     await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { ...cleanBody, updated_at: new Date().toISOString() } });
-    const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     try {
       await syncVenueFromContract(req.params.id, cleanBody);
     } catch (vErr) {
@@ -5564,14 +5567,14 @@ api.put('/contracts2/:id/status', authMiddleware, async (req, res) => {
     updateData.cancellation_observation = req.body.cancellation_observation;
   }
   await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: updateData });
-  const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   await syncContractReservations(updatedContract);
   clearDjClientResponseCache();
   res.json(updatedContract);
 });
 api.delete('/contracts2/:id', authMiddleware, async (req, res) => {
   await db.collection('contracts2').updateOne({ id: req.params.id }, { $set: { status: 'trash', updated_at: new Date().toISOString() } });
-  const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updatedContract = await db.collection('contracts2').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   await syncContractReservations(updatedContract);
   clearDjClientResponseCache();
   res.json({ success: true });
@@ -6170,7 +6173,7 @@ api.post('/freelance-email-templates', authMiddleware, async (req, res) => {
 api.put('/freelance-email-templates/:id', authMiddleware, async (req, res) => {
   try {
     await db.collection('freelance_email_templates').updateOne({ id: req.params.id }, { $set: req.body });
-    const updated = await db.collection('freelance_email_templates').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const updated = await db.collection('freelance_email_templates').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     res.json(clean(updated));
   } catch (error) {
     res.status(500).json({ detail: error.message });
@@ -6300,7 +6303,7 @@ api.post('/client-email-templates', authMiddleware, async (req, res) => {
 api.put('/client-email-templates/:id', authMiddleware, async (req, res) => {
   try {
     await db.collection('client_email_templates').updateOne({ id: req.params.id }, { $set: req.body });
-    const updated = await db.collection('client_email_templates').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const updated = await db.collection('client_email_templates').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     res.json(clean(updated));
   } catch (error) {
     res.status(500).json({ detail: error.message });
@@ -6373,12 +6376,12 @@ api.get('/forms', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('custom_forms').find({}, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/forms/:id', authMiddleware, async (req, res) => {
-  const f = await db.collection('custom_forms').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const f = await db.collection('custom_forms').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!f) return res.status(404).json({ detail: 'Not found' });
   res.json(f);
 });
 api.get('/forms/:id/public', async (req, res) => {
-  const f = await db.collection('custom_forms').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const f = await db.collection('custom_forms').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!f) return res.status(404).json({ detail: 'Not found' });
   res.json(f);
 });
@@ -6396,7 +6399,7 @@ api.delete('/forms/:id', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 api.post('/forms/:id/duplicate', authMiddleware, async (req, res) => {
-  const orig = await db.collection('custom_forms').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const orig = await db.collection('custom_forms').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!orig) return res.status(404).json({ detail: 'Not found' });
   const dup = { ...orig, id: uuidv4(), name: `${orig.name} (copie)`, created_at: new Date().toISOString() };
   await db.collection('custom_forms').insertOne(dup);
@@ -6424,7 +6427,7 @@ api.post('/forms/upload-file', upload.single('file'), async (req, res) => {
 });
 api.post('/forms/:id/submit', async (req, res) => {
   try {
-    const form = await db.collection('custom_forms').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const form = await db.collection('custom_forms').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     const formName = form ? (form.name || 'Formulaire') : 'Formulaire';
     const formData = req.body.data || req.body;
     const submitterEmail = req.body.email || '';
@@ -7249,6 +7252,7 @@ api.get('/material-options', authMiddleware, async (req, res) => {
   materialOptionsCache.expiresAt = now + 10000; // 10s TTL
   res.json(signed);
 });
+
 api.post('/material-options', authMiddleware, async (req, res) => {
   const opt = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
   await db.collection('material_options').insertOne(opt);
@@ -7371,7 +7375,22 @@ api.get('/catalogue/equipements', async (req, res) => {
     query.category = { $nin: hiddenCatNames };
   }
   
-  const items = cleanList(await db.collection('location_equipment').find(query, { projection: { _id: 0 } }).sort({ name: 1 }).toArray());
+  let items = cleanList(await db.collection('location_equipment').find(query, { projection: { _id: 0 } }).sort({ name: 1 }).toArray());
+  
+  // Appliquer l'ordre personnalisé défini par l'administrateur si présent
+  const orderDoc = await db.collection('location_settings').findOne({ type: 'products_order' }, { projection: { _id: 0 } });
+  const customOrder = orderDoc?.product_ids || orderDoc?.order || [];
+  if (Array.isArray(customOrder) && customOrder.length > 0) {
+    items.sort((a, b) => {
+      const idxA = customOrder.indexOf(a.id);
+      const idxB = customOrder.indexOf(b.id);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
   res.json(await autoSignGcsUrlsInObject(items));
 });
 api.post('/location/equipment', authMiddleware, async (req, res) => {
@@ -7381,7 +7400,7 @@ api.post('/location/equipment', authMiddleware, async (req, res) => {
 });
 api.put('/location/equipment/:id', authMiddleware, async (req, res) => {
   await db.collection('location_equipment').updateOne({ id: req.params.id }, { $set: { ...req.body, updated_at: new Date().toISOString() } });
-  const updated = await db.collection('location_equipment').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updated = await db.collection('location_equipment').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   res.json(await autoSignGcsUrlsInObject(updated));
 });
 api.delete('/location/equipment/:id', authMiddleware, async (req, res) => {
@@ -7914,52 +7933,6 @@ api.post('/location/categories', authMiddleware, async (req, res) => {
   }
 });
 
-api.put('/location/categories/:id', authMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = { ...req.body };
-    delete updates._id;
-    delete updates.id;
-
-    if (updates.name) {
-      updates.name = updates.name.trim();
-    }
-
-    await db.collection('location_categories').updateOne({ id }, { $set: updates });
-    const updated = await db.collection('location_categories').findOne({ id }, { projection: { _id: 0 } });
-    if (!updated) {
-      return res.status(404).json({ error: 'Catégorie introuvable', detail: 'Catégorie introuvable', success: false });
-    }
-    res.json({ ...clean(updated), success: true });
-  } catch (err) {
-    console.error('Error updating location category:', err);
-    res.status(500).json({ error: 'Erreur lors de la mise à jour de la catégorie', detail: err.message, success: false });
-  }
-});
-
-api.delete('/location/categories/:id', authMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const cat = await db.collection('location_categories').findOne({ id });
-    if (cat) {
-      // Check if equipment is using this category
-      const usedByCount = await db.collection('location_equipment').countDocuments({ category: cat.name });
-      if (usedByCount > 0) {
-        return res.status(400).json({
-          error: `Impossible de supprimer : ${usedByCount} équipement(s) utilisent cette catégorie`,
-          detail: `Impossible de supprimer : ${usedByCount} équipement(s) utilisent cette catégorie`,
-          success: false
-        });
-      }
-    }
-    await db.collection('location_categories').deleteOne({ id });
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error deleting location category:', err);
-    res.status(500).json({ error: 'Erreur lors de la suppression de la catégorie', detail: err.message, success: false });
-  }
-});
-
 api.put('/location/categories/reorder', authMiddleware, async (req, res) => {
   try {
     if (req.body.category_ids && Array.isArray(req.body.category_ids)) {
@@ -8004,13 +7977,71 @@ api.post('/location/categories/reset', authMiddleware, async (req, res) => {
     res.status(500).json({ error: 'Erreur lors de la réinitialisation', success: false });
   }
 });
+
+api.put('/location/categories/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (id === 'reorder' || id === 'reset') {
+      return res.status(400).json({ error: 'Action invalide', success: false });
+    }
+    const updates = { ...req.body };
+    delete updates._id;
+    delete updates.id;
+
+    if (updates.name) {
+      updates.name = updates.name.trim();
+    }
+
+    await db.collection('location_categories').updateOne({ id }, { $set: updates });
+    const updated = await db.collection('location_categories').findOne({ id }, { projection: { _id: 0 } });
+    if (!updated) {
+      return res.status(404).json({ error: 'Catégorie introuvable', detail: 'Catégorie introuvable', success: false });
+    }
+    res.json({ ...clean(updated), success: true });
+  } catch (err) {
+    console.error('Error updating location category:', err);
+    res.status(500).json({ error: 'Erreur lors de la mise à jour de la catégorie', detail: err.message, success: false });
+  }
+});
+
+api.delete('/location/categories/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (id === 'reorder' || id === 'reset') {
+      return res.status(400).json({ error: 'Action invalide', success: false });
+    }
+    const cat = await db.collection('location_categories').findOne({ id });
+    if (cat) {
+      // Check if equipment is using this category
+      const usedByCount = await db.collection('location_equipment').countDocuments({ category: cat.name });
+      if (usedByCount > 0) {
+        return res.status(400).json({
+          error: `Impossible de supprimer : ${usedByCount} équipement(s) utilisent cette catégorie`,
+          detail: `Impossible de supprimer : ${usedByCount} équipement(s) utilisent cette catégorie`,
+          success: false
+        });
+      }
+    }
+    await db.collection('location_categories').deleteOne({ id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting location category:', err);
+    res.status(500).json({ error: 'Erreur lors de la suppression de la catégorie', detail: err.message, success: false });
+  }
+});
 api.get('/location/catalogue/products-order', authMiddleware, async (req, res) => {
   const doc = await db.collection('location_settings').findOne({ type: 'products_order' }, { projection: { _id: 0 } });
-  res.json(doc || { product_ids: [] });
+  const list = doc?.product_ids || doc?.order || [];
+  res.json({ product_ids: list, order: list });
 });
 api.put('/location/catalogue/products-order', authMiddleware, async (req, res) => {
-  await db.collection('location_settings').updateOne({ type: 'products_order' }, { $set: { order: req.body.order } }, { upsert: true });
-  res.json({ success: true });
+  const list = req.body.product_ids || req.body.order || [];
+  await db.collection('location_settings').updateOne(
+    { type: 'products_order' },
+    { $set: { order: list, product_ids: list, updated_at: new Date().toISOString() } },
+    { upsert: true }
+  );
+  res.json({ success: true, count: list.length });
 });
 api.post('/location/catalogue/products-order/reset', authMiddleware, async (req, res) => {
   await db.collection('location_settings').deleteOne({ type: 'products_order' });
@@ -8088,7 +8119,7 @@ api.get('/location/quotes', authMiddleware, async (req, res) => {
   res.json(cleanList(await db.collection('location_quotes').find(filter, { projection: { _id: 0 } }).sort({ created_at: -1 }).toArray()));
 });
 api.get('/location/quotes/:id', authMiddleware, async (req, res) => {
-  const q = await db.collection('location_quotes').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const q = await db.collection('location_quotes').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!q) return res.status(404).json({ detail: 'Not found' });
   res.json(q);
 });
@@ -8915,7 +8946,7 @@ api.put('/location/reservations/:id', authMiddleware, async (req, res) => {
     updateFields.items = updateFields.equipment_items;
   }
   await db.collection('location_reservations').updateOne({ id: req.params.id }, { $set: updateFields });
-  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   
   if (updatedReservation) {
     const googleEventId = await tryAutoSyncToGoogle(updatedReservation);
@@ -8967,7 +8998,7 @@ api.put('/location/reservations/:id/change-status', authMiddleware, async (req, 
   }
   await db.collection('location_reservations').updateOne({ id: req.params.id }, { $set: updateFields });
   
-  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (updatedReservation) {
      const googleEventId = await tryAutoSyncToGoogle(updatedReservation);
      if (googleEventId === 'DELETED') {
@@ -8995,7 +9026,7 @@ api.patch('/location/reservations/:id/status', authMiddleware, async (req, res) 
   }
   await db.collection('location_reservations').updateOne({ id: req.params.id }, { $set: updateFields });
   
-  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const updatedReservation = await db.collection('location_reservations').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (updatedReservation) {
      const googleEventId = await tryAutoSyncToGoogle(updatedReservation);
      if (googleEventId === 'DELETED') {
@@ -9284,7 +9315,7 @@ api.put('/delivery/workflows/:id', authMiddleware, async (req, res) => {
 });
 api.post('/delivery/workflows/:id/complete', authMiddleware, async (req, res) => {
   try {
-    const wf = await db.collection('delivery_workflows').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const wf = await db.collection('delivery_workflows').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     if (!wf) return res.status(404).json({ detail: 'Workflow not found' });
 
     await db.collection('delivery_workflows').updateOne({ id: req.params.id }, { $set: {
@@ -9669,7 +9700,7 @@ api.post('/rental/workflows', authMiddleware, async (req, res) => {
   }
 });
 api.get('/rental/workflows/:id', authMiddleware, async (req, res) => {
-  const w = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const w = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!w) return res.status(404).json({ detail: 'Not found' });
   res.json(w);
 });
@@ -9754,7 +9785,7 @@ api.delete('/rental/workflows/:id/identity/:side', authMiddleware, async (req, r
 });
 api.post('/rental/workflows/:id/add-item', authMiddleware, async (req, res) => {
   try {
-    const wf = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const wf = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     if (!wf) return res.status(404).json({ detail: 'Workflow not found' });
 
     const equipmentId = req.body.equipment_id;
@@ -9802,7 +9833,7 @@ api.post('/rental/workflows/:id/add-item', authMiddleware, async (req, res) => {
       }
     }
 
-    const updated = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const updated = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     res.json(updated);
   } catch (e) {
     console.error('Error adding item:', e);
@@ -9855,7 +9886,7 @@ api.post('/rental/workflows/:id/send-email', authMiddleware, async (req, res) =>
 });
 api.post('/rental/workflows/:id/complete', authMiddleware, async (req, res) => {
   try {
-    const wf = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const wf = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     if (!wf) return res.status(404).json({ detail: 'Workflow not found' });
 
     const update = {
@@ -10003,7 +10034,7 @@ api.get('/rental/returns', authMiddleware, async (req, res) => {
 });
 api.post('/rental/returns/:id/complete', authMiddleware, async (req, res) => {
   try {
-    const wf = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const wf = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     if (!wf) return res.status(404).json({ detail: 'Workflow not found' });
 
     const returnChecklist = req.body.return_checklist || [];
@@ -10065,7 +10096,7 @@ api.post('/rental/returns/:id/complete', authMiddleware, async (req, res) => {
 });
 api.post('/rental/returns/:id/dispute', authMiddleware, async (req, res) => {
   try {
-    const wf = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    const wf = await db.collection('rental_workflows').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
     if (!wf) return res.status(404).json({ detail: 'Workflow not found' });
 
     await db.collection('rental_workflows').updateOne({ id: req.params.id }, { $set: {
@@ -10480,7 +10511,7 @@ api.post('/devis2/sent/manual', authMiddleware, async (req, res) => {
   res.json({ success: true, quote: clean(s) });
 });
 api.get('/devis2/sent/:id/file', authMiddleware, async (req, res) => {
-  const s = await db.collection('devis2_sent').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const s = await db.collection('devis2_sent').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!s || !s.pdf_data) return res.status(404).json({ detail: 'Not found' });
   res.json({ pdf_data: s.pdf_data });
 });
@@ -10589,7 +10620,7 @@ api.delete('/document-library/:id', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 api.get('/document-library/:id/content', authMiddleware, async (req, res) => {
-  const doc = await db.collection('document_library').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const doc = await db.collection('document_library').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!doc) return res.status(404).json({ detail: 'Not found' });
   res.json(doc);
 });
@@ -10599,7 +10630,7 @@ api.post('/file-transfers/from-library', authMiddleware, async (req, res) => {
   res.json(clean(t));
 });
 api.get('/document-library/:id/preview', authMiddleware, async (req, res) => {
-  const doc = await db.collection('document_library').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+  const doc = await db.collection('document_library').findOne({ id: req.params.id }, { projection: { _id: 0, 'event_documents.pdf_data': 0 } });
   if (!doc) return res.status(404).json({ detail: 'Not found' });
   res.json(doc);
 });

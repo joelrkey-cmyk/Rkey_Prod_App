@@ -11,6 +11,137 @@ var allEquipmentMap = {};
 var publicCategories = [];
 var currentExpandedCard = null;
 
+// --- Diaporama / Slideshow state & controller ---
+var activeSlideshows = {};
+
+function clearAllSlideshows() {
+    Object.keys(activeSlideshows).forEach(function(id) {
+        if (activeSlideshows[id] && activeSlideshows[id].timer) {
+            clearInterval(activeSlideshows[id].timer);
+        }
+    });
+    activeSlideshows = {};
+}
+
+function getItemPhotos(item) {
+    if (!item) return [];
+    var rawList = [];
+    if (Array.isArray(item.photos) && item.photos.length > 0) {
+        rawList = item.photos;
+    } else if (item.photo_url) {
+        rawList = [item.photo_url];
+    }
+    return rawList.map(function(url) {
+        if (!url) return '';
+        url = String(url).trim();
+        if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+            return url;
+        }
+        return BASE_URL + (url.startsWith('/') ? '' : '/') + url;
+    }).filter(Boolean);
+}
+
+function initSlideshows(equipmentList) {
+    clearAllSlideshows();
+    if (!Array.isArray(equipmentList)) return;
+    equipmentList.forEach(function(item) {
+        var photos = getItemPhotos(item);
+        if (photos.length > 1) {
+            activeSlideshows[item.id] = {
+                currentIndex: 0,
+                total: photos.length,
+                timer: null,
+                isHovered: false
+            };
+            startSlideshowTimer(item.id);
+        }
+    });
+}
+
+function startSlideshowTimer(itemId) {
+    var state = activeSlideshows[itemId];
+    if (!state || state.total <= 1) return;
+    if (state.timer) clearInterval(state.timer);
+    state.timer = setInterval(function() {
+        if (!state.isHovered) {
+            goToSlide(itemId, (state.currentIndex + 1) % state.total);
+        }
+    }, 3000);
+}
+
+function pauseSlideshow(itemId) {
+    var state = activeSlideshows[itemId];
+    if (state) state.isHovered = true;
+}
+
+function resumeSlideshow(itemId) {
+    var state = activeSlideshows[itemId];
+    if (state) state.isHovered = false;
+}
+
+function goToSlide(itemId, nextIndex, event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    var state = activeSlideshows[itemId];
+    if (!state) return;
+    
+    var container = document.getElementById('slideshow-' + itemId);
+    if (!container) return;
+    
+    state.currentIndex = (nextIndex + state.total) % state.total;
+    
+    // Mettre à jour les slides avec fondu
+    var slides = container.querySelectorAll('.slideshow-slide');
+    slides.forEach(function(slide, idx) {
+        if (idx === state.currentIndex) {
+            slide.classList.add('active');
+        } else {
+            slide.classList.remove('active');
+        }
+    });
+    
+    // Mettre à jour les petites boules
+    var dots = container.querySelectorAll('.slideshow-dot');
+    dots.forEach(function(dot, idx) {
+        if (idx === state.currentIndex) {
+            dot.classList.add('active');
+        } else {
+            dot.classList.remove('active');
+        }
+    });
+    
+    // Mettre à jour le badge discret
+    var badge = document.getElementById('badge-' + itemId);
+    if (badge) {
+        var badgeText = badge.querySelector('.badge-text');
+        if (badgeText) badgeText.textContent = (state.currentIndex + 1) + '/' + state.total;
+    }
+    
+    // Réinitialiser le cycle du timer
+    startSlideshowTimer(itemId);
+}
+
+function nextSlide(itemId, event) {
+    var state = activeSlideshows[itemId];
+    if (!state) return;
+    goToSlide(itemId, state.currentIndex + 1, event);
+}
+
+function prevSlide(itemId, event) {
+    var state = activeSlideshows[itemId];
+    if (!state) return;
+    goToSlide(itemId, state.currentIndex - 1, event);
+}
+
+function handleImageError(img) {
+    var slide = img.closest('.slideshow-slide');
+    if (slide) {
+        slide.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f3f4f6;color:#9ca3af;font-size:12px;">Image non disponible</div>';
+    }
+}
+
 // --- Robust resize logic ---
 var _lastSentHeight = 0;
 var _resizeTimer = null;
@@ -124,6 +255,7 @@ async function loadEquipment() {
 function renderEquipment(equipment) {
     var container = document.getElementById('equipment-container');
     currentExpandedCard = null;
+    clearAllSlideshows();
     
     if (equipment.length === 0) {
         container.innerHTML = 
@@ -139,21 +271,52 @@ function renderEquipment(equipment) {
     equipment.forEach(function(item) {
         var cardId = 'card-' + item.id;
         var displayDescription = item.catalogue_description || item.description || '';
+        var photos = getItemPhotos(item);
         
         html += '<div id="' + cardId + '" class="equipment-card">';
         
-        var imgUrl = item.photo_url;
-        if (imgUrl && !imgUrl.startsWith('http') && !imgUrl.startsWith('data:')) {
-            imgUrl = BASE_URL + (imgUrl.startsWith('/') ? '' : '/') + imgUrl;
-        }
-        
-        // Image
-        if (imgUrl) {
+        // Section Photos / Diaporama
+        if (photos.length === 0) {
+            html += '<div class="card-image-placeholder">' + (item.is_pack ? '📦' : '🎛️') + '</div>';
+        } else if (photos.length === 1) {
             html += '<div class="card-image-container">';
-            html += '<img src="' + imgUrl + '" alt="' + item.name + '" class="card-image" onerror="this.parentElement.outerHTML=\'<div class=card-image-placeholder>' + (item.is_pack ? '📦' : '🎛️') + '</div>\'">';
+            html += '<img src="' + photos[0] + '" alt="' + item.name + '" class="card-image" onerror="this.parentElement.outerHTML=\'<div class=card-image-placeholder>' + (item.is_pack ? '📦' : '🎛️') + '</div>\'">';
             html += '</div>';
         } else {
-            html += '<div class="card-image-placeholder">' + (item.is_pack ? '📦' : '🎛️') + '</div>';
+            // Diaporama avec défilement automatique (3s), flèches discrètes et petites boules de navigation
+            html += '<div class="card-image-container" id="slideshow-' + item.id + '" onmouseenter="pauseSlideshow(\'' + item.id + '\')" onmouseleave="resumeSlideshow(\'' + item.id + '\')">';
+            
+            // Slides superposées avec fondu fluide
+            photos.forEach(function(pUrl, pIdx) {
+                var activeClass = pIdx === 0 ? ' active' : '';
+                html += '<div class="slideshow-slide' + activeClass + '" data-slide-index="' + pIdx + '">';
+                html += '<img src="' + pUrl + '" alt="' + item.name + ' - photo ' + (pIdx + 1) + '" class="card-image" onerror="handleImageError(this)">';
+                html += '</div>';
+            });
+            
+            // Flèches discrètes précédent / suivant au survol
+            html += '<button type="button" class="slideshow-arrow prev" onclick="prevSlide(\'' + item.id + '\', event)" aria-label="Photo précédente" title="Photo précédente">';
+            html += '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>';
+            html += '</button>';
+            html += '<button type="button" class="slideshow-arrow next" onclick="nextSlide(\'' + item.id + '\', event)" aria-label="Photo suivante" title="Photo suivante">';
+            html += '<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
+            html += '</button>';
+            
+            // Petites boules discrètes de navigation en bas
+            html += '<div class="slideshow-dots" onclick="event.stopPropagation()">';
+            photos.forEach(function(_, pIdx) {
+                var activeDot = pIdx === 0 ? ' active' : '';
+                html += '<button type="button" class="slideshow-dot' + activeDot + '" onclick="goToSlide(\'' + item.id + '\', ' + pIdx + ', event)" title="Photo ' + (pIdx + 1) + '/' + photos.length + '" aria-label="Photo ' + (pIdx + 1) + '"></button>';
+            });
+            html += '</div>';
+            
+            // Badge discret 1/N
+            html += '<div class="slideshow-badge" id="badge-' + item.id + '">';
+            html += '<svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>';
+            html += '<span class="badge-text">1/' + photos.length + '</span>';
+            html += '</div>';
+            
+            html += '</div>';
         }
         
         html += '<div class="card-content">';
@@ -224,6 +387,9 @@ function renderEquipment(equipment) {
     
     html += '</div>';
     container.innerHTML = html;
+    
+    // Initialiser les diaporamas automatiques pour les produits multi-photos
+    initSlideshows(equipment);
     
     setTimeout(sendHeightToParent, 100);
 }

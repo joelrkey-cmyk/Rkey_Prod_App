@@ -1,0 +1,22 @@
+--- frontend/src/components/DjClientApp.jsx
++++ frontend/src/components/DjClientApp.jsx
+@@ -695,6 +695,9 @@
+            return;
+          }
+          const publicRes = await fetch(`${BACKEND_URL}/api/public/dj-client/${encodeURIComponent(slug)}`);
++         if (!publicRes.ok) {
++             throw new Error(`HTTP error! status: ${publicRes.status}`);
++         }
+          if (publicRes.ok) {
+              const data = await publicRes.json().catch(() => ({ events: [] }));
+              allContracts = data.events || [];
+@@ -725,6 +728,9 @@
+              fetch(`${BACKEND_URL}/api/material-options`, { headers })
+          ]);
+ 
++         if (!contractsRes.ok) {
++             throw new Error(`HTTP error! status: ${contractsRes.status}`);
++         }
+          if (optionsRes.ok) {
+              const opts = await optionsRes.json().catch(() => ([]));
+              if (!silent) setAvailableOptions(opts);
