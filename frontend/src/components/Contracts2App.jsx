@@ -34,6 +34,8 @@ import {
   isArtistFreelance,
   isContractDirigeant 
 } from "./contracts2/calculations";
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -164,6 +166,7 @@ function Contracts2App() {
   const [clientNotifPortalLink, setClientNotifPortalLink] = useState("");
   const [clientNotifIsSending, setClientNotifIsSending] = useState(false);
   const [hasCopiedPortalLink, setHasCopiedPortalLink] = useState(false);
+  const [clientNotifAttachPdf, setClientNotifAttachPdf] = useState(true);
 
   const [basePrice, setBasePrice] = useState(0);
   // ── CONTRATS 2: Mode Mandat/Agence ──
@@ -1306,10 +1309,29 @@ function Contracts2App() {
     }
     try {
       setNotifIsSending(true);
+      let pdf_base64 = null;
+      let pdf_filename = null;
+      if (pendingSigningContractObj) {
+        try {
+          const html = generateArtisteHTML(pendingSigningContractObj, resolveProfile);
+          if (html) {
+            const { generatePdfBase64FromHtmlContent } = await import('./contracts2/pdfGenerator');
+            pdf_base64 = await generatePdfBase64FromHtmlContent(html);
+            const profile = resolveProfile(pendingSigningContractObj);
+            const artistName = (profile?.nom_artistique || profile?.nom_complet || 'Artiste').replace(/[^a-zA-Z0-9]/g, '_');
+            pdf_filename = `Contrat_Artiste_${artistName}.pdf`;
+          }
+        } catch (pdfErr) {
+          console.warn("Could not generate artist PDF attachment:", pdfErr);
+        }
+      }
+
       await axios.post(`${API}/contract-emails/send`, {
         recipient_email: notifRecipientEmail.trim(),
         email_subject: notifEmailSubject.trim(),
-        email_body: notifEmailBody
+        email_body: notifEmailBody,
+        pdf_base64,
+        pdf_filename
       });
       toast.success("Notification par email envoyée à l'artiste avec succès !");
       setIsArtistNotifOpen(false);
@@ -1357,10 +1379,39 @@ function Contracts2App() {
     }
     try {
       setClientNotifIsSending(true);
+
+      let pdf_base64 = null;
+      let pdf_filename = null;
+      if (clientNotifAttachPdf && pendingSigningContractObj) {
+        try {
+          const isDir = isContractDirigeant(pendingSigningContractObj);
+          const isMandat = pendingSigningContractObj.contract_mode === 'mandataire' && !isDir;
+          const isEntreprise = pendingSigningContractObj.contract_mode === 'entreprise' && !isDir;
+          let html = "";
+          if (isMandat) {
+            html = generateMandatHTML(pendingSigningContractObj, companySettings);
+          } else if (isEntreprise) {
+            html = generateEntrepriseHTML(pendingSigningContractObj, companySettings, resolveProfile);
+          } else {
+            html = generateContractHTMLLocal(pendingSigningContractObj, null, signatureImages);
+          }
+          if (html) {
+            const { generatePdfBase64FromHtmlContent } = await import('./contracts2/pdfGenerator');
+            pdf_base64 = await generatePdfBase64FromHtmlContent(html);
+            const cleanName = (pendingSigningContractObj?.client_info?.name || 'Client').replace(/[^a-zA-Z0-9]/g, '_');
+            pdf_filename = `Contrat_SIGNE_${cleanName}.pdf`;
+          }
+        } catch (pdfErr) {
+          console.warn("Could not generate client PDF attachment:", pdfErr);
+        }
+      }
+
       await axios.post(`${API}/contract-emails/send`, {
         recipient_email: clientNotifRecipientEmail.trim(),
         email_subject: clientNotifEmailSubject.trim(),
-        email_body: clientNotifEmailBody
+        email_body: clientNotifEmailBody,
+        pdf_base64,
+        pdf_filename
       });
       await finalizeContractAsSigned(pendingSigningContractId, true);
     } catch (err) {
@@ -2729,14 +2780,22 @@ function Contracts2App() {
   const exportHTMLToPDF = async (htmlContent, fileName) => {
     try {
       toast.info("Génération PDF en cours...", { duration: 3000 });
-      if (!window.jspdf || !window.jspdf.jsPDF) { toast.error("jsPDF non disponible."); return; }
-      const pdf = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
       const tempContainer = document.createElement('div');
       tempContainer.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:794px;background:white;padding:20px;';
       tempContainer.innerHTML = htmlContent;
       document.body.appendChild(tempContainer);
-      await new Promise(r => setTimeout(r, 1500));
-      const { default: html2canvas } = await import('html2canvas');
+      
+      const images = Array.from(tempContainer.querySelectorAll('img'));
+      await Promise.all(images.map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => {
+          img.onload = resolve;
+          img.onerror = resolve;
+        });
+      }));
+      await new Promise(r => setTimeout(r, 600));
+
       const allPages = tempContainer.querySelectorAll('[id^="pdf-page-"]');
       const pageIds = Array.from(allPages).map(el => el.id).sort((a, b) => {
         const order = id => id === 'pdf-page-1' ? 1 : id === 'pdf-page-cgv' ? 999 : 2;
@@ -5972,6 +6031,19 @@ function Contracts2App() {
                 className="w-full text-sm font-sans leading-relaxed border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 bg-white p-3.5 shadow-sm min-h-[250px] text-slate-800 rounded-lg placeholder:text-slate-400"
                 placeholder="Rédigez votre message simplement..."
               />
+
+              {/* Option Pièce jointe contrat PDF */}
+              <div className="flex items-center space-x-2.5 p-3 bg-emerald-50/60 border border-emerald-200 rounded-lg">
+                <Checkbox 
+                  id="attach_contract_pdf"
+                  checked={clientNotifAttachPdf}
+                  onCheckedChange={(checked) => setClientNotifAttachPdf(!!checked)}
+                />
+                <label htmlFor="attach_contract_pdf" className="text-xs font-semibold text-emerald-950 cursor-pointer flex items-center gap-1.5 select-none">
+                  <Paperclip className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>Joindre automatiquement le contrat (PDF) en pièce jointe de l'email</span>
+                </label>
+              </div>
             </div>
           </div>
 

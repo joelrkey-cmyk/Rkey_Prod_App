@@ -6332,18 +6332,30 @@ api.post('/contract-emails/send', authMiddleware, async (req, res) => {
     
     let pdfAttachments = [];
     if (pdfs && Array.isArray(pdfs)) {
-      pdfAttachments = pdfs.map(p => ({
-        filename: p.filename || 'contrat.pdf',
-        content: p.base64, encoding: 'base64',
-        contentType: 'application/pdf', contentDisposition: 'attachment'
-      }));
+      pdfAttachments = pdfs.filter(p => p && (p.base64 || p.content)).map(p => {
+        const raw = p.base64 || p.content;
+        const cleanBase64 = typeof raw === 'string' && raw.includes(',') ? raw.split(',')[1] : raw;
+        return {
+          filename: p.filename || 'contrat.pdf',
+          content: Buffer.from(cleanBase64, 'base64'),
+          contentType: 'application/pdf',
+          contentDisposition: 'attachment'
+        };
+      });
     } else if (pdf_base64) {
+      const cleanBase64 = typeof pdf_base64 === 'string' && pdf_base64.includes(',') ? pdf_base64.split(',')[1] : pdf_base64;
       pdfAttachments.push({
         filename: pdf_filename || 'contrat_RkeyProd.pdf',
-        content: pdf_base64, encoding: 'base64',
-        contentType: 'application/pdf', contentDisposition: 'attachment'
+        content: Buffer.from(cleanBase64, 'base64'),
+        contentType: 'application/pdf',
+        contentDisposition: 'attachment'
       });
     }
+    
+    console.log(`[POST /contract-emails/send] Envoi à ${recipient_email} - ${pdfAttachments.length} pièce(s) jointe(s) PDF`);
+    pdfAttachments.forEach((att, idx) => {
+      console.log(`  [PDF #${idx + 1}] ${att.filename} (${att.content.length} octets)`);
+    });
     
     let formattedBody = email_body || 'Veuillez trouver ci-joint votre contrat.';
     if (typeof formattedBody === 'string') {
@@ -11001,11 +11013,9 @@ if (!fs.existsSync(frontendPath)) {
 console.log(`Serving frontend from: ${frontendPath}`);
 app.use(express.static(frontendPath, {
   setHeaders: function (res, filePath, stat) {
-    if (filePath.endsWith('.html')) {
-      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-      res.set('Pragma', 'no-cache');
-      res.set('Expires', '0');
-    }
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
   }
 }));
 

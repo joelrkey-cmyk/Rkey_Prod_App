@@ -19,13 +19,17 @@ import {
   Loader2,
   FileText,
   Mail,
-  XCircle
+  XCircle,
+  Paperclip,
+  CheckCircle2
 } from 'lucide-react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import apiService from '../services/api';
 import VariableInsertMenu, { VARIABLES } from './VariableInsertMenu';
 import { useEmailSignature } from '../hooks/useEmailSignature';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // Quill editor modules configuration
 const quillModules = {
@@ -344,18 +348,23 @@ const ContractEmailPage = () => {
 
       toast.info("Génération du(des) PDF en cours...", { duration: 5000 });
       let pdfBase64 = '';
-      let pdfFilename = `contrat_RkeyProd_${eventDateFormatted}.pdf`;
+      const cleanClientName = (contractData?.client_info?.name || 'Client')
+        .replace(/[^a-zA-Z0-9]/g, '_')
+        .replace(/_+/g, '_');
+      let pdfFilename = `Contrat_RkeyProd_${cleanClientName}_${eventDateFormatted}.pdf`;
       let pdfs = [];
 
       const generateSinglePdfBase64 = async (htmlToRender) => {
         let tempContainer = null;
         try {
-          if (!window.jspdf || !window.jspdf.jsPDF) {
-            throw new Error('jsPDF non disponible');
-          }
-          
-          const pdf = new window.jspdf.jsPDF({
-            orientation: 'portrait', unit: 'mm', format: 'a4', compress: true
+          const pdf = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: 'a4',
+            compress: true,
+            precision: 3,
+            userUnit: 1.0,
+            putOnlyUsedFonts: true
           });
           const pageWidth = 210;
           const margin = 10;
@@ -372,22 +381,50 @@ const ContractEmailPage = () => {
           tempContainer.innerHTML = htmlToRender;
           document.body.appendChild(tempContainer);
           
-          await new Promise(r => setTimeout(r, 1500));
+          // Attendre que toutes les images (logos, signatures) soient chargées
+          const images = Array.from(tempContainer.querySelectorAll('img'));
+          await Promise.all(images.map(img => {
+            if (img.complete) return Promise.resolve();
+            return new Promise(resolve => {
+              img.onload = resolve;
+              img.onerror = resolve;
+            });
+          }));
+          
+          // Légère attente pour s'assurer du rendu des polices et styles
+          await new Promise(r => setTimeout(r, 600));
           
           const allPages = tempContainer.querySelectorAll('[id^="pdf-page-"]');
           let pdfPageAdded = false;
           
           if (allPages.length > 0) {
-            for (let i = 0; i < allPages.length; i++) {
-              const pageEl = allPages[i];
+            const pageIds = Array.from(allPages).map(el => el.id).sort((a, b) => {
+              const getPageOrder = (id) => {
+                if (id === 'pdf-page-1') return 1;
+                if (id === 'pdf-page-2') return 2;
+                if (id === 'pdf-page-3') return 3;
+                if (id.startsWith('pdf-page-3-')) return 3 + (id.charCodeAt(id.length - 1) - 97) * 0.1;
+                if (id === 'pdf-page-cgv') return 999;
+                return 998;
+              };
+              return getPageOrder(a) - getPageOrder(b);
+            });
+
+            for (let i = 0; i < pageIds.length; i++) {
+              const pageEl = tempContainer.querySelector(`#${pageIds[i]}`);
               if (pageEl && pageEl.innerHTML.trim()) {
                 if (pdfPageAdded) pdf.addPage();
                 try {
-                  const canvas = await window.html2canvas(pageEl, {
-                    scale: 1.4, useCORS: true, allowTaint: true,
-                    backgroundColor: '#ffffff', width: 794,
+                  const canvas = await html2canvas(pageEl, {
+                    scale: 1.4,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    width: 794,
                     height: Math.min(1123, pageEl.scrollHeight),
-                    logging: false, removeContainer: false
+                    logging: false,
+                    removeContainer: false,
+                    imageTimeout: 0
                   });
                   const imgData = canvas.toDataURL('image/jpeg', 0.88);
                   const imgWidth = availableWidth;
@@ -406,9 +443,14 @@ const ContractEmailPage = () => {
               }
             }
           } else {
-            const canvas = await window.html2canvas(tempContainer, {
-              scale: 1.4, useCORS: true, allowTaint: true,
-              backgroundColor: '#ffffff', width: 794, logging: false
+            const canvas = await html2canvas(tempContainer, {
+              scale: 1.4,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff',
+              width: 794,
+              logging: false,
+              imageTimeout: 0
             });
             const imgData = canvas.toDataURL('image/jpeg', 0.88);
             const imgWidth = availableWidth;
@@ -416,29 +458,47 @@ const ContractEmailPage = () => {
             pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, Math.min(imgHeight, availableHeight), undefined, 'FAST');
           }
           
-          return pdf.output('datauristring').split(',')[1] || '';
+          const output = pdf.output('datauristring');
+          const cleanB64 = output.split(',')[1] || '';
+          console.log(`[generateSinglePdfBase64] PDF généré avec succès (${cleanB64.length} caractères base64)`);
+          return cleanB64;
         } finally {
-          try { if (tempContainer && tempContainer.parentNode) tempContainer.parentNode.removeChild(tempContainer); } catch(e) {}
+          try {
+            if (tempContainer && tempContainer.parentNode) {
+              tempContainer.parentNode.removeChild(tempContainer);
+            }
+          } catch(e) {}
         }
       };
 
       try {
-        if (contractHTMLs && Array.isArray(contractHTMLs)) {
+        if (contractHTMLs && Array.isArray(contractHTMLs) && contractHTMLs.length > 0) {
           for (let doc of contractHTMLs) {
             const b64 = await generateSinglePdfBase64(doc.html);
             if (b64) {
               pdfs.push({
                 base64: b64,
-                filename: doc.filename
+                filename: doc.filename || `Contrat_${eventDateFormatted}.pdf`
               });
             }
           }
-        } else {
+        } else if (contractHTML) {
           pdfBase64 = await generateSinglePdfBase64(contractHTML);
         }
       } catch (pdfError) {
         console.error('PDF generation error:', pdfError);
-        toast.error("Erreur de génération PDF, envoi sans pièce jointe");
+        toast.error("Erreur lors de la génération du contrat en PDF : " + (pdfError.message || ''));
+        setSendingEmail(false);
+        return;
+      }
+
+      // VÉRIFICATION CRITIQUE : s'assurer qu'au moins une pièce jointe PDF valide existe
+      const hasValidAttachments = (pdfs && pdfs.length > 0 && pdfs.some(p => p.base64 && p.base64.length > 100)) || (pdfBase64 && pdfBase64.length > 100);
+      if (!hasValidAttachments) {
+        console.error("Échec de génération : aucun fichier PDF généré");
+        toast.error("Le fichier PDF du contrat n'a pas pu être généré. L'envoi a été annulé afin d'éviter un email sans pièce jointe.");
+        setSendingEmail(false);
+        return;
       }
 
       const requestData = {
@@ -601,17 +661,14 @@ const ContractEmailPage = () => {
 
               {/* PDF Filename Display */}
               {contractData && (() => {
-                // Format event date for display - using client_info.event_date
                 const eventDate = contractData?.client_info?.event_date;
                 let dateStr = '';
                 
                 if (eventDate && eventDate.trim() !== '') {
-                  // Parse YYYY-MM-DD format directly to avoid timezone issues
                   const parts = eventDate.split('-');
                   if (parts.length === 3) {
                     dateStr = `${parts[2]}${parts[1]}${parts[0]}`;
                   } else {
-                    // Fallback to Date parsing
                     try {
                       const date = new Date(eventDate);
                       if (!isNaN(date.getTime())) {
@@ -626,17 +683,47 @@ const ContractEmailPage = () => {
                   }
                 }
                 
-                // Fallback to current date
                 if (!dateStr) {
                   const now = new Date();
                   dateStr = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}${now.getFullYear()}`;
                 }
+
+                const cleanClient = (contractData?.client_info?.name || 'Client')
+                  .replace(/[^a-zA-Z0-9]/g, '_')
+                  .replace(/_+/g, '_');
+                
+                const hasMultipleDocs = contractHTMLs && Array.isArray(contractHTMLs) && contractHTMLs.length > 0;
                 
                 return (
-                  <div className="bg-gray-100 border border-gray-300 rounded-lg p-3">
-                    <p className="text-sm text-gray-700 flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-red-500" />
-                      <strong>Pièce jointe :</strong> contrat_RkeyProd_{dateStr}.pdf
+                  <div className="bg-emerald-50/70 border border-emerald-200 rounded-lg p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-emerald-900 flex items-center gap-2">
+                        <Paperclip className="w-4 h-4 text-emerald-600" />
+                        <span>Pièce(s) jointe(s) qui seron{hasMultipleDocs ? 't' : 't'} envoyée{hasMultipleDocs ? 's' : ''} :</span>
+                      </p>
+                      <span className="text-[11px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full border border-emerald-300">
+                        {hasMultipleDocs ? `${contractHTMLs.length} fichiers PDF` : '1 fichier PDF'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 pl-6">
+                      {hasMultipleDocs ? (
+                        contractHTMLs.map((doc, idx) => (
+                          <div key={idx} className="flex items-center gap-2 text-xs text-slate-800 font-medium bg-white/80 px-2.5 py-1.5 rounded border border-emerald-100">
+                            <FileText className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                            <span className="font-mono text-[11px] truncate">{doc.filename || `Contrat_${idx + 1}_${dateStr}.pdf`}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex items-center gap-2 text-xs text-slate-800 font-medium bg-white/80 px-2.5 py-1.5 rounded border border-emerald-100">
+                          <FileText className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                          <span className="font-mono text-[11px] truncate">Contrat_RkeyProd_{cleanClient}_{dateStr}.pdf</span>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-emerald-700/90 pl-6 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline flex-shrink-0" />
+                      Génération PDF automatique et intégration directe dans les pièces jointes de l'email.
                     </p>
                   </div>
                 );

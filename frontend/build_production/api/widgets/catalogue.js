@@ -102,16 +102,16 @@ async function loadCategories() {
 
 function renderFilterButtons() {
     var filterBar = document.getElementById('filter-bar');
-    var html = '<button class="filter-btn active" data-filter="all" onclick="toggleFilter(\'all\', this)">Tout</button>';
+    var html = '<button class="filter-btn active" data-filter="all" onclick="toggleFilter(\'all\', this)"><span>Tout</span></button>';
     
-    html += '<button class="filter-btn" data-filter="pack" onclick="toggleFilter(\'pack\', this)">📦 Packs</button>';
+    html += '<button class="filter-btn" data-filter="pack" onclick="toggleFilter(\'pack\', this)"><span class="filter-icon">📦</span><span>Packs</span></button>';
     
     publicCategories.forEach(function(cat) {
         if (cat.name.toLowerCase() === 'packs') return;
         
         var icon = cat.icon || '📁';
         html += '<button class="filter-btn" data-filter="' + cat.name + '" onclick="toggleFilter(\'' + cat.name + '\', this)">';
-        html += icon + ' ' + cat.name;
+        html += '<span class="filter-icon">' + icon + '</span><span>' + cat.name + '</span>';
         html += '</button>';
     });
     
@@ -166,10 +166,11 @@ function renderEquipment(equipment) {
         
         html += '<div class="equipment-card" onclick="openDetailsModal(\'' + item.id + '\')">';
         
-        // Square Image Thumbnail
+        // Image Thumbnail
         html += '<div class="card-thumbnail-container">';
         if (primaryPhoto) {
-            html += '<img src="' + primaryPhoto + '" alt="' + item.name + '" class="card-thumbnail" onerror="this.style.display=\'none\';">';
+            html += '<img src="' + primaryPhoto + '" alt="' + (item.name || '').replace(/"/g, '&quot;') + '" class="card-thumbnail" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">';
+            html += '<div class="card-thumbnail-placeholder" style="display:none;">' + (item.is_pack ? '📦' : '🎛️') + '</div>';
         } else {
             html += '<div class="card-thumbnail-placeholder">' + (item.is_pack ? '📦' : '🎛️') + '</div>';
         }
@@ -190,7 +191,6 @@ function renderEquipment(equipment) {
         html += '<h4 class="card-title" title="' + item.name + '">' + item.name + '</h4>';
         
         html += '<div class="card-meta-row">';
-        html += '<span class="card-category">' + item.category + '</span>';
         html += '<span class="card-price">' + item.daily_price + '€/j</span>';
         html += '</div>';
         
@@ -319,6 +319,7 @@ function openDetailsModal(itemId) {
     
     // 3. Pack content
     if (item.is_pack && Array.isArray(item.pack_items) && item.pack_items.length > 0) {
+        bodyHtml += '<div style="height:32px;width:100%;clear:both;" aria-hidden="true"></div>';
         bodyHtml += '<div class="modal-pack-box">';
         bodyHtml += '<div class="modal-pack-title">📦 Matériel inclus dans ce pack</div>';
         bodyHtml += '<div class="modal-pack-grid">';

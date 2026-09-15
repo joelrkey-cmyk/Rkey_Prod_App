@@ -1,6 +1,13 @@
 // Fonctions de génération PDF pour les contrats
 import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { toast } from 'sonner';
+
+// Assurer la rétrocompatibilité globale avec window.jspdf et window.html2canvas
+if (typeof window !== 'undefined') {
+  if (!window.jspdf) window.jspdf = { jsPDF };
+  if (!window.html2canvas) window.html2canvas = html2canvas;
+}
 
 export const getFormattedEventDate = (contract) => {
   const rawDate = contract?.client_info?.event_date;
@@ -47,23 +54,6 @@ export const generatePDFFromHTML = async (contract, generateContractHTMLFn, load
   try {
     if (showToast) toast.info(`Génération PDF (${mode}) en cours...`, { duration: 3000 });
 
-    // Vérifier html2pdf
-    let html2pdfLib;
-    try {
-      const html2pdfModule = await import('html2pdf.js/dist/html2pdf.bundle.min.js');
-      html2pdfLib = html2pdfModule.default || html2pdfModule;
-    } catch (importError) {
-      console.error('Failed to dynamically import html2pdf:', importError);
-      if (showToast) toast.error("Erreur : html2pdf non disponible. Veuillez rafraîchir la page.");
-      return null;
-    }
-
-    // Vérifier jsPDF
-    if (!window.jspdf || !window.jspdf.jsPDF) {
-      if (showToast) toast.error("Erreur : jsPDF non disponible. Veuillez rafraîchir la page.");
-      return null;
-    }
-
     if (!contract || !contract.client_info || !contract.client_info.name) {
       if (showToast) toast.error("Erreur : Données du contrat manquantes.");
       return null;
@@ -74,7 +64,7 @@ export const generatePDFFromHTML = async (contract, generateContractHTMLFn, load
 
     console.log(`📄 Création du PDF (${mode}) avec capture page par page...`);
 
-    const pdf = new window.jspdf.jsPDF({
+    const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
@@ -380,3 +370,120 @@ export const printContractWithSignature = async (contract, generateContractHTMLF
       toast.error("Erreur lors de la génération du PDF avec signature");
     });
 };
+
+// Génération d'un PDF Base64 à partir d'un code HTML de contrat (utilisé pour les pièces jointes d'emails)
+export const generatePdfBase64FromHtmlContent = async (htmlContent) => {
+  if (!htmlContent) return null;
+  let tempContainer = null;
+  try {
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+      compress: true,
+      precision: 3,
+      userUnit: 1.0,
+      putOnlyUsedFonts: true
+    });
+    const pageWidth = 210;
+    const margin = 10;
+    const availableWidth = pageWidth - (2 * margin);
+    const availableHeight = 297 - (2 * margin);
+
+    tempContainer = document.createElement('div');
+    tempContainer.style.position = 'fixed';
+    tempContainer.style.top = '-9999px';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.width = '794px';
+    tempContainer.style.background = 'white';
+    tempContainer.style.padding = '20px';
+    tempContainer.innerHTML = htmlContent;
+    document.body.appendChild(tempContainer);
+
+    // Attendre le chargement des images (logos, signatures)
+    const images = Array.from(tempContainer.querySelectorAll('img'));
+    await Promise.all(images.map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise(resolve => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+    }));
+
+    await new Promise(r => setTimeout(r, 600));
+
+    const allPages = tempContainer.querySelectorAll('[id^="pdf-page-"]');
+    let pdfPageAdded = false;
+
+    if (allPages.length > 0) {
+      const pageIds = Array.from(allPages).map(el => el.id).sort((a, b) => {
+        const getPageOrder = (id) => {
+          if (id === 'pdf-page-1') return 1;
+          if (id === 'pdf-page-2') return 2;
+          if (id === 'pdf-page-3') return 3;
+          if (id.startsWith('pdf-page-3-')) return 3 + (id.charCodeAt(id.length - 1) - 97) * 0.1;
+          if (id === 'pdf-page-cgv') return 999;
+          return 998;
+        };
+        return getPageOrder(a) - getPageOrder(b);
+      });
+
+      for (let i = 0; i < pageIds.length; i++) {
+        const pageEl = tempContainer.querySelector(`#${pageIds[i]}`);
+        if (pageEl && pageEl.innerHTML.trim()) {
+          if (pdfPageAdded) pdf.addPage();
+          try {
+            const canvas = await html2canvas(pageEl, {
+              scale: 1.4,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff',
+              width: 794,
+              height: Math.min(1123, pageEl.scrollHeight),
+              logging: false,
+              removeContainer: false,
+              imageTimeout: 0
+            });
+            const imgData = canvas.toDataURL('image/jpeg', 0.88);
+            const imgWidth = availableWidth;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            if (imgHeight <= availableHeight) {
+              pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, imgHeight, undefined, 'FAST');
+            } else {
+              const scaledHeight = availableHeight;
+              const scaledWidth = (canvas.width * scaledHeight) / canvas.height;
+              pdf.addImage(imgData, 'JPEG', margin, margin, scaledWidth, scaledHeight, undefined, 'FAST');
+            }
+            pdfPageAdded = true;
+          } catch (pageErr) {
+            console.warn('Capture page error:', pageErr);
+          }
+        }
+      }
+    } else {
+      const canvas = await html2canvas(tempContainer, {
+        scale: 1.4,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 794,
+        logging: false,
+        imageTimeout: 0
+      });
+      const imgData = canvas.toDataURL('image/jpeg', 0.88);
+      const imgWidth = availableWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      pdf.addImage(imgData, 'JPEG', margin, margin, imgWidth, Math.min(imgHeight, availableHeight), undefined, 'FAST');
+    }
+
+    const output = pdf.output('datauristring');
+    return output.split(',')[1] || '';
+  } finally {
+    try {
+      if (tempContainer && tempContainer.parentNode) {
+        tempContainer.parentNode.removeChild(tempContainer);
+      }
+    } catch(e) {}
+  }
+};
+

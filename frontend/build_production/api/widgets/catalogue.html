@@ -31,45 +31,68 @@
         /* Filter Bar */
         .filter-bar {
             display: flex;
-            gap: 6px;
-            margin-bottom: 24px;
+            gap: 12px;
+            margin-bottom: 30px;
             flex-wrap: wrap;
             justify-content: center;
         }
         
         .filter-btn {
-            padding: 6px 14px;
-            border: 1.5px solid #f97316;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 48px;
+            padding: 12px 40px !important;
+            flex-shrink: 0 !important;
+            border: 2px solid #f97316;
             background: transparent;
             color: #f97316;
-            border-radius: 20px;
+            border-radius: 9999px;
             cursor: pointer;
-            font-weight: 500;
-            font-size: 13px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 14px;
+            line-height: 1.2;
             transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            white-space: nowrap !important;
+            box-sizing: border-box;
+        }
+        
+        .filter-icon {
+            font-size: 18px;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 0;
         }
         
         .filter-btn:hover {
-            background: rgba(249, 115, 22, 0.15);
+            background: rgba(249, 115, 22, 0.12);
             color: #f97316;
+            transform: translateY(-1px);
         }
         
         .filter-btn.active {
             background: #f97316;
             color: white;
             font-weight: 600;
+            box-shadow: 0 3px 8px rgba(249, 115, 22, 0.25);
         }
         
-        /* Equipment Grid (Petites icônes) */
+        /* Equipment Grid (Petites icônes compactes) */
         .equipment-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+            gap: 10px;
         }
 
         @media (max-width: 480px) {
             .equipment-grid {
-                grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+                grid-template-columns: repeat(auto-fill, minmax(115px, 1fr));
                 gap: 8px;
             }
         }
@@ -78,45 +101,50 @@
             background: white;
             border: 1px solid #e2e8f0;
             border-radius: 12px;
-            padding: 10px;
+            padding: 10px 10px 8px 10px;
             cursor: pointer;
             user-select: none;
-            transition: all 0.15s ease-in-out;
+            transition: all 0.18s ease-in-out;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             position: relative;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
         }
         
         .equipment-card:hover {
             border-color: #f97316;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            transform: scale(1.02);
+            box-shadow: 0 6px 14px rgba(249, 115, 22, 0.15);
+            transform: translateY(-2px);
         }
         
-        /* Vignette carrée */
+        /* Vignette compacte */
         .card-thumbnail-container {
             position: relative;
             width: 100%;
-            padding-bottom: 100%; /* Ratio 1:1 */
+            height: 95px;
             border-radius: 8px;
             background: #f8fafc;
             border: 1px solid #f1f5f9;
             overflow: hidden;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 480px) {
+            .card-thumbnail-container {
+                height: 85px;
+            }
         }
         
         .card-thumbnail {
-            position: absolute;
-            top: 0;
-            left: 0;
             width: 100%;
             height: 100%;
             object-fit: contain;
-            padding: 6px;
+            padding: 4px;
             transition: transform 0.2s ease;
         }
         
@@ -125,12 +153,12 @@
         }
 
         .card-thumbnail-placeholder {
-            position: absolute;
-            inset: 0;
+            width: 100%;
+            height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 28px;
+            font-size: 26px;
             background: #f8fafc;
         }
         
@@ -139,7 +167,7 @@
             position: absolute;
             bottom: 4px;
             right: 4px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(15, 23, 42, 0.75);
             backdrop-filter: blur(4px);
             -webkit-backdrop-filter: blur(4px);
             color: white;
@@ -157,12 +185,12 @@
             position: absolute;
             top: 4px;
             left: 4px;
-            background: #f59e0b;
+            background: #f97316;
             color: white;
             font-size: 9px;
             font-weight: 700;
-            padding: 2px 5px;
-            border-radius: 4px;
+            padding: 1px 6px;
+            border-radius: 9999px;
             z-index: 2;
         }
 
@@ -185,7 +213,7 @@
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
-            height: 31px; /* Exact height for 2 lines to align elements */
+            min-height: 31px;
         }
 
         .equipment-card:hover .card-title {
@@ -195,33 +223,24 @@
         .card-meta-row {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            font-size: 10px;
+            justify-content: flex-end;
             margin-top: 4px;
-            gap: 4px;
-        }
-
-        .card-category {
-            color: #94a3b8;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 60%;
         }
 
         .card-price {
-            font-weight: 700;
+            font-weight: 800;
             color: #f97316;
             white-space: nowrap;
+            font-size: 13px;
         }
 
         /* Detail action indicator */
         .card-action-indicator {
-            margin-top: 8px;
-            padding-top: 8px;
+            margin-top: 6px;
+            padding-top: 5px;
             border-top: 1px solid #f1f5f9;
             text-align: center;
-            font-size: 9px;
+            font-size: 9.5px;
             font-weight: 500;
             color: #94a3b8;
             transition: color 0.15s ease;
@@ -229,6 +248,7 @@
 
         .equipment-card:hover .card-action-indicator {
             color: #f97316;
+            font-weight: 600;
         }
 
         /* --- Modal Details Popup Styles --- */
@@ -381,14 +401,14 @@
             height: 280px;
             border-radius: 12px;
             overflow: hidden;
-            background: #0f172a;
+            background: #ffffff;
             border: 1px solid #e2e8f0;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
 
         @media (max-width: 480px) {
             .modal-slideshow-container {
-                height: 200px;
+                height: 220px;
             }
         }
         
@@ -401,7 +421,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #0f172a;
+            background: #ffffff;
         }
         
         .modal-slide.active {
@@ -422,24 +442,25 @@
             top: 50%;
             transform: translateY(-50%);
             z-index: 10;
-            width: 32px;
-            height: 32px;
+            width: 34px;
+            height: 34px;
             border-radius: 50%;
-            background: rgba(0, 0, 0, 0.5);
-            color: #ffffff;
-            border: none;
+            background: rgba(255, 255, 255, 0.95);
+            color: #1e293b;
+            border: 1px solid #e2e8f0;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             transition: all 0.2s ease;
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
             padding: 0;
         }
 
         .modal-arrow:hover {
-            background: rgba(0, 0, 0, 0.8);
+            background: #f97316;
+            color: #ffffff;
+            border-color: #f97316;
             transform: translateY(-50%) scale(1.05);
         }
 
@@ -513,17 +534,17 @@
             background: #f8fafc;
             border: 1px solid #e2e8f0;
             border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 16px;
+            padding: 18px 20px;
+            margin-bottom: 36px;
         }
         
         .modal-section-title {
-            font-size: 10px;
+            font-size: 10.5px;
             font-weight: 700;
             text-transform: uppercase;
             color: #64748b;
             letter-spacing: 0.05em;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -567,7 +588,9 @@
             background: #fffbeb;
             border: 1px solid #fde68a;
             border-radius: 12px;
-            padding: 16px;
+            padding: 20px 22px;
+            margin-top: 36px;
+            margin-bottom: 20px;
         }
         
         .modal-pack-title {
@@ -676,12 +699,7 @@
         /* Responsive list for filters */
         @media (max-width: 640px) {
             .filter-bar {
-                gap: 4px;
-            }
-            
-            .filter-btn {
-                padding: 5px 10px;
-                font-size: 11px;
+                gap: 8px;
             }
         }
     </style>
@@ -690,7 +708,7 @@
     <div class="widget-container">
         <div id="filter-bar" class="filter-bar">
             <button class="filter-btn active" data-filter="all" onclick="toggleFilter('all', this)">
-                Tout
+                <span>Tout</span>
             </button>
         </div>
         
