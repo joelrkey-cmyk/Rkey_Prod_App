@@ -1,5 +1,5 @@
 // Catalogue Widget - R'Key Prod
-// Script de gestion du catalogue de location de matériel
+// Script de gestion du catalogue de location de matériel (Format Petites Icônes avec Modal de Détails)
 
 var parsedUrl = new URL(document.currentScript ? document.currentScript.src : window.location.href);
 var BASE_URL = parsedUrl.protocol + '//' + parsedUrl.host;
@@ -9,19 +9,14 @@ var CATEGORIES_URL = BASE_URL + '/api/location/categories/public';
 var allEquipment = [];
 var allEquipmentMap = {};
 var publicCategories = [];
-var currentExpandedCard = null;
+var activeFilter = 'all';
 
-// --- Diaporama / Slideshow state & controller ---
-var activeSlideshows = {};
-
-function clearAllSlideshows() {
-    Object.keys(activeSlideshows).forEach(function(id) {
-        if (activeSlideshows[id] && activeSlideshows[id].timer) {
-            clearInterval(activeSlideshows[id].timer);
-        }
-    });
-    activeSlideshows = {};
-}
+// --- Carousel / Slideshow state inside the details modal ---
+var modalSlideshowState = {
+    currentIndex: 0,
+    photos: [],
+    timer: null
+};
 
 function getItemPhotos(item) {
     if (!item) return [];
@@ -41,108 +36,7 @@ function getItemPhotos(item) {
     }).filter(Boolean);
 }
 
-function initSlideshows(equipmentList) {
-    clearAllSlideshows();
-    if (!Array.isArray(equipmentList)) return;
-    equipmentList.forEach(function(item) {
-        var photos = getItemPhotos(item);
-        if (photos.length > 1) {
-            activeSlideshows[item.id] = {
-                currentIndex: 0,
-                total: photos.length,
-                timer: null,
-                isHovered: false
-            };
-            startSlideshowTimer(item.id);
-        }
-    });
-}
-
-function startSlideshowTimer(itemId) {
-    var state = activeSlideshows[itemId];
-    if (!state || state.total <= 1) return;
-    if (state.timer) clearInterval(state.timer);
-    state.timer = setInterval(function() {
-        if (!state.isHovered) {
-            goToSlide(itemId, (state.currentIndex + 1) % state.total);
-        }
-    }, 3000);
-}
-
-function pauseSlideshow(itemId) {
-    var state = activeSlideshows[itemId];
-    if (state) state.isHovered = true;
-}
-
-function resumeSlideshow(itemId) {
-    var state = activeSlideshows[itemId];
-    if (state) state.isHovered = false;
-}
-
-function goToSlide(itemId, nextIndex, event) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }
-    var state = activeSlideshows[itemId];
-    if (!state) return;
-    
-    var container = document.getElementById('slideshow-' + itemId);
-    if (!container) return;
-    
-    state.currentIndex = (nextIndex + state.total) % state.total;
-    
-    // Mettre à jour les slides avec fondu
-    var slides = container.querySelectorAll('.slideshow-slide');
-    slides.forEach(function(slide, idx) {
-        if (idx === state.currentIndex) {
-            slide.classList.add('active');
-        } else {
-            slide.classList.remove('active');
-        }
-    });
-    
-    // Mettre à jour les petites boules
-    var dots = container.querySelectorAll('.slideshow-dot');
-    dots.forEach(function(dot, idx) {
-        if (idx === state.currentIndex) {
-            dot.classList.add('active');
-        } else {
-            dot.classList.remove('active');
-        }
-    });
-    
-    // Mettre à jour le badge discret
-    var badge = document.getElementById('badge-' + itemId);
-    if (badge) {
-        var badgeText = badge.querySelector('.badge-text');
-        if (badgeText) badgeText.textContent = (state.currentIndex + 1) + '/' + state.total;
-    }
-    
-    // Réinitialiser le cycle du timer
-    startSlideshowTimer(itemId);
-}
-
-function nextSlide(itemId, event) {
-    var state = activeSlideshows[itemId];
-    if (!state) return;
-    goToSlide(itemId, state.currentIndex + 1, event);
-}
-
-function prevSlide(itemId, event) {
-    var state = activeSlideshows[itemId];
-    if (!state) return;
-    goToSlide(itemId, state.currentIndex - 1, event);
-}
-
-function handleImageError(img) {
-    var slide = img.closest('.slideshow-slide');
-    if (slide) {
-        slide.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#f3f4f6;color:#9ca3af;font-size:12px;">Image non disponible</div>';
-    }
-}
-
-// --- Robust resize logic ---
+// --- Robust resize logic for iframe auto-height ---
 var _lastSentHeight = 0;
 var _resizeTimer = null;
 var _firstResizeDone = false;
@@ -154,7 +48,7 @@ function sendHeightToParent() {
 
     function send() {
         var rect = container.getBoundingClientRect();
-        var h = rect.height > 0 ? Math.ceil(rect.height) + 2 : document.body.scrollHeight;
+        var h = rect.height > 0 ? Math.ceil(rect.height) + 20 : document.body.scrollHeight;
         if (h < 50) return;
         if (Math.abs(h - _lastSentHeight) < 3 && _firstResizeDone) return;
         _lastSentHeight = h;
@@ -230,7 +124,7 @@ async function loadEquipment() {
         
         var response = await fetch(API_URL);
         if (!response.ok) {
-            throw new Error('Erreur lors du chargement');
+            throw new Error('Erreur lors du chargement du catalogue');
         }
         
         allEquipment = await response.json();
@@ -240,7 +134,7 @@ async function loadEquipment() {
         });
         
         renderEquipment(allEquipment);
-        setTimeout(sendHeightToParent, 100);
+        setTimeout(sendHeightToParent, 120);
     } catch (error) {
         console.error('Erreur:', error);
         document.getElementById('equipment-container').innerHTML = 
@@ -248,14 +142,12 @@ async function loadEquipment() {
                 '❌ Impossible de charger le catalogue.<br>' +
                 'Veuillez réessayer plus tard.' +
             '</div>';
-        setTimeout(sendHeightToParent, 100);
+        setTimeout(sendHeightToParent, 120);
     }
 }
 
 function renderEquipment(equipment) {
     var container = document.getElementById('equipment-container');
-    currentExpandedCard = null;
-    clearAllSlideshows();
     
     if (equipment.length === 0) {
         container.innerHTML = 
@@ -269,154 +161,53 @@ function renderEquipment(equipment) {
     var html = '<div class="equipment-grid">';
     
     equipment.forEach(function(item) {
-        var cardId = 'card-' + item.id;
-        var displayDescription = item.catalogue_description || item.description || '';
         var photos = getItemPhotos(item);
+        var primaryPhoto = photos[0];
         
-        html += '<div id="' + cardId + '" class="equipment-card">';
+        html += '<div class="equipment-card" onclick="openDetailsModal(\'' + item.id + '\')">';
         
-        // Section Photos / Diaporama
-        if (photos.length === 0) {
-            html += '<div class="card-image-placeholder">' + (item.is_pack ? '📦' : '🎛️') + '</div>';
-        } else if (photos.length === 1) {
-            html += '<div class="card-image-container">';
-            html += '<img src="' + photos[0] + '" alt="' + item.name + '" class="card-image" onerror="this.parentElement.outerHTML=\'<div class=card-image-placeholder>' + (item.is_pack ? '📦' : '🎛️') + '</div>\'">';
-            html += '</div>';
+        // Square Image Thumbnail
+        html += '<div class="card-thumbnail-container">';
+        if (primaryPhoto) {
+            html += '<img src="' + primaryPhoto + '" alt="' + item.name + '" class="card-thumbnail" onerror="this.style.display=\'none\';">';
         } else {
-            // Diaporama avec défilement automatique (3s), flèches discrètes et petites boules de navigation
-            html += '<div class="card-image-container" id="slideshow-' + item.id + '" onmouseenter="pauseSlideshow(\'' + item.id + '\')" onmouseleave="resumeSlideshow(\'' + item.id + '\')">';
-            
-            // Slides superposées avec fondu fluide
-            photos.forEach(function(pUrl, pIdx) {
-                var activeClass = pIdx === 0 ? ' active' : '';
-                html += '<div class="slideshow-slide' + activeClass + '" data-slide-index="' + pIdx + '">';
-                html += '<img src="' + pUrl + '" alt="' + item.name + ' - photo ' + (pIdx + 1) + '" class="card-image" onerror="handleImageError(this)">';
-                html += '</div>';
-            });
-            
-            // Flèches discrètes précédent / suivant au survol
-            html += '<button type="button" class="slideshow-arrow prev" onclick="prevSlide(\'' + item.id + '\', event)" aria-label="Photo précédente" title="Photo précédente">';
-            html += '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>';
-            html += '</button>';
-            html += '<button type="button" class="slideshow-arrow next" onclick="nextSlide(\'' + item.id + '\', event)" aria-label="Photo suivante" title="Photo suivante">';
-            html += '<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
-            html += '</button>';
-            
-            // Petites boules discrètes de navigation en bas
-            html += '<div class="slideshow-dots" onclick="event.stopPropagation()">';
-            photos.forEach(function(_, pIdx) {
-                var activeDot = pIdx === 0 ? ' active' : '';
-                html += '<button type="button" class="slideshow-dot' + activeDot + '" onclick="goToSlide(\'' + item.id + '\', ' + pIdx + ', event)" title="Photo ' + (pIdx + 1) + '/' + photos.length + '" aria-label="Photo ' + (pIdx + 1) + '"></button>';
-            });
-            html += '</div>';
-            
-            // Badge discret 1/N
-            html += '<div class="slideshow-badge" id="badge-' + item.id + '">';
-            html += '<svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>';
-            html += '<span class="badge-text">1/' + photos.length + '</span>';
-            html += '</div>';
-            
-            html += '</div>';
+            html += '<div class="card-thumbnail-placeholder">' + (item.is_pack ? '📦' : '🎛️') + '</div>';
         }
         
-        html += '<div class="card-content">';
-        html += '<span class="card-category">' + item.category + '</span>';
+        // Pack Badge
         if (item.is_pack) {
-            html += '<span class="card-badge-pack">📦 Pack</span>';
+            html += '<div class="pack-badge">Pack</div>';
         }
-        html += '<div class="card-header">';
-        html += '<h3 class="card-title">' + item.name + '</h3>';
+        
+        // Photos Counter Badge
+        if (photos.length > 1) {
+            html += '<div class="photo-count-badge">📷 ' + photos.length + '</div>';
+        }
+        html += '</div>'; // end thumbnail container
+        
+        // Card details
+        html += '<div class="card-info">';
+        html += '<h4 class="card-title" title="' + item.name + '">' + item.name + '</h4>';
+        
+        html += '<div class="card-meta-row">';
+        html += '<span class="card-category">' + item.category + '</span>';
         html += '<span class="card-price">' + item.daily_price + '€/j</span>';
-        if (item.youtube_url) {
-            html += '<a href="' + item.youtube_url + '" target="_blank" rel="noopener noreferrer" class="youtube-btn" title="Voir la vidéo" onclick="event.stopPropagation()">';
-            html += '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>';
-            html += '</a>';
-        }
         html += '</div>';
         
-        // Preview description
-        if (displayDescription) {
-            html += '<p class="card-description-preview">' + displayDescription + '</p>';
-        }
+        html += '<div class="card-action-indicator">Voir le détail →</div>';
         
-        // Voir plus button
-        html += '<button class="voir-plus-btn" onclick="toggleCard(\'' + item.id + '\')">';
-        html += 'Voir plus <span class="arrow">▼</span>';
-        html += '</button>';
-        
-        html += '</div>'; // end card-content
-        
-        // Expandable content
-        html += '<div class="card-expanded-content">';
-        
-        // Full description
-        if (displayDescription) {
-            html += '<div class="expanded-section">';
-            html += '<div class="expanded-section-title">📝 Description</div>';
-            html += '<p class="expanded-description">' + displayDescription + '</p>';
-            html += '</div>';
-        }
-        
-        // Pack contents
-        if (item.is_pack && item.pack_items && item.pack_items.length > 0) {
-            html += '<div class="expanded-section">';
-            html += '<div class="expanded-section-title">📦 Contenu du pack</div>';
-            html += '<ul class="expanded-pack-list">';
-            item.pack_items.forEach(function(packItem) {
-                var equipName = packItem.name || 
-                    (allEquipmentMap[packItem.equipment_id] ? allEquipmentMap[packItem.equipment_id].name : packItem.equipment_id);
-                html += '<li>• ' + packItem.quantity + 'x ' + equipName + '</li>';
-            });
-            html += '</ul>';
-            html += '</div>';
-        }
-        
-        // YouTube link in expanded
-        if (item.youtube_url) {
-            html += '<div class="expanded-section">';
-            html += '<a href="' + item.youtube_url + '" target="_blank" rel="noopener noreferrer" class="youtube-link-expanded">';
-            html += '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>';
-            html += 'Voir la vidéo';
-            html += '</a>';
-            html += '</div>';
-        }
-        
-        html += '</div>'; // end expanded content
-        html += '</div>'; // end card
+        html += '</div>'; // end card-info
+        html += '</div>'; // end equipment-card
     });
     
     html += '</div>';
     container.innerHTML = html;
     
-    // Initialiser les diaporamas automatiques pour les produits multi-photos
-    initSlideshows(equipment);
-    
     setTimeout(sendHeightToParent, 100);
 }
 
-function toggleCard(itemId) {
-    var cardElement = document.getElementById('card-' + itemId);
-    
-    // Close previously expanded card if different
-    if (currentExpandedCard && currentExpandedCard !== cardElement) {
-        currentExpandedCard.classList.remove('expanded');
-    }
-    
-    // Toggle current card
-    cardElement.classList.toggle('expanded');
-    
-    // Update current expanded card reference
-    if (cardElement.classList.contains('expanded')) {
-        currentExpandedCard = cardElement;
-    } else {
-        currentExpandedCard = null;
-    }
-    
-    // Update height after animation
-    setTimeout(sendHeightToParent, 450);
-}
-
 function toggleFilter(filter, button) {
+    activeFilter = filter;
     var buttons = document.querySelectorAll('.filter-btn');
     buttons.forEach(function(btn) { 
         btn.classList.remove('active'); 
@@ -441,6 +232,203 @@ function toggleFilter(filter, button) {
         });
         renderEquipment(filtered);
     }
+}
+
+// --- Details Modal Actions ---
+
+function openDetailsModal(itemId) {
+    var item = allEquipmentMap[itemId];
+    if (!item) return;
+    
+    var modal = document.getElementById('details-modal');
+    
+    // Set headers, name, prices, guarantee
+    document.getElementById('modal-title').textContent = item.name;
+    document.getElementById('modal-price').innerHTML = item.daily_price + '€<span> / jour</span>';
+    
+    var guaranteeText = item.guarantee ? 'Caution : ' + item.guarantee + '€' : '';
+    document.getElementById('modal-guarantee').textContent = guaranteeText;
+    
+    // Build badges
+    var badgesHtml = '';
+    if (item.is_pack) {
+        badgesHtml += '<span class="modal-badge modal-badge-pack">📦 Pack Matériel</span>';
+    }
+    badgesHtml += '<span class="modal-badge modal-badge-category">' + item.category + '</span>';
+    document.getElementById('modal-badges').innerHTML = badgesHtml;
+    
+    // Build body content
+    var bodyHtml = '';
+    var photos = getItemPhotos(item);
+    
+    // 1. Slideshow / Image container
+    if (photos.length > 0) {
+        bodyHtml += '<div class="modal-slideshow-container" id="modal-slideshow">';
+        
+        photos.forEach(function(pUrl, idx) {
+            var activeClass = idx === 0 ? ' active' : '';
+            bodyHtml += '<div class="modal-slide' + activeClass + '" data-slide-index="' + idx + '">';
+            bodyHtml += '<img src="' + pUrl + '" alt="' + item.name + ' - Photo ' + (idx + 1) + '" onerror="this.outerHTML=\'<div class=card-thumbnail-placeholder>🎛️</div>\'">';
+            bodyHtml += '</div>';
+        });
+        
+        // Slideshow controls if multiple photos
+        if (photos.length > 1) {
+            bodyHtml += '<button type="button" class="modal-arrow prev" onclick="prevModalSlide(event)">';
+            bodyHtml += '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>';
+            bodyHtml += '</button>';
+            bodyHtml += '<button type="button" class="modal-arrow next" onclick="nextModalSlide(event)">';
+            bodyHtml += '<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>';
+            bodyHtml += '</button>';
+            
+            bodyHtml += '<div class="modal-dots">';
+            photos.forEach(function(_, idx) {
+                var activeDot = idx === 0 ? ' active' : '';
+                bodyHtml += '<button type="button" class="modal-dot' + activeDot + '" onclick="goToModalSlide(' + idx + ', event)"></button>';
+            });
+            bodyHtml += '</div>';
+            
+            bodyHtml += '<div class="modal-count-badge" id="modal-slideshow-count">1/' + photos.length + '</div>';
+        }
+        
+        bodyHtml += '</div>';
+    } else {
+        bodyHtml += '<div style="height:120px; border: 1px dashed #e2e8f0; border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center; color:#94a3b8; font-size:12px; margin-bottom:20px;">';
+        bodyHtml += '<span>Aucune photo disponible</span>';
+        bodyHtml += '</div>';
+    }
+    
+    // 2. Description
+    var displayDescription = item.observations || item.catalogue_description || item.description || '';
+    bodyHtml += '<div class="modal-section">';
+    bodyHtml += '<div class="modal-section-title">📝 Descriptif &amp; Caractéristiques</div>';
+    if (displayDescription) {
+        bodyHtml += '<div class="modal-section-content">' + displayDescription + '</div>';
+    } else {
+        bodyHtml += '<div class="modal-section-content" style="font-style:italic; color:#94a3b8;">Aucune description détaillée disponible pour cet équipement.</div>';
+    }
+    
+    // YouTube link
+    if (item.youtube_url) {
+        bodyHtml += '<a href="' + item.youtube_url + '" target="_blank" rel="noopener noreferrer" class="modal-youtube-link">';
+        bodyHtml += '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>';
+        bodyHtml += 'Voir la vidéo de présentation';
+        bodyHtml += '</a>';
+    }
+    bodyHtml += '</div>';
+    
+    // 3. Pack content
+    if (item.is_pack && Array.isArray(item.pack_items) && item.pack_items.length > 0) {
+        bodyHtml += '<div class="modal-pack-box">';
+        bodyHtml += '<div class="modal-pack-title">📦 Matériel inclus dans ce pack</div>';
+        bodyHtml += '<div class="modal-pack-grid">';
+        
+        item.pack_items.forEach(function(pi) {
+            var piName = pi.name || pi.equipment_name || 'Équipement';
+            bodyHtml += '<div class="modal-pack-item" title="' + piName + '">';
+            bodyHtml += '<div class="modal-pack-qty">' + (pi.quantity || 1) + '×</div>';
+            bodyHtml += '<div class="modal-pack-item-name">' + piName + '</div>';
+            bodyHtml += '</div>';
+        });
+        
+        bodyHtml += '</div>'; // end grid
+        bodyHtml += '</div>'; // end pack-box
+    }
+    
+    document.getElementById('modal-body-content').innerHTML = bodyHtml;
+    
+    // Reset and initialize slideshow state for this modal
+    modalSlideshowState.currentIndex = 0;
+    modalSlideshowState.photos = photos;
+    if (modalSlideshowState.timer) clearInterval(modalSlideshowState.timer);
+    
+    // Auto-advance modal slideshow if multiple photos
+    if (photos.length > 1) {
+        startModalSlideshowTimer();
+    }
+    
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeDetailsModal() {
+    var modal = document.getElementById('details-modal');
+    modal.classList.remove('open');
+    document.body.style.overflow = '';
+    
+    if (modalSlideshowState.timer) {
+        clearInterval(modalSlideshowState.timer);
+        modalSlideshowState.timer = null;
+    }
+}
+
+function closeModalOnBackdrop(event) {
+    if (event.target.id === 'details-modal') {
+        closeDetailsModal();
+    }
+}
+
+// --- Modal Slideshow controller ---
+
+function startModalSlideshowTimer() {
+    if (modalSlideshowState.timer) clearInterval(modalSlideshowState.timer);
+    modalSlideshowState.timer = setInterval(function() {
+        nextModalSlide();
+    }, 3500);
+}
+
+function goToModalSlide(nextIndex, event) {
+    if (event) {
+        event.stopPropagation();
+    }
+    var total = modalSlideshowState.photos.length;
+    if (total <= 1) return;
+    
+    modalSlideshowState.currentIndex = (nextIndex + total) % total;
+    
+    var container = document.getElementById('modal-slideshow');
+    if (!container) return;
+    
+    // Update slides
+    var slides = container.querySelectorAll('.modal-slide');
+    slides.forEach(function(slide, idx) {
+        if (idx === modalSlideshowState.currentIndex) {
+            slide.classList.add('active');
+        } else {
+            slide.classList.remove('active');
+        }
+    });
+    
+    // Update dots
+    var dots = container.querySelectorAll('.modal-dot');
+    dots.forEach(function(dot, idx) {
+        if (idx === modalSlideshowState.currentIndex) {
+            dot.classList.add('active');
+        } else {
+            dot.classList.remove('active');
+        }
+    });
+    
+    // Update counter badge
+    var countBadge = document.getElementById('modal-slideshow-count');
+    if (countBadge) {
+        countBadge.textContent = (modalSlideshowState.currentIndex + 1) + '/' + total;
+    }
+    
+    // Restart timer
+    startModalSlideshowTimer();
+}
+
+function nextModalSlide(event) {
+    var total = modalSlideshowState.photos.length;
+    if (total <= 1) return;
+    goToModalSlide(modalSlideshowState.currentIndex + 1, event);
+}
+
+function prevModalSlide(event) {
+    var total = modalSlideshowState.photos.length;
+    if (total <= 1) return;
+    goToModalSlide(modalSlideshowState.currentIndex - 1, event);
 }
 
 // Load equipment on page load
