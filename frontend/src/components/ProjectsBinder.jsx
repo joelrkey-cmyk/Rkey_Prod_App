@@ -495,19 +495,19 @@ const ProjectsBinder = () => {
         </CardHeader>
 
         {/* ══════════ BARRE D'ONGLETS STYLE NAVIGATEUR INTERNET ══════════ */}
-        <div className="bg-slate-200/60 border-b border-slate-200 pt-2 px-3 sm:px-6 md:px-8">
+        <div className="bg-slate-200/60 border-b border-slate-200 pt-3 px-3 sm:px-6 md:px-8 overflow-hidden">
           <div 
             ref={tabsContainerRef}
-            className="flex items-end gap-1.5 overflow-x-auto scrollbar-thin scrollbar-thumb-slate-300 pb-0"
-            style={{ scrollbarWidth: 'thin' }}
+            className="flex items-end gap-2 overflow-x-auto overflow-y-hidden min-h-[52px] scrollbar-thin scrollbar-thumb-slate-300 pb-0"
+            style={{ scrollbarWidth: 'thin', overflowY: 'hidden' }}
           >
             {loading ? (
-              <div className="py-2 px-4 text-xs text-slate-400 flex items-center gap-2">
+              <div className="py-2.5 px-4 text-xs text-slate-400 flex items-center gap-2">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 <span>Chargement des projets...</span>
               </div>
             ) : projects.length === 0 ? (
-              <div className="py-2 text-xs text-slate-500 italic">
+              <div className="py-2.5 text-xs text-slate-500 italic">
                 Aucun projet pour le moment. Cliquez sur « + » pour créer votre premier projet !
               </div>
             ) : (
@@ -544,7 +544,7 @@ const ProjectsBinder = () => {
                     }}
                     onDrop={(e) => handleDropOnProjectTab(e, project, dragProjectPosition)}
                     onClick={() => handleSelectProject(project.id)}
-                    className={`group relative flex items-center gap-1.5 py-2 px-3 rounded-t-xl text-xs font-semibold select-none cursor-grab active:cursor-grabbing transition-all duration-150 border-t-2 border-l border-r shrink-0 max-w-[240px] ${
+                    className={`group relative flex items-center gap-2 py-2.5 px-3.5 rounded-t-xl text-xs sm:text-sm font-semibold select-none cursor-grab active:cursor-grabbing transition-all duration-150 border-t-2 border-l border-r shrink-0 max-w-[260px] ${
                       isOverThis && dragProjectPosition === 'before' ? 'ring-2 ring-indigo-500 ring-offset-1 -translate-x-0.5' : ''
                     } ${
                       isOverThis && dragProjectPosition === 'after' ? 'ring-2 ring-indigo-500 ring-offset-1 translate-x-0.5' : ''
@@ -552,24 +552,24 @@ const ProjectsBinder = () => {
                       isDraggingThis
                         ? 'opacity-30 border-dashed border-indigo-400 bg-indigo-50/50'
                         : isActive
-                          ? `bg-white ${pColor.tabActive} border-l-slate-300 border-r-slate-300 shadow-xs z-10 -mb-[1px] pb-2.5`
+                          ? `bg-white ${pColor.tabActive} border-l-slate-300 border-r-slate-300 shadow-xs z-10 -mb-[1px] pb-3`
                           : 'bg-slate-100/80 hover:bg-slate-100 text-slate-600 border-t-transparent border-l-slate-200/60 border-r-slate-200/60 hover:text-slate-800'
                     }`}
                     title={`${project.name} (Glisser pour réorganiser la priorité)`}
                   >
                     {/* Poignée de drag */}
-                    <GripVertical className="w-3 h-3 text-slate-300 group-hover:text-slate-500 shrink-0" />
+                    <GripVertical className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500 shrink-0" />
 
                     {/* Indicateur de couleur */}
                     <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${pColor.border.replace('border-', 'bg-')}`} />
 
                     {/* Nom du projet tronqué proprement */}
-                    <span className="truncate max-w-[130px]">
+                    <span className="truncate max-w-[140px]">
                       {project.name}
                     </span>
 
                     {/* Badge compteur de tâches */}
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold shrink-0 ${
+                    <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full font-bold shrink-0 ${
                       isActive ? pColor.badge : 'bg-slate-200/70 text-slate-600'
                     }`}>
                       {pDone}/{pTasks.length}
@@ -610,7 +610,7 @@ const ProjectsBinder = () => {
                 setNewProjectColor("indigo");
                 setShowNewProjectDialog(true);
               }}
-              className="p-2 mb-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white/80 transition-all cursor-pointer flex items-center justify-center shrink-0 border border-dashed border-slate-300 hover:border-indigo-400"
+              className="h-9 w-9 mb-1 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white/80 transition-all cursor-pointer flex items-center justify-center shrink-0 border border-dashed border-slate-300 hover:border-indigo-400"
               title="Ouvrir un nouvel onglet de projet"
             >
               <Plus className="w-4 h-4" />
@@ -700,45 +700,6 @@ const ProjectsBinder = () => {
                 </div>
               </div>
 
-              {/* Formulaire d'ajout rapide de tâche */}
-              <form onSubmit={handleAddTask} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 bg-slate-50/80 rounded-xl border border-slate-200/80">
-                <div className="flex-1 flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
-                  <Input
-                    value={newTaskText}
-                    onChange={(e) => setNewTaskText(e.target.value)}
-                    placeholder={`Ajouter une étape ou tâche à « ${activeProject.name} »...`}
-                    className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 p-0 text-xs text-slate-800 placeholder:text-slate-400 h-7 bg-transparent"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {/* Bouton Urgence */}
-                  <button
-                    type="button"
-                    onClick={() => setNewTaskUrgent(prev => !prev)}
-                    className={`h-8 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
-                      newTaskUrgent
-                        ? 'bg-red-600 border-red-700 text-white shadow-xs'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                    title={newTaskUrgent ? "Urgence activée (fond rouge vif)" : "Marquer comme urgent"}
-                  >
-                    <Flame className={`w-3.5 h-3.5 ${newTaskUrgent ? 'fill-white text-white' : 'text-red-500'}`} />
-                    <span>Urgent</span>
-                  </button>
-
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={!newTaskText.trim() || isAddingTask}
-                    className="h-8 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold gap-1 rounded-lg px-3.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Ajouter</span>
-                  </Button>
-                </div>
-              </form>
-
               {/* Liste des tâches du projet */}
               <div className="space-y-2 pt-1">
                 {projectTasks.length === 0 ? (
@@ -748,7 +709,7 @@ const ProjectsBinder = () => {
                       Aucune tâche dans ce projet pour le moment.
                     </p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Ajoutez votre première tâche via le champ ci-dessus.
+                      Ajoutez votre première étape ou tâche via le champ ci-dessous.
                     </p>
                   </div>
                 ) : (
@@ -876,6 +837,45 @@ const ProjectsBinder = () => {
                   })
                 )}
               </div>
+
+              {/* Formulaire d'ajout rapide d'une étape ou tâche (positionné en bas) */}
+              <form onSubmit={handleAddTask} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 bg-slate-50/90 rounded-xl border border-slate-200/90 mt-4 shadow-2xs">
+                <div className="flex-1 flex items-center gap-2 bg-white px-3.5 py-2 rounded-lg border border-slate-200 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 shadow-xs">
+                  <Input
+                    value={newTaskText}
+                    onChange={(e) => setNewTaskText(e.target.value)}
+                    placeholder={`Ajouter une étape ou tâche à « ${activeProject.name} »...`}
+                    className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0 p-0 text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 h-7 bg-transparent"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Bouton Urgence */}
+                  <button
+                    type="button"
+                    onClick={() => setNewTaskUrgent(prev => !prev)}
+                    className={`h-9 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                      newTaskUrgent
+                        ? 'bg-red-600 border-red-700 text-white shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                    title={newTaskUrgent ? "Urgence activée (fond rouge vif)" : "Marquer comme urgent"}
+                  >
+                    <Flame className={`w-3.5 h-3.5 ${newTaskUrgent ? 'fill-white text-white' : 'text-red-500'}`} />
+                    <span>Urgent</span>
+                  </button>
+
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={!newTaskText.trim() || isAddingTask}
+                    className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold gap-1.5 rounded-lg px-4 cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Ajouter</span>
+                  </Button>
+                </div>
+              </form>
 
             </div>
           )}
