@@ -8566,6 +8566,16 @@ const getCompanyProvenance = company => {
   }
   return "";
 };
+const formatDateFr = dateStr => {
+  if (!dateStr) return "";
+  if (dateStr.includes('-')) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+      return "".concat(parts[2], "-").concat(parts[1], "-").concat(parts[0]);
+    }
+  }
+  return dateStr;
+};
 function Contracts2App() {
   var _clientInfo$additiona, _clientInfo$company, _getProfileData$nom_a, _getProfileData$titre, _getProfileData$nom_a2, _getProfileData$titre2, _editingContract$even, _selectedContractForA, _selectedContractForA2, _contracts$find, _contracts$find$clien, _importMatchedContrac, _importMatchedContrac2;
   const navigate = (0,react_router_dom__WEBPACK_IMPORTED_MODULE_31__.useNavigate)();
@@ -8696,7 +8706,7 @@ function Contracts2App() {
   const [clientNotifPortalLink, setClientNotifPortalLink] = (0,react__WEBPACK_IMPORTED_MODULE_1__.useState)("");
   const [clientNotifIsSending, setClientNotifIsSending] = (0,react__WEBPACK_IMPORTED_MODULE_1__.useState)(false);
   const [hasCopiedPortalLink, setHasCopiedPortalLink] = (0,react__WEBPACK_IMPORTED_MODULE_1__.useState)(false);
-  const [clientNotifAttachPdf, setClientNotifAttachPdf] = (0,react__WEBPACK_IMPORTED_MODULE_1__.useState)(true);
+  const [clientNotifAttachPdf, setClientNotifAttachPdf] = (0,react__WEBPACK_IMPORTED_MODULE_1__.useState)(false);
   const [basePrice, setBasePrice] = (0,react__WEBPACK_IMPORTED_MODULE_1__.useState)(0);
   // ── CONTRATS 2: Mode Mandat/Agence ──
   const [contractMode, setContractMode] = (0,react__WEBPACK_IMPORTED_MODULE_1__.useState)('entreprise'); // 'entreprise' ou 'mandataire' par défaut
@@ -9737,7 +9747,7 @@ function Contracts2App() {
       var _contract$client_info, _contract$client_info2, _contract$client_info3, _contract$client_info4;
       const clientName = ((_contract$client_info = contract.client_info) === null || _contract$client_info === void 0 ? void 0 : _contract$client_info.name) || contract.client_name || "Client";
       const artistName = artist.nom_artistique || artist.nom_complet || "Artiste";
-      const eventDate = ((_contract$client_info2 = contract.client_info) === null || _contract$client_info2 === void 0 ? void 0 : _contract$client_info2.event_date) || contract.event_date || "";
+      const eventDate = formatDateFr(((_contract$client_info2 = contract.client_info) === null || _contract$client_info2 === void 0 ? void 0 : _contract$client_info2.event_date) || contract.event_date || "");
       const eventType = ((_contract$client_info3 = contract.client_info) === null || _contract$client_info3 === void 0 ? void 0 : _contract$client_info3.event_type) || contract.event_type || "";
       const eventLocation = ((_contract$client_info4 = contract.client_info) === null || _contract$client_info4 === void 0 ? void 0 : _contract$client_info4.event_location) || contract.event_location || "";
       let subject = tpl.subject || "";
@@ -9780,7 +9790,7 @@ function Contracts2App() {
     };
     const info = contract.client_info || {};
     const clientName = info.name || contract.client_name || "Client";
-    const eventDate = info.event_date || contract.event_date || "";
+    const eventDate = formatDateFr(info.event_date || contract.event_date || "");
     const eventType = info.event_type || contract.event_type || "";
     const eventLocation = info.event_location || contract.event_location || "";
     let djName = "Votre DJ";
@@ -10035,7 +10045,7 @@ function Contracts2App() {
         setNotifSelectedTemplateId(defTpl.id);
         const clientName = ((_contract$client_info8 = contract.client_info) === null || _contract$client_info8 === void 0 ? void 0 : _contract$client_info8.name) || contract.client_name || "Client";
         const artistName = artistProfile.nom_artistique || artistProfile.nom_complet || "Artiste";
-        const eventDate = ((_contract$client_info9 = contract.client_info) === null || _contract$client_info9 === void 0 ? void 0 : _contract$client_info9.event_date) || contract.event_date || "";
+        const eventDate = formatDateFr(((_contract$client_info9 = contract.client_info) === null || _contract$client_info9 === void 0 ? void 0 : _contract$client_info9.event_date) || contract.event_date || "");
         const eventType = ((_contract$client_info10 = contract.client_info) === null || _contract$client_info10 === void 0 ? void 0 : _contract$client_info10.event_type) || contract.event_type || "";
         const eventLocation = ((_contract$client_info11 = contract.client_info) === null || _contract$client_info11 === void 0 ? void 0 : _contract$client_info11.event_location) || contract.event_location || "";
         let subject = defTpl.subject || "";
@@ -15833,21 +15843,6 @@ function Contracts2App() {
               disabled: clientNotifIsSending,
               className: "w-full text-sm font-sans leading-relaxed border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 bg-white p-3.5 shadow-sm min-h-[250px] text-slate-800 rounded-lg placeholder:text-slate-400",
               placeholder: "R\xE9digez votre message simplement..."
-            }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_30__.jsxs)("div", {
-              className: "flex items-center space-x-2.5 p-3 bg-emerald-50/60 border border-emerald-200 rounded-lg",
-              children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_30__.jsx)(_ui_checkbox__WEBPACK_IMPORTED_MODULE_10__.Checkbox, {
-                id: "attach_contract_pdf",
-                checked: clientNotifAttachPdf,
-                onCheckedChange: checked => setClientNotifAttachPdf(!!checked)
-              }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_30__.jsxs)("label", {
-                htmlFor: "attach_contract_pdf",
-                className: "text-xs font-semibold text-emerald-950 cursor-pointer flex items-center gap-1.5 select-none",
-                children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_30__.jsx)(lucide_react__WEBPACK_IMPORTED_MODULE_50__["default"], {
-                  className: "h-3.5 w-3.5 text-emerald-600"
-                }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_30__.jsx)("span", {
-                  children: "Joindre automatiquement le contrat (PDF) en pi\xE8ce jointe de l'email"
-                })]
-              })]
             })]
           })]
         }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_30__.jsxs)(_ui_dialog__WEBPACK_IMPORTED_MODULE_13__.DialogFooter, {

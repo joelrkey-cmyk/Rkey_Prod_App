@@ -69,6 +69,17 @@ const getCompanyProvenance = (company) => {
   return "";
 };
 
+const formatDateFr = (dateStr) => {
+  if (!dateStr) return "";
+  if (dateStr.includes('-')) {
+    const parts = dateStr.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+  }
+  return dateStr;
+};
+
 function Contracts2App() {
   const navigate = useNavigate();
   
@@ -166,7 +177,7 @@ function Contracts2App() {
   const [clientNotifPortalLink, setClientNotifPortalLink] = useState("");
   const [clientNotifIsSending, setClientNotifIsSending] = useState(false);
   const [hasCopiedPortalLink, setHasCopiedPortalLink] = useState(false);
-  const [clientNotifAttachPdf, setClientNotifAttachPdf] = useState(true);
+  const [clientNotifAttachPdf, setClientNotifAttachPdf] = useState(false);
 
   const [basePrice, setBasePrice] = useState(0);
   // ── CONTRATS 2: Mode Mandat/Agence ──
@@ -1117,7 +1128,7 @@ function Contracts2App() {
     if (tpl && contract && artist) {
       const clientName = contract.client_info?.name || contract.client_name || "Client";
       const artistName = artist.nom_artistique || artist.nom_complet || "Artiste";
-      const eventDate = contract.client_info?.event_date || contract.event_date || "";
+      const eventDate = formatDateFr(contract.client_info?.event_date || contract.event_date || "");
       const eventType = contract.client_info?.event_type || contract.event_type || "";
       const eventLocation = contract.client_info?.event_location || contract.event_location || "";
 
@@ -1185,7 +1196,7 @@ function Contracts2App() {
     if (!tpl || !contract) return { subject: "", body: "" };
     const info = contract.client_info || {};
     const clientName = info.name || contract.client_name || "Client";
-    const eventDate = info.event_date || contract.event_date || "";
+    const eventDate = formatDateFr(info.event_date || contract.event_date || "");
     const eventType = info.event_type || contract.event_type || "";
     const eventLocation = info.event_location || contract.event_location || "";
     
@@ -1438,7 +1449,7 @@ function Contracts2App() {
         
         const clientName = contract.client_info?.name || contract.client_name || "Client";
         const artistName = artistProfile.nom_artistique || artistProfile.nom_complet || "Artiste";
-        const eventDate = contract.client_info?.event_date || contract.event_date || "";
+        const eventDate = formatDateFr(contract.client_info?.event_date || contract.event_date || "");
         const eventType = contract.client_info?.event_type || contract.event_type || "";
         const eventLocation = contract.client_info?.event_location || contract.event_location || "";
 
@@ -6031,22 +6042,8 @@ function Contracts2App() {
                 className="w-full text-sm font-sans leading-relaxed border-slate-300 focus:border-emerald-500 focus:ring-emerald-500 bg-white p-3.5 shadow-sm min-h-[250px] text-slate-800 rounded-lg placeholder:text-slate-400"
                 placeholder="Rédigez votre message simplement..."
               />
-
-              {/* Option Pièce jointe contrat PDF */}
-              <div className="flex items-center space-x-2.5 p-3 bg-emerald-50/60 border border-emerald-200 rounded-lg">
-                <Checkbox 
-                  id="attach_contract_pdf"
-                  checked={clientNotifAttachPdf}
-                  onCheckedChange={(checked) => setClientNotifAttachPdf(!!checked)}
-                />
-                <label htmlFor="attach_contract_pdf" className="text-xs font-semibold text-emerald-950 cursor-pointer flex items-center gap-1.5 select-none">
-                  <Paperclip className="h-3.5 w-3.5 text-emerald-600" />
-                  <span>Joindre automatiquement le contrat (PDF) en pièce jointe de l'email</span>
-                </label>
-              </div>
             </div>
           </div>
-
           <DialogFooter className="border-t pt-4 flex flex-col sm:flex-row gap-2 justify-between items-center">
             {/* Bouton Annuler la signature (sécurisé, ne signe rien) */}
             <Button 

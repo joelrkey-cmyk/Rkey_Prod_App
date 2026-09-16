@@ -2747,20 +2747,28 @@ function decodeMangledUtf8(str) {
 
 // ─── SMTP helper ───
 async function getSmtpConfig() {
-  const settings = await db.collection('global_settings').findOne({ type: 'company' });
+  let settings = null;
+  try {
+    if (db) {
+      settings = await db.collection('global_settings').findOne({ type: 'company' });
+    }
+  } catch (e) {
+    console.error('Error fetching global_settings for SMTP:', e);
+  }
+  const smtp_user = (settings && settings.smtp_user) || process.env.SMTP_USER || '';
   return {
-    smtp_server: (settings && settings.smtp_server) || process.env.SMTP_SERVER || '',
-    smtp_port: (settings && settings.smtp_port) || process.env.SMTP_PORT || '587',
+    smtp_server: (settings && settings.smtp_server) || process.env.SMTP_SERVER || 'smtp.hostinger.com',
+    smtp_port: (settings && settings.smtp_port) || process.env.SMTP_PORT || '465',
     smtp_encryption: (settings && settings.smtp_encryption) || 'auto',
-    smtp_user: (settings && settings.smtp_user) || process.env.SMTP_USER || '',
+    smtp_user: smtp_user,
     smtp_password: (settings && settings.smtp_password) || process.env.SMTP_PASSWORD || '',
-    smtp_from: (settings && settings.smtp_from) || process.env.SMTP_FROM || '',
+    smtp_from: (settings && settings.smtp_from) || process.env.SMTP_FROM || smtp_user || '',
     smtp_from_name: (settings && settings.smtp_from_name) || 'R\'KEY PROD',
   };
 }
 
 function createTransporter(cfg) {
-  const port = parseInt(cfg.smtp_port);
+  const port = parseInt(cfg.smtp_port) || 465;
   const encryption = cfg.smtp_encryption || 'auto';
   let secure;
   if (encryption === 'ssl') secure = true;
@@ -2775,7 +2783,7 @@ function createTransporter(cfg) {
   const originalTransporter = nodemailer.createTransport(opts);
   
   return {
-    sendMail: function(mailOptions, callback) {
+    sendMail: async function(mailOptions, callback) {
       if (mailOptions && mailOptions.html) {
         try {
           let html = mailOptions.html;
@@ -2799,7 +2807,28 @@ function createTransporter(cfg) {
           console.error("Error processing inline signature base64 image:", err);
         }
       }
-      return originalTransporter.sendMail(mailOptions, callback);
+      if (mailOptions && !mailOptions.cc) {
+        delete mailOptions.cc;
+      }
+      try {
+        return await originalTransporter.sendMail(mailOptions, callback);
+      } catch (sendErr) {
+        const isAuthErr = sendErr && (sendErr.responseCode === 535 || (sendErr.message && (sendErr.message.includes('authentication failed') || sendErr.message.includes('Invalid login'))));
+        if (isAuthErr && process.env.SMTP_PASSWORD && process.env.SMTP_PASSWORD !== cfg.smtp_password) {
+          console.warn('[SMTP] Auth failed with stored password, retrying with environment SMTP_PASSWORD...');
+          const fallbackOpts = {
+            ...opts,
+            auth: { user: cfg.smtp_user || process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
+          };
+          const fallbackTransporter = nodemailer.createTransport(fallbackOpts);
+          const res = await fallbackTransporter.sendMail(mailOptions, callback);
+          if (db) {
+            db.collection('global_settings').updateOne({ type: 'company' }, { $set: { smtp_password: process.env.SMTP_PASSWORD } }).catch(e => console.error('Failed to sync working SMTP password to DB:', e));
+          }
+          return res;
+        }
+        throw sendErr;
+      }
     },
     verify: function() {
       return originalTransporter.verify();
@@ -3246,6 +3275,245 @@ api.post('/home-planner/tasks/reset', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Error resetting tasks:', err);
     res.status(500).json({ detail: 'Erreur lors de la remise à zéro des tâches' });
+  }
+});
+
+// ══════════ PROJECTS & PROJECT TASKS (CLASSEUR / ONGLETS) ══════════
+api.get('/projects', authMiddleware, async (req, res) => {
+  try {
+    let projects = await db.collection('projects').find({}, { projection: { _id: 0 } }).sort({ order: 1, created_at: 1 }).toArray();
+
+    // Migration logic: if no projects exist yet, check if there are tasks with day='projet' in weekly_tasks
+    if (projects.length === 0) {
+      const oldProjectTasks = await db.collection('weekly_tasks').find({ day: 'projet' }).toArray();
+      const palette = ['indigo', 'emerald', 'purple', 'blue', 'amber', 'rose'];
+
+      if (oldProjectTasks.length > 0) {
+        const seededProjects = [];
+        for (let i = 0; i < oldProjectTasks.length; i++) {
+          const item = oldProjectTasks[i];
+          seededProjects.push({
+            id: uuidv4(),
+            name: item.text ? item.text.trim() : `Projet ${i + 1}`,
+            color: palette[i % palette.length],
+            order: i,
+            created_at: item.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        }
+        await db.collection('projects').insertMany(seededProjects);
+        // Clean up day='projet' tasks from weekly_tasks so weekly planner is dedicated to the week
+        await db.collection('weekly_tasks').deleteMany({ day: 'projet' });
+        projects = seededProjects;
+      } else {
+        const defaultProject = {
+          id: uuidv4(),
+          name: 'Projet Principal',
+          color: 'indigo',
+          order: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        await db.collection('projects').insertOne(defaultProject);
+        projects = [defaultProject];
+      }
+    }
+
+    // Retrieve all tasks for all projects
+    const allTasks = await db.collection('project_tasks').find({}, { projection: { _id: 0 } }).sort({ order: 1, created_at: 1 }).toArray();
+
+    const enrichedProjects = projects.map(p => {
+      const pTasks = allTasks.filter(t => t.project_id === p.id);
+      return {
+        ...clean(p),
+        tasks: pTasks
+      };
+    });
+
+    res.json(enrichedProjects);
+  } catch (err) {
+    console.error('Error fetching projects:', err);
+    res.status(500).json({ detail: 'Erreur lors de la récupération des projets' });
+  }
+});
+
+api.post('/projects', authMiddleware, async (req, res) => {
+  try {
+    const { name, color } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ detail: 'Le nom du projet est requis' });
+    }
+
+    const count = await db.collection('projects').countDocuments();
+    const newProject = {
+      id: uuidv4(),
+      name: name.trim(),
+      color: color || 'indigo',
+      order: count,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await db.collection('projects').insertOne(newProject);
+    res.json({ ...clean(newProject), tasks: [] });
+  } catch (err) {
+    console.error('Error creating project:', err);
+    res.status(500).json({ detail: 'Erreur lors de la création du projet' });
+  }
+});
+
+api.put('/projects/:id', authMiddleware, async (req, res) => {
+  try {
+    const { name, color, order } = req.body;
+    const update = { updated_at: new Date().toISOString() };
+    if (name !== undefined) update.name = name.trim();
+    if (color !== undefined) update.color = color;
+    if (order !== undefined) update.order = Number(order);
+
+    const result = await db.collection('projects').findOneAndUpdate(
+      { id: req.params.id },
+      { $set: update },
+      { returnDocument: 'after', projection: { _id: 0 } }
+    );
+
+    const updated = result && (result.value || result);
+    if (!updated) {
+      return res.status(404).json({ detail: 'Projet introuvable' });
+    }
+
+    const tasks = await db.collection('project_tasks').find({ project_id: req.params.id }, { projection: { _id: 0 } }).sort({ order: 1, created_at: 1 }).toArray();
+    res.json({ ...clean(updated), tasks });
+  } catch (err) {
+    console.error('Error updating project:', err);
+    res.status(500).json({ detail: 'Erreur lors de la mise à jour du projet' });
+  }
+});
+
+api.delete('/projects/:id', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('projects').deleteOne({ id: req.params.id });
+    await db.collection('project_tasks').deleteMany({ project_id: req.params.id });
+    res.json({ success: true, message: 'Projet et tâches supprimés' });
+  } catch (err) {
+    console.error('Error deleting project:', err);
+    res.status(500).json({ detail: 'Erreur lors de la suppression du projet' });
+  }
+});
+
+api.post('/projects/reorder', authMiddleware, async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        if (item.id) {
+          await db.collection('projects').updateOne(
+            { id: item.id },
+            { $set: { order: Number(item.order), updated_at: new Date().toISOString() } }
+          );
+        }
+      }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error reordering projects:', err);
+    res.status(500).json({ detail: 'Erreur lors du réordonnancement des projets' });
+  }
+});
+
+// Project Tasks Endpoints
+api.post('/projects/:id/tasks', authMiddleware, async (req, res) => {
+  try {
+    const { text, is_urgent, order } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ detail: 'Le texte de la tâche est requis' });
+    }
+
+    const countInProject = await db.collection('project_tasks').countDocuments({ project_id: req.params.id });
+    const task = {
+      id: uuidv4(),
+      project_id: req.params.id,
+      text: text.trim(),
+      completed: false,
+      is_urgent: !!is_urgent,
+      order: order !== undefined ? Number(order) : countInProject,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await db.collection('project_tasks').insertOne(task);
+    res.json(clean(task));
+  } catch (err) {
+    console.error('Error creating project task:', err);
+    res.status(500).json({ detail: 'Erreur lors de la création de la tâche' });
+  }
+});
+
+api.put('/projects/tasks/:taskId', authMiddleware, async (req, res) => {
+  try {
+    const { text, completed, is_urgent, order, project_id } = req.body;
+    const update = { updated_at: new Date().toISOString() };
+    if (text !== undefined) update.text = text.trim();
+    if (completed !== undefined) update.completed = !!completed;
+    if (is_urgent !== undefined) update.is_urgent = !!is_urgent;
+    if (order !== undefined) update.order = Number(order);
+    if (project_id !== undefined) update.project_id = project_id;
+
+    await db.collection('project_tasks').updateOne({ id: req.params.taskId }, { $set: update });
+    const updated = await db.collection('project_tasks').findOne({ id: req.params.taskId }, { projection: { _id: 0 } });
+    if (!updated) {
+      return res.status(404).json({ detail: 'Tâche introuvable' });
+    }
+    res.json(updated);
+  } catch (err) {
+    console.error('Error updating project task:', err);
+    res.status(500).json({ detail: 'Erreur lors de la mise à jour de la tâche' });
+  }
+});
+
+api.delete('/projects/tasks/:taskId', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.collection('project_tasks').deleteOne({ id: req.params.taskId });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ detail: 'Tâche introuvable' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting project task:', err);
+    res.status(500).json({ detail: 'Erreur lors de la suppression de la tâche' });
+  }
+});
+
+api.post('/projects/:id/tasks/reorder', authMiddleware, async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        if (item.id) {
+          await db.collection('project_tasks').updateOne(
+            { id: item.id },
+            { $set: { order: Number(item.order), updated_at: new Date().toISOString() } }
+          );
+        }
+      }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error reordering project tasks:', err);
+    res.status(500).json({ detail: 'Erreur lors de la réorganisation des tâches' });
+  }
+});
+
+api.post('/projects/:id/tasks/toggle-all', authMiddleware, async (req, res) => {
+  try {
+    const { completed } = req.body;
+    await db.collection('project_tasks').updateMany(
+      { project_id: req.params.id },
+      { $set: { completed: !!completed, updated_at: new Date().toISOString() } }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error toggling all project tasks:', err);
+    res.status(500).json({ detail: 'Erreur lors du basculement des tâches' });
   }
 });
 api.get('/dj-client/pending-alerts', authMiddleware, async (req, res) => {
@@ -6371,11 +6639,17 @@ api.post('/contract-emails/send', authMiddleware, async (req, res) => {
       pdfAttachments
     );
     
-    await transporter.sendMail({
+    const mailOptions = {
       from: `${cfg.smtp_from_name} <${cfg.smtp_from || cfg.smtp_user}>`,
-      to: recipient_email, cc: cfg.smtp_from,
-      subject: email_subject, html: finalHtml, attachments
-    });
+      to: recipient_email,
+      subject: email_subject,
+      html: finalHtml,
+      attachments
+    };
+    if (cfg.smtp_from && cfg.smtp_from !== recipient_email) {
+      mailOptions.cc = cfg.smtp_from;
+    }
+    await transporter.sendMail(mailOptions);
     res.json({ success: true, message: 'Contrats envoyés avec succès' });
   } catch (e) {
     console.error('Contract SMTP error:', e);
@@ -7196,8 +7470,18 @@ api.post('/crm/companies/merge', authMiddleware, async (req, res) => {
   }
 });
 api.put('/crm/companies/:id', authMiddleware, async (req, res) => {
-  await db.collection('crm_companies').updateOne({ id: req.params.id }, { $set: req.body });
-  res.json(await db.collection('crm_companies').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  try {
+    const updateData = { ...req.body };
+    delete updateData._id;
+    delete updateData.id;
+    updateData.updated_at = new Date().toISOString();
+    await db.collection('crm_companies').updateOne({ id: req.params.id }, { $set: updateData });
+    const updated = await db.collection('crm_companies').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    res.json(clean(updated));
+  } catch (err) {
+    console.error("[CRM Update Error]:", err);
+    res.status(500).json({ error: "Erreur lors de la mise à jour : " + err.message });
+  }
 });
 api.delete('/crm/companies/:id', authMiddleware, async (req, res) => {
   await db.collection('crm_companies').deleteOne({ id: req.params.id });
@@ -8070,8 +8354,18 @@ api.post('/location/clients', authMiddleware, async (req, res) => {
   res.json(clean(c));
 });
 api.put('/location/clients/:id', authMiddleware, async (req, res) => {
-  await db.collection('location_clients').updateOne({ id: req.params.id }, { $set: req.body });
-  res.json(await db.collection('location_clients').findOne({ id: req.params.id }, { projection: { _id: 0 } }));
+  try {
+    const updateData = { ...req.body };
+    delete updateData._id;
+    delete updateData.id;
+    updateData.updated_at = new Date().toISOString();
+    await db.collection('location_clients').updateOne({ id: req.params.id }, { $set: updateData });
+    const updated = await db.collection('location_clients').findOne({ id: req.params.id }, { projection: { _id: 0 } });
+    res.json(clean(updated));
+  } catch (err) {
+    console.error("[Location Client Update Error]:", err);
+    res.status(500).json({ error: "Erreur lors de la mise à jour : " + err.message });
+  }
 });
 api.delete('/location/clients/:id', authMiddleware, async (req, res) => {
   await db.collection('location_clients').deleteOne({ id: req.params.id });

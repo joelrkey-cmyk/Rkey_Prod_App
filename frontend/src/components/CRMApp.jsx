@@ -170,6 +170,7 @@ function CRMApp() {
     telephone: "",
     email: ""
   });
+  const [editingContactIndex, setEditingContactIndex] = useState(null);
 
   const [relanceForm, setRelanceForm] = useState({
     date: "",
@@ -220,24 +221,51 @@ function CRMApp() {
   };
 
   const handleSaveCompany = async () => {
-    if (!companyForm.nom.trim()) {
-      toast.error("Le nom de l'entreprise est requis");
+    if (!companyForm.nom || !companyForm.nom.trim()) {
+      toast.error(
+        companyForm.type_client === "Particulier"
+          ? "Le nom du client est requis"
+          : "Le nom de l'entreprise ou association est requis"
+      );
       return;
     }
 
     try {
+      let currentContacts = Array.isArray(companyForm.contacts) 
+        ? companyForm.contacts.map(c => ({ ...c })) 
+        : [];
+
+      // Auto-commit newContact if user typed a name in contact form and didn't click "Ajouter / Valider"
+      if (newContact.nom && newContact.nom.trim()) {
+        const contactPayload = {
+          nom: newContact.nom.trim(),
+          fonction: (newContact.fonction || "").trim(),
+          telephone: (newContact.telephone || "").trim(),
+          email: (newContact.email || "").trim()
+        };
+
+        if (editingContactIndex !== null && editingContactIndex >= 0 && editingContactIndex < currentContacts.length) {
+          currentContacts[editingContactIndex] = contactPayload;
+        } else {
+          currentContacts.push(contactPayload);
+        }
+      }
+
+      const payload = {
+        ...companyForm,
+        nom: companyForm.nom.trim(),
+        contacts: currentContacts
+      };
+
       if (editingCompany) {
-        await axios.put(`${API}/crm/companies/${editingCompany.id}`, {
-          ...editingCompany,
-          ...companyForm
-        });
-        toast.success("Entreprise mise à jour !");
+        await axios.put(`${API}/crm/companies/${editingCompany.id}`, payload);
+        toast.success("Fiche client mise à jour !");
       } else {
-        await axios.post(`${API}/crm/companies`, companyForm);
-        toast.success("Entreprise créée !");
+        await axios.post(`${API}/crm/companies`, payload);
+        toast.success("Fiche client créée !");
       }
       
-      loadCompanies();
+      await loadCompanies();
       setShowCompanyDialog(false);
       resetCompanyForm();
     } catch (error) {
@@ -266,24 +294,64 @@ function CRMApp() {
   };
 
   const handleAddContact = () => {
-    if (!newContact.nom.trim()) {
+    if (!newContact.nom || !newContact.nom.trim()) {
       toast.error("Le nom du contact est requis");
+      return;
+    }
+
+    const contactPayload = {
+      nom: newContact.nom.trim(),
+      fonction: (newContact.fonction || "").trim(),
+      telephone: (newContact.telephone || "").trim(),
+      email: (newContact.email || "").trim()
+    };
+
+    if (editingContactIndex !== null) {
+      setCompanyForm(prev => {
+        const updated = Array.isArray(prev.contacts) ? [...prev.contacts] : [];
+        updated[editingContactIndex] = contactPayload;
+        return { ...prev, contacts: updated };
+      });
+      setEditingContactIndex(null);
+      setNewContact({ nom: "", fonction: "", telephone: "", email: "" });
+      toast.success("Contact mis à jour");
       return;
     }
 
     setCompanyForm(prev => ({
       ...prev,
-      contacts: [...prev.contacts, { ...newContact }]
+      contacts: [...(prev.contacts || []), contactPayload]
     }));
 
     setNewContact({ nom: "", fonction: "", telephone: "", email: "" });
     toast.success("Contact ajouté");
   };
 
+  const handleEditContact = (index) => {
+    const contactToEdit = (companyForm.contacts || [])[index];
+    if (contactToEdit) {
+      setEditingContactIndex(index);
+      setNewContact({
+        nom: contactToEdit.nom || "",
+        fonction: contactToEdit.fonction || "",
+        telephone: contactToEdit.telephone || "",
+        email: contactToEdit.email || ""
+      });
+    }
+  };
+
+  const handleCancelEditContact = () => {
+    setEditingContactIndex(null);
+    setNewContact({ nom: "", fonction: "", telephone: "", email: "" });
+  };
+
   const handleRemoveContact = (index) => {
+    if (editingContactIndex === index) {
+      handleCancelEditContact();
+    }
     setCompanyForm(prev => ({
       ...prev,
-      contacts: prev.contacts.filter((_, i) => i !== index)
+      contacts: (prev.contacts || []).filter((_, i) => i !== index)
     }));
   };
 
@@ -351,6 +419,8 @@ function CRMApp() {
       date_evenement: ""
     });
     setEditingCompany(null);
+    setEditingContactIndex(null);
+    setNewContact({ nom: "", fonction: "", telephone: "", email: "" });
     setSireneSearchQuery("");
     setSireneResults([]);
     setShowSireneDropdown(false);
@@ -358,16 +428,18 @@ function CRMApp() {
 
   const openEditCompany = (company) => {
     setEditingCompany(company);
+    setEditingContactIndex(null);
+    setNewContact({ nom: "", fonction: "", telephone: "", email: "" });
     setCompanyForm({
-      nom: company.nom,
+      nom: company.nom || "",
       type_client: company.type_client || "Entreprise",
       siret: company.siret || "",
       secteur: company.secteur || "",
       adresse: company.adresse || "",
       telephone: company.telephone || "",
       email: company.email || "",
-      statut: company.statut,
-      contacts: company.contacts || [],
+      statut: company.statut || "prospect",
+      contacts: Array.isArray(company.contacts) ? company.contacts.map(c => ({ ...c })) : [],
       notes: company.notes || "",
       blacklist_tags: company.blacklist_tags || "",
       annee_prestation: company.annee_prestation || "",
@@ -1813,6 +1885,13 @@ function CRMApp() {
                         )}
                       </h4>
                       <p className="text-sm text-slate-400 truncate mt-0.5 flex items-center gap-1.5 flex-wrap">
+                        {company.type_client !== "Particulier" && company.contacts && company.contacts.length > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                            👤 Contact : {company.contacts[0].nom}
+                            {company.contacts[0].fonction ? ` (${company.contacts[0].fonction})` : ''}
+                            {company.contacts.length > 1 ? ` +${company.contacts.length - 1}` : ''}
+                          </span>
+                        )}
                         <span>{company.secteur || "Aucun secteur"} {company.siret && `• SIRET: ${company.siret}`}</span>
                         {!hasEmail ? (
                           <span className="inline-flex items-center text-red-500 font-medium text-xs">
@@ -1900,7 +1979,10 @@ function CRMApp() {
       </div>
 
       {/* Dialog Entreprise */}
-      <Dialog open={showCompanyDialog} onOpenChange={setShowCompanyDialog}>
+      <Dialog open={showCompanyDialog} onOpenChange={(open) => {
+        setShowCompanyDialog(open);
+        if (!open) resetCompanyForm();
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -2100,12 +2182,18 @@ function CRMApp() {
             )}
 
             <div>
-              <Label htmlFor="nom">Nom / Raison Sociale *</Label>
+              <Label htmlFor="nom">
+                {companyForm.type_client === "Particulier" 
+                  ? "Nom complet du client (Particulier) *" 
+                  : companyForm.type_client === "Association" 
+                    ? "Nom de l'association *" 
+                    : "Nom de l'entreprise / Raison Sociale *"}
+              </Label>
               <Input
                 id="nom"
                 value={companyForm.nom}
                 onChange={(e) => setCompanyForm(prev => ({ ...prev, nom: e.target.value }))}
-                placeholder="Ex: Mairie de Colmar, Jean Dupont"
+                placeholder={companyForm.type_client === "Particulier" ? "Ex: Jean Dupont, Céline & Marc" : "Ex: Peugeot Colmar, Super U, Mairie..."}
               />
             </div>
 
@@ -2209,43 +2297,114 @@ function CRMApp() {
 
             {/* Contacts */}
             <div className="border-t pt-4">
-              <Label className="text-base font-semibold mb-3 block">👥 Contacts</Label>
+              <div className="flex items-center justify-between mb-3">
+                <Label className="text-base font-semibold block">👥 Personnes de contact</Label>
+                {companyForm.type_client === "Particulier" ? (
+                  <span className="text-xs text-slate-500">Optionnel pour un particulier</span>
+                ) : (
+                  <span className="text-xs text-slate-500">Interlocuteurs (CSE, Responsable, etc.)</span>
+                )}
+              </div>
+
+              {companyForm.type_client === "Particulier" && (!companyForm.contacts || companyForm.contacts.length === 0) && editingContactIndex === null && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 mb-3 flex items-center gap-2">
+                  <span className="text-base">👤</span>
+                  <span>Pour une fiche individuelle (Particulier), les coordonnées ci-dessus (Nom, Téléphone, Email) correspondent directement au client. Vous pouvez toutefois ajouter un contact secondaire ci-dessous si nécessaire.</span>
+                </div>
+              )}
               
-              {companyForm.contacts.length > 0 && (
+              {companyForm.contacts && companyForm.contacts.length > 0 && (
                 <div className="space-y-2 mb-4">
                   {companyForm.contacts.map((contact, idx) => (
-                    <div key={idx} className="bg-gray-50 p-3 rounded-lg flex justify-between items-start">
+                    <div 
+                      key={idx} 
+                      className={`p-3 rounded-lg flex justify-between items-start transition-all border ${
+                        editingContactIndex === idx 
+                          ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-200' 
+                          : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
                       <div className="flex-1">
-                        <p className="font-medium">{contact.nom}</p>
-                        <p className="text-sm text-gray-600">
-                          {contact.fonction && `${contact.fonction} • `}
-                          {contact.telephone && `${contact.telephone} • `}
-                          {contact.email}
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-slate-800">{contact.nom}</p>
+                          {editingContactIndex === idx && (
+                            <span className="text-[10px] bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded">
+                              En cours d'édition
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-0.5">
+                          {contact.fonction && <span className="font-medium text-slate-700">{contact.fonction} • </span>}
+                          {contact.telephone && <span>📞 {contact.telephone} • </span>}
+                          {contact.email && <span>✉️ {contact.email}</span>}
                         </p>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleRemoveContact(idx)}
-                        className="text-red-600"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          onClick={() => handleEditContact(idx)}
+                          className="text-blue-600 hover:text-blue-800 hover:bg-blue-100/60 h-8 w-8 p-0"
+                          title="Modifier ce contact"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          onClick={() => handleRemoveContact(idx)}
+                          className="text-red-600 hover:text-red-800 hover:bg-red-100/60 h-8 w-8 p-0"
+                          title="Supprimer ce contact"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div className="space-y-3 bg-blue-50 p-4 rounded-lg">
-                <p className="text-sm font-medium">Ajouter un contact</p>
+              <div className={`space-y-3 p-4 rounded-lg border transition-all ${
+                editingContactIndex !== null 
+                  ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-200' 
+                  : 'bg-blue-50/70 border-blue-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                    {editingContactIndex !== null ? (
+                      <>
+                        <Edit className="w-4 h-4 text-amber-600" />
+                        <span>Modifier le contact</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 text-blue-600" />
+                        <span>Ajouter un contact {companyForm.type_client !== "Particulier" ? "à cette organisation" : "secondaire"}</span>
+                      </>
+                    )}
+                  </p>
+                  {editingContactIndex !== null && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancelEditContact}
+                      className="text-xs text-slate-500 hover:text-slate-800 h-6 px-2"
+                    >
+                      Annuler
+                    </Button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <Input
-                    placeholder="Nom *"
+                    placeholder="Nom du contact *"
                     value={newContact.nom}
                     onChange={(e) => setNewContact(prev => ({ ...prev, nom: e.target.value }))}
                   />
                   <Input
-                    placeholder="Fonction"
+                    placeholder="Fonction (ex: Membre CSE, RH, Direction)"
                     value={newContact.fonction}
                     onChange={(e) => setNewContact(prev => ({ ...prev, fonction: e.target.value }))}
                   />
@@ -2260,10 +2419,41 @@ function CRMApp() {
                     onChange={(e) => setNewContact(prev => ({ ...prev, email: e.target.value }))}
                   />
                 </div>
-                <Button onClick={handleAddContact} size="sm" variant="outline" className="w-full">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Ajouter ce contact
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    type="button"
+                    onClick={handleAddContact} 
+                    size="sm" 
+                    className={`w-full font-medium ${
+                      editingContactIndex !== null 
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white' 
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    {editingContactIndex !== null ? (
+                      <>
+                        <Check className="mr-2 h-4 w-4" />
+                        Valider la modification du contact
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Ajouter ce contact
+                      </>
+                    )}
+                  </Button>
+                  {editingContactIndex !== null && (
+                    <Button 
+                      type="button"
+                      onClick={handleCancelEditContact} 
+                      size="sm" 
+                      variant="outline"
+                      className="shrink-0"
+                    >
+                      Annuler
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2291,7 +2481,7 @@ function CRMApp() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCompanyDialog(false)}>
+            <Button variant="outline" onClick={() => { setShowCompanyDialog(false); resetCompanyForm(); }}>
               Annuler
             </Button>
             <Button 
@@ -2351,7 +2541,10 @@ function CRMApp() {
       </Dialog>
 
       {/* Dialog Détails Client */}
-      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
+      <Dialog open={showDetailDialog} onOpenChange={(open) => {
+        setShowDetailDialog(open);
+        if (!open) setSelectedCompanyForDetail(null);
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           {(() => {
             const company = companies.find(c => c.id === selectedCompanyForDetail?.id) || selectedCompanyForDetail;

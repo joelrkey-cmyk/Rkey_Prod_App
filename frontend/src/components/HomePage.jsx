@@ -9,6 +9,7 @@ import { Label } from './ui/label';
 import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw, FileSpreadsheet, Flame, GripVertical } from 'lucide-react';
 import axios from '../services/axiosConfig';
 import { toast } from 'sonner';
+import ProjectsBinder from './ProjectsBinder';
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -314,11 +315,10 @@ const HomePage = () => {
         mercredi: "Mercredi",
         jeudi: "Jeudi",
         vendredi: "Vendredi",
-        a_realiser: "À réaliser",
-        projet: "Projet"
+        a_realiser: "Important"
       };
       const label = dayLabels[targetDay] || targetDay;
-      const prep = (targetDay === 'a_realiser' || targetDay === 'projet') ? `dans « ${label} »` : `au ${label}`;
+      const prep = targetDay === 'a_realiser' ? `dans « ${label} »` : `au ${label}`;
       toast.success(`Tâche déplacée ${prep}`);
     } catch (error) {
       console.error("Error moving task:", error);
@@ -494,7 +494,7 @@ const HomePage = () => {
                   Planning Hebdomadaire
                 </CardTitle>
                 <CardDescription className="text-sm text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
-                  <span>Suivi des tâches de la semaine & Projets (Lundi au Vendredi + À réaliser & Projet)</span>
+                  <span>Suivi des tâches de la semaine (Lundi au Vendredi + Important)</span>
                   <span className="hidden md:inline">•</span>
                   <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium italic flex items-center gap-1">
                     <Clock className="w-3 h-3 text-slate-500" /> Remise à zéro automatique le lundi à 01h00
@@ -521,7 +521,7 @@ const HomePage = () => {
               </div>
             </div>
 
-            {/* Barre de progression de la semaine (hors projets et à réaliser) */}
+            {/* Barre de progression de la semaine */}
             <div className="w-full bg-slate-100 rounded-full h-2.5 mt-4 overflow-hidden border border-slate-200/50">
               <div 
                 className="bg-emerald-500 h-full rounded-full transition-all duration-500 shadow-sm" 
@@ -539,15 +539,14 @@ const HomePage = () => {
                 <p className="text-sm font-medium">Chargement du planning...</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
                 {[
                   { key: 'lundi', label: 'Lundi', color: 'border-blue-500 bg-blue-50/10 text-blue-800' },
                   { key: 'mardi', label: 'Mardi', color: 'border-purple-500 bg-purple-50/10 text-purple-800' },
                   { key: 'mercredi', label: 'Mercredi', color: 'border-pink-500 bg-pink-50/10 text-pink-800' },
                   { key: 'jeudi', label: 'Jeudi', color: 'border-orange-500 bg-orange-50/10 text-orange-800' },
                   { key: 'vendredi', label: 'Vendredi', color: 'border-emerald-500 bg-emerald-50/10 text-emerald-800' },
-                  { key: 'a_realiser', label: 'À réaliser', color: 'border-amber-500 bg-amber-50/10 text-amber-800', isExtension: true },
-                  { key: 'projet', label: 'Projet', color: 'border-indigo-500 bg-indigo-50/10 text-indigo-800', isExtension: true }
+                  { key: 'a_realiser', label: 'Important', color: 'border-amber-500 bg-amber-50/10 text-amber-800', isExtension: true }
                 ].map(day => {
                   const dayTasks = plannerTasks
                     .filter(t => t.day === day.key)
@@ -815,6 +814,9 @@ const HomePage = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Classeur de Projets (Onglets style navigateur) */}
+      <ProjectsBinder />
 
       {/* Dialog d'édition de tâche */}
       <Dialog open={editTaskDialogOpen} onOpenChange={setEditTaskDialogOpen}>
