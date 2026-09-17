@@ -54,7 +54,6 @@ const MobileHome = () => {
             { key: 'crm', route: '/crm', label: 'Fichier Client', desc: 'Gestion des clients', icon: UsersIcon, bg: 'bg-green-500 hover:bg-green-600' },
             { key: 'billetterie', route: '/billetterie', label: 'Événements', desc: 'Billetterie et événements', icon: Ticket, bg: 'bg-gray-800 hover:bg-gray-700' },
             { key: 'formulaires', route: '/formulaires', label: 'Formulaires', desc: 'Formulaires personnalisés', icon: FileText, bg: 'bg-orange-400 hover:bg-orange-500' },
-            { key: 'dj-profiles', route: '/dj-profiles', label: 'Artistes', desc: 'Profils artistes', icon: User, bg: 'bg-yellow-500 hover:bg-yellow-600' },
             { key: 'abonnements', route: '/abonnements', label: 'Abonnements', desc: 'Gestion des abonnements', icon: CreditCard, bg: 'bg-teal-500 hover:bg-teal-600' },
             { key: 'parametres', route: '/parametres', label: 'Paramètres', desc: 'Configuration', icon: Settings, bg: 'bg-slate-600 hover:bg-slate-700' },
           ];

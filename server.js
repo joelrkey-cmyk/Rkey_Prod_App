@@ -6918,6 +6918,8 @@ api.post('/crm/companies/batch', authMiddleware, async (req, res) => {
         lieu_evenement: c.lieu_evenement || "",
         source_contrat: c.source_file || "",
         gcs_url: c.gcs_url || "",
+        dj_id: c.dj_id || "",
+        dj_name: c.dj_name || "",
         created_at: new Date().toISOString()
       };
 

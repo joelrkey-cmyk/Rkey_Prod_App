@@ -14,7 +14,6 @@ import Settings from "./components/Settings";
 import Contracts2App from "./components/Contracts2App";
 import CRMApp from "./components/CRMApp";
 import BilletterieApp from "./components/BilletterieApp";
-import DjProfilesApp from "./components/DjProfilesApp";
 import DevisEnvoiApp from "./components/DevisEnvoiApp";
 import ContractEmailPage from "./components/ContractEmailPage";
 import RentalApp from "./components/rental/RentalApp";
@@ -168,12 +167,7 @@ function App() {
 
               <Route path="/dj-profiles" element={
                 <ProtectedRoute>
-                  <>
-                    <Navigation />
-                    <ErrorBoundary>
-                      <DjProfilesApp />
-                    </ErrorBoundary>
-                  </>
+                  <Navigate to="/parametres" replace />
                 </ProtectedRoute>
               } />
               

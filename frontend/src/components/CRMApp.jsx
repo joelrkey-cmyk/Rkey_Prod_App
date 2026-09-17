@@ -8,7 +8,7 @@ import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, AlertTriangle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FileSpreadsheet, Folder } from "lucide-react";
+import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, AlertTriangle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FileSpreadsheet, Folder, Headphones } from "lucide-react";
 import { toast } from "sonner";
 
 import API_BASE_URL from '../utils/apiUrl';
@@ -136,11 +136,16 @@ function CRMApp() {
     blacklist_tags: "",
     annee_prestation: "",
     type_evenement: "",
-    date_evenement: ""
+    date_evenement: "",
+    dj_id: "",
+    dj_name: ""
   });
 
   const [typeFilter, setTypeFilter] = useState("all");
   const [emailFilter, setEmailFilter] = useState("all"); // 'all' | 'missing' | 'has_email'
+  const [djFilter, setDjFilter] = useState("all"); // 'all' | <dj_id> | 'none'
+  const [djs, setDjs] = useState([]);
+  const [contractsList, setContractsList] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
 
   // ══════════ ÉTAT IMPORTATION CONTRATS (IA) ══════════
@@ -198,7 +203,165 @@ function CRMApp() {
   useEffect(() => {
     loadCompanies();
     loadRelances();
+    loadDjs();
+    loadContracts();
   }, []);
+
+  const loadDjs = async () => {
+    try {
+      const res = await axios.get(`${API}/dj-fiches`);
+      let list = [];
+      if (Array.isArray(res.data)) {
+        list = res.data;
+      } else if (res.data && typeof res.data === 'object') {
+        if (Array.isArray(res.data.profiles)) {
+          list = res.data.profiles;
+        } else if (res.data.profiles && typeof res.data.profiles === 'object') {
+          list = Object.values(res.data.profiles);
+        } else {
+          list = Object.values(res.data);
+        }
+      }
+      setDjs(Array.isArray(list) ? list : []);
+    } catch (error) {
+      console.error("Error loading DJs:", error);
+    }
+  };
+
+  const loadContracts = async () => {
+    try {
+      const res = await axios.get(`${API}/contracts2`);
+      setContractsList(Array.isArray(res.data) ? res.data : []);
+    } catch (error) {
+      console.error("Error loading contracts:", error);
+    }
+  };
+
+  // Associe un client CRM à ses contrats dans contracts2
+  const getCompanyContracts = (company) => {
+    if (!company || !contractsList || contractsList.length === 0) return [];
+    const compEmail = (company.email || "").toLowerCase().trim();
+    const compNom = (company.nom || "").toLowerCase().trim();
+    const compNotes = company.notes || "";
+    const compTel = (company.telephone || "").replace(/\D/g, "");
+
+    return contractsList.filter(c => {
+      // 1. Correspondance par ID de contrat (noté dans les notes ou source_contrat)
+      if (c.id && (compNotes.includes(c.id) || company.source_contrat === c.id)) return true;
+      
+      const cEmail = (c.client_info?.email || c.client_email || "").toLowerCase().trim();
+      const cName = (c.client_info?.name || c.client_name || "").toLowerCase().trim();
+      const cCompany = (c.client_info?.company || "").toLowerCase().trim();
+      const cTel = (c.client_info?.phone || c.client_phone || "").replace(/\D/g, "");
+
+      // 2. Correspondance par email principal
+      if (compEmail && cEmail && (compEmail === cEmail || compEmail.includes(cEmail) || cEmail.includes(compEmail))) return true;
+
+      // 3. Correspondance par nom complet ou entreprise
+      if (compNom && (compNom === cName || (cCompany && compNom === cCompany))) return true;
+
+      // 4. Correspondance avec les contacts enregistrés du client
+      if (Array.isArray(company.contacts)) {
+        for (const ct of company.contacts) {
+          const ctEmail = (ct.email || "").toLowerCase().trim();
+          const ctNom = (ct.nom || "").toLowerCase().trim();
+          if (ctEmail && cEmail && (ctEmail === cEmail || ctEmail.includes(cEmail) || cEmail.includes(ctEmail))) return true;
+          if (ctNom && (ctNom === cName || (cCompany && ctNom === cCompany))) return true;
+        }
+      }
+
+      // 5. Correspondance par numéro de téléphone (8 derniers chiffres)
+      if (compTel && compTel.length >= 8 && cTel && cTel.includes(compTel.slice(-8))) return true;
+
+      return false;
+    });
+  };
+
+  // Récupère tous les identifiants ou noms de DJ associés à un client
+  const getCompanyDjs = (company) => {
+    const djKeys = new Set();
+    
+    // Champs directs sur l'entreprise
+    if (company.dj_id) djKeys.add(String(company.dj_id));
+    if (company.dj_name) djKeys.add(company.dj_name.toLowerCase().trim());
+    if (company.dj_profile) djKeys.add(String(company.dj_profile));
+
+    // Depuis les contrats associés
+    const matched = getCompanyContracts(company);
+    matched.forEach(c => {
+      if (c.dj_profile) {
+        djKeys.add(String(c.dj_profile));
+      }
+      if (c.dj_profile_data?.nom_artistique) {
+        djKeys.add(c.dj_profile_data.nom_artistique.toLowerCase().trim());
+      }
+      if (c.dj_profile_data?.name) {
+        djKeys.add(c.dj_profile_data.name.toLowerCase().trim());
+      }
+      if (c.dj_profile_data?.nom_complet) {
+        djKeys.add(c.dj_profile_data.nom_complet.toLowerCase().trim());
+      }
+    });
+
+    return djKeys;
+  };
+
+  // Récupère le nom d'affichage principal du DJ pour un client
+  const getCompanyMainDjName = (company) => {
+    if (company.dj_name) return company.dj_name;
+    if (company.dj_id) {
+      const found = djs.find(d => String(d.id) === String(company.dj_id));
+      if (found) return found.nom_artistique || found.nom_complet;
+    }
+    const matched = getCompanyContracts(company);
+    for (const c of matched) {
+      if (c.dj_profile_data?.nom_artistique) return c.dj_profile_data.nom_artistique;
+      if (c.dj_profile_data?.name) return c.dj_profile_data.name;
+      if (c.dj_profile_data?.nom_complet) return c.dj_profile_data.nom_complet;
+      if (c.dj_profile) {
+        const found = djs.find(d => String(d.id) === String(c.dj_profile));
+        if (found) return found.nom_artistique || found.nom_complet;
+        return c.dj_profile;
+      }
+    }
+    return null;
+  };
+
+  // Liste des options de DJ disponibles pour le filtre
+  const availableDjOptions = React.useMemo(() => {
+    const options = [];
+    const seenNames = new Set();
+
+    // 1. DJ issus des paramètres généraux (/api/dj-fiches)
+    (djs || []).forEach(dj => {
+      const label = dj.nom_artistique || dj.nom_complet || dj.id;
+      if (label && !seenNames.has(label.toLowerCase())) {
+        seenNames.add(label.toLowerCase());
+        options.push({
+          id: String(dj.id),
+          name: label,
+          subtext: dj.nom_complet && dj.nom_artistique && dj.nom_artistique !== dj.nom_complet ? dj.nom_complet : null,
+          actif: dj.actif !== false
+        });
+      }
+    });
+
+    // 2. Compléter éventuellement avec les DJ présents dans les contrats
+    (contractsList || []).forEach(c => {
+      const djName = c.dj_profile_data?.nom_artistique || c.dj_profile_data?.name || c.dj_profile_data?.nom_complet;
+      if (djName && !seenNames.has(djName.toLowerCase())) {
+        seenNames.add(djName.toLowerCase());
+        options.push({
+          id: String(c.dj_profile || djName),
+          name: djName,
+          subtext: "Contrats",
+          actif: true
+        });
+      }
+    });
+
+    return options;
+  }, [djs, contractsList]);
 
   const loadCompanies = async () => {
     try {
@@ -416,7 +579,9 @@ function CRMApp() {
       blacklist_tags: "",
       annee_prestation: "",
       type_evenement: "",
-      date_evenement: ""
+      date_evenement: "",
+      dj_id: "",
+      dj_name: ""
     });
     setEditingCompany(null);
     setEditingContactIndex(null);
@@ -444,7 +609,9 @@ function CRMApp() {
       blacklist_tags: company.blacklist_tags || "",
       annee_prestation: company.annee_prestation || "",
       type_evenement: company.type_evenement || "",
-      date_evenement: company.date_evenement || getCompanyEventDate(company) || ""
+      date_evenement: company.date_evenement || getCompanyEventDate(company) || "",
+      dj_id: company.dj_id || "",
+      dj_name: company.dj_name || ""
     });
     setSireneSearchQuery("");
     setSireneResults([]);
@@ -562,7 +729,7 @@ function CRMApp() {
         const companyLower = clientInfo.company ? clientInfo.company.toLowerCase().trim() : "";
 
         // Check if exists
-        const exists = currentCompanies.some(c => {
+        const existingIdx = currentCompanies.findIndex(c => {
           const cEmail = c.email ? c.email.toLowerCase().trim() : "";
           const cNom = c.nom ? c.nom.toLowerCase().trim() : "";
           return (emailLower && cEmail === emailLower) || 
@@ -570,7 +737,10 @@ function CRMApp() {
                  (companyLower && cNom === companyLower);
         });
         
-        if (!exists) {
+        const contractDjId = contract.dj_profile || "";
+        const contractDjName = contract.dj_profile_data?.nom_artistique || contract.dj_profile_data?.name || contract.dj_profile_data?.nom_complet || "";
+
+        if (existingIdx === -1) {
             // Add new client
             const isCompany = !!clientInfo.company;
             const eventDate = clientInfo.event_date || "";
@@ -595,13 +765,28 @@ function CRMApp() {
                 blacklist_tags: "",
                 annee_prestation: eventYear,
                 type_evenement: eventType,
-                date_evenement: eventDate
+                date_evenement: eventDate,
+                dj_id: contractDjId,
+                dj_name: contractDjName,
+                source_contrat: contract.id || ""
             };
             
             const postResponse = await axios.post(`${API}/crm/companies`, newClient);
             const addedClient = postResponse.data;
             currentCompanies.push(addedClient);
             newClientsAdded++;
+        } else {
+            // If existing client lacks DJ, enrich it with this contract's DJ
+            const existing = currentCompanies[existingIdx];
+            if (!existing.dj_id && (contractDjId || contractDjName)) {
+              try {
+                const updatedObj = { ...existing, dj_id: contractDjId, dj_name: contractDjName };
+                await axios.put(`${API}/crm/companies/${existing.id}`, updatedObj);
+                currentCompanies[existingIdx] = updatedObj;
+              } catch (updateErr) {
+                console.error("Error backfilling DJ on company:", updateErr);
+              }
+            }
         }
       }
 
@@ -1451,7 +1636,25 @@ function CRMApp() {
                          (emailFilter === "missing" && !hasCompanyEmail(company)) || 
                          (emailFilter === "has_email" && hasCompanyEmail(company));
 
-    return matchesSearch && matchesStatus && matchesType && matchesAnnee && matchesEvent && matchesDateRange && matchesEmail;
+    // Filtre par DJ / Artiste titulaire des contrats
+    let matchesDj = true;
+    if (djFilter !== "all") {
+      const companyDjs = getCompanyDjs(company);
+      if (djFilter === "none") {
+        matchesDj = companyDjs.size === 0;
+      } else {
+        const selectedOpt = availableDjOptions.find(opt => String(opt.id) === String(djFilter));
+        const keysToCheck = [
+          String(djFilter),
+          selectedOpt?.name?.toLowerCase()?.trim(),
+          selectedOpt?.subtext?.toLowerCase()?.trim(),
+        ].filter(Boolean);
+
+        matchesDj = keysToCheck.some(k => companyDjs.has(k));
+      }
+    }
+
+    return matchesSearch && matchesStatus && matchesType && matchesAnnee && matchesEvent && matchesDateRange && matchesEmail && matchesDj;
   });
 
   const getStatusBadge = (statut) => {
@@ -1515,7 +1718,7 @@ function CRMApp() {
   };
 
   const handleDownloadCSV = () => {
-    const headers = ["Nom du Client", "Type de Client", "Statut", "Email Principal", "Téléphone Principal", "Adresse", "Date de prestation", "Type d'événement", "Année"];
+    const headers = ["Nom du Client", "Type de Client", "Statut", "Email Principal", "Téléphone Principal", "Adresse", "Date de prestation", "Type d'événement", "Année", "DJ Titulaire"];
     const rows = filteredCompanies.map(c => {
       const cleanedEmails = extractEmails(c.email).join(", ");
       return [
@@ -1527,7 +1730,8 @@ function CRMApp() {
         c.adresse || "",
         getCompanyEventDate(c) || "",
         getCompanyEventType(c) || "",
-        getCompanyYear(c) || ""
+        getCompanyYear(c) || "",
+        getCompanyMainDjName(c) || ""
       ];
     });
 
@@ -1718,6 +1922,26 @@ function CRMApp() {
                     </SelectContent>
                   </Select>
 
+                  <Select value={djFilter} onValueChange={setDjFilter}>
+                    <SelectTrigger className={`w-full sm:w-48 ${djFilter !== "all" ? "border-amber-400 bg-amber-50/80 text-amber-950 font-medium" : ""}`}>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <Headphones className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <SelectValue placeholder="DJ / Artiste" />
+                      </div>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">🎧 Tous les DJ / Artistes</SelectItem>
+                      {availableDjOptions.map(opt => (
+                        <SelectItem key={opt.id} value={opt.id}>
+                          🎧 {opt.name} {opt.subtext && opt.subtext !== "Contrats" ? `(${opt.subtext})` : ''}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="none" className="text-slate-500 italic">
+                        Sans DJ / Non assigné
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
                     <SelectTrigger className="w-full sm:w-36">
                       <SelectValue placeholder="Statut" />
@@ -1757,13 +1981,14 @@ function CRMApp() {
                     </SelectContent>
                   </Select>
 
-                  {(searchTerm || anneeFilter !== "all" || eventFilter !== "all" || statusFilter !== "all" || typeFilter !== "all" || emailFilter !== "all" || startDateFilter || endDateFilter) && (
+                  {(searchTerm || anneeFilter !== "all" || eventFilter !== "all" || djFilter !== "all" || statusFilter !== "all" || typeFilter !== "all" || emailFilter !== "all" || startDateFilter || endDateFilter) && (
                     <Button
                       variant="outline"
                       onClick={() => {
                         setSearchTerm("");
                         setAnneeFilter("all");
                         setEventFilter("all");
+                        setDjFilter("all");
                         setStatusFilter("all");
                         setTypeFilter("all");
                         setEmailFilter("all");
@@ -1881,6 +2106,12 @@ function CRMApp() {
                         {getCompanyProvenance(company) === "contrat" && (
                           <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 text-[10px] font-semibold py-0.5 px-2 border border-purple-200 uppercase tracking-tight">
                             🎵 Prestation
+                          </Badge>
+                        )}
+                        {getCompanyMainDjName(company) && (
+                          <Badge className="bg-amber-50 text-amber-900 hover:bg-amber-100 text-[10px] font-semibold py-0.5 px-2 border border-amber-300 uppercase tracking-tight flex items-center gap-1">
+                            <Headphones className="w-3 h-3 text-amber-600" />
+                            <span>DJ: {getCompanyMainDjName(company)}</span>
                           </Badge>
                         )}
                       </h4>
@@ -2264,6 +2495,40 @@ function CRMApp() {
             </div>
 
             <div>
+              <Label htmlFor="dj_profile_select">DJ / Artiste titulaire (contrats / prestation)</Label>
+              <Select
+                value={companyForm.dj_id || (companyForm.dj_name ? `name:${companyForm.dj_name}` : "none")}
+                onValueChange={(val) => {
+                  if (val === "none") {
+                    setCompanyForm(prev => ({ ...prev, dj_id: "", dj_name: "" }));
+                  } else if (val.startsWith("name:")) {
+                    const djName = val.replace("name:", "");
+                    setCompanyForm(prev => ({ ...prev, dj_id: "", dj_name: djName }));
+                  } else {
+                    const found = availableDjOptions.find(opt => String(opt.id) === String(val));
+                    setCompanyForm(prev => ({
+                      ...prev,
+                      dj_id: val,
+                      dj_name: found ? found.name : ""
+                    }));
+                  }
+                }}
+              >
+                <SelectTrigger id="dj_profile_select" className="w-full">
+                  <SelectValue placeholder="Choisir un DJ" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Aucun DJ assigné</SelectItem>
+                  {availableDjOptions.map(opt => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      🎧 {opt.name} {opt.subtext && opt.subtext !== "Contrats" ? `(${opt.subtext})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label htmlFor="adresse">Adresse</Label>
               <Input
                 id="adresse"
@@ -2614,6 +2879,12 @@ function CRMApp() {
                       <Badge className="bg-emerald-100 text-emerald-800 font-semibold">📅 Année: {getCompanyYear(company)}</Badge>
                     ) : null}
                     {getCompanyEventType(company) && <Badge className="bg-amber-100 text-amber-850 font-semibold">🎉 Événement: {getCompanyEventType(company)}</Badge>}
+                    {getCompanyMainDjName(company) && (
+                      <Badge className="bg-amber-50 text-amber-900 border-amber-300 font-semibold flex items-center gap-1">
+                        <Headphones className="w-3.5 h-3.5 text-amber-600" />
+                        <span>DJ Titulaire : {getCompanyMainDjName(company)}</span>
+                      </Badge>
+                    )}
                     {company.blacklist_tags && <Badge variant="destructive">{company.blacklist_tags}</Badge>}
                   </div>
 
@@ -2673,6 +2944,45 @@ function CRMApp() {
                             </div>
                           </div>
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Contrats & Prestations associées avec le DJ */}
+                  {getCompanyContracts(company).length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
+                        <Headphones className="w-4 h-4 text-amber-500" /> Contrats & Prestations ({getCompanyContracts(company).length})
+                      </h4>
+                      <div className="space-y-2">
+                        {getCompanyContracts(company).map((contract, idx) => {
+                          const cDjName = contract.dj_profile_data?.nom_artistique || contract.dj_profile_data?.name || contract.dj_profile_data?.nom_complet || (djs.find(d => String(d.id) === String(contract.dj_profile))?.nom_artistique) || contract.dj_profile || "Non assigné";
+                          const cDate = contract.client_info?.event_date || contract.event_date || "";
+                          const cType = contract.client_info?.event_type || contract.event_type || "Prestation musicale";
+                          return (
+                            <div key={contract.id || idx} className="bg-amber-50/50 border border-amber-200/70 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-slate-800 text-sm">{cType}</span>
+                                  {cDate && (
+                                    <span className="text-xs bg-white text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                                      📅 {new Date(cDate).toLocaleDateString('fr-FR')}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Contrat : <span className="font-mono">{contract.id ? contract.id.slice(0, 10) : '—'}</span> {contract.status ? `• Statut : ${contract.status}` : ''}
+                                </p>
+                              </div>
+                              <div className="shrink-0">
+                                <Badge className="bg-amber-100 text-amber-900 border-amber-300 font-semibold text-xs flex items-center gap-1">
+                                  <Headphones className="w-3 h-3 text-amber-700" />
+                                  <span>DJ : {cDjName}</span>
+                                </Badge>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

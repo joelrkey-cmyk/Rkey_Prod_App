@@ -7,6 +7,7 @@ import { Label } from './ui/label';
 import { toast } from 'sonner';
 import { ArrowLeft, Save, Building2, Landmark, Loader2, Mail, Upload, Trash2, Server, Send, Eye, EyeOff, Calendar } from 'lucide-react';
 import UserManagement from './settings/UserManagement';
+import DjArtistsManagement from './settings/DjArtistsManagement';
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -693,6 +694,9 @@ const GlobalSettingsApp = () => {
                   )}
                 </CardContent>
               </Card>
+
+              {/* DJ Artists Management */}
+              <DjArtistsManagement />
 
               {/* User Management */}
               <UserManagement />

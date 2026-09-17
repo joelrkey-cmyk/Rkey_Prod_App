@@ -3011,15 +3011,6 @@ function Contracts2App() {
                 <ArrowLeft className="h-4 w-4" /> Retour au Sommaire
               </Button>
               <Button onClick={resetForm} variant="outline" className="px-4 py-3 text-sm">Reset</Button>
-              <Button 
-                onClick={() => setIsImportModalOpen(true)} 
-                variant="outline" 
-                className="px-4 py-3 text-sm border-indigo-400 text-indigo-700 hover:bg-indigo-50 flex items-center gap-1.5"
-                data-testid="import-contract-btn"
-              >
-                <Upload className="h-4 w-4" />
-                Importer ancien contrat
-              </Button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

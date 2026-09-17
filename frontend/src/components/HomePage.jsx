@@ -444,7 +444,6 @@ const HomePage = () => {
             { name: 'Fichier Client', icon: <Building2 className="w-7 h-7" />, color: 'bg-green-500', route: '/crm', key: 'crm' },
             { name: 'Événements', icon: <Ticket className="w-7 h-7" />, color: 'bg-gray-800', route: '/billetterie', key: 'billetterie' },
             { name: 'Formulaires', icon: <FileText className="w-7 h-7" />, color: 'bg-orange-400', route: '/formulaires', key: 'formulaires' },
-            { name: 'Artistes', icon: <User className="w-7 h-7" />, color: 'bg-yellow-500', route: '/dj-profiles', key: 'dj-profiles' },
             { name: 'Paramètres', icon: <Settings className="w-7 h-7" />, color: 'bg-slate-600', route: '/parametres', key: 'parametres' },
           ].filter(app => {
             const savedUser = localStorage.getItem('user');
