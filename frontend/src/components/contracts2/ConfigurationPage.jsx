@@ -412,9 +412,9 @@ export const ConfigurationPage = ({
   const [editingFreelanceTemplate, setEditingFreelanceTemplate] = useState(null);
   const [isFreelanceModalOpen, setIsFreelanceModalOpen] = useState(false);
 
-  // Modèles d'emails pour les Clients / Mariés (Contrat & Acompte, Contrat seul, Lien interface DJ)
+  // Modèles d'emails pour les Clients / Mariés (Confirmation, Accès Espace DJ, etc.)
   const [clientTemplates, setClientTemplates] = useState([]);
-  const [newClientTemplate, setNewClientTemplate] = useState({ name: "", category: "contrat_acompte", subject: "", body: "" });
+  const [newClientTemplate, setNewClientTemplate] = useState({ name: "", subject: "", body: "" });
   const [editingClientTemplate, setEditingClientTemplate] = useState(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
 
@@ -953,6 +953,23 @@ export const ConfigurationPage = ({
   };
 
   // ── Méthodes pour les modèles d'emails clients ──
+  const moveClientTemplate = async (index, direction) => {
+    const newTemplates = [...clientTemplates];
+    if (direction === 'up' && index > 0) {
+      [newTemplates[index], newTemplates[index - 1]] = [newTemplates[index - 1], newTemplates[index]];
+    } else if (direction === 'down' && index < newTemplates.length - 1) {
+      [newTemplates[index], newTemplates[index + 1]] = [newTemplates[index + 1], newTemplates[index]];
+    }
+    setClientTemplates(newTemplates);
+    try {
+      const reorderData = newTemplates.map((t, idx) => ({ id: t.id, order: idx }));
+      await apiService.post('/client-email-templates/reorder', { templates: reorderData });
+    } catch (error) {
+      console.error("Error reordering client templates:", error);
+      toast.error("Erreur lors de la réorganisation des modèles");
+    }
+  };
+
   const addClientTemplate = async () => {
     if (!newClientTemplate.name.trim() || !newClientTemplate.subject.trim() || !newClientTemplate.body.trim()) {
       toast.error("Veuillez remplir le nom, l'objet et le message du modèle.");
@@ -962,13 +979,13 @@ export const ConfigurationPage = ({
       setIsSaving(true);
       const res = await apiService.post('/client-email-templates', {
         name: newClientTemplate.name.trim(),
-        category: newClientTemplate.category || 'contrat_acompte',
         subject: newClientTemplate.subject.trim(),
         body: newClientTemplate.body.trim(),
+        order: clientTemplates.length,
         is_default: clientTemplates.length === 0
       });
       setClientTemplates([...clientTemplates, res.data]);
-      setNewClientTemplate({ name: "", category: "contrat_acompte", subject: "", body: "" });
+      setNewClientTemplate({ name: "", subject: "", body: "" });
       toast.success("Modèle d'email client ajouté avec succès !");
     } catch (err) {
       console.error("Error adding client template:", err);
@@ -997,7 +1014,8 @@ export const ConfigurationPage = ({
     }
     try {
       setIsSaving(true);
-      const res = await apiService.put(`/client-email-templates/${editingClientTemplate.id}`, editingClientTemplate);
+      const { category, ...cleanData } = editingClientTemplate;
+      const res = await apiService.put(`/client-email-templates/${editingClientTemplate.id}`, cleanData);
       setClientTemplates(clientTemplates.map(t => t.id === editingClientTemplate.id ? res.data : t));
       setIsClientModalOpen(false);
       setEditingClientTemplate(null);
@@ -1935,7 +1953,7 @@ export const ConfigurationPage = ({
               </CardHeader>
               <CardContent>
                 <div className="space-y-4 mb-6">
-                  {clientTemplates.map((t) => (
+                  {clientTemplates.map((t, index) => (
                     <div key={t.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 border rounded-lg bg-white shadow-sm hover:border-emerald-200 transition-colors gap-4">
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1945,26 +1963,31 @@ export const ConfigurationPage = ({
                               Par défaut
                             </Badge>
                           )}
-                          {t.category === 'contrat_acompte' && (
-                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 font-normal">
-                              Contrat & Acompte
-                            </Badge>
-                          )}
-                          {t.category === 'contrat_seul' && (
-                            <Badge className="bg-amber-50 text-amber-700 border-amber-200 font-normal">
-                              Contrat seul
-                            </Badge>
-                          )}
-                          {t.category === 'lien_espace_dj' && (
-                            <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 font-normal">
-                              Lien Espace DJ
-                            </Badge>
-                          )}
                         </div>
                         <p className="text-xs text-emerald-700 font-medium mt-1">Sujet : {t.subject}</p>
                         <p className="text-xs text-slate-600 mt-1.5 line-clamp-3 whitespace-pre-line font-sans bg-slate-50 p-2 rounded border border-slate-100">{cleanPlainText(t.body)}</p>
                       </div>
-                      <div className="flex items-center space-x-2 shrink-0">
+                      <div className="flex items-center space-x-1.5 shrink-0">
+                        <Button 
+                          onClick={() => moveClientTemplate(index, 'up')} 
+                          disabled={index === 0 || isSaving} 
+                          size="sm" 
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                          title="Monter ce modèle"
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          onClick={() => moveClientTemplate(index, 'down')} 
+                          disabled={index === clientTemplates.length - 1 || isSaving} 
+                          size="sm" 
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                          title="Descendre ce modèle"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
                         {!t.is_default && (
                           <Button 
                             onClick={() => setClientTemplateAsDefault(t.id)} 
@@ -1983,6 +2006,7 @@ export const ConfigurationPage = ({
                           size="sm" 
                           variant="outline"
                           className="border-slate-300 hover:bg-slate-50"
+                          title="Modifier"
                         >
                           <Edit className="h-4 w-4 text-slate-600" />
                         </Button>
@@ -1990,6 +2014,7 @@ export const ConfigurationPage = ({
                           onClick={() => deleteClientTemplate(t.id)} 
                           size="sm" 
                           variant="destructive"
+                          title="Supprimer"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -2009,28 +2034,15 @@ export const ConfigurationPage = ({
                     <span>Créer un nouveau modèle pour les clients</span>
                   </h3>
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label className="text-slate-700 text-xs font-semibold">Nom interne du modèle</Label>
+                        <Label className="text-slate-700 text-xs font-semibold">Nom du modèle</Label>
                         <Input 
-                          placeholder="Ex: Contrat & Acompte reçus" 
+                          placeholder="Ex: Confirmation contrat & Espace DJ" 
                           value={newClientTemplate.name}
                           onChange={(e) => setNewClientTemplate({...newClientTemplate, name: e.target.value})}
                           className="border-slate-300 bg-white text-sm"
                         />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-slate-700 text-xs font-semibold">Catégorie / Utilisation</Label>
-                        <select
-                          className="w-full h-10 px-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          value={newClientTemplate.category || "contrat_acompte"}
-                          onChange={(e) => setNewClientTemplate({...newClientTemplate, category: e.target.value})}
-                        >
-                          <option value="contrat_acompte">Contrat signé et acompte reçu</option>
-                          <option value="contrat_seul">Contrat signé uniquement</option>
-                          <option value="lien_espace_dj">Lien d'accès à l'Espace DJ uniquement</option>
-                          <option value="autre">Autre modèle client</option>
-                        </select>
                       </div>
                       <div className="space-y-2">
                         <Label className="text-slate-700 text-xs font-semibold">Sujet de l'email</Label>
@@ -2198,30 +2210,14 @@ export const ConfigurationPage = ({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="client-tpl-category" className="text-slate-700 font-medium text-xs">Catégorie</Label>
-                    <select
-                      id="client-tpl-category"
-                      className="w-full h-10 px-3 py-2 text-sm bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      value={editingClientTemplate.category || "contrat_acompte"}
-                      onChange={(e) => setEditingClientTemplate({...editingClientTemplate, category: e.target.value})}
-                      disabled={isSaving}
-                    >
-                      <option value="contrat_acompte">Contrat signé et acompte reçu</option>
-                      <option value="contrat_seul">Contrat signé uniquement</option>
-                      <option value="lien_espace_dj">Lien d'accès à l'Espace DJ uniquement</option>
-                      <option value="autre">Autre modèle client</option>
-                    </select>
+                    <Label htmlFor="client-tpl-subject" className="text-slate-700 font-medium text-xs">Sujet du courriel</Label>
+                    <Input 
+                      id="client-tpl-subject" 
+                      value={editingClientTemplate.subject || ""} 
+                      onChange={(e) => setEditingClientTemplate({...editingClientTemplate, subject: e.target.value})} 
+                      disabled={isSaving} 
+                    />
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="client-tpl-subject" className="text-slate-700 font-medium text-xs">Sujet du courriel</Label>
-                  <Input 
-                    id="client-tpl-subject" 
-                    value={editingClientTemplate.subject || ""} 
-                    onChange={(e) => setEditingClientTemplate({...editingClientTemplate, subject: e.target.value})} 
-                    disabled={isSaving} 
-                  />
                 </div>
 
                 <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-lg text-xs text-emerald-900 flex flex-wrap items-center gap-2">

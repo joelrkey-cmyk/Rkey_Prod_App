@@ -2169,6 +2169,7 @@ function DevisView({ setCurrentView }) {
                       disabled={formData.trusted_no_guarantee || formData.trusted_client}
                       className={`[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${(formData.trusted_no_guarantee || formData.trusted_client) ? 'opacity-50 bg-gray-100' : ''}`}
                     />
+                    <p className="text-[11px] text-purple-700 mt-1">Empreinte bancaire (aucun chèque). Pièce d'identité obligatoire.</p>
                   </div>
                 </div>
                 

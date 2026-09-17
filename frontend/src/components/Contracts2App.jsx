@@ -169,7 +169,6 @@ function Contracts2App() {
   const [pendingSigningContractObj, setPendingSigningContractObj] = useState(null);
   const [isClientNotifOpen, setIsClientNotifOpen] = useState(false);
   const [clientNotifTemplates, setClientNotifTemplates] = useState([]);
-  const [clientNotifCategory, setClientNotifCategory] = useState("contrat_acompte");
   const [clientNotifSelectedTemplateId, setClientNotifSelectedTemplateId] = useState("");
   const [clientNotifRecipientEmail, setClientNotifRecipientEmail] = useState("");
   const [clientNotifEmailSubject, setClientNotifEmailSubject] = useState("");
@@ -1233,23 +1232,10 @@ function Contracts2App() {
     return { subject, body };
   };
 
-  const handleClientCategoryChange = (category, templates = clientNotifTemplates, contract = pendingSigningContractObj, currentLink = clientNotifPortalLink) => {
-    setClientNotifCategory(category);
-    const matching = templates.filter(t => t.category === category);
-    const chosenTpl = matching.find(t => t.is_default) || matching[0] || templates[0];
-    if (chosenTpl) {
-      setClientNotifSelectedTemplateId(chosenTpl.id);
-      const { subject, body } = applyClientTemplateVariables(chosenTpl, contract, currentLink);
-      setClientNotifEmailSubject(subject);
-      setClientNotifEmailBody(body);
-    }
-  };
-
   const handleClientTemplateSelect = (templateId, templates = clientNotifTemplates, contract = pendingSigningContractObj, currentLink = clientNotifPortalLink) => {
     setClientNotifSelectedTemplateId(templateId);
     const chosenTpl = templates.find(t => t.id === templateId);
     if (chosenTpl) {
-      if (chosenTpl.category) setClientNotifCategory(chosenTpl.category);
       const { subject, body } = applyClientTemplateVariables(chosenTpl, contract, currentLink);
       setClientNotifEmailSubject(subject);
       setClientNotifEmailBody(body);
@@ -1269,11 +1255,7 @@ function Contracts2App() {
       const list = res.data?.templates || [];
       setClientNotifTemplates(list);
 
-      const defaultCat = "contrat_acompte";
-      setClientNotifCategory(defaultCat);
-
-      const matching = list.filter(t => t.category === defaultCat);
-      const chosenTpl = matching.find(t => t.is_default) || matching[0] || list[0];
+      const chosenTpl = list.find(t => t.is_default) || list[0];
 
       if (chosenTpl) {
         setClientNotifSelectedTemplateId(chosenTpl.id);
@@ -5783,11 +5765,11 @@ function Contracts2App() {
           </DialogHeader>
 
           <div className="space-y-5 py-4">
-            {/* Sélection rapide du modèle par catégorie */}
+            {/* Sélection du modèle dans l'ordre configuré */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                  1. Choisissez le type de message à envoyer :
+                  1. Choisissez le modèle d'email à envoyer :
                 </Label>
                 <button
                   type="button"
@@ -5799,106 +5781,50 @@ function Contracts2App() {
                   className="text-xs text-emerald-700 hover:text-emerald-900 underline flex items-center gap-1 font-medium"
                 >
                   <Settings className="h-3 w-3" />
-                  Paramétrer les modèles
+                  Gérer & réordonner les modèles
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {/* Modèle 1: Contrat & Acompte reçus */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleClientCategoryChange("contrat_acompte")}
-                  className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
-                    clientNotifCategory === "contrat_acompte"
-                      ? "border-emerald-500 bg-emerald-50/80 ring-2 ring-emerald-400/20 shadow-sm"
-                      : "border-slate-200 bg-slate-50/60 hover:bg-slate-100/70"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
-                        clientNotifCategory === "contrat_acompte" ? "bg-emerald-600 text-white font-bold" : "border border-slate-400"
-                      }`}>
-                        {clientNotifCategory === "contrat_acompte" ? "✓" : ""}
-                      </span>
-                      Contrat & Acompte
-                    </span>
-                    <Badge className="bg-emerald-100 text-emerald-800 text-[10px] py-0 px-1.5 border-emerald-200">Reçus</Badge>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
-                    Confirmation complète : contrat signé + acompte encaissé + lien Espace DJ.
-                  </p>
-                </div>
-
-                {/* Modèle 2: Contrat signé uniquement */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleClientCategoryChange("contrat_seul")}
-                  className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
-                    clientNotifCategory === "contrat_seul"
-                      ? "border-amber-500 bg-amber-50/80 ring-2 ring-amber-400/20 shadow-sm"
-                      : "border-slate-200 bg-slate-50/60 hover:bg-slate-100/70"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
-                        clientNotifCategory === "contrat_seul" ? "bg-amber-600 text-white font-bold" : "border border-slate-400"
-                      }`}>
-                        {clientNotifCategory === "contrat_seul" ? "✓" : ""}
-                      </span>
-                      Contrat seul
-                    </span>
-                    <Badge className="bg-amber-100 text-amber-800 text-[10px] py-0 px-1.5 border-amber-200">En attente acompte</Badge>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
-                    Contrat bien reçu, rappel de l'acompte à régler + lien Espace DJ.
-                  </p>
-                </div>
-
-                {/* Modèle 3: Lien Espace DJ seul */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleClientCategoryChange("lien_espace_dj")}
-                  className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
-                    clientNotifCategory === "lien_espace_dj"
-                      ? "border-indigo-500 bg-indigo-50/80 ring-2 ring-indigo-400/20 shadow-sm"
-                      : "border-slate-200 bg-slate-50/60 hover:bg-slate-100/70"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[10px] ${
-                        clientNotifCategory === "lien_espace_dj" ? "bg-indigo-600 text-white font-bold" : "border border-slate-400"
-                      }`}>
-                        {clientNotifCategory === "lien_espace_dj" ? "✓" : ""}
-                      </span>
-                      Lien Espace DJ seul
-                    </span>
-                    <Badge className="bg-indigo-100 text-indigo-800 text-[10px] py-0 px-1.5 border-indigo-200">Accès</Badge>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
-                    Transmet l'adresse et le lien d'accès à l'interface DJ de personnalisation.
-                  </p>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                {clientNotifTemplates.map((tpl) => {
+                  const isSelected = clientNotifSelectedTemplateId === tpl.id;
+                  return (
+                    <div
+                      key={tpl.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleClientTemplateSelect(tpl.id)}
+                      className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-50/80 ring-2 ring-emerald-400/20 shadow-sm"
+                          : "border-slate-200 bg-slate-50/60 hover:bg-slate-100/70"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5 truncate">
+                          <span className={`w-3.5 h-3.5 shrink-0 rounded-full flex items-center justify-center text-[10px] ${
+                            isSelected ? "bg-emerald-600 text-white font-bold" : "border border-slate-400"
+                          }`}>
+                            {isSelected ? "✓" : ""}
+                          </span>
+                          <span className="truncate">{tpl.name}</span>
+                        </span>
+                        {tpl.is_default && (
+                          <Badge className="bg-emerald-100 text-emerald-800 text-[10px] py-0 px-1.5 border-emerald-200 shrink-0">
+                            Par défaut
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                        {tpl.subject}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
-
-              {/* Sélection d'un modèle précis dans la liste si multiple */}
-              {clientNotifTemplates.length > 3 && (
-                <div className="pt-1 flex items-center gap-2">
-                  <span className="text-xs text-slate-500">Ou sélectionner un modèle précis :</span>
-                  <select
-                    className="h-8 px-2 py-1 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-                    value={clientNotifSelectedTemplateId}
-                    onChange={(e) => handleClientTemplateSelect(e.target.value)}
-                  >
-                    {clientNotifTemplates.map(t => (
-                      <option key={t.id} value={t.id}>{t.name} {t.is_default ? "(Par défaut)" : ""}</option>
-                    ))}
-                  </select>
+              {clientNotifTemplates.length === 0 && (
+                <div className="text-xs text-slate-500 italic p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  Aucun modèle configuré. Le modèle par défaut sera utilisé.
                 </div>
               )}
             </div>

@@ -106,7 +106,7 @@ export function generateCompleteReservationDocuments(reservationData) {
     "Article 2 : Conditions de Retrait",
     "Le matériel loué est remis au locataire en parfait état de fonctionnement, propre, et avec l'intégralité de ses accessoires. Un contrôle contradictoire est effectué au départ.",
     "Article 3 : Caution et Pièces Justificatives",
-    "Pour toute location, la présentation d'une pièce d'identité en cours de validité et le dépôt d'une caution (chèque ou empreinte bancaire) sont exigés. Cette caution n'est pas encaissée sauf dégradation ou non-restitution du matériel.",
+    "Pour toute location, la présentation d'une pièce d'identité en cours de validité et le dépôt d'une caution (empreinte bancaire, aucun chèque accepté) sont exigés. Cette caution n'est pas encaissée sauf dégradation ou non-restitution du matériel.",
     "Article 4 : Responsabilité et Assurances",
     "Le locataire devient gardien juridique du matériel pendant toute la durée de la mise à disposition. Il est responsable des dégradations, pertes, vols, sinistres pouvant survenir au matériel.",
     "Article 5 : Restitution",

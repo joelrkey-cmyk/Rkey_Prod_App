@@ -222,7 +222,7 @@ export const generateWithdrawalPDF = async (withdrawal, clients) => {
     doc.text(depositAmount, infoCol1 + 28, yPos);
 
     if (!withdrawal.is_trusted_client) {
-      const paymentMethods = { 'n/a': 'N/A', 'especes': 'Espèces', 'cb': 'CB', 'cheque': 'Chèque', 'virement': 'Virement' };
+      const paymentMethods = { 'n/a': 'N/A', 'empreinte_cb': 'Empreinte CB', 'empreinte_bancaire': 'Empreinte bancaire', 'especes': 'Espèces', 'cb': 'CB', 'cheque': 'Chèque', 'virement': 'Virement' };
       doc.setFont('helvetica', 'bold');
       doc.text("Paiement:", infoCol2, yPos);
       doc.setFont('helvetica', 'normal');

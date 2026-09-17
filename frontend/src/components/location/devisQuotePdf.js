@@ -489,7 +489,7 @@ export const generateQuotePDF = (quoteData, clients = [], equipment = [], compan
       calcHeight += 5 + 5 + 4; // caution base + confiance + pièce identité
     } else {
       doc.setFontSize(6.5);
-      const tempLines = doc.splitTextToSize("Caution par chèque (non encaissé sauf litige). Pièce d'identité obligatoire.", colRightWidth - 6);
+      const tempLines = doc.splitTextToSize("Caution par empreinte bancaire (aucun chèque accepté). Pièce d'identité obligatoire.", colRightWidth - 6);
       calcHeight += 5 + (tempLines.length * 3.5);
     }
     const cautionBoxH = calcHeight + 4;
@@ -553,7 +553,7 @@ export const generateQuotePDF = (quoteData, clients = [], equipment = [], compan
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(6.5);
       doc.setTextColor(100, 100, 100);
-      const cautionLines = doc.splitTextToSize("Caution par chèque (non encaissé sauf litige). Pièce d'identité obligatoire.", colRightWidth - 6);
+      const cautionLines = doc.splitTextToSize("Caution par empreinte bancaire (aucun chèque accepté). Pièce d'identité obligatoire.", colRightWidth - 6);
       cautionLines.forEach(line => {
         doc.text(line, colRightX + 3, yRight + 1);
         yRight += 3.5;

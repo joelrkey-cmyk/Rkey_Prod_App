@@ -6537,20 +6537,29 @@ L'équipe R'Key Production`,
 
 api.get('/client-email-templates', authMiddleware, async (req, res) => {
   try {
-    let list = await db.collection('client_email_templates').find({}, { projection: { _id: 0 } }).toArray();
+    let list = await db.collection('client_email_templates').find({}, { projection: { _id: 0 } }).sort({ order: 1, created_at: 1 }).toArray();
     if (list.length === 0) {
-      await db.collection('client_email_templates').insertMany(DEFAULT_CLIENT_EMAIL_TEMPLATES);
-      list = DEFAULT_CLIENT_EMAIL_TEMPLATES;
+      const initial = DEFAULT_CLIENT_EMAIL_TEMPLATES.map((t, idx) => ({ ...t, order: idx }));
+      await db.collection('client_email_templates').insertMany(initial);
+      list = initial;
     } else {
-      // Nettoyer automatiquement les balises HTML si des modèles existants en comportent
-      let hasHtml = false;
-      for (const t of list) {
+      // S'assurer que chaque template a un order défini et nettoyer le HTML éventuel
+      for (let i = 0; i < list.length; i++) {
+        const t = list[i];
+        const updates = {};
+        if (typeof t.order !== 'number') {
+          t.order = i;
+          updates.order = i;
+        }
         if (t.body && (t.body.includes('<p>') || t.body.includes('<strong>') || t.body.includes('<a '))) {
-          hasHtml = true;
           t.body = cleanToPlainText(t.body);
-          await db.collection('client_email_templates').updateOne({ id: t.id }, { $set: { body: t.body } });
+          updates.body = t.body;
+        }
+        if (Object.keys(updates).length > 0) {
+          await db.collection('client_email_templates').updateOne({ id: t.id }, { $set: updates });
         }
       }
+      list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     }
     res.json({ templates: cleanList(list) });
   } catch (error) {
@@ -6560,9 +6569,45 @@ api.get('/client-email-templates', authMiddleware, async (req, res) => {
 
 api.post('/client-email-templates', authMiddleware, async (req, res) => {
   try {
-    const t = { id: uuidv4(), ...req.body, created_at: new Date().toISOString() };
+    const count = await db.collection('client_email_templates').countDocuments();
+    const order = typeof req.body.order === 'number' ? req.body.order : count;
+    const t = { id: uuidv4(), ...req.body, order, created_at: new Date().toISOString() };
     await db.collection('client_email_templates').insertOne(t);
     res.json(clean(t));
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+api.post('/client-email-templates/reorder', authMiddleware, async (req, res) => {
+  try {
+    const templates = req.body.templates || [];
+    for (let i = 0; i < templates.length; i++) {
+      const item = templates[i];
+      const id = typeof item === 'object' ? item.id : item;
+      const order = (typeof item === 'object' && typeof item.order === 'number') ? item.order : i;
+      if (id) {
+        await db.collection('client_email_templates').updateOne({ id }, { $set: { order } });
+      }
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ detail: error.message });
+  }
+});
+
+api.put('/client-email-templates/reorder', authMiddleware, async (req, res) => {
+  try {
+    const templates = req.body.templates || [];
+    for (let i = 0; i < templates.length; i++) {
+      const item = templates[i];
+      const id = typeof item === 'object' ? item.id : item;
+      const order = (typeof item === 'object' && typeof item.order === 'number') ? item.order : i;
+      if (id) {
+        await db.collection('client_email_templates').updateOne({ id }, { $set: { order } });
+      }
+    }
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ detail: error.message });
   }

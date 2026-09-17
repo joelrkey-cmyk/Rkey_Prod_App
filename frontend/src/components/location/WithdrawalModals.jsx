@@ -1253,10 +1253,12 @@ export function WithdrawalSlipModal({
                     id="payment-method"
                     className="mt-1 flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-1 focus:ring-ring disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                     data-testid="payment-method-select"
+                    defaultValue="empreinte_cb"
                   >
+                    <option value="empreinte_cb">Empreinte bancaire (CB)</option>
                     <option value="especes">Espèces</option>
                     <option value="cb">CB</option>
-                    <option value="cheque">Chèque</option>
+                    <option value="cheque">Chèque (exceptionnel)</option>
                     <option value="virement">Virement</option>
                     <option value="n/a">N/A</option>
                   </select>
