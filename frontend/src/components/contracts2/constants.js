@@ -38,10 +38,10 @@ export const defaultHypnosisProgram = {
 
 export const defaultCompanySettings = {
   company_name: "R'KEY PROD",
-  bank_name: "Tiime",
-  bank_iban: "FR76 1679 8000 0100 0192 2357 858",
-  bank_bic: "TRZOFR21XXX",
-  bank_titulaire: "R'KEY PROD",
+  bank_name: "Banque Populaire",
+  bank_iban: "FR7614707500383432183548943",
+  bank_bic: "CCBPFRPPMTZ",
+  bank_titulaire: "R'Key Prod",
   youtube_tutorial_url: "",
   fiche_visite_pdf_url: "",
   fiche_visite_pdf_name: "Fiche_de_visite.pdf",

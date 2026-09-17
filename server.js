@@ -3589,7 +3589,7 @@ api.get('/global-settings', authMiddleware, async (req, res) => {
     settings.smtp_password = '';
     return res.json(settings);
   }
-  res.json({ type: 'company', company_name: '', company_address: '', company_siret: '', company_tva: '', company_email: '', bank_name: '', bank_iban: '', bank_bic: '', bank_titulaire: '', smtp_server: '', smtp_port: '587', smtp_encryption: 'auto', smtp_user: '', smtp_password: '', smtp_from: '', smtp_from_name: '', has_email_signature: false, smtp_password_set: false, fiche_visite_pdf_url: '', fiche_visite_pdf_name: 'Fiche_de_visite.pdf', fiche_visite_pdf_uploaded_at: null });
+  res.json({ type: 'company', company_name: "R'Key Prod", company_address: '5 rue du Hohlandsbourg, 67390 Marckolsheim', company_siret: '99992355000019', company_tva: '', company_email: 'info@rkey-prod.fr', bank_name: 'Banque Populaire', bank_iban: 'FR7614707500383432183548943', bank_bic: 'CCBPFRPPMTZ', bank_titulaire: "R'Key Prod", smtp_server: '', smtp_port: '587', smtp_encryption: 'auto', smtp_user: '', smtp_password: '', smtp_from: '', smtp_from_name: '', has_email_signature: false, smtp_password_set: false, fiche_visite_pdf_url: '', fiche_visite_pdf_name: 'Fiche_de_visite.pdf', fiche_visite_pdf_uploaded_at: null });
 });
 
 // ══════════ FICHE DE VISITE PDF TEMPLATE (DJ-CLIENT) ══════════
@@ -4537,20 +4537,20 @@ api.get('/public/dj-client/:slug', async (req, res) => {
   const dbSettings = await db.collection('global_settings').findOne({ type: 'company' }, { projection: { _id: 0, email_signature_image: 0, smtp_password: 0 } });
   const companySettings = dbSettings ? {
     company_name: dbSettings.company_name || "R'KEY PROD",
-    bank_name: dbSettings.bank_name || "Tiime",
-    bank_iban: dbSettings.bank_iban || "",
-    bank_bic: dbSettings.bank_bic || "",
-    bank_titulaire: dbSettings.bank_titulaire || "R'KEY PROD",
+    bank_name: dbSettings.bank_name || "Banque Populaire",
+    bank_iban: dbSettings.bank_iban || "FR7614707500383432183548943",
+    bank_bic: dbSettings.bank_bic || "CCBPFRPPMTZ",
+    bank_titulaire: dbSettings.bank_titulaire || "R'Key Prod",
     youtube_tutorial_url: dbSettings.youtube_tutorial_url || "",
     fiche_visite_pdf_url: dbSettings.fiche_visite_pdf_url || "",
     fiche_visite_pdf_name: dbSettings.fiche_visite_pdf_name || "Fiche_de_visite.pdf",
     fiche_visite_pdf_uploaded_at: dbSettings.fiche_visite_pdf_uploaded_at || null,
   } : {
     company_name: "R'KEY PROD",
-    bank_name: "Tiime",
-    bank_iban: "FR76 1679 8000 0100 0192 2357 858",
-    bank_bic: "TRZOFR21XXX",
-    bank_titulaire: "R'KEY PROD",
+    bank_name: "Banque Populaire",
+    bank_iban: "FR7614707500383432183548943",
+    bank_bic: "CCBPFRPPMTZ",
+    bank_titulaire: "R'Key Prod",
     youtube_tutorial_url: "",
     fiche_visite_pdf_url: "",
     fiche_visite_pdf_name: "Fiche_de_visite.pdf",

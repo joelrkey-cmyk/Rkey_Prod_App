@@ -385,7 +385,7 @@ const GlobalSettingsApp = () => {
                       id="bank_iban"
                       value={formData.bank_iban}
                       onChange={(e) => updateField('bank_iban', e.target.value)}
-                      placeholder="FR76 1679 8000 0100 0192 2357 858"
+                      placeholder="FR7614707500383432183548943"
                       className="font-mono"
                       data-testid="input-bank-iban"
                     />
@@ -396,7 +396,7 @@ const GlobalSettingsApp = () => {
                       id="bank_bic"
                       value={formData.bank_bic}
                       onChange={(e) => updateField('bank_bic', e.target.value)}
-                      placeholder="TRZOFR21XXX"
+                      placeholder="CCBPFRPPMTZ"
                       className="font-mono"
                       data-testid="input-bank-bic"
                     />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock, Unlock, CreditCard, Play } from 'lucide-react';
+import { Users, Music, Clock, Settings, User, Eye, Plus, Shield, MessageSquare, Headphones, Trash2, ArrowUp, ArrowDown, Copy, Check, ChevronDown, ChevronRight, ArrowLeft, Filter, Link as LinkIcon, ExternalLink, Download, RefreshCw, Upload, Search, MapPin, Loader2, Utensils, CheckCircle, XCircle, EyeOff, X, FileText, FileSearch, Bell, Gift, Smartphone, DownloadCloud, Share2, Info, Calendar, Edit3, Sparkles, Mail, Phone, Youtube, Camera, ChevronLeft, AlertTriangle, Lock, Unlock, CreditCard, Play, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -502,10 +502,10 @@ function urlBase64ToUint8Array(base64String) {
           const data = await response.json().catch(() => ({}));
           setCompanySettings({
             company_name: data.company_name || "R'KEY PROD",
-            bank_name: data.bank_name || "Tiime",
-            bank_iban: data.bank_iban || "",
-            bank_bic: data.bank_bic || "",
-            bank_titulaire: data.bank_titulaire || "R'KEY PROD",
+            bank_name: data.bank_name || "Banque Populaire",
+            bank_iban: data.bank_iban || "FR7614707500383432183548943",
+            bank_bic: data.bank_bic || "CCBPFRPPMTZ",
+            bank_titulaire: data.bank_titulaire || "R'Key Prod",
             youtube_tutorial_url: data.youtube_tutorial_url || "",
             fiche_visite_pdf_url: data.fiche_visite_pdf_url || "",
             fiche_visite_pdf_name: data.fiche_visite_pdf_name || "Fiche_de_visite.pdf",
@@ -4170,7 +4170,7 @@ function urlBase64ToUint8Array(base64String) {
       };
 
       const getProfileDataForContract = (profileKey) => {
-        if (profileKey === 'joel') return { name: "Joël RUTTKAY (Joël R'Key)", nom_complet: "Joël RUTTKAY", nom_artistique: "Joël R'Key", email: "info@rkey-prod.fr", phone: "07 83 55 36 74", address: "5 rue du Hohlandsbourg, 67390 Marckolsheim", siret: "99992355000019", titre: "Gérant de R'KEY PROD", statut_artiste: "dirigeant", iban: "", bic: "" };
+        if (profileKey === 'joel') return { name: "Joël RUTTKAY (Joël R'Key)", nom_complet: "Joël RUTTKAY", nom_artistique: "Joël R'Key", email: "info@rkey-prod.fr", phone: "07 83 55 36 74", address: "5 rue du Hohlandsbourg, 67390 Marckolsheim", siret: "99992355000019", titre: "Gérant de R'KEY PROD", statut_artiste: "dirigeant", iban: "FR7614707500383432183548943", bic: "CCBPFRPPMTZ" };
         if (profileKey === 'stephane') return { name: "Stéphane JACOBY (Stefan Edison)", nom_complet: "Stéphane JACOBY", nom_artistique: "Stefan Edison", email: "stephane@rkey-prod.fr", phone: "06 31 21 61 14", address: "5 rue du Hohlandsbourg, 67390 Marckolsheim", siret: "42121827200019", titre: "Animateur DJ", statut_artiste: "freelance", iban: "FR76 4061 8804 8700 0401 4272 395", bic: "" };
         if (Array.isArray(djProfiles)) {
           if (typeof profileKey === 'number' && djProfiles[profileKey]) {
@@ -5324,25 +5324,98 @@ function urlBase64ToUint8Array(base64String) {
                         String(rawStageName).toLowerCase().includes('edison') ||
                         String(fullName).toLowerCase().includes('jacoby');
 
-      let resolvedIban = currentDjProfile?.iban || djSnapshot.iban || '';
-      let resolvedBic = currentDjProfile?.bic || djSnapshot.bic || '';
-      let resolvedTitulaire = currentDjProfile?.nom_complet || djSnapshot.nom_complet || fullName || '';
+      // 1. RIB Officiel Entreprise (R'Key Prod / Joël)
+      const companyIban = companySettings?.bank_iban || "FR7614707500383432183548943";
+      const companyBic = companySettings?.bank_bic || "CCBPFRPPMTZ";
+      const companyTitulaire = companySettings?.bank_titulaire || "R'Key Prod";
 
-      if (isJoel) {
-        if (!resolvedIban && currentDjProfile?.iban) resolvedIban = currentDjProfile.iban;
-        if (!resolvedIban && companySettings?.bank_iban) resolvedIban = companySettings.bank_iban;
-        if (!resolvedBic && currentDjProfile?.bic) resolvedBic = currentDjProfile.bic;
-        if (!resolvedBic && companySettings?.bank_bic) resolvedBic = companySettings.bank_bic;
-        resolvedTitulaire = "R'Key Prod";
-      } else if (isStephane) {
-        if (!resolvedIban) resolvedIban = currentDjProfile?.iban || "FR76 4061 8804 8700 0401 4272 395";
-        if (!resolvedBic && currentDjProfile?.bic) resolvedBic = currentDjProfile.bic;
-        resolvedTitulaire = "Stéphane Jacoby (Stefan Edison)";
-      } else {
-        if (!resolvedIban && companySettings?.bank_iban) resolvedIban = companySettings.bank_iban;
-        if (!resolvedBic && companySettings?.bank_bic) resolvedBic = companySettings.bank_bic;
-        if (!resolvedTitulaire && companySettings?.bank_titulaire) resolvedTitulaire = companySettings.bank_titulaire;
+      // 2. RIB Respectif au DJ assigné
+      let djIban = currentDjProfile?.iban || djSnapshot.iban || '';
+      let djBic = currentDjProfile?.bic || djSnapshot.bic || '';
+      let djTitulaire = currentDjProfile?.nom_complet || djSnapshot.nom_complet || fullName || rawStageName;
+
+      if (isStephane) {
+        if (!djIban) djIban = "FR76 4061 8804 8700 0401 4272 395";
+        if (!djBic) djBic = currentDjProfile?.bic || "BOUSFRPPXXX";
+        djTitulaire = "Stéphane Jacoby (Stefan Edison)";
+      } else if (isJoel) {
+        if (!djIban) djIban = companyIban;
+        if (!djBic) djBic = companyBic;
+        djTitulaire = "Joël RUTTKAY (R'Key Prod)";
       }
+
+      // Détermination intelligente et automatique du RIB de règlement :
+      // 1. Si "Cachet Artiste restant" (mode mandataire freelance) : le solde est le cachet artiste revenant directement au DJ => RIB du DJ assigné
+      // 2. Si "Solde restant à régler à R'Key Prod" ou solde dû : le solde revient à l'entreprise => RIB de R'Key Prod
+      // 3. Si l'administrateur a sélectionné manuellement un choix ('dj' ou 'company'), celui-ci est respecté
+      const defaultRibChoice = isMandatMode ? 'dj' : 'company';
+      const activeRibChoice = (c.bank_details_choice === 'dj' || c.bank_details_choice === 'company')
+        ? c.bank_details_choice
+        : (c.selected_rib === 'dj' || c.selected_rib === 'company')
+          ? c.selected_rib
+          : defaultRibChoice;
+
+      let resolvedIban = companyIban;
+      let resolvedBic = companyBic;
+      let resolvedTitulaire = companyTitulaire;
+
+      if (activeRibChoice === 'dj') {
+        resolvedIban = djIban || companyIban;
+        resolvedBic = djBic || companyBic;
+        resolvedTitulaire = djTitulaire || companyTitulaire;
+      }
+
+      const handleSwitchRib = async (newChoice) => {
+        if (role !== 'admin') return;
+        try {
+          // Mise à jour optimiste locale immédiate
+          setEvents(prevEvents => prevEvents.map(item => {
+            if (item.id === ev.id) {
+              const updatedRaw = { 
+                ...(item.rawContractData || {}), 
+                bank_details_choice: newChoice,
+                selected_rib: newChoice
+              };
+              return {
+                ...item,
+                bank_details_choice: newChoice,
+                selected_rib: newChoice,
+                rawContractData: updatedRaw,
+                contractInfo: updatedRaw
+              };
+            }
+            return item;
+          }));
+
+          const token = localStorage.getItem('access_token');
+          const headers = { 'Content-Type': 'application/json' };
+          if (token) headers['Authorization'] = `Bearer ${token}`;
+
+          const res = await fetch(`${BACKEND_URL}/api/contracts2/${ev.id}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({ 
+              bank_details_choice: newChoice,
+              selected_rib: newChoice 
+            })
+          });
+
+          if (res.ok) {
+            toast.success(
+              newChoice === 'dj'
+                ? `RIB basculé sur le DJ (${rawStageName || 'Artiste'})`
+                : "RIB basculé sur l'Entreprise R'Key Prod (défaut)"
+            );
+          } else {
+            toast.error("Erreur lors de l'enregistrement du RIB");
+            await fetchContractsAsEvents();
+          }
+        } catch (e) {
+          console.error("Error switching RIB choice", e);
+          toast.error("Erreur de connexion");
+          await fetchContractsAsEvents();
+        }
+      };
 
       // Statut et détails du règlement du solde (Admin)
       const isBalancePaid = Boolean(c.balance_paid);
@@ -5688,6 +5761,75 @@ function urlBase64ToUint8Array(base64String) {
           {/* Coordonnées bancaires / RIB pour le règlement */}
           {resolvedIban && (
             <div className="bg-gradient-to-r from-indigo-50/80 via-purple-50/40 to-slate-50 border border-indigo-100/90 rounded-xl p-4 mb-5 shadow-2xs">
+              {/* Switcher pour l'administrateur */}
+              {role === 'admin' && (
+                <div className="mb-3.5 pb-3 border-b border-indigo-100/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-indigo-700 flex-shrink-0" />
+                    <div>
+                      <span className="text-xs font-bold text-slate-800">
+                        RIB de règlement pour cet événement :
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-medium ml-1.5 hidden sm:inline">
+                        {isMandatMode 
+                          ? "(Cachet artiste restant : RIB DJ appliqué automatiquement)" 
+                          : "(Solde à régler à l'entreprise : RIB Entreprise appliqué automatiquement)"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="inline-flex items-center rounded-lg bg-white/95 p-1 border border-indigo-200/90 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchRib('company')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        activeRibChoice === 'company'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-indigo-900 hover:bg-indigo-50/60'
+                      }`}
+                      title="Utiliser le RIB officiel de l'entreprise (R'Key Prod)"
+                    >
+                      <span>🏢 Entreprise (R'Key Prod)</span>
+                      {!isMandatMode ? (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-extrabold uppercase ${
+                          activeRibChoice === 'company' ? 'bg-indigo-700/90 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          Auto
+                        </span>
+                      ) : activeRibChoice === 'company' ? (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-extrabold uppercase bg-indigo-700/90 text-white">
+                          Actif
+                        </span>
+                      ) : null}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchRib('dj')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        activeRibChoice === 'dj'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-indigo-900 hover:bg-indigo-50/60'
+                      }`}
+                      title={`Basculer sur le RIB respectif du DJ (${rawStageName || 'Artiste'})`}
+                    >
+                      <span>🎧 DJ ({rawStageName || 'Artiste'})</span>
+                      {isMandatMode ? (
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded font-extrabold uppercase ${
+                          activeRibChoice === 'dj' ? 'bg-indigo-700/90 text-white' : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          Auto
+                        </span>
+                      ) : activeRibChoice === 'dj' ? (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-extrabold uppercase bg-indigo-700/90 text-white">
+                          Actif
+                        </span>
+                      ) : null}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="p-2.5 bg-indigo-600 text-white rounded-xl flex-shrink-0 shadow-xs mt-0.5 sm:mt-0">
@@ -5698,6 +5840,15 @@ function urlBase64ToUint8Array(base64String) {
                       <p className="text-[10px] font-bold text-indigo-950/70 uppercase tracking-widest">
                         RIB / Coordonnées bancaires pour le règlement
                       </p>
+                      {activeRibChoice === 'company' ? (
+                        <span className="text-[10px] font-bold bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded uppercase tracking-wider border border-indigo-200/60">
+                          RIB Entreprise (R'Key Prod)
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold bg-purple-100 text-purple-900 px-2 py-0.5 rounded uppercase tracking-wider border border-purple-200/60">
+                          RIB DJ ({rawStageName || 'Artiste'}){isMandatMode ? " • Cachet Artiste" : ""}
+                        </span>
+                      )}
                       {resolvedTitulaire && (
                         <span className="text-[11px] font-semibold text-slate-700 bg-white/90 px-2 py-0.5 rounded-md border border-slate-200/70 shadow-2xs">
                           Titulaire : {resolvedTitulaire}

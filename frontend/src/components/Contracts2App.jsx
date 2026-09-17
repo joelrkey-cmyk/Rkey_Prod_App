@@ -327,7 +327,7 @@ function Contracts2App() {
   const getProfileData = (profileKey) => {
     const p = djProfiles[profileKey];
     if (p) return p;
-    if (profileKey === 'joel') return { name: "Joël RUTTKAY (Joël R'Key)", nom_complet: "Joël RUTTKAY", nom_artistique: "Joël R'Key", email: "info@rkey-prod.fr", phone: "07 83 55 36 74", address: "5 rue du Hohlandsbourg, 67390 Marckolsheim", siret: "99992355000019", titre: "Gérant de R'KEY PROD", statut_artiste: "dirigeant", iban: "", bic: "" };
+    if (profileKey === 'joel') return { name: "Joël RUTTKAY (Joël R'Key)", nom_complet: "Joël RUTTKAY", nom_artistique: "Joël R'Key", email: "info@rkey-prod.fr", phone: "07 83 55 36 74", address: "5 rue du Hohlandsbourg, 67390 Marckolsheim", siret: "99992355000019", titre: "Gérant de R'KEY PROD", statut_artiste: "dirigeant", iban: "FR7614707500383432183548943", bic: "CCBPFRPPMTZ" };
     if (profileKey === 'stephane') return { name: "Stéphane JACOBY (Stefan Edison)", nom_complet: "Stéphane JACOBY", nom_artistique: "Stefan Edison", email: "stephane@rkey-prod.fr", phone: "06 31 21 61 14", address: "5 rue du Hohlandsbourg, 67390 Marckolsheim", siret: "42121827200019", titre: "Animateur DJ", statut_artiste: "freelance", iban: "FR76 4061 8804 8700 0401 4272 395", bic: "" };
     return { name: "", nom_complet: "", nom_artistique: "", email: "", phone: "", address: "", siret: "", titre: "Animateur DJ", statut_artiste: "dirigeant", iban: "", bic: "" };
   };
