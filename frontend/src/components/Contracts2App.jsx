@@ -1302,29 +1302,12 @@ function Contracts2App() {
     }
     try {
       setNotifIsSending(true);
-      let pdf_base64 = null;
-      let pdf_filename = null;
-      if (pendingSigningContractObj) {
-        try {
-          const html = generateArtisteHTML(pendingSigningContractObj, resolveProfile);
-          if (html) {
-            const { generatePdfBase64FromHtmlContent } = await import('./contracts2/pdfGenerator');
-            pdf_base64 = await generatePdfBase64FromHtmlContent(html);
-            const profile = resolveProfile(pendingSigningContractObj);
-            const artistName = (profile?.nom_artistique || profile?.nom_complet || 'Artiste').replace(/[^a-zA-Z0-9]/g, '_');
-            pdf_filename = `Contrat_Artiste_${artistName}.pdf`;
-          }
-        } catch (pdfErr) {
-          console.warn("Could not generate artist PDF attachment:", pdfErr);
-        }
-      }
 
+      // Simple envoi d'email d'information au DJ sans pièce jointe
       await axios.post(`${API}/contract-emails/send`, {
         recipient_email: notifRecipientEmail.trim(),
         email_subject: notifEmailSubject.trim(),
-        email_body: notifEmailBody,
-        pdf_base64,
-        pdf_filename
+        email_body: notifEmailBody
       });
       toast.success("Notification par email envoyée à l'artiste avec succès !");
       setIsArtistNotifOpen(false);
