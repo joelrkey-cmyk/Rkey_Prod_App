@@ -509,8 +509,9 @@ export default function AgendaPrestationApp() {
       return;
     }
 
+    const cleanTitle = (customEventForm.title || '').replace(/^(\[OPTION\]|\(option\)|option\s*[-:]?)\s*/i, '').trim();
     const payload = {
-      title: customEventForm.title.trim(),
+      title: cleanTitle || customEventForm.title.trim(),
       date: format(addEventDate, 'yyyy-MM-dd'),
       isOption: addEventType === 'option',
       djId: customEventForm.djId || null,
@@ -943,8 +944,10 @@ export default function AgendaPrestationApp() {
                 {selectedEvent.id && selectedEvent.id.startsWith('custom_') && (
                   <button 
                     onClick={() => {
+                      const rawTitle = selectedEvent.cleanTitle || selectedEvent.title || '';
+                      const cleanedTitle = rawTitle.replace(/^(\[OPTION\]|\(option\)|option\s*[-:]?)\s*/i, '').trim();
                       setCustomEventForm({
-                        title: selectedEvent.cleanTitle || selectedEvent.title || '',
+                        title: cleanedTitle,
                         clientName: selectedEvent.clientName || '',
                         clientPhone: selectedEvent.clientPhone || '',
                         djId: selectedEvent.djId === 'option_black' ? '' : (selectedEvent.djId || ''),
@@ -1048,7 +1051,13 @@ export default function AgendaPrestationApp() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAddEventType('event')}
+                  onClick={() => {
+                    setAddEventType('event');
+                    setCustomEventForm(prev => ({
+                      ...prev,
+                      title: (prev.title || '').replace(/^(\[OPTION\]|\(option\)|option\s*[-:]?)\s*/i, '').trim()
+                    }));
+                  }}
                   className={`py-2 text-sm font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 cursor-pointer ${addEventType === 'event' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
                 >
                   <User className="w-4 h-4" />

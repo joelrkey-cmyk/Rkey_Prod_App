@@ -5,7 +5,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Building2, Landmark, Loader2, Mail, Upload, Trash2, Server, Send, Eye, EyeOff, Calendar } from 'lucide-react';
+import { ArrowLeft, Save, Building2, Landmark, Loader2, Mail, Upload, Trash2, Server, Send, Eye, EyeOff, Calendar, RefreshCw } from 'lucide-react';
 import UserManagement from './settings/UserManagement';
 import DjArtistsManagement from './settings/DjArtistsManagement';
 
@@ -22,6 +22,7 @@ const GlobalSettingsApp = () => {
   const [showSmtpPassword, setShowSmtpPassword] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
   const [testEmailAddress, setTestEmailAddress] = useState('');
+  const [triggeringAutoSync, setTriggeringAutoSync] = useState(false);
 
   const [smtpData, setSmtpData] = useState({
     smtp_server: '',
@@ -44,9 +45,11 @@ const GlobalSettingsApp = () => {
     bank_iban: '',
     bank_bic: '',
     bank_titulaire: '',
-    auto_sync_enabled: false,
-    auto_sync_time_1: '12:00',
-    auto_sync_time_2: '00:00',
+    auto_sync_enabled: true,
+    auto_sync_time: '12:00',
+    last_auto_sync_at: null,
+    last_auto_sync_status: null,
+    last_auto_sync_message: null,
   });
 
   useEffect(() => {
@@ -73,9 +76,11 @@ const GlobalSettingsApp = () => {
         bank_iban: data.bank_iban || '',
         bank_bic: data.bank_bic || '',
         bank_titulaire: data.bank_titulaire || '',
-        auto_sync_enabled: !!data.auto_sync_enabled,
-        auto_sync_time_1: data.auto_sync_time_1 || '12:00',
-        auto_sync_time_2: data.auto_sync_time_2 || '00:00',
+        auto_sync_enabled: data.auto_sync_enabled !== undefined ? !!data.auto_sync_enabled : true,
+        auto_sync_time: data.auto_sync_time || data.auto_sync_time_1 || '12:00',
+        last_auto_sync_at: data.last_auto_sync_at || null,
+        last_auto_sync_status: data.last_auto_sync_status || null,
+        last_auto_sync_message: data.last_auto_sync_message || null,
       });
       setSmtpData({
         smtp_server: data.smtp_server || '',
@@ -124,6 +129,30 @@ const GlobalSettingsApp = () => {
 
   const updateSmtpField = (field, value) => {
     setSmtpData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleTriggerAutoSync = async () => {
+    try {
+      setTriggeringAutoSync(true);
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`${BACKEND_URL}/api/global-settings/trigger-auto-sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Erreur lors de la synchronisation');
+      toast.success(data.message || 'Synchronisation exécutée avec succès !');
+      // Refresh settings to update last_auto_sync_at info
+      loadSettings();
+    } catch (err) {
+      console.error('Trigger auto sync error:', err);
+      toast.error(err.message || 'Impossible de lancer la synchronisation');
+    } finally {
+      setTriggeringAutoSync(false);
+    }
   };
 
   const handleTestEmail = async () => {
@@ -648,15 +677,15 @@ const GlobalSettingsApp = () => {
                     Synchronisation Automatique (Agenda & Location)
                   </CardTitle>
                   <CardDescription>
-                    Configurez la synchronisation automatique des événements vers Google Calendar.
+                    Configurez la synchronisation quotidienne automatique de vos événements et locations vers Google Calendar.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between p-4 bg-slate-50 border rounded-lg">
                     <div>
-                      <h4 className="font-medium text-slate-800">Activer la synchronisation automatique</h4>
+                      <h4 className="font-medium text-slate-800">Activer la synchronisation quotidienne automatique</h4>
                       <p className="text-sm text-slate-500">
-                        Synchronise automatiquement vos événements et locations avec Google Calendar.
+                        Synchronise automatiquement chaque jour tous vos événements de l'Agenda DJ et vos réservations de Location vers Google Calendar.
                       </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
@@ -671,24 +700,68 @@ const GlobalSettingsApp = () => {
                   </div>
                   
                   {formData.auto_sync_enabled && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 animate-in fade-in duration-300">
-                      <div>
-                        <Label htmlFor="auto_sync_time_1">Heure de synchronisation 1</Label>
-                        <Input
-                          id="auto_sync_time_1"
-                          type="time"
-                          value={formData.auto_sync_time_1}
-                          onChange={(e) => updateField('auto_sync_time_1', e.target.value)}
-                        />
+                    <div className="p-4 bg-slate-50/80 border rounded-lg space-y-4 animate-in fade-in duration-300">
+                      <div className="max-w-xs">
+                        <Label htmlFor="auto_sync_time" className="text-sm font-semibold text-slate-700">
+                          Heure de synchronisation quotidienne
+                        </Label>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <Input
+                            id="auto_sync_time"
+                            type="time"
+                            value={formData.auto_sync_time || '12:00'}
+                            onChange={(e) => updateField('auto_sync_time', e.target.value)}
+                            className="bg-white font-medium"
+                          />
+                          <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+                            (par défaut 12:00)
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                          La synchronisation s'effectue automatiquement une fois par jour à l'heure indiquée (fuseau horaire de Paris).
+                        </p>
                       </div>
-                      <div>
-                        <Label htmlFor="auto_sync_time_2">Heure de synchronisation 2 (optionnel)</Label>
-                        <Input
-                          id="auto_sync_time_2"
-                          type="time"
-                          value={formData.auto_sync_time_2}
-                          onChange={(e) => updateField('auto_sync_time_2', e.target.value)}
-                        />
+
+                      <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="text-xs text-slate-600">
+                          {formData.last_auto_sync_at ? (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-semibold text-slate-700">Dernière synchronisation :</span>{' '}
+                                <span>{new Date(formData.last_auto_sync_at).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}</span>
+                                {formData.last_auto_sync_status && (
+                                  <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${
+                                    formData.last_auto_sync_status === 'success' 
+                                      ? 'bg-emerald-100 text-emerald-800' 
+                                      : formData.last_auto_sync_status === 'error'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-amber-100 text-amber-800'
+                                  }`}>
+                                    {formData.last_auto_sync_status === 'success' ? 'Réussie' : formData.last_auto_sync_status === 'error' ? 'Erreur' : 'Partielle'}
+                                  </span>
+                                )}
+                              </div>
+                              {formData.last_auto_sync_message && (
+                                <p className="text-[11px] text-slate-500 italic">
+                                  {formData.last_auto_sync_message}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">Aucune synchronisation automatique enregistrée pour le moment.</span>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={triggeringAutoSync}
+                          onClick={handleTriggerAutoSync}
+                          className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-green-700 hover:border-green-300 self-start sm:self-center"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${triggeringAutoSync ? 'animate-spin text-green-600' : ''}`} />
+                          {triggeringAutoSync ? 'Synchronisation...' : 'Tester la synchronisation maintenant'}
+                        </Button>
                       </div>
                     </div>
                   )}

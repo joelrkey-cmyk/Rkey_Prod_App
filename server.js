@@ -1307,6 +1307,54 @@ function resolveDjProfileId(id) {
   return id;
 }
 
+// Check if an error from Google Calendar API is a rate limit or transient failure that should be retried
+function isRateLimitOrTransientError(err) {
+  if (!err) return false;
+  const status = err.status || (err.response && err.response.status) || err.code;
+  const msg = (err.message || String(err)).toLowerCase();
+  
+  if (status === 429 || status === 500 || status === 502 || status === 503 || status === 504) {
+    return true;
+  }
+  if (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT' || err.code === 'EAI_AGAIN') {
+    return true;
+  }
+  if (msg.includes('rate limit') || msg.includes('ratelimit') || msg.includes('user rate limit') || msg.includes('quota') || msg.includes('backend error') || msg.includes('resource has been exhausted')) {
+    return true;
+  }
+  const errors = err.errors || (err.response && err.response.data && err.response.data.error && err.response.data.error.errors);
+  if (Array.isArray(errors)) {
+    for (const e of errors) {
+      const r = (e.reason || '').toLowerCase();
+      if (r === 'ratelimitexceeded' || r === 'userratelimitexceeded' || r === 'quotaexceeded' || r === 'backenderror' || r === 'rate_limit_exceeded') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Centralized execution wrapper with exponential backoff and jitter for Google Calendar API calls
+async function callGCalWithRetry(fn, opName = 'GCal operation', maxRetries = 5) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt <= maxRetries && isRateLimitOrTransientError(err)) {
+        const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 16000);
+        const jitter = Math.floor(Math.random() * 600);
+        const delay = baseDelay + jitter;
+        console.warn(`[GCal RateLimit/Transient] ${opName} hit "${err.message || 'Rate Limit'}". Retrying in ${(delay / 1000).toFixed(1)}s (tentative ${attempt}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function syncReservationToCalendar(reservation) {
   await initLocationGoogleCalendar();
   if (!locationCalendar) throw new Error('Location Google Calendar integration is not initialized (check credentials).');
@@ -1433,10 +1481,13 @@ async function syncReservationToCalendar(reservation) {
     // we delete that legacy event first to prevent duplicates!
     if (reservation.google_event_id && reservation.google_event_id !== deterministicEventId) {
       try {
-        await locationCalendar.events.delete({
-          calendarId: currentId,
-          eventId: reservation.google_event_id,
-        });
+        await callGCalWithRetry(
+          () => locationCalendar.events.delete({
+            calendarId: currentId,
+            eventId: reservation.google_event_id,
+          }),
+          `deleteLegacyReservation(${reservation.google_event_id})`
+        );
         console.log(`[GCal Sync] Deleted legacy non-deterministic event: ${reservation.google_event_id}`);
       } catch (delErr) {
         // If not found or failed, ignore
@@ -1447,10 +1498,13 @@ async function syncReservationToCalendar(reservation) {
     // Check if the event with deterministic ID already exists on Google Calendar
     let existsOnCalendar = false;
     try {
-      await locationCalendar.events.get({
-        calendarId: currentId,
-        eventId: deterministicEventId,
-      });
+      await callGCalWithRetry(
+        () => locationCalendar.events.get({
+          calendarId: currentId,
+          eventId: deterministicEventId,
+        }),
+        `getReservation(${deterministicEventId})`
+      );
       existsOnCalendar = true;
       console.log(`[GCal Sync] Found existing calendar event for deterministic ID: ${deterministicEventId}`);
     } catch (getErr) {
@@ -1462,44 +1516,55 @@ async function syncReservationToCalendar(reservation) {
 
     // Also check if there are other duplicates by title/date or containing the RESERVATION_ID in the description,
     // just in case they were created in the past and don't match our deterministicEventId!
-    try {
-      const listRes = await locationCalendar.events.list({
-        calendarId: currentId,
-        q: reservation.id,
-        singleEvents: true,
-      });
-      const existingLegacyMatches = (listRes.data.items || []).filter(evt => {
-        // Ensure it's not our deterministicEventId so we don't delete our target!
-        return evt.id !== deterministicEventId;
-      });
+    if (!existsOnCalendar) {
+      try {
+        const listRes = await callGCalWithRetry(
+          () => locationCalendar.events.list({
+            calendarId: currentId,
+            q: reservation.id,
+            singleEvents: true,
+          }),
+          `listReservationDuplicates(${reservation.id})`
+        );
+        const existingLegacyMatches = (listRes.data.items || []).filter(evt => {
+          // Ensure it's not our deterministicEventId so we don't delete our target!
+          return evt.id !== deterministicEventId;
+        });
 
-      if (existingLegacyMatches.length > 0) {
-        console.log(`[GCal Sync] Found ${existingLegacyMatches.length} legacy duplicates containing reservation ID ${reservation.id}. Cleaning them up...`);
-        for (const legacyEvt of existingLegacyMatches) {
-          try {
-            await locationCalendar.events.delete({
-              calendarId: currentId,
-              eventId: legacyEvt.id,
-            });
-            console.log(`[GCal Sync] Deleted legacy duplicate event ${legacyEvt.id}`);
-          } catch (delErr) {
-            console.error(`[GCal Sync] Error deleting legacy duplicate event ${legacyEvt.id}:`, delErr.message);
+        if (existingLegacyMatches.length > 0) {
+          console.log(`[GCal Sync] Found ${existingLegacyMatches.length} legacy duplicates containing reservation ID ${reservation.id}. Cleaning them up...`);
+          for (const legacyEvt of existingLegacyMatches) {
+            try {
+              await callGCalWithRetry(
+                () => locationCalendar.events.delete({
+                  calendarId: currentId,
+                  eventId: legacyEvt.id,
+                }),
+                `deleteLegacyDuplicate(${legacyEvt.id})`
+              );
+              console.log(`[GCal Sync] Deleted legacy duplicate event ${legacyEvt.id}`);
+            } catch (delErr) {
+              console.error(`[GCal Sync] Error deleting legacy duplicate event ${legacyEvt.id}:`, delErr.message);
+            }
           }
         }
+      } catch (searchErr) {
+        console.warn('[GCal Sync] Error listing/cleaning up legacy events containing ID:', searchErr.message);
       }
-    } catch (searchErr) {
-      console.warn('[GCal Sync] Error listing/cleaning up legacy events containing ID:', searchErr.message);
     }
 
     let response;
     // We try to update/restore first, then fall back to insert, then update again in case of conflict.
     if (existsOnCalendar) {
       try {
-        response = await locationCalendar.events.update({
-          calendarId: currentId,
-          eventId: deterministicEventId,
-          resource: event,
-        });
+        response = await callGCalWithRetry(
+          () => locationCalendar.events.update({
+            calendarId: currentId,
+            eventId: deterministicEventId,
+            resource: event,
+          }),
+          `updateReservation(${deterministicEventId})`
+        );
         console.log(`[GCal Sync] Event updated successfully with deterministic ID: ${deterministicEventId}`);
       } catch (updateErr) {
         console.warn(`[GCal Sync] Update failed for deterministic ID ${deterministicEventId}. Trying insert...`, updateErr.message);
@@ -1509,20 +1574,26 @@ async function syncReservationToCalendar(reservation) {
 
     if (!existsOnCalendar) {
       try {
-        response = await locationCalendar.events.insert({
-          calendarId: currentId,
-          resource: event,
-        });
+        response = await callGCalWithRetry(
+          () => locationCalendar.events.insert({
+            calendarId: currentId,
+            resource: event,
+          }),
+          `insertReservation(${deterministicEventId})`
+        );
         console.log(`[GCal Sync] Event created successfully with deterministic ID: ${response.data.id}`);
       } catch (insertErr) {
         const insertStatus = insertErr.status || (insertErr.response && insertErr.response.status);
         if (insertStatus === 409) {
           console.log(`[GCal Sync] 409 Conflict on insert. Retrying update/restore from trash...`);
-          response = await locationCalendar.events.update({
-            calendarId: currentId,
-            eventId: deterministicEventId,
-            resource: event,
-          });
+          response = await callGCalWithRetry(
+            () => locationCalendar.events.update({
+              calendarId: currentId,
+              eventId: deterministicEventId,
+              resource: event,
+            }),
+            `restoreReservation(${deterministicEventId})`
+          );
           console.log(`[GCal Sync] Event restored and updated successfully from trash: ${response.data.id}`);
         } else {
           throw insertErr;
@@ -1566,10 +1637,13 @@ async function deleteReservationFromGoogleCalendar(eventId) {
   if (!currentId || !eventId) return;
 
   try {
-    await locationCalendar.events.delete({
-      calendarId: currentId,
-      eventId: eventId,
-    });
+    await callGCalWithRetry(
+      () => locationCalendar.events.delete({
+        calendarId: currentId,
+        eventId: eventId,
+      }),
+      `deleteReservationFromGoogleCalendar(${eventId})`
+    );
     console.log(`Event ${eventId} deleted from Google Calendar`);
   } catch (error) {
     const status = error.status || (error.response && error.response.status);
@@ -1590,10 +1664,13 @@ async function syncGoogleCalendarChangesBack() {
 async function deleteGoogleCalendarEvent(calendarId, eventId) {
   if (!calendar || !calendarId || !eventId) return;
   try {
-    await calendar.events.delete({
-      calendarId: calendarId,
-      eventId: eventId,
-    });
+    await callGCalWithRetry(
+      () => calendar.events.delete({
+        calendarId: calendarId,
+        eventId: eventId,
+      }),
+      `deleteGoogleCalendarEvent(${eventId})`
+    );
     console.log(`Event ${eventId} deleted from Google Calendar ${calendarId}`);
   } catch (error) {
     const status = error.status || (error.response && error.response.status);
@@ -1738,33 +1815,152 @@ async function syncContractToGoogleCalendar(contract) {
 
   try {
     let response;
-    if (contract.google_event_id) {
+    let targetEventId = contract.google_event_id;
+
+    // Attach tracking properties
+    eventResource.extendedProperties = {
+      private: {
+        rkey_contract_id: String(contract.id),
+        rkey_type: 'contract'
+      }
+    };
+
+    // Fast-path: if we already have a google_event_id, try updating directly
+    if (targetEventId) {
       try {
-        response = await calendar.events.update({
-          calendarId: targetCalendarId,
-          eventId: contract.google_event_id,
-          resource: eventResource
-        });
-        console.log(`[GCal Sync] Contract event updated successfully: ${response.data.id}`);
+        response = await callGCalWithRetry(
+          () => calendar.events.update({
+            calendarId: targetCalendarId,
+            eventId: targetEventId,
+            resource: eventResource
+          }),
+          `contract.update(${contract.id})`
+        );
+        console.log(`[GCal Sync] Contract event updated directly: ${response.data.id}`);
       } catch (updateErr) {
         const status = updateErr.status || (updateErr.response && updateErr.response.status);
         if (status === 404 || status === 410) {
-          console.warn(`[GCal Sync] Event ${contract.google_event_id} not found/deleted in GCal. Re-inserting...`);
-          response = await calendar.events.insert({
-            calendarId: targetCalendarId,
-            resource: eventResource
-          });
-          console.log(`[GCal Sync] Contract event created successfully (re-inserted): ${response.data.id}`);
+          console.warn(`[GCal Sync] Event ${targetEventId} not found in GCal (status ${status}). Will search and re-insert...`);
+          targetEventId = null;
         } else {
           throw updateErr;
         }
       }
-    } else {
-      response = await calendar.events.insert({
-        calendarId: targetCalendarId,
-        resource: eventResource
-      });
-      console.log(`[GCal Sync] Contract event created successfully: ${response.data.id}`);
+    }
+
+    // Slow-path: search events on this date to deduplicate and find any unlinked existing event
+    if (!response) {
+      const dayStart = new Date(startDateObj);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(startDateObj);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      let matchingEvents = [];
+      try {
+        const listRes = await callGCalWithRetry(
+          () => calendar.events.list({
+            calendarId: targetCalendarId,
+            timeMin: dayStart.toISOString(),
+            timeMax: dayEnd.toISOString(),
+            singleEvents: true
+          }),
+          `contract.list(${contract.id})`
+        );
+        const dayEvents = listRes.data.items || [];
+        
+        const normClient = (clientName || '').toLowerCase().replace(/[^a-z0-9à-ÿ]/g, ' ').replace(/\s+/g, ' ').trim();
+        const clientTokens = normClient.split(' ').filter(t => t.length > 2);
+
+        for (const ev of dayEvents) {
+          if (!ev.id) continue;
+          if (targetEventId && ev.id === targetEventId) {
+            matchingEvents.unshift(ev);
+            continue;
+          }
+          if (ev.extendedProperties?.private?.rkey_contract_id === String(contract.id)) {
+            matchingEvents.push(ev);
+            continue;
+          }
+          if (ev.description && ev.description.includes(String(contract.id))) {
+            matchingEvents.push(ev);
+            continue;
+          }
+          const normSummary = (ev.summary || '').toLowerCase().replace(/[^a-z0-9à-ÿ]/g, ' ').replace(/\s+/g, ' ').trim();
+          if (normClient && normClient !== 'client' && normClient.length > 2) {
+            if (normSummary.includes(normClient)) {
+              matchingEvents.push(ev);
+              continue;
+            }
+            if (clientTokens.length > 0) {
+              const matchedTokens = clientTokens.filter(t => normSummary.includes(t));
+              if (matchedTokens.length >= Math.min(2, clientTokens.length)) {
+                matchingEvents.push(ev);
+                continue;
+              }
+            }
+          }
+        }
+      } catch (searchErr) {
+        console.warn(`[GCal Sync] Deduplication event search warning: ${searchErr.message}`);
+      }
+
+      // Deduplicate matching events (unique by id)
+      const uniqueMatches = [];
+      const seenIds = new Set();
+      for (const m of matchingEvents) {
+        if (!seenIds.has(m.id)) {
+          seenIds.add(m.id);
+          uniqueMatches.push(m);
+        }
+      }
+
+      if (uniqueMatches.length > 0) {
+        targetEventId = uniqueMatches[0].id;
+        // Clean up duplicate events on Google Calendar if any exist
+        if (uniqueMatches.length > 1) {
+          console.log(`[GCal Sync] Found ${uniqueMatches.length - 1} duplicate event(s) for contract ${contract.id}. Cleaning up duplicates...`);
+          for (let i = 1; i < uniqueMatches.length; i++) {
+            try {
+              await callGCalWithRetry(
+                () => calendar.events.delete({
+                  calendarId: targetCalendarId,
+                  eventId: uniqueMatches[i].id
+                }),
+                `contract.deleteDuplicate(${uniqueMatches[i].id})`
+              );
+              console.log(`[GCal Sync] Deleted duplicate event ${uniqueMatches[i].id}`);
+            } catch (delErr) {
+              console.warn(`[GCal Sync] Could not delete duplicate event ${uniqueMatches[i].id}:`, delErr.message);
+            }
+          }
+        }
+
+        try {
+          response = await callGCalWithRetry(
+            () => calendar.events.update({
+              calendarId: targetCalendarId,
+              eventId: targetEventId,
+              resource: eventResource
+            }),
+            `contract.updateMatched(${targetEventId})`
+          );
+          console.log(`[GCal Sync] Contract event updated from match: ${response.data.id}`);
+        } catch (updErr) {
+          console.warn(`[GCal Sync] Update on matched event ${targetEventId} failed, inserting new:`, updErr.message);
+        }
+      }
+
+      if (!response) {
+        response = await callGCalWithRetry(
+          () => calendar.events.insert({
+            calendarId: targetCalendarId,
+            resource: eventResource
+          }),
+          `contract.insert(${contract.id})`
+        );
+        console.log(`[GCal Sync] Contract event created successfully: ${response.data.id}`);
+      }
     }
 
     if (response && response.data && response.data.id) {
@@ -1883,15 +2079,19 @@ async function syncCustomEventToGoogleCalendar(item) {
   const locationText = item.location || 'Non fourni';
   const details = item.details || 'Aucun détail';
 
+  // Always clean any existing [OPTION] or (option) prefix from item.title to avoid stacking or leftover prefixes
+  const rawTitle = (item.title || '').trim();
+  const cleanTitle = rawTitle.replace(/^(\[OPTION\]|\(option\)|option\s*[-:]?)\s*/i, '').trim();
+
   const description = `📅 ÉVÉNEMENT DU DJ (AGENDA PRESTATION)\n----------------------------------------\n` +
     `👤 Client : ${clientName}\n` +
     `📞 Téléphone : ${phoneText}\n` +
     `📍 Lieu : ${locationText}\n` +
-    `⚡️ Titre de l'événement : ${item.title}\n\n` +
+    `⚡️ Titre de l'événement : ${cleanTitle}\n\n` +
     `📝 DÉTAILS / NOTES :\n${details}\n` +
     `----------------------------------------`;
 
-  const eventTitle = item.isOption ? `[OPTION] ${item.title}` : `${item.title}`;
+  const eventTitle = item.isOption ? `[OPTION] ${cleanTitle}` : cleanTitle;
 
   const eventResource = {
     summary: eventTitle,
@@ -1904,58 +2104,175 @@ async function syncCustomEventToGoogleCalendar(item) {
     end: {
       date: endFormat,
       timeZone: 'Europe/Paris'
+    },
+    extendedProperties: {
+      private: {
+        rkey_custom_event_id: String(item._id || item.id),
+        rkey_type: item.isOption ? 'option' : 'custom_event'
+      }
     }
   };
 
   const itemEventTypeLower = (item.eventType || '').toLowerCase();
-  const itemTitleLower = (item.title || '').toLowerCase();
+  const itemTitleLower = cleanTitle.toLowerCase();
   if (itemEventTypeLower.includes('hypnose') || itemTitleLower.includes('hypnose')) {
     eventResource.colorId = '10'; // Basil (Green)
   }
 
   try {
     let response;
-    if (item.google_event_id) {
+    let targetEventId = item.google_event_id;
+
+    // Fast-path: if we already have a google_event_id, try updating directly
+    if (targetEventId) {
       try {
-        response = await calendar.events.update({
-          calendarId: targetCalendarId,
-          eventId: item.google_event_id,
-          resource: eventResource
-        });
-        console.log(`[GCal Sync] Custom event updated successfully: ${response.data.id}`);
+        response = await callGCalWithRetry(
+          () => calendar.events.update({
+            calendarId: targetCalendarId,
+            eventId: targetEventId,
+            resource: eventResource
+          }),
+          `customEvent.update(${item._id || item.id})`
+        );
+        console.log(`[GCal Sync] Custom event updated directly: ${response.data.id}`);
       } catch (updateErr) {
         const status = updateErr.status || (updateErr.response && updateErr.response.status);
         if (status === 404 || status === 410) {
-          console.warn(`[GCal Sync] Custom Event ${item.google_event_id} not found in GCal. Re-inserting...`);
-          response = await calendar.events.insert({
-            calendarId: targetCalendarId,
-            resource: eventResource
-          });
-          console.log(`[GCal Sync] Custom event created successfully (re-inserted): ${response.data.id}`);
+          console.warn(`[GCal Sync] Custom Event ${targetEventId} not found in GCal (status ${status}). Will search and re-insert...`);
+          targetEventId = null;
         } else {
           throw updateErr;
         }
       }
-    } else {
-      response = await calendar.events.insert({
-        calendarId: targetCalendarId,
-        resource: eventResource
-      });
-      console.log(`[GCal Sync] Custom event created successfully: ${response.data.id}`);
+    }
+
+    // Slow-path: search existing events on this date to find any pre-existing/duplicate events
+    if (!response) {
+      const dayStart = new Date(startDateObj);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(startDateObj);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      let matchingEvents = [];
+      try {
+        const listRes = await callGCalWithRetry(
+          () => calendar.events.list({
+            calendarId: targetCalendarId,
+            timeMin: dayStart.toISOString(),
+            timeMax: dayEnd.toISOString(),
+            singleEvents: true
+          }),
+          `customEvent.list(${item._id || item.id})`
+        );
+        const dayEvents = listRes.data.items || [];
+        const targetClean = cleanTitle.toLowerCase();
+        const targetWords = targetClean.split(/[\s\-',]+/).filter(w => w.length > 2);
+
+        for (const ev of dayEvents) {
+          if (!ev.id) continue;
+          if (targetEventId && ev.id === targetEventId) {
+            matchingEvents.unshift(ev);
+            continue;
+          }
+          if (ev.extendedProperties?.private?.rkey_custom_event_id === String(item._id || item.id)) {
+            matchingEvents.push(ev);
+            continue;
+          }
+          if (ev.description && cleanTitle.length > 3 && ev.description.includes(cleanTitle)) {
+            matchingEvents.push(ev);
+            continue;
+          }
+          const evClean = (ev.summary || '').replace(/^(\[OPTION\]|\(option\)|option\s*[-:]?)\s*/i, '').trim().toLowerCase();
+          const evWords = evClean.split(/[\s\-',]+/).filter(w => w.length > 2);
+          const commonWords = targetWords.filter(w => evWords.includes(w));
+
+          const isTitleMatch = (evClean === targetClean) ||
+            (targetClean.length >= 4 && evClean.includes(targetClean)) ||
+            (evClean.length >= 4 && targetClean.includes(evClean)) ||
+            (targetWords.length > 0 && commonWords.length >= Math.min(2, targetWords.length));
+
+          if (isTitleMatch) {
+            matchingEvents.push(ev);
+            continue;
+          }
+        }
+      } catch (searchErr) {
+        console.warn(`[GCal Sync] Deduplication custom event search warning: ${searchErr.message}`);
+      }
+
+      // Deduplicate matching events (unique by id)
+      const uniqueMatches = [];
+      const seenIds = new Set();
+      for (const m of matchingEvents) {
+        if (!seenIds.has(m.id)) {
+          seenIds.add(m.id);
+          uniqueMatches.push(m);
+        }
+      }
+
+      if (uniqueMatches.length > 0) {
+        targetEventId = uniqueMatches[0].id;
+        if (uniqueMatches.length > 1) {
+          console.log(`[GCal Sync] Found ${uniqueMatches.length - 1} duplicate Google Calendar event(s) for custom event ${item._id || item.id}. Cleaning up duplicates...`);
+          for (let i = 1; i < uniqueMatches.length; i++) {
+            try {
+              await callGCalWithRetry(
+                () => calendar.events.delete({
+                  calendarId: targetCalendarId,
+                  eventId: uniqueMatches[i].id
+                }),
+                `customEvent.deleteDuplicate(${uniqueMatches[i].id})`
+              );
+              console.log(`[GCal Sync] Deleted duplicate custom event ${uniqueMatches[i].id}`);
+            } catch (delErr) {
+              console.warn(`[GCal Sync] Could not delete duplicate custom event ${uniqueMatches[i].id}:`, delErr.message);
+            }
+          }
+        }
+
+        try {
+          response = await callGCalWithRetry(
+            () => calendar.events.update({
+              calendarId: targetCalendarId,
+              eventId: targetEventId,
+              resource: eventResource
+            }),
+            `customEvent.updateMatched(${targetEventId})`
+          );
+          console.log(`[GCal Sync] Custom event updated from match: ${response.data.id}`);
+        } catch (updErr) {
+          console.warn(`[GCal Sync] Update on matched custom event ${targetEventId} failed, inserting new:`, updErr.message);
+        }
+      }
+
+      if (!response) {
+        response = await callGCalWithRetry(
+          () => calendar.events.insert({
+            calendarId: targetCalendarId,
+            resource: eventResource
+          }),
+          `customEvent.insert(${item._id || item.id})`
+        );
+        console.log(`[GCal Sync] Custom event created successfully: ${response.data.id}`);
+      }
     }
 
     if (response && response.data && response.data.id) {
+      const updateDoc = {
+        google_event_id: response.data.id,
+        google_calendar_id: targetCalendarId
+      };
+      if (cleanTitle && item.title !== cleanTitle) {
+        updateDoc.title = cleanTitle;
+      }
       await db.collection('agenda_custom_events').updateOne(
         { _id: new ObjectId(item._id || item.id) },
-        { 
-          $set: { 
-            google_event_id: response.data.id,
-            google_calendar_id: targetCalendarId
-          } 
-        }
+        { $set: updateDoc }
       );
       item.google_event_id = response.data.id;
       item.google_calendar_id = targetCalendarId;
+      if (cleanTitle) item.title = cleanTitle;
     }
     return { success: true };
   } catch (err) {
@@ -3587,9 +3904,10 @@ api.get('/global-settings', authMiddleware, async (req, res) => {
     settings.has_email_signature = !!(await db.collection('global_settings').findOne({ type: 'company', email_signature_image: { $exists: true, $ne: '' } }));
     settings.smtp_password_set = !!settings.smtp_password;
     settings.smtp_password = '';
+    settings.auto_sync_time = settings.auto_sync_time || settings.auto_sync_time_1 || '12:00';
     return res.json(settings);
   }
-  res.json({ type: 'company', company_name: "R'Key Prod", company_address: '5 rue du Hohlandsbourg, 67390 Marckolsheim', company_siret: '99992355000019', company_tva: '', company_email: 'info@rkey-prod.fr', bank_name: 'Banque Populaire', bank_iban: 'FR7614707500383432183548943', bank_bic: 'CCBPFRPPMTZ', bank_titulaire: "R'Key Prod", smtp_server: '', smtp_port: '587', smtp_encryption: 'auto', smtp_user: '', smtp_password: '', smtp_from: '', smtp_from_name: '', has_email_signature: false, smtp_password_set: false, fiche_visite_pdf_url: '', fiche_visite_pdf_name: 'Fiche_de_visite.pdf', fiche_visite_pdf_uploaded_at: null });
+  res.json({ type: 'company', company_name: "R'Key Prod", company_address: '5 rue du Hohlandsbourg, 67390 Marckolsheim', company_siret: '99992355000019', company_tva: '', company_email: 'info@rkey-prod.fr', bank_name: 'Banque Populaire', bank_iban: 'FR7614707500383432183548943', bank_bic: 'CCBPFRPPMTZ', bank_titulaire: "R'Key Prod", smtp_server: '', smtp_port: '587', smtp_encryption: 'auto', smtp_user: '', smtp_password: '', smtp_from: '', smtp_from_name: '', has_email_signature: false, smtp_password_set: false, fiche_visite_pdf_url: '', fiche_visite_pdf_name: 'Fiche_de_visite.pdf', fiche_visite_pdf_uploaded_at: null, auto_sync_enabled: true, auto_sync_time: '12:00' });
 });
 
 // ══════════ FICHE DE VISITE PDF TEMPLATE (DJ-CLIENT) ══════════
@@ -3692,8 +4010,22 @@ api.get('/public/dj-client/fiche-visite-template', async (req, res) => {
 api.put('/global-settings', authMiddleware, async (req, res) => {
   const data = { ...req.body, type: 'company', updated_at: new Date().toISOString() };
   if (!data.smtp_password) delete data.smtp_password;
+  if (data.auto_sync_time) {
+    data.auto_sync_time_1 = data.auto_sync_time;
+    delete data.auto_sync_time_2;
+  }
   await db.collection('global_settings').updateOne({ type: 'company' }, { $set: data }, { upsert: true });
   res.json(data);
+});
+
+api.post('/global-settings/trigger-auto-sync', authMiddleware, async (req, res) => {
+  try {
+    const result = await executeDailyAutoSync('manual_test');
+    res.json(result);
+  } catch (err) {
+    console.error('Error triggering auto sync manually:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 api.get('/global-settings/email-signature', authMiddleware, async (req, res) => {
@@ -11130,8 +11462,10 @@ api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
       }
     }
 
+    const cleanTitle = (title || '').replace(/^(\[OPTION\]|\(option\)|option\s*[-:]?)\s*/i, '').trim();
+
     const newEvents = dates.map(d => ({
-      title,
+      title: cleanTitle || title.trim(),
       date: d,
       isOption: !!isOption,
       djId: djId || null,
@@ -11172,8 +11506,9 @@ api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
     if (!title || !date) {
       return res.status(400).json({ error: "Le titre et la date sont requis." });
     }
+    const cleanTitle = (title || '').replace(/^(\[OPTION\]|\(option\)|option\s*[-:]?)\s*/i, '').trim();
     const updateData = {
-      title,
+      title: cleanTitle || title.trim(),
       date,
       isOption: !!isOption,
       djId: djId || null,
@@ -11294,6 +11629,7 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
       } else {
         syncedContractsCount++;
       }
+      await new Promise(r => setTimeout(r, 100));
     }
 
     // 2. Sync active custom events
@@ -11306,6 +11642,7 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
       } else {
         syncedCustomEventsCount++;
       }
+      await new Promise(r => setTimeout(r, 100));
     }
 
     res.json({
@@ -11388,46 +11725,77 @@ app.use('/api', (req, res) => {
 // ═══════════════════════════════════════════
 const cron = require('node-cron');
 
-cron.schedule('* * * * *', async () => {
-  if (!db) return;
-  try {
-    const settings = await db.collection('global_settings').findOne({ type: 'company' });
-    if (!settings || !settings.auto_sync_enabled) return;
+let isAutoSyncRunning = false;
+let lastAutoSyncRunKey = null;
 
-    const now = new Date();
-    // Assuming Paris timezone as the default for the user
-    const formatter = new Intl.DateTimeFormat('fr-FR', {
-      timeZone: 'Europe/Paris',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    // Formatter returns like "12:00", wait, fr-FR format is "12:00" or "12 h 00" sometimes. 
-    // Let's use simple local time padding just in case, but formatting with options is safer:
-    const parts = formatter.formatToParts(now);
-    const hour = parts.find(p => p.type === 'hour')?.value;
-    const minute = parts.find(p => p.type === 'minute')?.value;
-    const currentParisTime = `${hour}:${minute}`;
-    
-    if (currentParisTime === settings.auto_sync_time_1 || currentParisTime === settings.auto_sync_time_2) {
-      console.log(`[CRON] Auto-sync triggered at ${currentParisTime}`);
-      
-      // Sync Location
-      const reservations = await db.collection('location_reservations').find({}).toArray();
-      for (const resItem of reservations) {
+async function runConcurrentTasks(items, concurrency, fn) {
+  const executing = new Set();
+  const results = [];
+  for (const item of items) {
+    const p = Promise.resolve().then(() => fn(item));
+    results.push(p);
+    executing.add(p);
+    const clean = () => executing.delete(p);
+    p.then(clean, clean);
+    if (executing.size >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+  return Promise.all(results);
+}
+
+async function executeDailyAutoSync(source = 'cron') {
+  if (isAutoSyncRunning) {
+    console.log(`[AUTO-SYNC] Synchronisation déjà en cours, requête ignorée (${source}).`);
+    return { success: false, inProgress: true, message: 'Synchronisation déjà en cours.' };
+  }
+  if (!db) {
+    return { success: false, message: 'Base de données non initialisée.' };
+  }
+
+  isAutoSyncRunning = true;
+  const startTime = new Date();
+  console.log(`[AUTO-SYNC] Démarrage de la synchronisation automatique (${source}) à ${startTime.toISOString()}...`);
+
+  let syncedReservationsCount = 0;
+  let syncedContractsCount = 0;
+  let syncedCustomEventsCount = 0;
+  const errors = [];
+
+  try {
+    // 1. Sync Location Reservations (filter directly for eligible types or existing google_event_id)
+    try {
+      const reservations = await db.collection('location_reservations').find({
+        $or: [
+          { booking_type: { $in: ['client', 'Client', 'CLIENT', 'livraison', 'Livraison', 'LIVRAISON'] } },
+          { google_event_id: { $exists: true, $ne: null } }
+        ]
+      }).toArray();
+
+      await runConcurrentTasks(reservations, 2, async (resItem) => {
+        try {
           const googleEventId = await tryAutoSyncToGoogle(resItem);
           if (googleEventId === 'DELETED') {
-              await db.collection('location_reservations').updateOne({ id: resItem.id }, { $unset: { google_event_id: "" } });
+            await db.collection('location_reservations').updateOne({ id: resItem.id }, { $unset: { google_event_id: "" } });
           } else if (googleEventId && googleEventId !== resItem.google_event_id) {
-              await db.collection('location_reservations').updateOne({ id: resItem.id }, { $set: { google_event_id: googleEventId } });
+            await db.collection('location_reservations').updateOne({ id: resItem.id }, { $set: { google_event_id: googleEventId } });
           }
-      }
+          if (googleEventId && googleEventId !== 'DELETED') {
+            syncedReservationsCount++;
+          }
+        } catch (resErr) {
+          console.warn(`[AUTO-SYNC] Erreur sync réservation ${resItem.id}:`, resErr.message);
+        }
+        await new Promise(r => setTimeout(r, 100));
+      });
+    } catch (locErr) {
+      console.error('[AUTO-SYNC] Erreur synchronisation location:', locErr.message);
+      errors.push(`Location: ${locErr.message}`);
+    }
 
-      // Sync Agenda
-      try {
-        await initGoogleCalendar();
-      } catch (initErr) {
-        console.error('[CRON] Failed to initialize Google Calendar during background sync:', initErr);
-      }
+    // 2. Sync Agenda DJ (Contracts & Custom Events)
+    try {
+      await initGoogleCalendar();
       if (calendar) {
         const contractsToSync = await db.collection('contracts2').find({
           $or: [
@@ -11435,20 +11803,134 @@ cron.schedule('* * * * *', async () => {
             { google_event_id: { $exists: true, $ne: null } }
           ]
         }).toArray();
-        for (const contract of contractsToSync) {
-          await syncContractToGoogleCalendar(contract);
-        }
+
+        await runConcurrentTasks(contractsToSync, 2, async (contract) => {
+          try {
+            const res = await syncContractToGoogleCalendar(contract);
+            if (res && res.success === false) {
+              // DJ without calendar
+            } else {
+              syncedContractsCount++;
+            }
+          } catch (cErr) {
+            console.warn(`[AUTO-SYNC] Erreur sync contrat ${contract.id}:`, cErr.message);
+          }
+          await new Promise(r => setTimeout(r, 100));
+        });
 
         const customEvents = await db.collection('agenda_custom_events').find({}).toArray();
-        for (const item of customEvents) {
-          await syncCustomEventToGoogleCalendar(item);
+        await runConcurrentTasks(customEvents, 2, async (item) => {
+          try {
+            const res = await syncCustomEventToGoogleCalendar(item);
+            if (res && res.success === false) {
+              // DJ without calendar
+            } else {
+              syncedCustomEventsCount++;
+            }
+          } catch (evErr) {
+            console.warn(`[AUTO-SYNC] Erreur sync événement personnalisé ${item._id || item.id}:`, evErr.message);
+          }
+          await new Promise(r => setTimeout(r, 100));
+        });
+      } else {
+        errors.push('Agenda: Google Calendar non initialisé');
+      }
+    } catch (agendaErr) {
+      console.error('[AUTO-SYNC] Erreur synchronisation agenda:', agendaErr.message);
+      errors.push(`Agenda: ${agendaErr.message}`);
+    }
+
+    const durationMs = Date.now() - startTime.getTime();
+    const summaryMsg = `Synchronisation réussie (${syncedContractsCount} contrats, ${syncedCustomEventsCount} événements agenda, ${syncedReservationsCount} réservations location) en ${(durationMs / 1000).toFixed(1)}s.`;
+    console.log(`[AUTO-SYNC] ${summaryMsg}`);
+
+    await db.collection('global_settings').updateOne(
+      { type: 'company' },
+      {
+        $set: {
+          last_auto_sync_at: new Date().toISOString(),
+          last_auto_sync_status: errors.length > 0 ? 'partial' : 'success',
+          last_auto_sync_message: summaryMsg,
+          last_auto_sync_errors: errors
         }
       }
-      
-      console.log(`[CRON] Auto-sync completed.`);
+    );
+
+    return {
+      success: true,
+      message: summaryMsg,
+      syncedContracts: syncedContractsCount,
+      syncedCustomEvents: syncedCustomEventsCount,
+      syncedReservations: syncedReservationsCount,
+      durationMs,
+      errors
+    };
+  } catch (err) {
+    console.error('[AUTO-SYNC] Erreur fatale pendant la synchronisation:', err);
+    await db.collection('global_settings').updateOne(
+      { type: 'company' },
+      {
+        $set: {
+          last_auto_sync_at: new Date().toISOString(),
+          last_auto_sync_status: 'error',
+          last_auto_sync_message: err.message || 'Erreur inconnue'
+        }
+      }
+    );
+    return { success: false, error: err.message };
+  } finally {
+    isAutoSyncRunning = false;
+  }
+}
+
+// Scheduled auto-sync: checked every minute against the single configured daily time
+cron.schedule('* * * * *', async () => {
+  if (!db) return;
+  try {
+    const settings = await db.collection('global_settings').findOne({ type: 'company' });
+    if (!settings || !settings.auto_sync_enabled) return;
+
+    const now = new Date();
+    // Europe/Paris timezone formatting
+    const timeFormatter = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'Europe/Paris',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const dateFormatter = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'Europe/Paris',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+
+    const parts = timeFormatter.formatToParts(now);
+    const hour = parts.find(p => p.type === 'hour')?.value;
+    const minute = parts.find(p => p.type === 'minute')?.value;
+    const curH = String(parseInt(hour, 10) || 0).padStart(2, '0');
+    const curM = String(parseInt(minute, 10) || 0).padStart(2, '0');
+    const currentParisTime = `${curH}:${curM}`;
+
+    // Single configured schedule time (default '12:00')
+    const rawTarget = settings.auto_sync_time || settings.auto_sync_time_1 || '12:00';
+    const [tH, tM] = (rawTarget || '12:00').split(':').map(n => String(parseInt(n, 10) || 0).padStart(2, '0'));
+    const targetParisTime = `${tH}:${tM}`;
+
+    const parisDateStr = dateFormatter.format(now);
+    const executionKey = `${parisDateStr}_${targetParisTime}`;
+
+    if (currentParisTime === targetParisTime) {
+      if (lastAutoSyncRunKey === executionKey) {
+        // Already executed for this daily slot
+        return;
+      }
+      lastAutoSyncRunKey = executionKey;
+      console.log(`[CRON] Déclenchement de la synchronisation automatique quotidienne programmée à ${currentParisTime} (heure de Paris).`);
+      await executeDailyAutoSync('cron');
     }
   } catch (err) {
-    console.error("[CRON] Auto-sync error:", err);
+    console.error("[CRON] Erreur scheduler auto-sync:", err);
   }
 });
 
