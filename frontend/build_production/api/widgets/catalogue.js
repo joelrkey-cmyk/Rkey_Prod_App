@@ -257,7 +257,6 @@ function openDetailsModal(itemId) {
     if (item.category) {
         badgesHtml += '<span class="modal-badge modal-badge-category">' + item.category + '</span>';
     }
-    badgesHtml += '<span class="modal-badge modal-badge-published"><span class="modal-badge-dot"></span>Publié sur le catalogue</span>';
     document.getElementById('modal-badges').innerHTML = badgesHtml;
     
     // Build body content
@@ -338,6 +337,9 @@ function openDetailsModal(itemId) {
         bodyHtml += '</div>'; // end pack-box
     }
     
+    // Bottom safety spacer
+    bodyHtml += '<div style="height:16px;width:100%;flex-shrink:0;"></div>';
+
     document.getElementById('modal-body-content').innerHTML = bodyHtml;
     
     // Reset and initialize slideshow state for this modal

@@ -8133,7 +8133,8 @@ api.get(['/gcs/:path(*)', '/gcs/:folder/:filename', '/gcs/*'], async (req, res) 
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=31536000');
     if (req.query.download === 'true') {
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      const downloadName = req.query.name || filename;
+      res.setHeader('Content-Disposition', `attachment; filename="${downloadName.replace(/"/g, '\\"')}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
     }
 
     // Range Request Handling (Required for smooth HTML5 <audio> and <video> playback and seeking)
@@ -11705,6 +11706,9 @@ app.use((req, res, next) => {
     return next();
   }
   
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
   res.sendFile(path.join(frontendPath, 'index.html'), (err) => {
     if (err) {
       res.status(404).send('Frontend index.html non trouvé.');

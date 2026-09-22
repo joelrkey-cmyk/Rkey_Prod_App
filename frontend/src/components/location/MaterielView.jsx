@@ -468,6 +468,65 @@ function MaterielView() {
     }, 150);
   };
 
+  // Helper to get the list of equipment currently displayed on screen (filtered and sorted by category and search)
+  const getNavigationList = () => {
+    const list = [];
+    const seenIds = new Set();
+    const defaultCategories = ['Sonorisation', 'Lumière', 'Vidéo', 'Câbles', 'Machine FX', 'Structure et pieds', 'DJ', 'Divers'];
+    
+    categories.forEach(cat => {
+      const categoryName = cat.name;
+      if (categoryFilter !== 'all' && categoryName !== categoryFilter) {
+        return;
+      }
+      
+      const categoryEquipment = equipment.filter(item => {
+        let matchesCategory;
+        if (categoryName === 'Packs') {
+          const itemCategory = item.category || '';
+          const isInDefaultCategory = defaultCategories.includes(itemCategory) || itemCategory === 'Packs';
+          matchesCategory = item.is_pack && isInDefaultCategory;
+        } else if (categoryName === 'Lumière') {
+          matchesCategory = (item.category === 'Lumière' || item.category === 'Éclairage') && !item.is_pack;
+        } else if (categoryName === 'Structure et pieds') {
+          matchesCategory = (item.category === 'Structure et pieds' || item.category === 'Structure Truss') && !item.is_pack;
+        } else if (defaultCategories.includes(categoryName)) {
+          matchesCategory = item.category === categoryName && !item.is_pack;
+        } else {
+          matchesCategory = item.category === categoryName;
+        }
+        
+        const matchesSearch = !searchTerm || 
+          item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.reference?.toLowerCase().includes(searchTerm.toLowerCase());
+          
+        return matchesCategory && matchesSearch;
+      });
+      
+      categoryEquipment.forEach(item => {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          list.push(item);
+        }
+      });
+    });
+    
+    // Fallback or remaining equipment
+    equipment.forEach(item => {
+      if (!seenIds.has(item.id)) {
+        const matchesSearch = !searchTerm || 
+          item.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          item.reference?.toLowerCase().includes(searchTerm.toLowerCase());
+        if (matchesSearch) {
+          seenIds.add(item.id);
+          list.push(item);
+        }
+      }
+    });
+
+    return list;
+  };
+
   // AI Description functions
   const generateDescription = async () => {
     if (!productReference.trim()) {
@@ -883,11 +942,51 @@ function MaterielView() {
 
       {showAddForm && (
         <Card data-form-card="equipment">
-          <CardHeader>
-            <CardTitle>{editingEquipment ? 'Modifier le matériel' : 'Nouveau matériel'}</CardTitle>
-            <CardDescription>
-              {editingEquipment ? 'Modifiez les informations du matériel' : 'L\'IA générera automatiquement une description'}
-            </CardDescription>
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-100 pb-4 mb-4">
+            <div className="space-y-1.5">
+              <CardTitle>{editingEquipment ? 'Modifier le matériel' : 'Nouveau matériel'}</CardTitle>
+              <CardDescription>
+                {editingEquipment ? 'Modifiez les informations du matériel' : 'L\'IA générera automatiquement une description'}
+              </CardDescription>
+            </div>
+            {editingEquipment && (() => {
+              const navList = getNavigationList();
+              const currentIndex = navList.findIndex(x => x.id === editingEquipment.id);
+              const prevItem = currentIndex > 0 ? navList[currentIndex - 1] : null;
+              const nextItem = currentIndex !== -1 && currentIndex < navList.length - 1 ? navList[currentIndex + 1] : null;
+
+              return (
+                <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200 shadow-sm self-start sm:self-auto">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs font-medium flex items-center gap-1 text-slate-700 hover:text-slate-900 hover:bg-slate-200/60 disabled:opacity-50 disabled:hover:bg-transparent rounded-lg"
+                    disabled={!prevItem}
+                    onClick={() => prevItem && handleEdit(prevItem)}
+                    title={prevItem ? `Précédent : ${prevItem.name}` : "Aucun équipement précédent"}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Précédent</span>
+                  </Button>
+                  <span className="text-xs font-bold text-slate-500 px-2 min-w-[50px] text-center select-none font-mono">
+                    {currentIndex !== -1 ? `${currentIndex + 1} / ${navList.length}` : '- / -'}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs font-medium flex items-center gap-1 text-slate-700 hover:text-slate-900 hover:bg-slate-200/60 disabled:opacity-50 disabled:hover:bg-transparent rounded-lg"
+                    disabled={!nextItem}
+                    onClick={() => nextItem && handleEdit(nextItem)}
+                    title={nextItem ? `Suivant : ${nextItem.name}` : "Aucun équipement suivant"}
+                  >
+                    <span>Suivant</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              );
+            })()}
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -1327,30 +1426,86 @@ function MaterielView() {
                   )}
                 </div>
               )}
-              <div className="flex gap-2 justify-between">
-                <div className="flex gap-2">
-                  <Button 
-                    type="submit" 
-                    disabled={isLoading}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    {isLoading ? 'Traitement...' : (editingEquipment ? 'Mettre à jour' : 'Ajouter')}
-                  </Button>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={resetForm}
-                    disabled={isLoading}
-                  >
-                    Annuler
-                  </Button>
+              <div className="flex flex-col sm:flex-row gap-4 justify-between pt-4 border-t border-slate-100">
+                <div className="flex gap-2 justify-between w-full sm:w-auto">
+                  <div className="flex gap-2">
+                    <Button 
+                      type="submit" 
+                      disabled={isLoading}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {isLoading ? 'Traitement...' : (editingEquipment ? 'Mettre à jour' : 'Ajouter')}
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={resetForm}
+                      disabled={isLoading}
+                    >
+                      Annuler
+                    </Button>
+                  </div>
+                  
+                  {/* Bouton Supprimer - uniquement en mode édition (mobile) */}
+                  {editingEquipment && (
+                    <Button 
+                      type="button"
+                      variant="destructive"
+                      className="sm:hidden"
+                      onClick={() => handleDelete(editingEquipment.id)}
+                      disabled={isLoading}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
                 </div>
-                
-                {/* Bouton Supprimer - uniquement en mode édition */}
+
+                {/* Navigation en bas de page pour l'édition */}
+                {editingEquipment && (() => {
+                  const navList = getNavigationList();
+                  const currentIndex = navList.findIndex(x => x.id === editingEquipment.id);
+                  const prevItem = currentIndex > 0 ? navList[currentIndex - 1] : null;
+                  const nextItem = currentIndex !== -1 && currentIndex < navList.length - 1 ? navList[currentIndex + 1] : null;
+
+                  return (
+                    <div className="flex items-center justify-between sm:justify-start gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200 self-stretch sm:self-auto">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs font-medium flex items-center gap-1 text-slate-700 hover:text-slate-900 hover:bg-slate-200/60 disabled:opacity-50 disabled:hover:bg-transparent rounded-lg"
+                        disabled={!prevItem}
+                        onClick={() => prevItem && handleEdit(prevItem)}
+                        title={prevItem ? `Précédent : ${prevItem.name}` : "Aucun équipement précédent"}
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span>Précédent</span>
+                      </Button>
+                      <span className="text-xs font-bold text-slate-500 px-2 min-w-[50px] text-center select-none font-mono">
+                        {currentIndex !== -1 ? `${currentIndex + 1} / ${navList.length}` : '- / -'}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs font-medium flex items-center gap-1 text-slate-700 hover:text-slate-900 hover:bg-slate-200/60 disabled:opacity-50 disabled:hover:bg-transparent rounded-lg"
+                        disabled={!nextItem}
+                        onClick={() => nextItem && handleEdit(nextItem)}
+                        title={nextItem ? `Suivant : ${nextItem.name}` : "Aucun équipement suivant"}
+                      >
+                        <span>Suivant</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  );
+                })()}
+
+                {/* Bouton Supprimer - uniquement en mode édition (desktop) */}
                 {editingEquipment && (
                   <Button 
                     type="button"
                     variant="destructive"
+                    className="hidden sm:flex"
                     onClick={() => handleDelete(editingEquipment.id)}
                     disabled={isLoading}
                   >

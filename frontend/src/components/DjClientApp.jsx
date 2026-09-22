@@ -2221,7 +2221,7 @@ function urlBase64ToUint8Array(base64String) {
       });
     };
 
-    const resolveAudioUrl = (rawUrl, download = false) => {
+    const resolveAudioUrl = (rawUrl, download = false, fileName = '') => {
       if (!rawUrl || typeof rawUrl !== 'string') return '';
       if (rawUrl.startsWith('data:')) return rawUrl;
       let clean = rawUrl.trim();
@@ -2241,7 +2241,13 @@ function urlBase64ToUint8Array(base64String) {
         clean = clean.split('?')[0];
       }
 
-      const query = download ? '?download=true' : '';
+      let query = '';
+      if (download) {
+        query = '?download=true';
+        if (fileName) {
+          query += `&name=${encodeURIComponent(fileName)}`;
+        }
+      }
       if (clean.startsWith('http')) {
         return clean + query;
       }
@@ -2749,7 +2755,7 @@ function urlBase64ToUint8Array(base64String) {
                         <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5">
                           <span className="truncate max-w-[200px]" title={file.name}>{file.name}</span>
                           <a
-                            href={resolveAudioUrl(file.url, true)}
+                            href={resolveAudioUrl(file.url, true, file.name)}
                             download={file.name || "audio.mp3"}
                             target="_blank"
                             rel="noopener noreferrer"

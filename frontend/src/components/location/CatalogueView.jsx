@@ -49,6 +49,7 @@ function CatalogueView() {
   const [isLoading, setIsLoading] = useState(true);
   const [showWidgetDialog, setShowWidgetDialog] = useState(false);
   const [widgetCode, setWidgetCode] = useState('');
+  const [widgetKey, setWidgetKey] = useState(1);
   const [categories, setCategories] = useState([]);
   const [showVisibilityManager, setShowVisibilityManager] = useState(false);
   const [showProductOrder, setShowProductOrder] = useState(false);
@@ -230,7 +231,8 @@ function CatalogueView() {
     return `<!-- Widget Catalogue Location R'Key Prod (Format Petites Icônes Compactes & Pop-up) -->
 <div id="rkey-catalogue-widget" style="width:100%;max-width:1400px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <style>
-    #rkey-catalogue-widget * { box-sizing: border-box; margin: 0; padding: 0; }
+    #rkey-catalogue-widget * { box-sizing: border-box; }
+    #rkey-catalogue-widget h1, #rkey-catalogue-widget h2, #rkey-catalogue-widget h3, #rkey-catalogue-widget h4, #rkey-catalogue-widget p, #rkey-catalogue-widget button, #rkey-catalogue-widget ul, #rkey-catalogue-widget ol, #rkey-catalogue-widget li { margin: 0; padding: 0; }
     .rkey-filter-bar { display: flex; gap: 12px; margin-bottom: 30px; flex-wrap: wrap; justify-content: center; }
     .rkey-filter-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 12px 40px !important; flex-shrink: 0 !important; border: 2px solid #f97316; background: transparent; color: #f97316; border-radius: 9999px; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 14px; line-height: 1.2; transition: all 0.2s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.03); white-space: nowrap !important; box-sizing: border-box; }
     .rkey-filter-btn:hover { background: rgba(249, 115, 22, 0.12); color: #f97316; transform: translateY(-1px); }
@@ -264,77 +266,78 @@ function CatalogueView() {
     .rkey-card:hover .rkey-card-action { color: #f97316; font-weight: 600; }
     
     /* Modale & Overlay Épurée et Accessible */
-    .rkey-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; height: 100dvh; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 999999; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.22s ease-out; padding: 16px; box-sizing: border-box; }
+    .rkey-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; height: 100dvh; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 999999; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.22s ease-out; padding: 24px 16px; box-sizing: border-box; }
     .rkey-modal-overlay.open { opacity: 1; pointer-events: auto; }
-    .rkey-modal-content { background: white; border-radius: 16px; width: 100%; max-width: 660px; max-height: 90vh; max-height: 90dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.28); transform: scale(0.96); transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; }
+    .rkey-modal-content { background: #ffffff; border: 1px solid rgba(0, 0, 0, 0.1); border-radius: 22px; width: 95%; max-width: 840px; max-height: calc(100vh - 40px); max-height: calc(100dvh - 40px); overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45); transform: scale(0.96); transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; }
     .rkey-modal-overlay.open .rkey-modal-content { transform: scale(1); }
     
-    /* En-tête de la modale sans superposition */
-    .rkey-modal-header { padding: 20px 24px 16px 24px; border-bottom: 1px solid #f1f5f9; }
-    .rkey-modal-header-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    /* En-tête de la modale avec des marges réduites et harmonisées */
+    .rkey-modal-header { padding: 20px 28px 12px 28px; border-bottom: 1px solid #f1f5f9; flex-shrink: 0; box-sizing: border-box; }
+    .rkey-modal-header-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
     .rkey-modal-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
     .rkey-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 9999px; line-height: 1.3; white-space: nowrap; }
     .rkey-badge-pack { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-    .rkey-badge-cat { background: #f8fafc; color: #334155; border: 1px solid #e2e8f0; font-weight: 500; }
-    .rkey-badge-published { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 500; }
-    .rkey-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block; animation: rkey-pulse 2s infinite ease-in-out; }
-    @keyframes rkey-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.85); } }
+    .rkey-badge-cat { background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; font-weight: 500; }
 
     .rkey-modal-header-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; margin-left: auto; }
     .rkey-modal-price-box { text-align: right; }
-    .rkey-modal-price { font-size: 24px; font-weight: 900; color: #ea580c; line-height: 1; display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; letter-spacing: -0.02em; }
+    .rkey-modal-price { font-size: 22px; font-weight: 900; color: #ea580c; line-height: 1; display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; letter-spacing: -0.02em; }
     .rkey-modal-price .rkey-unit { font-size: 12px; font-weight: 500; color: #64748b; }
     .rkey-modal-guarantee { font-size: 11px; color: #64748b; font-weight: 500; margin-top: 3px; }
     
     .rkey-modal-close { background: transparent; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 18px; font-weight: 600; transition: all 0.15s; flex-shrink: 0; }
     .rkey-modal-close:hover { background: #f1f5f9; color: #0f172a; }
 
-    .rkey-modal-title { font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.35; margin: 0; letter-spacing: -0.01em; }
+    .rkey-modal-title { font-size: 19px; font-weight: 800; color: #0f172a; line-height: 1.35; margin: 0; letter-spacing: -0.01em; }
 
-    /* Corps de la modale */
-    .rkey-modal-body { padding: 22px 24px; overflow-y: auto; }
+    /* Corps de la modale avec des marges réduites et harmonisées */
+    .rkey-modal-body { padding: 16px 28px 24px 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; }
     
-    /* Diaporama photo */
-    .rkey-carousel { position: relative; width: 100%; height: 290px; border-radius: 14px; overflow: hidden; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 22px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+    /* Diaporama photo avec cadre bien proportionné à 180px de haut pour dégager le bas */
+    .rkey-carousel { position: relative; width: 100%; height: 180px; border-radius: 14px; overflow: hidden; background: #f8fafc; border: 1.5px solid #cbd5e1; margin-bottom: 0; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 1px 3px rgba(0,0,0,0.02); box-sizing: border-box; }
     .rkey-carousel img { max-width: 100%; max-height: 100%; object-fit: contain; padding: 8px; }
-    .rkey-carousel-btn { position: absolute; top: 50%; transform: translateY(-50%); background: #f97316; color: white; border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: bold; box-shadow: 0 3px 8px rgba(249, 115, 22, 0.35); display: flex; align-items: center; justify-content: center; transition: all 0.18s ease; z-index: 5; }
+    .rkey-carousel-btn { position: absolute; top: 50%; transform: translateY(-50%); background: #f97316; color: white; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 3px 8px rgba(249, 115, 22, 0.35); display: flex; align-items: center; justify-content: center; transition: all 0.18s ease; z-index: 5; }
     .rkey-carousel-btn:hover { background: #ea580c; transform: translateY(-50%) scale(1.06); }
     .rkey-carousel-btn.prev { left: 10px; }
     .rkey-carousel-btn.next { right: 10px; }
-    .rkey-carousel-counter { position: absolute; bottom: 10px; right: 10px; background: rgba(15, 23, 42, 0.72); color: white; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 6px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 5; }
+    .rkey-carousel-counter { position: absolute; bottom: 8px; right: 8px; background: rgba(15, 23, 42, 0.75); color: white; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 6px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 5; }
 
-    /* Section Descriptif */
-    .rkey-modal-sec { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; margin-bottom: 20px; }
-    .rkey-modal-sec-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-    .rkey-modal-sec-desc { font-size: 13.5px; color: #334155; line-height: 1.65; white-space: pre-line; }
+    /* Section Descriptif avec cadre Slate bien visible et contenu espacé des bords */
+    .rkey-modal-sec { background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 14px; padding: 16px 22px; margin-bottom: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.02); box-sizing: border-box; }
+    .rkey-modal-sec-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #334155; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .rkey-modal-sec-desc { font-size: 13.5px; color: #1e293b; line-height: 1.65; white-space: pre-line; }
 
-    /* Section Pack */
-    .rkey-pack-sec { background: #fffdf5; border: 1px solid #fef08a; border-radius: 12px; padding: 16px 18px; margin-top: 20px; margin-bottom: 10px; }
-    .rkey-pack-sec-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: #92400e; letter-spacing: 0.05em; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
-    .rkey-pack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
-    .rkey-pack-item { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid #fef3c7; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
-    .rkey-pack-qty { width: 22px; height: 22px; background: #fef3c7; color: #92400e; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10.5px; flex-shrink: 0; }
+    /* Section Pack avec cadre Ambré distinct et aéré */
+    .rkey-pack-sec { background: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 14px; padding: 16px 22px; margin-top: 0; margin-bottom: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.02); box-sizing: border-box; }
+    .rkey-pack-sec-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #92400e; letter-spacing: 0.05em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .rkey-pack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+    .rkey-pack-item { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid #fde68a; padding: 7px 10px; border-radius: 8px; font-size: 11.5px; font-weight: 500; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+    .rkey-pack-qty { width: 20px; height: 20px; background: #fef3c7; color: #92400e; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; }
 
-    /* Pied de modale */
-    .rkey-modal-footer { padding: 12px 24px 16px 24px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; }
-    .rkey-btn-close-footer { padding: 8px 20px; background: white; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.15s; }
-    .rkey-btn-close-footer:hover { background: #f8fafc; border-color: #94a3b8; }
-
-    /* Adaptation Mobile - Directement en face des yeux */
-    @media (max-width: 640px) {
-      .rkey-modal-overlay { align-items: flex-start; padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); overflow-y: auto; }
-      .rkey-modal-content { max-height: calc(100dvh - 16px); border-radius: 14px; margin-top: 2px; }
-      .rkey-modal-header { padding: 14px 16px 12px 16px; }
-      .rkey-modal-header-top { margin-bottom: 8px; }
-      .rkey-modal-body { padding: 14px 16px; }
-      .rkey-modal-title { font-size: 16.5px; }
+    /* Adaptation Écrans Moyens & Mobiles */
+    @media (max-width: 840px) {
+      .rkey-modal-header { padding: 18px 22px 10px 22px; }
+      .rkey-modal-body { padding: 14px 22px 20px 22px; }
+    }
+    @media (max-width: 600px) {
+      .rkey-modal-overlay { padding: 18px 12px; }
+      .rkey-modal-content { max-height: calc(100dvh - 28px); border-radius: 18px; width: 96%; }
+      .rkey-modal-header { padding: 16px 18px 8px 18px; }
+      .rkey-modal-header-top { margin-bottom: 6px; }
+      .rkey-modal-body { padding: 12px 18px 16px 18px; gap: 12px; }
+      .rkey-modal-title { font-size: 17px; }
       .rkey-modal-price { font-size: 20px; }
-      .rkey-carousel { height: 230px; margin-bottom: 16px; }
-      .rkey-carousel-btn { width: 32px; height: 32px; font-size: 16px; }
-      .rkey-modal-sec { padding: 14px 14px; margin-bottom: 16px; }
-      .rkey-pack-sec { padding: 14px 14px; margin-top: 16px; }
-      .rkey-pack-grid { grid-template-columns: 1fr; }
-      .rkey-modal-footer { padding: 10px 16px 14px 16px; }
+      .rkey-carousel { height: 170px; border-radius: 12px; }
+      .rkey-modal-sec { padding: 14px 18px; border-radius: 12px; }
+      .rkey-pack-sec { padding: 14px 18px; border-radius: 12px; }
+    }
+    @media (max-width: 380px) {
+      .rkey-modal-header { padding: 12px 14px 8px 14px; }
+      .rkey-modal-body { padding: 10px 14px 14px 14px; gap: 10px; }
+      .rkey-modal-title { font-size: 16px; }
+      .rkey-modal-price { font-size: 19px; }
+      .rkey-carousel { height: 150px; }
+      .rkey-pack-grid { grid-template-columns: 1fr; gap: 6px; }
     }
   </style>
 
@@ -357,9 +360,6 @@ function CatalogueView() {
         <h3 id="rkey-modal-name" class="rkey-modal-title"></h3>
       </div>
       <div class="rkey-modal-body" id="rkey-modal-body"></div>
-      <div class="rkey-modal-footer">
-        <button class="rkey-btn-close-footer" onclick="closeRkeyModal()">Fermer</button>
-      </div>
     </div>
   </div>
 
@@ -468,7 +468,6 @@ function CatalogueView() {
       if (item.category) {
         bH += '<span class="rkey-badge rkey-badge-cat">' + item.category + '</span>';
       }
-      bH += '<span class="rkey-badge rkey-badge-published"><span class="rkey-badge-dot"></span>Publié sur le catalogue</span>';
       document.getElementById('rkey-modal-badges').innerHTML = bH;
 
       currentPhotos = getPhotos(item);
@@ -500,6 +499,9 @@ function CatalogueView() {
         });
         bodyH += '</div></div>';
       }
+
+      // Espace de respiration inférieur pour garantir qu'aucun cadre ne touche le bas de la fenêtre
+      bodyH += '<div style="height:16px;width:100%;flex-shrink:0;"></div>';
 
       document.getElementById('rkey-modal-body').innerHTML = bodyH;
       
@@ -554,9 +556,18 @@ function CatalogueView() {
     // For the preview in the iframe, always use the current window's origin
     const previewCode = getDirectWidgetCode(window.location.origin);
     setWidgetCode(previewCode);
+    setWidgetKey(Date.now());
     setWidgetActiveTab('preview');
     setShowWidgetDialog(true);
   };
+
+  // Ensure widget preview code is refreshed whenever dialog opens
+  useEffect(() => {
+    if (showWidgetDialog) {
+      setWidgetCode(getDirectWidgetCode(window.location.origin));
+      setWidgetKey(Date.now());
+    }
+  }, [showWidgetDialog]);
 
   const getExportWidgetCode = () => {
     let productionUrl = window.location.origin;
@@ -1067,7 +1078,7 @@ function CatalogueView() {
 
         {/* Widget Dialog avec Aperçu en Direct et Code HTML */}
         <Dialog open={showWidgetDialog} onOpenChange={setShowWidgetDialog}>
-          <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-6">
+          <DialogContent className="max-w-5xl max-h-[94vh] flex flex-col p-6">
             <DialogHeader className="pb-3 border-b">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -1117,28 +1128,39 @@ function CatalogueView() {
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                       <span><strong>Aperçu interactif :</strong> Vous pouvez tester les filtres par catégorie et cliquer sur n'importe quel article pour ouvrir sa fiche détaillée.</span>
                     </span>
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      className="text-xs h-7 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                      onClick={() => {
-                        const w = window.open();
-                        if (w) {
-                          w.document.write(widgetCode);
-                          w.document.close();
-                        }
-                      }}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5 mr-1" />
-                      Plein écran
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="text-xs h-7 gap-1 text-gray-700 hover:text-gray-900 bg-white"
+                        onClick={() => {
+                          setWidgetCode(getDirectWidgetCode(window.location.origin));
+                          setWidgetKey(Date.now());
+                        }}
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Rafraîchir l'aperçu
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="text-xs h-7 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                        onClick={() => {
+                          window.open('/api/widgets/catalogue.html?v=' + Date.now(), '_blank');
+                        }}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                        Plein écran (Nouvel onglet)
+                      </Button>
+                    </div>
                   </div>
                   
                   <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-inner">
                     <iframe
+                      key={widgetKey}
                       title="Aperçu du Widget Catalogue"
                       srcDoc={widgetCode}
-                      className="w-full h-[520px] border-0"
+                      className="w-full h-[660px] border-0"
                       sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
                     />
                   </div>
@@ -1181,7 +1203,7 @@ function CatalogueView() {
           open={!!selectedEquipmentForModal} 
           onOpenChange={(open) => { if (!open) setSelectedEquipmentForModal(null); }}
         >
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8">
             {selectedEquipmentForModal && (() => {
               const modalItem = selectedEquipmentForModal;
               const modalPhotos = Array.isArray(modalItem.photos) && modalItem.photos.length > 0
@@ -1258,7 +1280,7 @@ function CatalogueView() {
                   )}
 
                   {/* Descriptif & Observations */}
-                  <div className="space-y-2 bg-slate-50/80 border border-slate-200/80 rounded-xl p-4 mb-9">
+                  <div className="space-y-2 bg-slate-50/80 border border-slate-200/80 rounded-xl p-4">
                     <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
                       <span>📝</span> Descriptif & Caractéristiques
                     </h4>
@@ -1275,7 +1297,7 @@ function CatalogueView() {
 
                   {/* Contenu du Pack si applicable */}
                   {modalItem.is_pack && Array.isArray(modalItem.pack_items) && modalItem.pack_items.length > 0 && (
-                    <div className="space-y-2.5 bg-amber-50/70 border border-amber-200 rounded-xl p-4 mt-9">
+                    <div className="space-y-2.5 bg-amber-50/70 border border-amber-200 rounded-xl p-4">
                       <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
                         <span>📦</span> Matériel inclus dans ce pack
                       </h4>
