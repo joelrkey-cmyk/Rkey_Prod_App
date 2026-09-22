@@ -2428,6 +2428,24 @@ function Contracts2App() {
     toast.success("Formulaire réinitialisé !");
   };
 
+  const handleStartNewContract = () => {
+    if (editingContract) {
+      resetForm();
+    }
+    setActiveTab("create");
+  };
+
+  const handleTabChange = (newTab) => {
+    if (newTab === "create") {
+      if (editingContract) {
+        resetForm();
+      }
+      setActiveTab("create");
+    } else {
+      setActiveTab(newTab);
+    }
+  };
+
   useEffect(() => {
     if (clientInfo.event_date && (!clientInfo.setup_date || clientInfo.setup_date === calculateSetupDate(clientInfo.event_date))) {
       setClientInfo(prev => ({ ...prev, setup_date: calculateSetupDate(prev.event_date) }));
@@ -2581,6 +2599,7 @@ function Contracts2App() {
           setActiveTab("preview");
         } else {
           toast.success("Brouillon enregistré avec succès ! Vous pouvez y revenir à tout moment.");
+          setActiveTab("edit");
         }
       }
     } catch (error) {
@@ -2672,7 +2691,7 @@ function Contracts2App() {
     setCgvTitle(contract.cgv_title || "Conditions Générales de Vente");
     setArtisteCgvTitle(contract.artiste_cgv_title || "Conditions Générales de l'Artiste");
     setEditingContract(contract);
-    setActiveTab("create");
+    setActiveTab("edit");
     toast.success("Contrat chargé pour modification");
   };
 
@@ -3103,12 +3122,28 @@ function Contracts2App() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="create" className="flex items-center space-x-2">
-              <FileText className="h-4 w-4" />
-              <span>{editingContract ? 'Modifier' : 'Créer'}</span>
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+          <TabsList className={`grid w-full ${editingContract ? 'grid-cols-4' : 'grid-cols-3'} mb-6`}>
+            <TabsTrigger 
+              value="create" 
+              className="flex items-center space-x-2"
+              title="Créer un nouveau contrat"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Nouveau</span>
             </TabsTrigger>
+            {editingContract && (
+              <TabsTrigger 
+                value="edit" 
+                className="flex items-center space-x-2 data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700 font-semibold"
+                title={`Modifier le contrat de ${editingContract.client_info?.name || 'ce client'}`}
+              >
+                <Edit className="h-4 w-4 text-blue-600" />
+                <span className="truncate">
+                  Modifier {editingContract.client_info?.name ? `(${editingContract.client_info.name})` : ''}
+                </span>
+              </TabsTrigger>
+            )}
             <TabsTrigger value="preview" className="flex items-center space-x-2">
               <FileText className="h-4 w-4" />
               <span>Aperçu</span>
@@ -3120,14 +3155,44 @@ function Contracts2App() {
           </TabsList>
 
           {/* ═══════════════════════════════════════════════ */}
-          {/* CREATE CONTRACT TAB                            */}
+          {/* CREATE / EDIT CONTRACT TAB                      */}
           {/* ═══════════════════════════════════════════════ */}
-          <TabsContent value="create">
-            <div className="mb-6 flex justify-center space-x-2">
-              <Button onClick={() => setActiveTab("history")} variant="outline" className="px-4 py-3 text-sm flex items-center gap-1.5 border-slate-300 text-slate-700 hover:bg-slate-100">
-                <ArrowLeft className="h-4 w-4" /> Retour au Sommaire
-              </Button>
-              <Button onClick={resetForm} variant="outline" className="px-4 py-3 text-sm">Reset</Button>
+          <TabsContent value={activeTab === 'edit' ? 'edit' : 'create'}>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <Button 
+                  onClick={() => setActiveTab("history")} 
+                  variant="outline" 
+                  className="px-4 py-2 text-sm flex items-center gap-1.5 border-slate-300 text-slate-700 hover:bg-slate-100"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Retour au Sommaire
+                </Button>
+                {editingContract ? (
+                  <span className="text-xs md:text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-md flex items-center gap-1.5">
+                    <Edit className="h-3.5 w-3.5 text-blue-600" />
+                    Modification : <strong className="font-semibold text-blue-900">{editingContract.client_info?.name || 'Contrat'}</strong>
+                  </span>
+                ) : (
+                  <span className="text-xs md:text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-md flex items-center gap-1.5">
+                    <Plus className="h-3.5 w-3.5 text-emerald-600" />
+                    Nouveau contrat
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {editingContract && (
+                  <Button 
+                    onClick={handleStartNewContract} 
+                    variant="outline" 
+                    className="px-3 py-2 text-sm text-blue-600 border-blue-200 hover:bg-blue-50 flex items-center gap-1.5"
+                    title="Démarrer un nouveau contrat vierge"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Nouveau contrat
+                  </Button>
+                )}
+                <Button onClick={resetForm} variant="outline" className="px-4 py-2 text-sm">Reset</Button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -4920,6 +4985,7 @@ function Contracts2App() {
               setShowArchive={setShowArchive}
               setShowConfiguration={setShowConfiguration}
               setActiveTab={setActiveTab}
+              onNewContract={handleStartNewContract}
               onPrintContract={handlePrintContract}
               onPreviewContract={handlePreviewContract}
               onLoadContract={loadContract}

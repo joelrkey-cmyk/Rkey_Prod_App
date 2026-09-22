@@ -244,7 +244,7 @@ function openDetailsModal(itemId) {
     
     // Set headers, name, prices, guarantee
     document.getElementById('modal-title').textContent = item.name;
-    document.getElementById('modal-price').innerHTML = item.daily_price + '€<span> / jour</span>';
+    document.getElementById('modal-price').innerHTML = (item.daily_price || 0) + '€<span> / jour</span>';
     
     var guaranteeText = item.guarantee ? 'Caution : ' + item.guarantee + '€' : '';
     document.getElementById('modal-guarantee').textContent = guaranteeText;
@@ -254,7 +254,10 @@ function openDetailsModal(itemId) {
     if (item.is_pack) {
         badgesHtml += '<span class="modal-badge modal-badge-pack">📦 Pack Matériel</span>';
     }
-    badgesHtml += '<span class="modal-badge modal-badge-category">' + item.category + '</span>';
+    if (item.category) {
+        badgesHtml += '<span class="modal-badge modal-badge-category">' + item.category + '</span>';
+    }
+    badgesHtml += '<span class="modal-badge modal-badge-published"><span class="modal-badge-dot"></span>Publié sur le catalogue</span>';
     document.getElementById('modal-badges').innerHTML = badgesHtml;
     
     // Build body content
@@ -319,7 +322,6 @@ function openDetailsModal(itemId) {
     
     // 3. Pack content
     if (item.is_pack && Array.isArray(item.pack_items) && item.pack_items.length > 0) {
-        bodyHtml += '<div style="height:32px;width:100%;clear:both;" aria-hidden="true"></div>';
         bodyHtml += '<div class="modal-pack-box">';
         bodyHtml += '<div class="modal-pack-title">📦 Matériel inclus dans ce pack</div>';
         bodyHtml += '<div class="modal-pack-grid">';
@@ -348,8 +350,18 @@ function openDetailsModal(itemId) {
         startModalSlideshowTimer();
     }
     
+    var modalContent = modal.querySelector('.modal-content');
+    if (modalContent) modalContent.scrollTop = 0;
+    modal.scrollTop = 0;
     modal.classList.add('open');
     document.body.style.overflow = 'hidden';
+
+    // Ensure modal appears directly in view on mobile
+    if (window.innerWidth <= 640) {
+      try {
+        modal.scrollIntoView({ behavior: 'auto', block: 'start' });
+      } catch(e) {}
+    }
 }
 
 function closeDetailsModal() {

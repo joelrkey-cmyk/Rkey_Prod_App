@@ -225,9 +225,7 @@ function CatalogueView() {
   const unpublishedCount = equipment.length - publishedCount;
 
   const getDirectWidgetCode = (serverUrl) => {
-    const sUrl = (serverUrl && !serverUrl.includes('localhost') && !serverUrl.includes('ais-dev') && !serverUrl.includes('ais-pre')) 
-      ? serverUrl 
-      : 'https://rkeyprodapp.fr';
+    const sUrl = serverUrl || 'https://rkeyprodapp.fr';
 
     return `<!-- Widget Catalogue Location R'Key Prod (Format Petites Icônes Compactes & Pop-up) -->
 <div id="rkey-catalogue-widget" style="width:100%;max-width:1400px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
@@ -265,30 +263,79 @@ function CatalogueView() {
     .rkey-card-action { margin-top: 6px; padding-top: 5px; border-top: 1px solid #f1f5f9; text-align: center; font-size: 9.5px; font-weight: 500; color: #94a3b8; transition: color 0.15s ease; }
     .rkey-card:hover .rkey-card-action { color: #f97316; font-weight: 600; }
     
-    .rkey-modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); backdrop-filter: blur(8px); z-index: 99999; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.25s ease-out; padding: 16px; }
+    /* Modale & Overlay Épurée et Accessible */
+    .rkey-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; height: 100dvh; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 999999; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.22s ease-out; padding: 16px; box-sizing: border-box; }
     .rkey-modal-overlay.open { opacity: 1; pointer-events: auto; }
-    .rkey-modal-content { background: white; border-radius: 16px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); transform: scale(0.95); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; }
+    .rkey-modal-content { background: white; border-radius: 16px; width: 100%; max-width: 660px; max-height: 90vh; max-height: 90dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.28); transform: scale(0.96); transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; }
     .rkey-modal-overlay.open .rkey-modal-content { transform: scale(1); }
-    .rkey-modal-header { padding: 20px 20px 14px 20px; border-bottom: 1px solid #f1f5f9; position: relative; }
-    .rkey-modal-close { position: absolute; top: 16px; right: 16px; background: #f1f5f9; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 16px; transition: all 0.2s; }
-    .rkey-modal-close:hover { background: #e2e8f0; color: #0f172a; }
-    .rkey-modal-title { font-size: 18px; font-weight: 800; color: #0f172a; line-height: 1.3; }
-    .rkey-modal-price { font-size: 20px; font-weight: 900; color: #f97316; }
-    .rkey-modal-body { padding: 20px; overflow-y: auto; }
-    .rkey-carousel { position: relative; width: 100%; height: 270px; border-radius: 12px; overflow: hidden; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 22px; display: flex; align-items: center; justify-content: center; }
-    .rkey-carousel img { max-width: 100%; max-height: 100%; object-fit: contain; padding: 6px; }
-    .rkey-carousel-btn { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.92); color: #1e293b; border: 1px solid #e2e8f0; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; font-size: 16px; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
-    .rkey-carousel-btn:hover { background: #f97316; color: white; border-color: #f97316; }
+    
+    /* En-tête de la modale sans superposition */
+    .rkey-modal-header { padding: 20px 24px 16px 24px; border-bottom: 1px solid #f1f5f9; }
+    .rkey-modal-header-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .rkey-modal-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+    .rkey-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 9999px; line-height: 1.3; white-space: nowrap; }
+    .rkey-badge-pack { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .rkey-badge-cat { background: #f8fafc; color: #334155; border: 1px solid #e2e8f0; font-weight: 500; }
+    .rkey-badge-published { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 500; }
+    .rkey-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block; animation: rkey-pulse 2s infinite ease-in-out; }
+    @keyframes rkey-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.85); } }
+
+    .rkey-modal-header-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; margin-left: auto; }
+    .rkey-modal-price-box { text-align: right; }
+    .rkey-modal-price { font-size: 24px; font-weight: 900; color: #ea580c; line-height: 1; display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; letter-spacing: -0.02em; }
+    .rkey-modal-price .rkey-unit { font-size: 12px; font-weight: 500; color: #64748b; }
+    .rkey-modal-guarantee { font-size: 11px; color: #64748b; font-weight: 500; margin-top: 3px; }
+    
+    .rkey-modal-close { background: transparent; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 18px; font-weight: 600; transition: all 0.15s; flex-shrink: 0; }
+    .rkey-modal-close:hover { background: #f1f5f9; color: #0f172a; }
+
+    .rkey-modal-title { font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.35; margin: 0; letter-spacing: -0.01em; }
+
+    /* Corps de la modale */
+    .rkey-modal-body { padding: 22px 24px; overflow-y: auto; }
+    
+    /* Diaporama photo */
+    .rkey-carousel { position: relative; width: 100%; height: 290px; border-radius: 14px; overflow: hidden; background: #ffffff; border: 1px solid #e2e8f0; margin-bottom: 22px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+    .rkey-carousel img { max-width: 100%; max-height: 100%; object-fit: contain; padding: 8px; }
+    .rkey-carousel-btn { position: absolute; top: 50%; transform: translateY(-50%); background: #f97316; color: white; border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; font-size: 18px; font-weight: bold; box-shadow: 0 3px 8px rgba(249, 115, 22, 0.35); display: flex; align-items: center; justify-content: center; transition: all 0.18s ease; z-index: 5; }
+    .rkey-carousel-btn:hover { background: #ea580c; transform: translateY(-50%) scale(1.06); }
     .rkey-carousel-btn.prev { left: 10px; }
     .rkey-carousel-btn.next { right: 10px; }
-    .rkey-modal-sec { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin-bottom: 36px; }
-    .rkey-modal-sec-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 10px; }
-    .rkey-modal-sec-desc { font-size: 13.5px; color: #334155; line-height: 1.6; white-space: pre-line; }
-    .rkey-pack-sec { background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 20px 22px; margin-top: 36px; margin-bottom: 20px; }
-    .rkey-pack-sec-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: #b45309; letter-spacing: 0.05em; margin-bottom: 14px; }
-    .rkey-pack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
-    .rkey-pack-item { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid #fef3c7; padding: 7px 10px; border-radius: 8px; font-size: 11.5px; }
-    .rkey-pack-qty { width: 20px; height: 20px; background: #fef3c7; color: #b45309; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; }
+    .rkey-carousel-counter { position: absolute; bottom: 10px; right: 10px; background: rgba(15, 23, 42, 0.72); color: white; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 6px; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 5; }
+
+    /* Section Descriptif */
+    .rkey-modal-sec { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; margin-bottom: 20px; }
+    .rkey-modal-sec-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .rkey-modal-sec-desc { font-size: 13.5px; color: #334155; line-height: 1.65; white-space: pre-line; }
+
+    /* Section Pack */
+    .rkey-pack-sec { background: #fffdf5; border: 1px solid #fef08a; border-radius: 12px; padding: 16px 18px; margin-top: 20px; margin-bottom: 10px; }
+    .rkey-pack-sec-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: #92400e; letter-spacing: 0.05em; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+    .rkey-pack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+    .rkey-pack-item { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid #fef3c7; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+    .rkey-pack-qty { width: 22px; height: 22px; background: #fef3c7; color: #92400e; font-weight: 700; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10.5px; flex-shrink: 0; }
+
+    /* Pied de modale */
+    .rkey-modal-footer { padding: 12px 24px 16px 24px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; }
+    .rkey-btn-close-footer { padding: 8px 20px; background: white; color: #1e293b; border: 1px solid #cbd5e1; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; transition: all 0.15s; }
+    .rkey-btn-close-footer:hover { background: #f8fafc; border-color: #94a3b8; }
+
+    /* Adaptation Mobile - Directement en face des yeux */
+    @media (max-width: 640px) {
+      .rkey-modal-overlay { align-items: flex-start; padding: 8px; padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); overflow-y: auto; }
+      .rkey-modal-content { max-height: calc(100dvh - 16px); border-radius: 14px; margin-top: 2px; }
+      .rkey-modal-header { padding: 14px 16px 12px 16px; }
+      .rkey-modal-header-top { margin-bottom: 8px; }
+      .rkey-modal-body { padding: 14px 16px; }
+      .rkey-modal-title { font-size: 16.5px; }
+      .rkey-modal-price { font-size: 20px; }
+      .rkey-carousel { height: 230px; margin-bottom: 16px; }
+      .rkey-carousel-btn { width: 32px; height: 32px; font-size: 16px; }
+      .rkey-modal-sec { padding: 14px 14px; margin-bottom: 16px; }
+      .rkey-pack-sec { padding: 14px 14px; margin-top: 16px; }
+      .rkey-pack-grid { grid-template-columns: 1fr; }
+      .rkey-modal-footer { padding: 10px 16px 14px 16px; }
+    }
   </style>
 
   <div id="rkey-filter-bar" class="rkey-filter-bar"></div>
@@ -296,20 +343,22 @@ function CatalogueView() {
 
   <div id="rkey-modal" class="rkey-modal-overlay" onclick="if(event.target===this)closeRkeyModal()">
     <div class="rkey-modal-content">
-      <button class="rkey-modal-close" onclick="closeRkeyModal()">✕</button>
       <div class="rkey-modal-header">
-        <div id="rkey-modal-badges" style="display:flex;gap:6px;margin-bottom:6px;padding-right:40px;"></div>
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-          <h3 id="rkey-modal-name" class="rkey-modal-title"></h3>
-          <div style="text-align:right;flex-shrink:0;">
-            <div id="rkey-modal-price" class="rkey-modal-price"></div>
-            <div id="rkey-modal-guarantee" style="font-size:10px;color:#64748b;"></div>
+        <div class="rkey-modal-header-top">
+          <div id="rkey-modal-badges" class="rkey-modal-badges"></div>
+          <div class="rkey-modal-header-actions">
+            <div class="rkey-modal-price-box">
+              <div id="rkey-modal-price" class="rkey-modal-price"></div>
+              <div id="rkey-modal-guarantee" class="rkey-modal-guarantee"></div>
+            </div>
+            <button class="rkey-modal-close" onclick="closeRkeyModal()" title="Fermer" aria-label="Fermer">✕</button>
           </div>
         </div>
+        <h3 id="rkey-modal-name" class="rkey-modal-title"></h3>
       </div>
       <div class="rkey-modal-body" id="rkey-modal-body"></div>
-      <div style="padding:10px 20px 14px 20px;border-top:1px solid #f1f5f9;display:flex;justify-content:flex-end;">
-        <button onclick="closeRkeyModal()" style="padding:6px 14px;background:#f1f5f9;color:#475569;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;">Fermer</button>
+      <div class="rkey-modal-footer">
+        <button class="rkey-btn-close-footer" onclick="closeRkeyModal()">Fermer</button>
       </div>
     </div>
   </div>
@@ -409,12 +458,17 @@ function CatalogueView() {
       var item = itemMap[id];
       if (!item) return;
       document.getElementById('rkey-modal-name').textContent = item.name;
-      document.getElementById('rkey-modal-price').innerHTML = item.daily_price + '€<span style="font-size:11px;font-weight:normal;color:#64748b;"> / jour</span>';
+      document.getElementById('rkey-modal-price').innerHTML = (item.daily_price || 0) + '€<span class="rkey-unit"> / jour</span>';
       document.getElementById('rkey-modal-guarantee').textContent = item.guarantee ? ('Caution : ' + item.guarantee + '€') : '';
       
       var bH = '';
-      if (item.is_pack) bH += '<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:#fef3c7;color:#b45309;">📦 PACK</span>';
-      bH += '<span style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;background:#f1f5f9;color:#475569;">' + item.category + '</span>';
+      if (item.is_pack) {
+        bH += '<span class="rkey-badge rkey-badge-pack">📦 Pack Matériel</span>';
+      }
+      if (item.category) {
+        bH += '<span class="rkey-badge rkey-badge-cat">' + item.category + '</span>';
+      }
+      bH += '<span class="rkey-badge rkey-badge-published"><span class="rkey-badge-dot"></span>Publié sur le catalogue</span>';
       document.getElementById('rkey-modal-badges').innerHTML = bH;
 
       currentPhotos = getPhotos(item);
@@ -422,26 +476,25 @@ function CatalogueView() {
       var bodyH = '';
       if (currentPhotos.length > 0) {
         bodyH += '<div class="rkey-carousel" id="rkey-car-box">';
-        bodyH += '<img id="rkey-car-img" src="' + currentPhotos[0] + '">';
+        bodyH += '<img id="rkey-car-img" src="' + currentPhotos[0] + '" alt="' + (item.name || '').replace(/"/g, '&quot;') + '">';
         if (currentPhotos.length > 1) {
           bodyH += '<button class="rkey-carousel-btn prev" onclick="moveRkeySlide(-1, event)">‹</button>';
           bodyH += '<button class="rkey-carousel-btn next" onclick="moveRkeySlide(1, event)">›</button>';
-          bodyH += '<div id="rkey-car-num" style="position:absolute;top:10px;right:10px;background:rgba(15,23,42,0.65);color:white;font-size:10px;font-weight:600;padding:3px 7px;border-radius:6px;backdrop-filter:blur(4px);">1/' + currentPhotos.length + '</div>';
+          bodyH += '<div id="rkey-car-num" class="rkey-carousel-counter">1/' + currentPhotos.length + '</div>';
         }
         bodyH += '</div>';
       }
 
       var desc = item.observations || item.catalogue_description || item.description || '';
-      bodyH += '<div class="rkey-modal-sec"><div class="rkey-modal-sec-title">📝 Descriptif & Caractéristiques</div>';
+      bodyH += '<div class="rkey-modal-sec"><div class="rkey-modal-sec-title"><span>📝</span> Descriptif & Caractéristiques</div>';
       bodyH += '<div class="rkey-modal-sec-desc">' + (desc ? desc : '<em>Aucune description détaillée.</em>') + '</div>';
       if (item.youtube_url) {
-        bodyH += '<a href="' + item.youtube_url + '" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#ef4444;color:white;padding:6px 12px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;margin-top:8px;">▶ Voir la vidéo</a>';
+        bodyH += '<a href="' + item.youtube_url + '" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#ef4444;color:white;padding:6px 12px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:600;margin-top:10px;">▶ Voir la vidéo</a>';
       }
       bodyH += '</div>';
 
       if (item.is_pack && Array.isArray(item.pack_items) && item.pack_items.length > 0) {
-        bodyH += '<div style="height:32px;width:100%;clear:both;" aria-hidden="true"></div>';
-        bodyH += '<div class="rkey-pack-sec"><div class="rkey-pack-sec-title">📦 Matériel inclus dans ce pack</div><div class="rkey-pack-grid">';
+        bodyH += '<div class="rkey-pack-sec"><div class="rkey-pack-sec-title"><span>📦</span> Matériel inclus dans ce pack</div><div class="rkey-pack-grid">';
         item.pack_items.forEach(function(pi){
           bodyH += '<div class="rkey-pack-item"><div class="rkey-pack-qty">' + (pi.quantity||1) + '×</div><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (pi.name || pi.equipment_name || 'Équipement') + '</div></div>';
         });
@@ -449,7 +502,22 @@ function CatalogueView() {
       }
 
       document.getElementById('rkey-modal-body').innerHTML = bodyH;
-      document.getElementById('rkey-modal').classList.add('open');
+      
+      var modal = document.getElementById('rkey-modal');
+      var modalContent = modal.querySelector('.rkey-modal-content');
+      if (modalContent) modalContent.scrollTop = 0;
+      modal.scrollTop = 0;
+      modal.classList.add('open');
+
+      // Lock body scroll
+      document.body.style.overflow = 'hidden';
+
+      // Ensure modal is directly in view on mobile
+      if (window.innerWidth <= 640) {
+        try {
+          modal.scrollIntoView({ behavior: 'auto', block: 'start' });
+        } catch(e) {}
+      }
 
       if (autoTimer) clearInterval(autoTimer);
       if (currentPhotos.length > 1) {
@@ -460,6 +528,7 @@ function CatalogueView() {
     window.closeRkeyModal = function() {
       var m = document.getElementById('rkey-modal');
       if (m) m.classList.remove('open');
+      document.body.style.overflow = '';
       if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
     };
 

@@ -19,6 +19,7 @@ export const ContractHistory = ({
   setShowArchive,
   setShowConfiguration,
   setActiveTab,
+  onNewContract,
   onPrintContract,
   onPreviewContract,
   onLoadContract,
@@ -222,6 +223,17 @@ export const ContractHistory = ({
                   </select>
                 </div>
               </div>
+            )}
+
+            {!showTrash && !showArchive && (
+              <Button
+                onClick={() => onNewContract ? onNewContract() : setActiveTab("create")}
+                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 shadow-xs"
+                data-testid="history-header-new-contract-btn"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Nouveau contrat</span>
+              </Button>
             )}
           </div>
         </CardHeader>
@@ -485,12 +497,12 @@ export const ContractHistory = ({
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">Aucun contrat créé</h3>
                   <p className="text-gray-600 mb-6">Créez votre premier contrat DJ pour commencer</p>
                   <Button 
-                    onClick={() => setActiveTab("create")}
+                    onClick={() => onNewContract ? onNewContract() : setActiveTab("create")}
                     className="bg-blue-600 hover:bg-blue-700"
                     data-testid="create-first-contract-btn"
                   >
                     <Plus className="h-4 w-4 mr-2" />
-                    Créer un contrat
+                    Nouveau contrat
                   </Button>
                 </>
               )}
