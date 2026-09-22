@@ -57,7 +57,7 @@ export const calculateCompanyMargeHT = (basePrice, selectedOptions, discountAmou
 
   const optionsTotalForDeposit = (selectedOptions || [])
     .filter(option => option.selected && !option.is_addition_post_signature && !option.added_post_signature)
-    .reduce((sum, option) => sum + option.price, 0);
+    .reduce((sum, option) => sum + (option.included_in_formula ? 0 : (option.price || 0)), 0);
 
   const baseTTC = Math.max(0, basePrice - discountAmount);
   const baseHT = baseTTC / 1.2;
@@ -107,9 +107,9 @@ export const calculateContractCompanyMargeHT = (contract) => {
 };
 
 export const calculateTotal = (basePrice, selectedOptions, discountAmount) => {
-  const optionsTotal = selectedOptions
+  const optionsTotal = (selectedOptions || [])
     .filter(option => option.selected)
-    .reduce((sum, option) => sum + option.price, 0);
+    .reduce((sum, option) => sum + (option.included_in_formula ? 0 : (option.price || 0)), 0);
   return Math.max(0, basePrice + optionsTotal - discountAmount);
 };
 
@@ -123,7 +123,7 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
   if (isCompanyMode && isFreelance) {
     const optionsTotalForDeposit = (selectedOptions || [])
       .filter(option => option.selected && !option.is_addition_post_signature && !option.added_post_signature)
-      .reduce((sum, option) => sum + option.price, 0);
+      .reduce((sum, option) => sum + (option.included_in_formula ? 0 : (option.price || 0)), 0);
 
     const baseTTC = Math.max(0, basePrice - discountAmount);
     const baseHT = baseTTC / 1.2;
@@ -156,15 +156,20 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
     return Math.max(0, acompteTTC);
   }
 
-  const optionsTotal = selectedOptions
+  const optionsTotal = (selectedOptions || [])
     .filter(option => option.selected && !option.is_addition_post_signature && !option.added_post_signature)
-    .reduce((sum, option) => sum + option.price, 0);
-  const ratio = isCompany ? 0.3 : 0.5;
-  const deposit = (basePrice * ratio) + optionsTotal - discountAmount;
-  
+    .reduce((sum, option) => sum + (option.included_in_formula ? 0 : (option.price || 0)), 0);
+
+  const total = Math.max(0, basePrice + optionsTotal - discountAmount);
+
+  // Joël le dirigeant (non-freelance) : acompte standard à 30% du montant total TTC
   if (!isFreelance) {
+    const deposit = Math.round(total * 0.30 * 100) / 100;
     return Math.max(0, deposit);
   }
+
+  const ratio = isCompany ? 0.3 : 0.5;
+  const deposit = (basePrice * ratio) + optionsTotal - discountAmount;
   return Math.max(0, Math.round(deposit / 50) * 50);
 };
 
@@ -232,21 +237,26 @@ export const calculateContractDepositAmount = (contract) => {
 
   const optionsTotal = (contract.selected_options || [])
     .filter(option => option.selected !== false && !option.is_addition_post_signature && !option.added_post_signature)
-    .reduce((sum, option) => sum + option.price, 0);
-  const isCompany = !!(contract.client_info?.company && contract.client_info.company.trim().length > 0);
-  const ratio = isCompany ? 0.3 : 0.5;
-  const deposit = (contract.base_price * ratio) + optionsTotal - (contract.discount_amount || 0);
-  
+    .reduce((sum, option) => sum + (option.included_in_formula ? 0 : (option.price || 0)), 0);
+
+  const total = Math.max(0, (contract.base_price || 0) + optionsTotal - (contract.discount_amount || 0));
+
+  // Joël le dirigeant : acompte standard à 30% du montant total TTC
   if (isContractDirigeant(contract)) {
+    const deposit = Math.round(total * 0.30 * 100) / 100;
     return Math.max(0, deposit);
   }
+
+  const isCompany = !!(contract.client_info?.company && contract.client_info.company.trim().length > 0);
+  const ratio = isCompany ? 0.3 : 0.5;
+  const deposit = ((contract.base_price || 0) * ratio) + optionsTotal - (contract.discount_amount || 0);
   return Math.max(0, Math.round(deposit / 50) * 50);
 };
 
 export const calculateContractTotal = (contract) => {
   const optionsTotal = (contract.selected_options || [])
     .filter(option => option.selected)
-    .reduce((sum, option) => sum + option.price, 0);
+    .reduce((sum, option) => sum + (option.included_in_formula ? 0 : (option.price || 0)), 0);
   return Math.max(0, contract.base_price + optionsTotal - (contract.discount_amount || 0));
 };
 

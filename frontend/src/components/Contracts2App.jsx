@@ -34,6 +34,8 @@ import {
   isArtistFreelance,
   isContractDirigeant 
 } from "./contracts2/calculations";
+import { WeddingFormulasSelector } from "./contracts2/WeddingFormulasSelector";
+import { WEDDING_FORMULAS, WEDDING_OPTION_DEFINITIONS, isDateHighSeason } from "./contracts2/weddingFormulas";
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -179,6 +181,9 @@ function Contracts2App() {
   const [clientNotifAttachPdf, setClientNotifAttachPdf] = useState(false);
 
   const [basePrice, setBasePrice] = useState(0);
+  // ── FORMULES MARIAGE (Joël Dirigeant) ──
+  const [weddingFormula, setWeddingFormula] = useState(""); // 'essentielle' | 'confort' | 'signature' | 'prestige' | ''
+  const [weddingSeason, setWeddingSeason] = useState("haute"); // 'haute' | 'basse'
   // ── CONTRATS 2: Mode Mandat/Agence ──
   const [contractMode, setContractMode] = useState('entreprise'); // 'entreprise' ou 'mandataire' par défaut
   const [cgvTitle, setCgvTitle] = useState("Conditions Générales de Vente");
@@ -394,6 +399,12 @@ function Contracts2App() {
     }
     return baseTypes;
   }, [selectedDjProfile, djProfiles]);
+
+  const isWeddingEvent = useMemo(() => {
+    const t = (clientInfo?.event_type || '').toLowerCase();
+    const ct = (clientInfo?.custom_event_type || '').toLowerCase();
+    return t.includes('mariage') || ct.includes('mariage');
+  }, [clientInfo?.event_type, clientInfo?.custom_event_type]);
 
   const getNoteContent = (noteKey) => {
     return predefinedNotes[noteKey] || { title: '', content: '' };
@@ -1606,10 +1617,114 @@ function Contracts2App() {
         setSelectedNotes([]);
       }
     }
+
+    if (field === 'event_date' && value) {
+      const isHigh = isDateHighSeason(value);
+      const detectedSeason = isHigh ? 'haute' : 'basse';
+      setWeddingSeason(detectedSeason);
+      if (weddingFormula && WEDDING_FORMULAS[weddingFormula]) {
+        const targetPrice = WEDDING_FORMULAS[weddingFormula].prices[detectedSeason];
+        if (targetPrice) setBasePrice(targetPrice);
+      }
+    }
   };
 
   const handleOptionToggle = (optionId) => {
     setSelectedOptions(prev => prev.map(option => option.id === optionId ? { ...option, selected: !option.selected } : option));
+  };
+
+  // ── GESTION FORMULES MARIAGE (Joël Dirigeant) ──
+  const handleSelectWeddingFormula = (formulaKey, season = weddingSeason) => {
+    const formula = WEDDING_FORMULAS[formulaKey];
+    if (!formula) return;
+
+    // Désactivation si déjà active
+    if (weddingFormula === formulaKey) {
+      handleClearWeddingFormula();
+      return;
+    }
+
+    setWeddingFormula(formulaKey);
+    const targetPrice = formula.prices[season] || formula.prices.haute;
+    setBasePrice(targetPrice);
+
+    // Ajustement de l'horaire
+    if (formula.unlimitedTime) {
+      setClientInfo(prev => ({
+        ...prev,
+        unlimited_time: true,
+        end_time: ""
+      }));
+    } else {
+      setClientInfo(prev => ({
+        ...prev,
+        unlimited_time: false,
+        end_time: formula.endTime || "04:00"
+      }));
+    }
+
+    // Synchronisation automatique des options
+    setSelectedOptions(prevOptions => {
+      let nextOptions = [...prevOptions];
+
+      WEDDING_OPTION_DEFINITIONS.forEach(def => {
+        const isIncluded = formula.includedOptionKeys.includes(def.key);
+        const existingIdx = nextOptions.findIndex(o => def.matches(o.name));
+
+        if (existingIdx !== -1) {
+          if (isIncluded) {
+            nextOptions[existingIdx] = {
+              ...nextOptions[existingIdx],
+              selected: true,
+              included_in_formula: true
+            };
+          } else {
+            // Si cette option était incluse par une autre formule, on la désactive proprement
+            if (nextOptions[existingIdx].included_in_formula) {
+              nextOptions[existingIdx] = {
+                ...nextOptions[existingIdx],
+                selected: false,
+                included_in_formula: false
+              };
+            }
+          }
+        } else if (isIncluded) {
+          // Si l'option n'existe pas encore dans les options locales, on l'injecte
+          nextOptions.push({
+            id: `opt-formula-${def.key}`,
+            name: def.label,
+            price: def.defaultPrice,
+            event_categories: ['Mariage', 'Tous'],
+            selected: true,
+            included_in_formula: true
+          });
+        }
+      });
+
+      return nextOptions;
+    });
+
+    toast.success(`Formule ${formula.name} appliquée (${targetPrice} € TTC — ${formula.unlimitedTime ? 'Sans limite horaire' : `Jusqu'à ${formula.endTime}`})`);
+  };
+
+  const handleChangeWeddingSeason = (newSeason) => {
+    setWeddingSeason(newSeason);
+    if (weddingFormula && WEDDING_FORMULAS[weddingFormula]) {
+      const formulaPrice = WEDDING_FORMULAS[weddingFormula].prices[newSeason];
+      if (formulaPrice !== undefined) {
+        setBasePrice(formulaPrice);
+        toast.info(`Tarif actualisé : ${formulaPrice} € (${newSeason === 'haute' ? 'Haute saison (Mai-Oct)' : 'Basse saison (Nov-Avr)'})`);
+      }
+    }
+  };
+
+  const handleClearWeddingFormula = () => {
+    setWeddingFormula("");
+    setSelectedOptions(prev => prev.map(o => ({
+      ...o,
+      included_in_formula: false
+    })));
+    toast.info("Mode tarif libre / personnalisé activé");
   };
 
   const handleNoteToggle = (noteKey) => {
@@ -2214,11 +2329,18 @@ function Contracts2App() {
 
   const isDirigeant = () => {
     const p = getProfileData(selectedDjProfile);
-    return p.nom_artistique?.toLowerCase().includes("r'key") || p.nom_artistique?.toLowerCase().includes("rkey") || p.titre?.includes("Gérant") || p.statut_artiste === 'dirigeant';
+    return p.nom_artistique?.toLowerCase().includes("r'key") || 
+           p.nom_artistique?.toLowerCase().includes("rkey") || 
+           p.titre?.includes("Gérant") || 
+           p.statut_artiste === 'dirigeant' ||
+           p.nom_artistique?.toLowerCase() === "joël" ||
+           p.nom_artistique?.toLowerCase() === "joel";
   };
 
   const calculateTotal = () => {
-    const optionsTotal = selectedOptions.filter(option => option.selected).reduce((sum, option) => sum + option.price, 0);
+    const optionsTotal = selectedOptions
+      .filter(option => option.selected)
+      .reduce((sum, option) => sum + (option.included_in_formula ? 0 : option.price), 0);
     if (isDirigeant()) {
       // Mode Prestation Directe: Prix de base + Options - Remise
       return Math.max(0, basePrice + optionsTotal - discountAmount);
@@ -2290,6 +2412,7 @@ function Contracts2App() {
     setCateringNotes(""); setCateringDrinks(false); setCateringHotMealNoTable(false); setCateringHotMealNoTableQty(0);
     setSelectedEvents([]); setCustomRepasEvents([]); setCustomMusiqueEvents([]); setEventNotes(""); setEventOrder([]);
     setBasePrice(0); setFraisMandat(0); setCachetArtiste(0); setFreelanceCachetCap(800); setPackSonorisation(false); setPackLumiere(false); setInvoiceNumber(""); setArtisteInvoiceNumber(""); setDiscountAmount(0); setCustomDepositAmount(0); setNoDepositRequired(false);
+    setWeddingFormula(""); setWeddingSeason("haute");
     setOptionsTarifNotes(""); setSelectedRIB(""); setDepositPaid(false); setDepositPaymentMethod(""); setBackgroundMusicAperitif("");
     setHasLimiteurSon(false); setHasDetecteurFumee(false); setHasNoLimiteurNiDetecteur(false);
     setHypnosisProgram(defaultHypnosisProgram);
@@ -2390,6 +2513,9 @@ function Contracts2App() {
       freelance_cachet_cap: freelanceCachetCap,
       pack_sonorisation: packSonorisation || false,
       pack_lumiere: packLumiere || false,
+      wedding_formula: weddingFormula || "",
+      wedding_formula_season: weddingSeason || "haute",
+      wedding_formula_name: weddingFormula && WEDDING_FORMULAS[weddingFormula] ? WEDDING_FORMULAS[weddingFormula].name : "",
       selected_options: selectedOptions.filter(opt => opt.selected),
       options_tarif_notes: optionsTarifNotes,
       discount_amount: discountAmount || 0,
@@ -2494,9 +2620,13 @@ function Contracts2App() {
       return {
         ...option,
         selected: saved ? saved.selected !== false : false,
-        price: saved && saved.price !== undefined ? saved.price : option.price
+        price: saved && saved.price !== undefined ? saved.price : option.price,
+        included_in_formula: saved ? !!saved.included_in_formula : false
       };
     }));
+    
+    setWeddingFormula(contract.wedding_formula || "");
+    setWeddingSeason(contract.wedding_formula_season || (isDateHighSeason(contract.client_info?.event_date) ? "haute" : "basse"));
     
     setDiscountAmount(contract.discount_amount || 0);
     setInvoiceNumber(contract.invoice_number || "");
@@ -2577,9 +2707,13 @@ function Contracts2App() {
       return {
         ...option,
         selected: saved ? saved.selected !== false : false,
-        price: saved && saved.price !== undefined ? saved.price : option.price
+        price: saved && saved.price !== undefined ? saved.price : option.price,
+        included_in_formula: saved ? !!saved.included_in_formula : false
       };
     }));
+    
+    setWeddingFormula(contract.wedding_formula || "");
+    setWeddingSeason(contract.wedding_formula_season || (isDateHighSeason(contract.client_info?.event_date) ? "haute" : "basse"));
     
     setDiscountAmount(contract.discount_amount || 0);
     setInvoiceNumber(""); 
@@ -3728,7 +3862,7 @@ function Contracts2App() {
                     <div className="space-y-2"><Label className="text-slate-700">Prix de base</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={basePrice} onChange={(e) => setBasePrice(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="10" /></div></div>
                     <div className="space-y-2"><Label className="text-slate-700">Remise (optionnel)</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="5" /></div></div>
                     <Separator />
-                    <div className="space-y-2"><Label className="text-slate-700">Acompte personnalisé (optionnel)</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={customDepositAmount} onChange={(e) => setCustomDepositAmount(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="10" /></div><p className="text-xs text-slate-500">Par défaut: {clientInfo?.company?.trim() ? "30%" : "50%"} du tarif de base</p></div>
+                    <div className="space-y-2"><Label className="text-slate-700">Acompte personnalisé (optionnel)</Label><div className="flex items-center space-x-2"><Euro className="h-4 w-4 text-slate-500" /><Input type="number" value={customDepositAmount} onChange={(e) => setCustomDepositAmount(Number(e.target.value))} className="border-slate-300 focus:border-blue-500 w-32" min="0" step="10" /></div><p className="text-xs text-slate-500">{isDirigeant() ? "Par défaut: 30% du montant total" : `Par défaut: ${clientInfo?.company?.trim() ? "30%" : "50%"} du tarif de base`}</p></div>
                     <div className="flex items-center space-x-2"><Checkbox id="no_deposit_hypnosis" checked={noDepositRequired} onCheckedChange={(checked) => setNoDepositRequired(checked)} /><Label htmlFor="no_deposit_hypnosis" className="text-sm font-normal cursor-pointer">Client de confiance - Aucun acompte requis</Label></div>
                     <Separator />
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
@@ -3828,11 +3962,31 @@ function Contracts2App() {
                   <CardDescription>{isDirigeant() ? 'Configurez les options et le tarif du contrat' : 'Répartition des montants entre l\'agence et l\'artiste'}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Formules Mariage — Joël Dirigeant & Mariage uniquement */}
+                  {isDirigeant() && isWeddingEvent && (
+                    <div className="mb-6">
+                      <WeddingFormulasSelector
+                        currentFormula={weddingFormula}
+                        currentSeason={weddingSeason}
+                        onSelectFormula={handleSelectWeddingFormula}
+                        onChangeSeason={handleChangeWeddingSeason}
+                        onClearFormula={handleClearWeddingFormula}
+                      />
+                    </div>
+                  )}
+
                   {/* Prix de base & Plafond DJ Freelance */}
                   <div className="flex flex-wrap gap-4 items-end bg-slate-50/50 p-4 rounded-lg border border-slate-100">
                     {/* Prix de base simple - Non modifiable en mode mandat */}
                     <div className="space-y-2">
-                      <Label className="text-slate-700">Prix de base (TTC)</Label>
+                      <Label className="text-slate-700 flex items-center gap-2">
+                        <span>Prix de base (TTC)</span>
+                        {weddingFormula && WEDDING_FORMULAS[weddingFormula] && (
+                          <Badge className="bg-blue-600 hover:bg-blue-600 text-white text-[11px] font-medium">
+                            Formule {WEDDING_FORMULAS[weddingFormula].name}
+                          </Badge>
+                        )}
+                      </Label>
                       <div className="flex items-center space-x-2">
                         <Euro className="h-4 w-4 text-slate-500" />
                         <Input 
@@ -3921,6 +4075,7 @@ function Contracts2App() {
                   {/* Options Matériel (communes aux deux modes) */}
                   <div className="grid grid-cols-1 gap-3">
                     {selectedOptions.filter(opt => {
+                      if (opt.included_in_formula) return true;
                       let rawCats = opt.event_categories || opt.categories || opt.event_types;
                       if (typeof rawCats === 'string') rawCats = rawCats.split(',').map(s => s.trim()).filter(Boolean);
                       if (!rawCats || !Array.isArray(rawCats) || rawCats.length === 0) return false;
@@ -3935,11 +4090,42 @@ function Contracts2App() {
                       
                       return allowed.some(cat => normCurrent === cat || normCurrent.includes(cat) || cat.includes(normCurrent));
                     }).map((option) => (
-                      <div key={option.id} className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${option.selected ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"}`} onClick={() => handleOptionToggle(option.id)}>
+                      <div 
+                        key={option.id} 
+                        className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${
+                          option.selected 
+                            ? (option.included_in_formula ? "border-emerald-500 bg-emerald-50/70" : "border-blue-500 bg-blue-50") 
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`} 
+                        onClick={() => handleOptionToggle(option.id)}
+                      >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
                             <Checkbox checked={option.selected} readOnly />
-                            <div><p className="font-medium text-slate-800">{option.name}</p><Badge variant="secondary" className="mt-1">{option.price}€</Badge></div>
+                            <div>
+                              <p className="font-medium text-slate-800 flex items-center gap-2">
+                                <span>{option.name}</span>
+                                {option.included_in_formula && (
+                                  <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white text-[10px] font-bold py-0.5 px-2">
+                                    ✓ Inclus dans la formule
+                                  </Badge>
+                                )}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1">
+                                {option.included_in_formula ? (
+                                  <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 font-bold">
+                                    0,00 € (Inclus)
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary">{option.price}€</Badge>
+                                )}
+                                {option.included_in_formula && (
+                                  <span className="text-xs text-slate-400 line-through">
+                                    valeur : {option.price}€
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -3954,9 +4140,24 @@ function Contracts2App() {
                     <div className="space-y-2 text-sm">
                       {(isDirigeant() || contractMode === 'entreprise') ? (
                         <>
-                          <div className="flex justify-between"><span>Tarif de base :</span><span className="font-medium">{basePrice.toFixed(2)} €</span></div>
+                          <div className="flex justify-between">
+                            <span>
+                              {weddingFormula && WEDDING_FORMULAS[weddingFormula] 
+                                ? `Formule Mariage (${WEDDING_FORMULAS[weddingFormula].name} — ${weddingSeason === 'haute' ? 'Mai à Octobre' : 'Novembre à Avril'}) :` 
+                                : 'Tarif de base :'}
+                            </span>
+                            <span className="font-medium">{basePrice.toFixed(2)} €</span>
+                          </div>
                           {selectedOptions.filter(o => o.selected).map(o => (
-                            <div key={o.id} className="flex justify-between text-slate-600"><span>{o.name} :</span><span className="font-medium">{o.price.toFixed(2)} €</span></div>
+                            <div key={o.id} className="flex justify-between text-slate-600">
+                              <span className="flex items-center gap-1.5">
+                                {o.included_in_formula ? '✓ ' : '+ '}
+                                {o.name} :
+                              </span>
+                              <span className={`font-medium ${o.included_in_formula ? 'text-emerald-600 font-bold' : ''}`}>
+                                {o.included_in_formula ? 'Inclus (0,00 €)' : `${o.price.toFixed(2)} €`}
+                              </span>
+                            </div>
                           ))}
                         </>
                       ) : (
@@ -3964,7 +4165,15 @@ function Contracts2App() {
                           <div className="flex justify-between"><span className="text-orange-700">Frais de Mandat & Gestion :</span><span className="font-medium">{fraisMandat.toFixed(2)} €</span></div>
                           <div className="flex justify-between"><span className="text-purple-700">Cachet Artiste :</span><span className="font-medium">{cachetArtiste.toFixed(2)} €</span></div>
                           {selectedOptions.filter(o => o.selected).map(o => (
-                            <div key={o.id} className="flex justify-between text-slate-600"><span>{o.name} :</span><span className="font-medium">{o.price.toFixed(2)} €</span></div>
+                            <div key={o.id} className="flex justify-between text-slate-600">
+                              <span className="flex items-center gap-1.5">
+                                {o.included_in_formula ? '✓ ' : '+ '}
+                                {o.name} :
+                              </span>
+                              <span className={`font-medium ${o.included_in_formula ? 'text-emerald-600 font-bold' : ''}`}>
+                                {o.included_in_formula ? 'Inclus (0,00 €)' : `${o.price.toFixed(2)} €`}
+                              </span>
+                            </div>
                           ))}
                         </>
                       )}
@@ -4280,17 +4489,31 @@ function Contracts2App() {
                             </>
                           );
                         }
+                        if (isDirigeant()) {
+                          return (
+                            <>
+                              <div className="flex justify-between">
+                                <span>Acompte (30% du montant total) :</span>
+                                <span className="font-semibold text-green-600">{calculateDepositAmount().toFixed(2)}€</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span>Solde restant (70%) :</span>
+                                <span className="font-semibold">{calculateRemainingBalance().toFixed(2)}€</span>
+                              </div>
+                            </>
+                          );
+                        }
                         const isCompany = !!(clientInfo?.company && clientInfo.company.trim().length > 0);
                         const ratioStr = isCompany ? "30%" : "50%";
                         return (
                           <>
                             <div className="flex justify-between">
                               <span>Acompte ({ratioStr} tarif + options complètes):</span>
-                              <span className="font-semibold text-green-600">{calculateDepositAmount()}€</span>
+                              <span className="font-semibold text-green-600">{calculateDepositAmount().toFixed(2)}€</span>
                             </div>
                             <div className="flex justify-between">
                               <span>Solde restant:</span>
-                              <span className="font-semibold">{calculateRemainingBalance()}€</span>
+                              <span className="font-semibold">{calculateRemainingBalance().toFixed(2)}€</span>
                             </div>
                           </>
                         );

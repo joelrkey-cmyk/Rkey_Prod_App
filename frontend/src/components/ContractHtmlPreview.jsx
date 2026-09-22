@@ -68,7 +68,7 @@ const ContractHtmlPreview = () => {
   const calculateContractTotal = () => {
     const optionsTotal = (contract.selected_options || [])
       .filter(option => option.selected)
-      .reduce((sum, option) => sum + option.price, 0);
+      .reduce((sum, option) => sum + (option.included_in_formula ? 0 : (option.price || 0)), 0);
     return Math.max(0, contract.base_price + optionsTotal - (contract.discount_amount || 0));
   };
 
@@ -83,15 +83,18 @@ const ContractHtmlPreview = () => {
     
     const optionsTotal = (contract.selected_options || [])
       .filter(option => option.selected)
-      .reduce((sum, option) => sum + option.price, 0);
+      .reduce((sum, option) => sum + (option.included_in_formula ? 0 : (option.price || 0)), 0);
     
+    const total = Math.max(0, (contract.base_price || 0) + optionsTotal - (contract.discount_amount || 0));
+
+    if (isContractDirigeant(contract)) {
+      return Math.max(0, Math.round(total * 0.30 * 100) / 100);
+    }
+
     const isCompany = !!(contract.client_info?.company && contract.client_info.company.trim().length > 0);
     const ratio = isCompany ? 0.3 : 0.5;
-    const deposit = (contract.base_price * ratio) + optionsTotal - (contract.discount_amount || 0);
+    const deposit = ((contract.base_price || 0) * ratio) + optionsTotal - (contract.discount_amount || 0);
     
-    if (isContractDirigeant(contract)) {
-      return Math.max(0, deposit);
-    }
     return Math.max(0, Math.round(deposit / 50) * 50);
   };
 
@@ -163,13 +166,23 @@ const ContractHtmlPreview = () => {
               </thead>
               <tbody>
                 <tr>
-                  <td className="border border-gray-300 p-2"><strong>Prestation artistique</strong></td>
+                  <td className="border border-gray-300 p-2">
+                    <strong>{contract.wedding_formula_name ? `Prestation DJ Mariage — Formule ${contract.wedding_formula_name.toUpperCase()}` : 'Prestation artistique'}</strong>
+                  </td>
                   <td className="border border-gray-300 p-2 text-right font-bold">{contract.base_price}€</td>
                 </tr>
                 {contract.selected_options.filter(opt => opt.selected).map((option, idx) => (
                   <tr key={idx}>
-                    <td className="border border-gray-300 p-2">+ {option.name}</td>
-                    <td className="border border-gray-300 p-2 text-right font-bold">{option.price}€</td>
+                    <td className="border border-gray-300 p-2">
+                      {option.included_in_formula ? (
+                        <>✓ {option.name} <span className="text-xs text-emerald-600 font-semibold">(Inclus dans la formule)</span></>
+                      ) : (
+                        `+ ${option.name}`
+                      )}
+                    </td>
+                    <td className="border border-gray-300 p-2 text-right font-bold">
+                      {option.included_in_formula ? <span className="text-emerald-600">Inclus</span> : `${option.price}€`}
+                    </td>
                   </tr>
                 ))}
                 {contract.discount_amount > 0 && (

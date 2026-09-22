@@ -24,7 +24,9 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
     : (contract.client_info ? contract.client_info.event_type : '');
 
   const isHypnose = resolvedEventType && resolvedEventType.toLowerCase().trim() === 'intervention hypnose';
-  const mainPrestationName = isHypnose ? "Intervention hypnose" : (isJoel ? "Animation DJ" : "Prestation artistique");
+  const mainPrestationName = contract.wedding_formula_name
+    ? `Prestation DJ & Animation Mariage — Formule ${contract.wedding_formula_name.toUpperCase()}`
+    : (isHypnose ? "Intervention hypnose" : (isJoel ? "Animation DJ" : "Prestation artistique"));
 
   const fmtVal = (val) => (val || 0).toFixed(2) + " €";
   const fmtHTVal = (val) => (Math.round(((val || 0) / 1.20) * 100) / 100).toFixed(2) + " €";
@@ -205,13 +207,13 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             )}
             ${contract.selected_options.filter(opt => opt.selected).map(option => `
               <tr>
-                <td>+ ${option.name}</td>
+                <td>${option.included_in_formula ? `✓ ${option.name} <span style="font-size: 11px; color: #15803d; font-weight: 600;">(Inclus dans la formule)</span>` : `+ ${option.name}`}</td>
                 ${isCompany ? `
-                  <td style="text-align: right;">${fmtHTVal(option.price)}</td>
-                  <td style="text-align: right;">${fmtTvaVal(option.price)}</td>
-                  <td style="text-align: right; font-weight: bold;">${fmtVal(option.price)}</td>
+                  <td style="text-align: right; ${option.included_in_formula ? 'color: #15803d;' : ''}">${option.included_in_formula ? '0,00 €' : fmtHTVal(option.price)}</td>
+                  <td style="text-align: right; ${option.included_in_formula ? 'color: #15803d;' : ''}">${option.included_in_formula ? '0,00 €' : fmtTvaVal(option.price)}</td>
+                  <td style="text-align: right; font-weight: bold; ${option.included_in_formula ? 'color: #15803d;' : ''}">${option.included_in_formula ? 'Inclus' : fmtVal(option.price)}</td>
                 ` : `
-                  <td style="text-align: right;">${fmtVal(option.price)}</td>
+                  <td style="text-align: right; ${option.included_in_formula ? 'color: #15803d;' : ''}">${option.included_in_formula ? '<strong>Inclus</strong>' : fmtVal(option.price)}</td>
                 `}
               </tr>
             `).join('')}
@@ -544,7 +546,7 @@ export const generateContractHTML = (contract, clientSignature, signatureImages,
             <div class="section-title">OPTIONS VALIDÉES</div>
             <div style="font-size: 11px; line-height: 1.5; margin-bottom: 12pt;">
               ${contract.selected_options && contract.selected_options.filter(opt => opt.selected).length > 0 
-                ? contract.selected_options.filter(opt => opt.selected).map(opt => `• ${opt.name}`).join('<br>')
+                ? contract.selected_options.filter(opt => opt.selected).map(opt => `• ${opt.name}${opt.included_in_formula ? ' (Inclus)' : ''}`).join('<br>')
                 : 'Aucune option supplémentaire'}
             </div>
             
