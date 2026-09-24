@@ -2368,7 +2368,8 @@ function Contracts2App() {
       isCompany,
       contractMode,
       profile,
-      freelanceCachetCap
+      freelanceCachetCap,
+      editingContract?.created_at
     );
   };
 
@@ -2384,7 +2385,8 @@ function Contracts2App() {
       isCompany,
       contractMode,
       profile,
-      freelanceCachetCap
+      freelanceCachetCap,
+      editingContract?.created_at
     );
   };
 

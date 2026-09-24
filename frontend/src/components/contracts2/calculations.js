@@ -1,5 +1,17 @@
 // Fonctions de calcul pour les contrats
 
+const isCreatedBeforeTransitionDate = (createdAt) => {
+  if (!createdAt) return false; // Par défaut, 30% si aucune date (nouveau contrat)
+  try {
+    // Les contrats créés avant le 24/09/2026 appliquent un acompte de 50%, les nouveaux à 30%
+    const transitionDate = new Date("2026-09-24T00:00:00");
+    const createdDate = new Date(createdAt);
+    return createdDate < transitionDate;
+  } catch (e) {
+    return false;
+  }
+};
+
 export const isContractDirigeant = (c) => {
   if (!c) return false;
   
@@ -113,7 +125,7 @@ export const calculateTotal = (basePrice, selectedOptions, discountAmount) => {
   return Math.max(0, basePrice + optionsTotal - discountAmount);
 };
 
-export const calculateDepositAmount = (basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany = false, contractMode = "entreprise", djProfile = null, freelanceCachetCap = 800) => {
+export const calculateDepositAmount = (basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany = false, contractMode = "entreprise", djProfile = null, freelanceCachetCap = 800, createdAt = null) => {
   if (noDepositRequired) return 0;
   if (customDepositAmount > 0) return customDepositAmount;
 
@@ -162,10 +174,16 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
 
   const total = Math.max(0, basePrice + optionsTotal - discountAmount);
 
-  // Joël le dirigeant (non-freelance) : acompte standard à 30% du montant total TTC
+  // Joël le dirigeant (non-freelance) : acompte standard à 30% (ou 50% de la formule de base + options si créé avant le 24/09/2026)
   if (!isFreelance) {
-    const deposit = Math.round(total * 0.30 * 100) / 100;
-    return Math.max(0, deposit);
+    const isOld = isCreatedBeforeTransitionDate(createdAt);
+    if (isOld) {
+      const deposit = (basePrice * 0.50) + optionsTotal - discountAmount;
+      return Math.max(0, Math.round(deposit * 100) / 100);
+    } else {
+      const deposit = total * 0.30;
+      return Math.max(0, Math.round(deposit * 100) / 100);
+    }
   }
 
   const ratio = isCompany ? 0.3 : 0.5;
@@ -173,9 +191,9 @@ export const calculateDepositAmount = (basePrice, selectedOptions, discountAmoun
   return Math.max(0, Math.round(deposit / 50) * 50);
 };
 
-export const calculateRemainingBalance = (basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany = false, contractMode = "entreprise", djProfile = null, freelanceCachetCap = 800) => {
+export const calculateRemainingBalance = (basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany = false, contractMode = "entreprise", djProfile = null, freelanceCachetCap = 800, createdAt = null) => {
   const total = calculateTotal(basePrice, selectedOptions, discountAmount);
-  const deposit = calculateDepositAmount(basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany, contractMode, djProfile, freelanceCachetCap);
+  const deposit = calculateDepositAmount(basePrice, selectedOptions, discountAmount, customDepositAmount, noDepositRequired, isCompany, contractMode, djProfile, freelanceCachetCap, createdAt);
   return Math.max(0, total - deposit);
 };
 
@@ -241,10 +259,18 @@ export const calculateContractDepositAmount = (contract) => {
 
   const total = Math.max(0, (contract.base_price || 0) + optionsTotal - (contract.discount_amount || 0));
 
-  // Joël le dirigeant : acompte standard à 30% du montant total TTC
+  // Joël le dirigeant : acompte standard à 30% (ou 50% de la formule de base + options si créé avant le 24/09/2026)
   if (isContractDirigeant(contract)) {
-    const deposit = Math.round(total * 0.30 * 100) / 100;
-    return Math.max(0, deposit);
+    const isOld = isCreatedBeforeTransitionDate(contract.created_at);
+    if (isOld) {
+      const basePrice = contract.base_price || 0;
+      const discountAmount = contract.discount_amount || 0;
+      const deposit = (basePrice * 0.50) + optionsTotal - discountAmount;
+      return Math.max(0, Math.round(deposit * 100) / 100);
+    } else {
+      const deposit = total * 0.30;
+      return Math.max(0, Math.round(deposit * 100) / 100);
+    }
   }
 
   const isCompany = !!(contract.client_info?.company && contract.client_info.company.trim().length > 0);
