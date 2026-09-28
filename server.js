@@ -3887,10 +3887,81 @@ api.get('/dj-client/admin/contracts', authMiddleware, async (req, res) => {
       { status: { $nin: ['trash', 'deleted', 'draft'] } },
       { projection: { cgv_text: 0, predefined_notes: 0, _id: 0, 'event_documents.pdf_data': 0 } }
     ).toArray();
-    const result = cleanList(contracts);
-    adminContractsCache.data = result;
+    const results = cleanList(contracts);
+
+    // Fetch custom events with a clientName and no associated contractId to avoid duplication
+    try {
+      const customEvents = await db.collection('agenda_custom_events').find({
+        clientName: { $exists: true, $ne: '' },
+        contractId: { $in: [null, undefined, ''] }
+      }).toArray();
+      
+      const virtualContracts = customEvents.map(ce => {
+        const ceId = ce._id.toString();
+        const clientName = ce.clientName || 'Client';
+        const eventType = ce.eventType || 'Événement';
+        
+        const typeLower = eventType.split(' ')[0].toLowerCase().replace(/\s+/g, '-');
+        const clientNameLower = clientName.toLowerCase().replace(/\s+/g, '-');
+        const clientSlug = `${typeLower}-${clientNameLower}`;
+
+        const customDoc = ce.attachment ? {
+          id: ce.attachment.id || ceId,
+          filename: ce.attachment.filename,
+          category: 'ManualEventDoc',
+          uploaded_at: ce.attachment.uploaded_at || ce.createdAt || new Date().toISOString(),
+          gcs_path: ce.attachment.gcs_path,
+          url: ce.attachment.url,
+          isFromManualEvent: true,
+          manualEventTitle: ce.title
+        } : null;
+
+        const ceDocs = ce.event_documents || [];
+
+        return {
+          id: ceId,
+          client_info: {
+            name: clientName,
+            phone: ce.clientPhone || "",
+            event_type: eventType,
+            event_date: ce.date,
+            event_location: ce.location || "",
+            details: ce.details || ""
+          },
+          clientSlug,
+          clientName: clientName,
+          client_name: clientName,
+          eventType: eventType,
+          event_date: ce.date,
+          dj_profile: ce.djId || 'joel',
+          dj_profile_data: { nom_artistique: ce.djName || "Joël R'Key" },
+          djName: ce.djName || "Joël R'Key",
+          djLogin: (ce.djName || "Joël R'Key").toLowerCase().replace(/\s+/g, '-'),
+          event_documents: customDoc ? [customDoc, ...ceDocs] : ceDocs,
+          status: 'completed',
+          isVirtual: true,
+          title: ce.title,
+          event_order: [],
+          dj_notes: ce.details || "",
+          playlist_link: ce.playlist_link || "",
+          selected_options: ce.selected_options || [],
+          requested_options: ce.requested_options || [],
+          chat_messages: ce.chat_messages || [],
+          selected_pdf_notes: ce.selected_pdf_notes || [],
+          notifications: ce.notifications || { admin: {}, dj: {}, client: {} },
+          venue_photos: ce.venue_photos || [],
+          client_photo: ce.client_photo || null
+        };
+      });
+      
+      results.push(...virtualContracts);
+    } catch (err) {
+      console.error("Error fetching custom events as virtual contracts:", err);
+    }
+
+    adminContractsCache.data = results;
     adminContractsCache.expiresAt = now + 10000; // 10s TTL
-    res.json(result);
+    res.json(results);
   } catch (error) {
     console.error("Error in /dj-client/admin/contracts:", error);
     res.status(500).json({ error: error.message });
@@ -4811,7 +4882,7 @@ api.get('/public/dj-client/:slug', async (req, res) => {
     contracts = await db.collection('contracts2').find({ status: { $in: ['sent', 'archived', 'completed'] } }, { projection: { _id: 0, cgv_text: 0, predefined_notes: 0, signatures: 0, 'event_documents.pdf_data': 0 } }).toArray();
   }
   
-  const mappedEvents = contracts.map(c => {
+  const mappedEventsRaw = contracts.map(c => {
     const info = c.client_info || {};
     let clientName = info.name || c.client_name || 'Client inconnu';
     if (typeof clientName !== 'string') {
@@ -4850,6 +4921,52 @@ api.get('/public/dj-client/:slug', async (req, res) => {
       clientName,
       eventType
     };
+  });
+
+  // Fetch and inject custom events' attachments linked to these contracts
+  const contractIds = mappedEventsRaw.map(e => e.id).filter(Boolean);
+  let linkedCustomEvents = [];
+  try {
+    linkedCustomEvents = await db.collection('agenda_custom_events').find({
+      $or: [
+        { contractId: { $in: contractIds } },
+        { clientName: { $in: mappedEventsRaw.map(e => e.clientName).filter(Boolean) } }
+      ]
+    }).toArray();
+  } catch (err) {
+    console.error("Error fetching linked custom events:", err);
+  }
+
+  const mappedEvents = mappedEventsRaw.map(event => {
+    const cloned = { ...event };
+    const eventId = event.id;
+    const clientName = event.clientName;
+    
+    let customDocs = [];
+    linkedCustomEvents.forEach(customEv => {
+      const isLinked = (customEv.contractId && customEv.contractId === eventId) ||
+                       (!customEv.contractId && clientName && customEv.clientName && customEv.clientName.toLowerCase().trim() === clientName.toLowerCase().trim());
+                       
+      if (isLinked && customEv.attachment) {
+        customDocs.push({
+          id: customEv.attachment.id || customEv._id.toString(),
+          filename: customEv.attachment.filename,
+          category: 'ManualEventDoc',
+          uploaded_at: customEv.attachment.uploaded_at || customEv.createdAt || new Date().toISOString(),
+          gcs_path: customEv.attachment.gcs_path,
+          url: customEv.attachment.url,
+          isFromManualEvent: true,
+          manualEventTitle: customEv.title
+        });
+      }
+    });
+
+    if (!cloned.event_documents) {
+      cloned.event_documents = [];
+    }
+    
+    cloned.event_documents = [...cloned.event_documents, ...customDocs];
+    return cloned;
   });
 
   const rawOptions = cleanList(await db.collection('material_options').find({}, { projection: { _id: 0 } }).sort({ sort_order: 1, name: 1 }).toArray());
@@ -4916,6 +5033,110 @@ api.get('/public/dj-client/:slug', async (req, res) => {
         return cloned;
       });
       const signedEvents = await autoSignGcsUrlsInObject(cleanedClientEvents);
+      responseData = { role: 'client', events: signedEvents, slug, availableOptions: options, companySettings };
+    }
+  }
+
+  if (!responseData) {
+    // Fall back to checking agenda_custom_events for a matching custom/manual event
+    let matchingCustomEvents = [];
+    try {
+      const parts = slug.split('-');
+      const clientParts = parts.slice(1).filter(p => p.length >= 3);
+      const orCustomConditions = [
+        { clientName: new RegExp('^' + makeAccentInsensitivePattern(slug) + '$', 'i') }
+      ];
+      if (clientParts.length > 0) {
+        const conditions = clientParts.map(part => {
+          const pattern = makeAccentInsensitivePattern(part);
+          const regex = new RegExp(pattern, 'i');
+          return { clientName: regex };
+        });
+        orCustomConditions.push({ $and: conditions });
+      }
+      
+      const allCustomEvents = await db.collection('agenda_custom_events').find({}).toArray();
+      matchingCustomEvents = allCustomEvents.filter(ce => {
+        if (!ce.clientName) return false;
+        const clientName = ce.clientName;
+        const eventType = ce.eventType || 'Événement';
+        
+        const typeLower = eventType.split(' ')[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+        const clientNameLower = clientName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
+        const ceSlug = `${typeLower}-${clientNameLower}`;
+        
+        return normalizeString(ceSlug) === normalizedRequestedSlug ||
+               normalizeString(clientName) === normalizedRequestedSlug ||
+               normalizeString(ce._id?.toString() || '') === normalizedRequestedSlug;
+      });
+      
+      if (matchingCustomEvents.length === 0) {
+        matchingCustomEvents = await db.collection('agenda_custom_events').find({ $or: orCustomConditions }).toArray();
+      }
+    } catch (err) {
+      console.error("Error finding fallbacks in agenda_custom_events:", err);
+    }
+    
+    if (matchingCustomEvents.length > 0) {
+      const virtualContracts = matchingCustomEvents.map(ce => {
+        const ceId = ce._id.toString();
+        const clientName = ce.clientName || 'Client';
+        const eventType = ce.eventType || 'Événement';
+        
+        const typeLower = eventType.split(' ')[0].toLowerCase().replace(/\s+/g, '-');
+        const clientNameLower = clientName.toLowerCase().replace(/\s+/g, '-');
+        const clientSlug = `${typeLower}-${clientNameLower}`;
+
+        const customDoc = ce.attachment ? {
+          id: ce.attachment.id || ceId,
+          filename: ce.attachment.filename,
+          category: 'ManualEventDoc',
+          uploaded_at: ce.attachment.uploaded_at || ce.createdAt || new Date().toISOString(),
+          gcs_path: ce.attachment.gcs_path,
+          url: ce.attachment.url,
+          isFromManualEvent: true,
+          manualEventTitle: ce.title
+        } : null;
+
+        const ceDocs = ce.event_documents || [];
+
+        return {
+          id: ceId,
+          client_info: {
+            name: clientName,
+            phone: ce.clientPhone || "",
+            event_type: eventType,
+            event_date: ce.date,
+            event_location: ce.location || "",
+            details: ce.details || ""
+          },
+          clientSlug,
+          clientName: clientName,
+          client_name: clientName,
+          eventType: eventType,
+          event_date: ce.date,
+          dj_profile: ce.djId || 'joel',
+          dj_profile_data: { nom_artistique: ce.djName || "Joël R'Key" },
+          djName: ce.djName || "Joël R'Key",
+          djLogin: (ce.djName || "Joël R'Key").toLowerCase().replace(/\s+/g, '-'),
+          event_documents: customDoc ? [customDoc, ...ceDocs] : ceDocs,
+          status: 'completed',
+          isVirtual: true,
+          title: ce.title,
+          event_order: [],
+          dj_notes: ce.details || "",
+          playlist_link: ce.playlist_link || "",
+          selected_options: ce.selected_options || [],
+          requested_options: ce.requested_options || [],
+          chat_messages: ce.chat_messages || [],
+          selected_pdf_notes: ce.selected_pdf_notes || [],
+          notifications: ce.notifications || { admin: {}, dj: {}, client: {} },
+          venue_photos: ce.venue_photos || [],
+          client_photo: ce.client_photo || null
+        };
+      });
+
+      const signedEvents = await autoSignGcsUrlsInObject(virtualContracts);
       responseData = { role: 'client', events: signedEvents, slug, availableOptions: options, companySettings };
     }
   }
@@ -5053,30 +5274,68 @@ async function cleanupExpiredEventAudioFiles() {
 api.put('/public/dj-client/:id', async (req, res) => {
   const id = req.params.id;
   const contract = await db.collection('contracts2').findOne({ id });
-  if (contract && isContractLockedForClient(contract)) {
-    const isManual = contract.is_client_locked_manually === true || contract.manual_lock_status === 'locked';
-    return res.status(403).json({
-      error: isManual
-        ? "Les modifications ne sont plus autorisées (espace client verrouillé par l'administrateur)."
-        : "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)."
-    });
-  }
-  const cleanBody = sanitizeContractPayload(req.body);
-  await db.collection('contracts2').updateOne({ id }, { $set: { ...cleanBody, updated_at: new Date().toISOString() } });
-  const updatedContract = await db.collection('contracts2').findOne({ id }, { projection: { _id: 0 } });
-  await syncVenueFromContract(id, cleanBody);
-  if (updatedContract) {
-    try {
-      await syncContractReservations(updatedContract);
-    } catch (resErr) {
-      console.error("[dj-client syncContractReservations Error]:", resErr);
+  if (contract) {
+    if (isContractLockedForClient(contract)) {
+      const isManual = contract.is_client_locked_manually === true || contract.manual_lock_status === 'locked';
+      return res.status(403).json({
+        error: isManual
+          ? "Les modifications ne sont plus autorisées (espace client verrouillé par l'administrateur)."
+          : "Les modifications ne sont plus autorisées à moins de 2 jours de l'événement (J-2)."
+      });
     }
+    const cleanBody = sanitizeContractPayload(req.body);
+    await db.collection('contracts2').updateOne({ id }, { $set: { ...cleanBody, updated_at: new Date().toISOString() } });
+    const updatedContract = await db.collection('contracts2').findOne({ id }, { projection: { _id: 0 } });
+    await syncVenueFromContract(id, cleanBody);
+    if (updatedContract) {
+      try {
+        await syncContractReservations(updatedContract);
+      } catch (resErr) {
+        console.error("[dj-client syncContractReservations Error]:", resErr);
+      }
+    }
+    
+    // Clear the public DJ-Client cache so the client's page updates immediately
+    clearDjClientResponseCache();
+    return res.json({ success: true });
   }
-  
-  // Clear the public DJ-Client cache so the client's page updates immediately
-  clearDjClientResponseCache();
-  
-  res.json({ success: true });
+
+  // Fallback: update agenda_custom_events if id is a valid ObjectId
+  try {
+    if (ObjectId.isValid(id)) {
+      const customEv = await db.collection('agenda_custom_events').findOne({ _id: new ObjectId(id) });
+      if (customEv) {
+        const cleanBody = req.body || {};
+        const updateData = {};
+        
+        if (cleanBody.playlist_link !== undefined) updateData.playlist_link = cleanBody.playlist_link;
+        if (cleanBody.dj_notes !== undefined) updateData.details = cleanBody.dj_notes;
+        if (cleanBody.details !== undefined) updateData.details = cleanBody.details;
+        if (cleanBody.chat_messages !== undefined) updateData.chat_messages = cleanBody.chat_messages;
+        if (cleanBody.selected_options !== undefined) updateData.selected_options = cleanBody.selected_options;
+        if (cleanBody.requested_options !== undefined) updateData.requested_options = cleanBody.requested_options;
+        if (cleanBody.selected_pdf_notes !== undefined) updateData.selected_pdf_notes = cleanBody.selected_pdf_notes;
+        if (cleanBody.client_photo !== undefined) updateData.client_photo = cleanBody.client_photo;
+        if (cleanBody.venue_photos !== undefined) updateData.venue_photos = cleanBody.venue_photos;
+        if (cleanBody.event_documents !== undefined) updateData.event_documents = cleanBody.event_documents;
+        if (cleanBody.notifications !== undefined) updateData.notifications = cleanBody.notifications;
+        
+        updateData.updatedAt = new Date().toISOString();
+
+        await db.collection('agenda_custom_events').updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData }
+        );
+        
+        clearDjClientResponseCache();
+        return res.json({ success: true });
+      }
+    }
+  } catch (err) {
+    console.error("Error updating custom event in PUT /public/dj-client/:id:", err);
+  }
+
+  return res.status(404).json({ error: 'Not found' });
 });
 
 // Helper to convert images (PNG, JPG, HEIC, etc.) to PDF format
@@ -5163,10 +5422,17 @@ api.post('/public/dj-client/:id/documents/convert-visit-sheet', upload.single('f
       newDoc.pdf_data = pdfBuffer.toString('base64');
     }
     
-    await db.collection('contracts2').updateOne(
-      { id: req.params.id }, 
-      { $push: { event_documents: newDoc } }
-    );
+    if (contract) {
+      await db.collection('contracts2').updateOne(
+        { id: req.params.id }, 
+        { $push: { event_documents: newDoc } }
+      );
+    } else if (ObjectId.isValid(req.params.id)) {
+      await db.collection('agenda_custom_events').updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $push: { event_documents: newDoc } }
+      );
+    }
     
     clearDjClientResponseCache();
     res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at, hiddenForClient: newDoc.hiddenForClient || false } });
@@ -5212,10 +5478,19 @@ api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, r
     newDoc.pdf_data = req.file.buffer.toString('base64');
     console.log(`[UPLOAD] Document ${docId} saved locally in MongoDB collection`);
   }
-  await db.collection('contracts2').updateOne(
-    { id: req.params.id }, 
-    { $push: { event_documents: newDoc } }
-  );
+  
+  if (contract) {
+    await db.collection('contracts2').updateOne(
+      { id: req.params.id }, 
+      { $push: { event_documents: newDoc } }
+    );
+  } else if (ObjectId.isValid(req.params.id)) {
+    await db.collection('agenda_custom_events').updateOne(
+      { _id: new ObjectId(req.params.id) },
+      { $push: { event_documents: newDoc } }
+    );
+  }
+  
   clearDjClientResponseCache();
   res.json({ success: true, document: { id: newDoc.id, filename: newDoc.filename, category: newDoc.category, uploaded_at: newDoc.uploaded_at, hiddenForClient: newDoc.hiddenForClient || false } });
   } catch (err) {
@@ -5226,18 +5501,76 @@ api.post('/public/dj-client/:id/documents', upload.single('file'), async (req, r
 
 api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
   console.log(`[GET DOCUMENT] id: ${req.params.id}, docId: ${req.params.docId}, preview: ${req.query.preview}`);
-  const contract = await db.collection('contracts2').findOne({ id: req.params.id });
-  if (!contract) {
-    console.log(`[GET DOCUMENT] Contract not found for id: ${req.params.id}`);
-    return res.status(404).json({ error: 'Not found' });
+  
+  let contract = null;
+  try {
+    contract = await db.collection('contracts2').findOne({ id: req.params.id });
+  } catch (err) {
+    console.error("Error finding contract:", err);
   }
-  if (!contract.event_documents) {
-    console.log(`[GET DOCUMENT] Contract found but event_documents is missing/empty for id: ${req.params.id}`);
-    return res.status(404).json({ error: 'Not found' });
+  
+  let doc = null;
+  if (contract) {
+    doc = contract.event_documents ? contract.event_documents.find(d => d.id === req.params.docId) : null;
   }
-  const doc = contract.event_documents.find(d => d.id === req.params.docId);
+  
   if (!doc) {
-    console.log(`[GET DOCUMENT] Document ${req.params.docId} not found in event_documents of contract ${req.params.id}`);
+    // Check if the document is inside the event_documents of a custom event
+    try {
+      const orCustomConditions = [
+        { "event_documents.id": req.params.docId }
+      ];
+      if (ObjectId.isValid(req.params.id)) {
+        orCustomConditions.push({ _id: new ObjectId(req.params.id) });
+      }
+      
+      const customEvWithDoc = await db.collection('agenda_custom_events').findOne({
+        $or: orCustomConditions,
+        "event_documents.id": req.params.docId
+      });
+      
+      if (customEvWithDoc && customEvWithDoc.event_documents) {
+        doc = customEvWithDoc.event_documents.find(d => d.id === req.params.docId);
+      }
+    } catch (e) {
+      console.error("Error finding document in custom event event_documents:", e);
+    }
+  }
+
+  if (!doc) {
+    // Check if there is an agenda custom event linked to this contract with this attachment id or matching the docId
+    const orConditions = [
+      { "attachment.id": req.params.docId }
+    ];
+    if (contract) {
+      orConditions.push({ contractId: req.params.id });
+      orConditions.push({ clientName: contract.client_name || (contract.client_info && contract.client_info.name) });
+    }
+    
+    try {
+      if (ObjectId.isValid(req.params.id)) {
+        orConditions.push({ _id: new ObjectId(req.params.id) });
+      }
+    } catch (e) {}
+
+    const customEv = await db.collection('agenda_custom_events').findOne({
+      $or: orConditions,
+      "attachment.id": req.params.docId
+    });
+    
+    if (customEv && customEv.attachment) {
+      doc = {
+        id: customEv.attachment.id,
+        filename: customEv.attachment.filename,
+        gcs_path: customEv.attachment.gcs_path,
+        pdf_data: customEv.attachment.pdf_data || null,
+        mimetype: customEv.attachment.mimetype || 'application/pdf'
+      };
+    }
+  }
+
+  if (!doc) {
+    console.log(`[GET DOCUMENT] Document ${req.params.docId} not found in event_documents or linked manual events`);
     return res.status(404).json({ error: 'Document not found' });
   }
   
@@ -5252,7 +5585,9 @@ api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
     gcsPath = `contract-event-documents/${req.params.id}/${doc.id}${ext}`;
   }
 
-  console.log(`[GET DOCUMENT] Found doc filename: ${doc.filename}, gcsPath: ${gcsPath}, has pdf_data: ${!!doc.pdf_data}, has activeBucket: ${!!activeBucket}`);
+  const mimeType = doc.mimetype || (doc.filename ? getMimeType(doc.filename) : 'application/pdf');
+
+  console.log(`[GET DOCUMENT] Found doc filename: ${doc.filename}, gcsPath: ${gcsPath}, mimetype: ${mimeType}, has pdf_data: ${!!doc.pdf_data}, has activeBucket: ${!!activeBucket}`);
   
   if (gcsPath && activeBucket) {
     const file = activeBucket.file(gcsPath);
@@ -5265,7 +5600,7 @@ api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
     }
 
     if (exists) {
-      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
       return file.createReadStream().on('error', (err) => {
         console.error(`[GET DOCUMENT] GCS stream error for ${gcsPath}:`, err);
@@ -5280,7 +5615,7 @@ api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
 
   if (doc.pdf_data) {
     const buffer = Buffer.from(doc.pdf_data, 'base64');
-    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(doc.filename)}"`);
     return res.send(buffer);
   }
@@ -5292,13 +5627,28 @@ api.get('/public/dj-client/:id/documents/:docId', async (req, res) => {
 api.delete('/public/dj-client/:id/documents/:docId', async (req, res) => {
   try {
     const contract = await db.collection('contracts2').findOne({ id: req.params.id });
-    if (!contract || !contract.event_documents) return res.status(404).json({ error: 'Not found' });
-    if (isContractLockedForClient(contract)) {
+    
+    let docToDelete = null;
+    let isCustom = false;
+    let customEv = null;
+    
+    if (contract && contract.event_documents) {
+      docToDelete = contract.event_documents.find(d => d.id === req.params.docId);
+    } else if (ObjectId.isValid(req.params.id)) {
+      customEv = await db.collection('agenda_custom_events').findOne({ _id: new ObjectId(req.params.id) });
+      if (customEv && customEv.event_documents) {
+        docToDelete = customEv.event_documents.find(d => d.id === req.params.docId);
+        isCustom = true;
+      }
+    }
+    
+    if (!docToDelete) return res.status(404).json({ error: 'Not found' });
+    
+    if (contract && isContractLockedForClient(contract)) {
       return res.status(403).json({ error: "Les modifications ne sont plus autorisées (espace client verrouillé)." });
     }
     
     // Find the document to potentially delete from GCS
-    const docToDelete = contract.event_documents.find(d => d.id === req.params.docId);
     const activeBucket = getGcsBucket();
     if (docToDelete && docToDelete.gcs_path && activeBucket) {
       const file = activeBucket.file(docToDelete.gcs_path);
@@ -5309,10 +5659,18 @@ api.delete('/public/dj-client/:id/documents/:docId', async (req, res) => {
       }
     }
 
-    await db.collection('contracts2').updateOne(
-      { id: req.params.id },
-      { $pull: { event_documents: { id: req.params.docId } } }
-    );
+    if (contract) {
+      await db.collection('contracts2').updateOne(
+        { id: req.params.id },
+        { $pull: { event_documents: { id: req.params.docId } } }
+      );
+    } else if (isCustom) {
+      await db.collection('agenda_custom_events').updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $pull: { event_documents: { id: req.params.docId } } }
+      );
+    }
+    
     clearDjClientResponseCache();
     res.json({ success: true });
   } catch (err) {
@@ -11414,9 +11772,50 @@ api.get('/agenda-custom-events', authMiddleware, async (req, res) => {
   }
 });
 
+api.post('/agenda-custom-events/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Aucun fichier n'a été fourni." });
+    }
+    const fileId = uuidv4();
+    const decodedName = decodeMulterFilename(req.file.originalname);
+    const ext = path.extname(decodedName) || '';
+    const gcsPath = `agenda-custom-events-attachments/${fileId}${ext}`;
+    const activeBucket = getGcsBucket();
+    
+    if (activeBucket) {
+      const file = activeBucket.file(gcsPath);
+      await file.save(req.file.buffer, { metadata: { contentType: req.file.mimetype } });
+      res.json({
+        success: true,
+        id: fileId,
+        filename: decodedName,
+        url: `/api/gcs/${gcsPath}`,
+        gcs_path: gcsPath,
+        uploaded_at: new Date().toISOString(),
+        mimetype: req.file.mimetype
+      });
+    } else {
+      const b64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      res.json({
+        success: true,
+        id: fileId,
+        filename: decodedName,
+        url: b64,
+        gcs_path: null,
+        uploaded_at: new Date().toISOString(),
+        mimetype: req.file.mimetype
+      });
+    }
+  } catch (err) {
+    console.error("[agenda-custom-events upload error]:", err);
+    res.status(500).json({ error: "Erreur lors du téléversement : " + err.message });
+  }
+});
+
 api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
   try {
-    const { title, date, isOption, djId, djName, clientName, clientPhone, eventType, details, location, recurrence, recurrenceEndType, recurrenceEndDate, recurrenceCount } = req.body;
+    const { title, date, isOption, djId, djName, clientName, clientPhone, eventType, details, location, recurrence, recurrenceEndType, recurrenceEndDate, recurrenceCount, contractId, attachment } = req.body;
     if (!title || !date) {
       return res.status(400).json({ error: "Le titre et la date sont requis." });
     }
@@ -11477,6 +11876,8 @@ api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
       details: details || "",
       location: location || "",
       recurrenceId,
+      contractId: contractId || null,
+      attachment: attachment || null,
       createdAt: new Date().toISOString()
     }));
 
@@ -11503,7 +11904,7 @@ api.post('/agenda-custom-events', authMiddleware, async (req, res) => {
 api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, date, isOption, djId, djName, clientName, clientPhone, eventType, details, location } = req.body;
+    const { title, date, isOption, djId, djName, clientName, clientPhone, eventType, details, location, contractId, attachment } = req.body;
     if (!title || !date) {
       return res.status(400).json({ error: "Le titre et la date sont requis." });
     }
@@ -11519,6 +11920,8 @@ api.put('/agenda-custom-events/:id', authMiddleware, async (req, res) => {
       eventType: eventType || "",
       details: details || "",
       location: location || "",
+      contractId: contractId || null,
+      attachment: attachment || null,
       updatedAt: new Date().toISOString()
     };
     await db.collection('agenda_custom_events').updateOne(

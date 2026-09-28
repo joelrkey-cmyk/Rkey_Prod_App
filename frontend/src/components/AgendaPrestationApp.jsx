@@ -4,7 +4,7 @@ import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import axios from '../services/axiosConfig';
-import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw, Plus, MapPin, Edit, Phone } from 'lucide-react';
+import { Trash2, Shield, CalendarDays, Loader2, X, User, Tag, Key, Info, HelpCircle, RotateCw, Plus, MapPin, Edit, Phone, FileText, Upload, ExternalLink, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import API_BASE_URL from '../utils/apiUrl';
 
@@ -71,7 +71,20 @@ export default function AgendaPrestationApp() {
   // State variables for manually added options and events
   const [addEventDate, setAddEventDate] = useState(null);
   const [addEventType, setAddEventType] = useState('option'); // 'option' or 'event'
-  const [customEventForm, setCustomEventForm] = useState({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
+  const [customEventForm, setCustomEventForm] = useState({
+    title: '',
+    clientName: '',
+    clientPhone: '',
+    djId: '',
+    eventType: '',
+    customEventTypeInput: '',
+    details: '',
+    location: '',
+    contractId: '',
+    attachment: null
+  });
+  const [contracts, setContracts] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const getEventTypesList = (djId) => {
     const baseTypes = ["Mariage", "Anniversaire", "Comité d'entreprise", "Soirée privée", "Événement professionnel"];
@@ -185,6 +198,7 @@ export default function AgendaPrestationApp() {
       if (stefanId) nameToOfficialId.set("stephane", stefanId);
 
       const allContracts = (contractsRes.data || []).filter(c => !['deleted', 'trash', 'draft', 'cancelled'].includes(c.status));
+      setContracts(allContracts);
       
       const parsedEvents = [];
       const eventSignatures = new Set();
@@ -385,7 +399,9 @@ export default function AgendaPrestationApp() {
           details: item.details || '',
           location: item.location || '',
           isOption: !!item.isOption,
-          recurrenceId: item.recurrenceId || null
+          recurrenceId: item.recurrenceId || null,
+          contractId: item.contractId || null,
+          attachment: item.attachment || null
         });
       });
 
@@ -498,6 +514,51 @@ export default function AgendaPrestationApp() {
     }, 1000);
   };
 
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const token = localStorage.getItem('access_token');
+      const res = await axios.post(`${API}/agenda-custom-events/upload`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      if (res.data?.success) {
+        setCustomEventForm(prev => ({
+          ...prev,
+          attachment: {
+            id: res.data.id,
+            filename: res.data.filename,
+            url: res.data.url,
+            gcs_path: res.data.gcs_path,
+            uploaded_at: res.data.uploaded_at,
+            mimetype: res.data.mimetype
+          }
+        }));
+        toast.success("Document téléversé avec succès !");
+      } else {
+        toast.error("Erreur lors du téléversement du fichier.");
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
+      toast.error(err.response?.data?.error || "Erreur de téléversement.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRemoveAttachment = () => {
+    setCustomEventForm(prev => ({ ...prev, attachment: null }));
+    toast.success("Pièce jointe retirée.");
+  };
+
   const handleSaveCustomEvent = async (e) => {
     e.preventDefault();
     if (!customEventForm.title || !customEventForm.title.trim()) {
@@ -524,7 +585,9 @@ export default function AgendaPrestationApp() {
       recurrence: !editingCustomEventId ? recurrence : 'none',
       recurrenceEndType: !editingCustomEventId ? recurrenceEndType : 'count',
       recurrenceEndDate: !editingCustomEventId ? recurrenceEndDate : '',
-      recurrenceCount: !editingCustomEventId ? Number(recurrenceCount) : 5
+      recurrenceCount: !editingCustomEventId ? Number(recurrenceCount) : 5,
+      contractId: customEventForm.contractId || null,
+      attachment: customEventForm.attachment || null
     };
 
     try {
@@ -533,7 +596,7 @@ export default function AgendaPrestationApp() {
         const res = await axios.put(`${API}/agenda-custom-events/${editingCustomEventId}`, payload);
         if (res.data.success) {
           toast.success("Événement / Option modifié avec succès !");
-          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
+          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '', contractId: '', attachment: null });
           setAddEventDate(null);
           setEditingCustomEventId(null);
           setRecurrence('none');
@@ -548,7 +611,7 @@ export default function AgendaPrestationApp() {
         const res = await axios.post(`${API}/agenda-custom-events`, payload);
         if (res.data.success) {
           toast.success(addEventType === 'option' ? "Option de soirée enregistrée avec succès !" : "Événement enregistré avec succès !");
-          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
+          setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '', contractId: '', attachment: null });
           setAddEventDate(null);
           setRecurrence('none');
           setRecurrenceEndType('count');
@@ -799,7 +862,7 @@ export default function AgendaPrestationApp() {
                                   e.stopPropagation();
                                   setAddEventDate(date);
                                   setAddEventType('option');
-                                  setCustomEventForm({ title: '', clientName: '', djId: '', eventType: '', customEventTypeInput: '', details: '' });
+                                  setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '', contractId: '', attachment: null });
                                 }}
                                 className="w-5 h-5 rounded-full bg-slate-100 hover:bg-slate-900 hover:text-white border border-slate-300 hover:border-slate-900 flex items-center justify-center text-slate-600 transition-colors shrink-0 text-xs font-bold cursor-pointer"
                                 title="Ajouter une option de soirée ou un événement"
@@ -882,6 +945,43 @@ export default function AgendaPrestationApp() {
                   <span className="font-semibold text-slate-800">{selectedEvent.clientName || 'Inconnu'}</span>
                 </div>
 
+                {selectedEvent.clientName && (
+                  <div className="flex items-center gap-2.5 text-sm border-t border-dashed border-slate-100 pt-2.5 pb-1">
+                    <ExternalLink className="w-4.5 h-4.5 text-pink-500" />
+                    <span className="text-slate-500 font-semibold">Espace Client :</span>
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <a 
+                        href={`${window.location.origin}/${(() => {
+                          const rawEventType = selectedEvent.eventType || 'Événement';
+                          const firstWord = rawEventType.trim().split(/\s+/)[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+                          const clientNameClean = (selectedEvent.clientName || 'client').trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+                          return `${firstWord}-${clientNameClean}`;
+                        })()}`}
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-indigo-600 hover:text-indigo-700 hover:underline font-semibold text-xs truncate max-w-[180px] sm:max-w-[240px]"
+                      >
+                        Ouvrir l'Espace Client
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rawEventType = selectedEvent.eventType || 'Événement';
+                          const firstWord = rawEventType.trim().split(/\s+/)[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+                          const clientNameClean = (selectedEvent.clientName || 'client').trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+                          const link = `${window.location.origin}/${firstWord}-${clientNameClean}`;
+                          navigator.clipboard.writeText(link);
+                          toast.success("Lien Espace Client copié dans le presse-papier !");
+                        }}
+                        className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold flex items-center gap-1 transition"
+                        title="Copier le lien"
+                      >
+                        <Copy className="w-3 h-3" /> Copier
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {(selectedEvent.clientPhone || selectedEvent.clientPhone2) && (
                   <div className="flex items-center gap-2.5 text-sm">
                     <Phone className="w-4.5 h-4.5 text-indigo-500" />
@@ -954,7 +1054,9 @@ export default function AgendaPrestationApp() {
                         eventType: (selectedEvent.eventType && !getEventTypesList(selectedEvent.djId).includes(selectedEvent.eventType)) ? 'custom' : (selectedEvent.eventType || ''),
                         customEventTypeInput: (selectedEvent.eventType && !getEventTypesList(selectedEvent.djId).includes(selectedEvent.eventType)) ? selectedEvent.eventType : '',
                         details: selectedEvent.details || '',
-                        location: selectedEvent.location || ''
+                        location: selectedEvent.location || '',
+                        contractId: selectedEvent.contractId || '',
+                        attachment: selectedEvent.attachment || null
                       });
                       setAddEventDate(selectedEvent.start);
                       setAddEventType(selectedEvent.isOption ? 'option' : 'event');
@@ -1009,7 +1111,7 @@ export default function AgendaPrestationApp() {
                 onClick={() => {
                   setAddEventDate(null);
                   setEditingCustomEventId(null);
-                  setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
+                  setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '', contractId: '', attachment: null });
                   setRecurrence('none');
                   setRecurrenceEndType('count');
                   setRecurrenceEndDate('');
@@ -1022,7 +1124,7 @@ export default function AgendaPrestationApp() {
             </div>
             
             {/* Form */}
-            <form onSubmit={handleSaveCustomEvent} className="p-6 space-y-4">
+            <form onSubmit={handleSaveCustomEvent} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
               {/* Date Input */}
               <div className="mb-4">
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Date de l'événement *</label>
@@ -1254,6 +1356,49 @@ export default function AgendaPrestationApp() {
                 </div>
               )}
 
+              {/* Pièce jointe / Document Uploader */}
+              <div className="border-t pt-4">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Pièce jointe / Document (optionnel)</label>
+                {customEventForm.attachment ? (
+                  <div className="flex items-center justify-between p-3 bg-indigo-50/50 border border-indigo-150 rounded-lg text-sm text-slate-900">
+                    <div className="flex items-center gap-2 truncate">
+                      <FileText className="w-5 h-5 text-indigo-500 shrink-0" />
+                      <span className="truncate font-semibold">{customEventForm.attachment.filename}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveAttachment}
+                      className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition"
+                      title="Supprimer la pièce jointe"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/20 rounded-xl p-4 transition-all cursor-pointer">
+                      <div className="flex flex-col items-center text-center">
+                        {isUploading ? (
+                          <Loader2 className="w-6 h-6 text-indigo-500 animate-spin mb-2" />
+                        ) : (
+                          <Upload className="w-6 h-6 text-slate-400 mb-2" />
+                        )}
+                        <span className="text-sm font-semibold text-indigo-650 hover:text-indigo-700">
+                          {isUploading ? "Téléversement en cours..." : "Cliquez pour ajouter un document"}
+                        </span>
+                        <span className="text-xs text-slate-400 mt-1">Tous formats acceptés (PDF, Image, etc.)</span>
+                      </div>
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                        disabled={isUploading}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
               {!editingCustomEventId && (
                 <div className="border-t pt-4 space-y-4">
                   <div className="flex items-center gap-2">
@@ -1340,7 +1485,7 @@ export default function AgendaPrestationApp() {
                   onClick={() => {
                     setAddEventDate(null);
                     setEditingCustomEventId(null);
-                    setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '' });
+                    setCustomEventForm({ title: '', clientName: '', clientPhone: '', djId: '', eventType: '', customEventTypeInput: '', details: '', location: '', contractId: '', attachment: null });
                     setRecurrence('none');
                     setRecurrenceEndType('count');
                     setRecurrenceEndDate('');

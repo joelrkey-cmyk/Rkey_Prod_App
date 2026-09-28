@@ -854,7 +854,8 @@ function urlBase64ToUint8Array(base64String) {
             next_appointment_date: c.next_appointment_date || null,
             next_appointment_time: c.next_appointment_time || null,
             is_client_locked_manually: !!c.is_client_locked_manually,
-            manual_lock_status: c.manual_lock_status || null
+            manual_lock_status: c.manual_lock_status || null,
+            isVirtual: !!c.isVirtual
          };
       });
       
@@ -3012,6 +3013,81 @@ function urlBase64ToUint8Array(base64String) {
       const doc = new jsPDF();
       
       let y = 10;
+
+      if (ev.isVirtual) {
+        // Simple and Clean layout for manually entered events
+        doc.setFontSize(20);
+        doc.setTextColor(31, 41, 55);
+        doc.setFont("helvetica", "bold");
+        doc.text(`Fiche Événement Manuel - ${ev.clientName || 'Sans Nom'}`, 15, y);
+        y += 12;
+
+        const info = ev.client_info || {};
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        doc.setTextColor(75, 85, 99);
+        doc.text(`Type d'événement : ${ev.eventType || info.event_type || 'Événement'}`, 15, y); y += 6;
+        
+        const formatDate = (dateStr) => {
+          if (!dateStr) return "Non définie";
+          const parts = dateStr.split('-');
+          if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+          return dateStr;
+        };
+        doc.text(`Date : ${formatDate(ev.date || info.event_date)}`, 15, y); y += 6;
+        if (info.phone) { doc.text(`Téléphone : ${info.phone}`, 15, y); y += 6; }
+        if (info.event_location) { doc.text(`Lieu : ${info.event_location}`, 15, y); y += 6; }
+        
+        y += 6;
+        doc.setDrawColor(229, 231, 235);
+        doc.line(15, y, 195, y);
+        y += 10;
+
+        if (notes) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(14);
+          doc.setTextColor(31, 41, 55);
+          doc.text("Notes de l'événement :", 15, y);
+          y += 8;
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(75, 85, 99);
+          const splitText = doc.splitTextToSize(notes, 180);
+          splitText.forEach(line => {
+            if (y > 280) { doc.addPage(); y = 12; }
+            doc.text(line, 15, y);
+            y += 5;
+          });
+          y += 6;
+        }
+
+        const docs = ev.eventDocuments || [];
+        if (docs.length > 0) {
+          if (y > 240) { doc.addPage(); y = 12; }
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(14);
+          doc.setTextColor(31, 41, 55);
+          doc.text("Documents Administratifs Importés :", 15, y);
+          y += 8;
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(75, 85, 99);
+          docs.forEach((docItem, index) => {
+            if (y > 280) { doc.addPage(); y = 12; }
+            doc.text(`${index + 1}. ${docItem.filename} (${formatDate(docItem.uploaded_at?.split('T')[0])})`, 15, y);
+            y += 6;
+          });
+        }
+
+        if (shouldPreview) {
+          return doc.output('bloburl');
+        } else {
+          const safeName = (ev.clientName || 'Client').replace(/\s+/g, '_');
+          doc.save(`Fiche_DJ_${safeName}.pdf`);
+          return;
+        }
+      }
+      
       const startY = 10;
       let leftY = startY;
       let rightY = startY;
@@ -4433,7 +4509,7 @@ function urlBase64ToUint8Array(base64String) {
 
           const formData = new FormData();
           formData.append("file", file);
-          formData.append("category", docsUploadCategory);
+          formData.append("category", ev.isVirtual ? "Administrative" : docsUploadCategory);
 
           try {
             const response = await fetch(`${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/convert-visit-sheet`, {
@@ -4486,7 +4562,7 @@ function urlBase64ToUint8Array(base64String) {
       const isAdministrativeDoc = (doc) => {
         if (!doc.category) return false;
         const cat = doc.category.toLowerCase();
-        return cat.includes('administrative') || cat.includes('contrat') || cat.includes('administratif');
+        return cat.includes('administrative') || cat.includes('contrat') || cat.includes('administratif') || cat.includes('manualeventdoc');
       };
 
       const administrativeDocs = visibleEventDocs.filter(isAdministrativeDoc);
@@ -4506,15 +4582,17 @@ function urlBase64ToUint8Array(base64String) {
             
             {isAdminOrDj && (
               <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3">
-               <select 
-                 className="text-sm border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1.5"
-                 value={docsUploadCategory}
-                 onChange={(e) => setDocsUploadCategory(e.target.value)}
-                 title="Catégorie pour le prochain upload"
-               >
-                 <option value="Administrative">Administratif</option>
-                 <option value="Animations et interventions">Animations</option>
-               </select>
+               {!ev.isVirtual && (
+                 <select 
+                   className="text-sm border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 py-1.5"
+                   value={docsUploadCategory}
+                   onChange={(e) => setDocsUploadCategory(e.target.value)}
+                   title="Catégorie pour le prochain upload"
+                 >
+                   <option value="Administrative">Administratif</option>
+                   <option value="Animations et interventions">Animations</option>
+                 </select>
+               )}
                <label className={`cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center gap-2 ${docsUploading ? 'opacity-50 pointer-events-none' : ''}`}>
                  {docsUploading ? (
                     <><RefreshCw className="animate-spin w-4 h-4" /> Envoi...</>
@@ -4876,135 +4954,56 @@ function urlBase64ToUint8Array(base64String) {
             </div>
 
             {/* SECTION ANIMATIONS ET INTERVENTIONS */}
-            <div>
-              <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Animations et interventions</h4>
-              {(displayGlobalDocs.length === 0 && animationEventDocs.length === 0 && !isAdminOrDj) ? (
-                 <p className="text-sm text-slate-500 italic">Aucun document d'animation pour cet événement.</p>
-              ) : (
-                <div className="bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden divide-y divide-slate-200/60 shadow-xs">
-                  
-                  {/* Event Specific Animation Docs */}
-                  {animationEventDocs.map((doc) => (
-                    <div 
-                      key={doc.id}
-                      className={`flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150 ${
-                        doc.hiddenForClient && isAdminOrDj ? "bg-rose-50/10" : ""
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                          doc.hiddenForClient && isAdminOrDj ? "bg-rose-50 border border-rose-100" : "bg-slate-50 border border-slate-100"
-                        }`}>
-                          <FileText className={`w-5 h-5 ${doc.hiddenForClient && isAdminOrDj ? "text-rose-500" : "text-slate-500"}`} />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold text-slate-800 text-sm leading-tight truncate max-w-[150px] sm:max-w-xs md:max-w-md lg:max-w-lg" title={fixMangledFilenameDisplay(doc.filename)}>
-                              {fixMangledFilenameDisplay(doc.filename)}
-                            </p>
-                            {isAdminOrDj && (
-                              doc.hiddenForClient ? (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full">
-                                  <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
-                                  <Eye className="w-2.5 h-2.5" /> Client : Visible
-                                </span>
-                              )
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1">Ajouté le {doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button 
-                          onClick={(e) => { 
-                            e.stopPropagation(); 
-                            const previewUrl = `${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/${doc.id}?preview=true`;
-                            setPreviewDoc({ 
-                              title: doc.filename, 
-                              type: 'pdf', 
-                              url: previewUrl 
-                            }); 
-                          }} 
-                          className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
-                          title="Aperçu rapide"
-                        >
-                          <FileSearch className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
-                          className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
-                          title="Télécharger"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                        {isAdminOrDj && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleToggleEventDocVisibility(doc.id); }}
-                            className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
-                            title={doc.hiddenForClient ? "Montrer au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
-                          >
-                            {doc.hiddenForClient ? (
-                              <EyeOff className="w-4 h-4 text-rose-500" />
-                            ) : (
-                              <Eye className="w-4 h-4 text-emerald-600" />
-                            )}
-                          </button>
-                        )}
-                        {currentRoute.role === 'admin' && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
-                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
-                            title="Supprimer ce document"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Global Tips (Existing feature) */}
-                  {displayGlobalDocs.map((doc) => {
-                    const isSelected = selectedPdfs.includes(doc.id);
-                    return (
+            {!ev.isVirtual && (
+              <div>
+                <h4 className="text-lg font-semibold text-slate-800 mb-4 border-b pb-2">Animations et interventions</h4>
+                {(displayGlobalDocs.length === 0 && animationEventDocs.length === 0 && !isAdminOrDj) ? (
+                   <p className="text-sm text-slate-500 italic">Aucun document d'animation pour cet événement.</p>
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden divide-y divide-slate-200/60 shadow-xs">
+                    
+                    {/* Event Specific Animation Docs */}
+                    {animationEventDocs.map((doc) => (
                       <div 
                         key={doc.id}
-                        onClick={() => { if (isAdminOrDj) handleTogglePdf(doc.id); }}
-                        className={`flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150 ${isAdminOrDj ? 'cursor-pointer' : ''}`}
+                        className={`flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150 ${
+                          doc.hiddenForClient && isAdminOrDj ? "bg-rose-50/10" : ""
+                        }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          {isAdminOrDj && (
-                            <div className="flex items-center justify-center flex-shrink-0">
-                              <input 
-                                type="checkbox" 
-                                checked={isSelected} 
-                                onChange={() => {}} 
-                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 pointer-events-none" 
-                              />
-                            </div>
-                          )}
-                          <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-200 flex-shrink-0">
-                            <FileText className="w-5 h-5 text-indigo-500" />
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                            doc.hiddenForClient && isAdminOrDj ? "bg-rose-50 border border-rose-100" : "bg-slate-50 border border-slate-100"
+                          }`}>
+                            <FileText className={`w-5 h-5 ${doc.hiddenForClient && isAdminOrDj ? "text-rose-500" : "text-slate-500"}`} />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={fixMangledFilenameDisplay(doc.title || doc.filename)}>
-                              {fixMangledFilenameDisplay(doc.title || doc.filename)}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-1">Guide/Tips PDF</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-slate-800 text-sm leading-tight truncate max-w-[150px] sm:max-w-xs md:max-w-md lg:max-w-lg" title={fixMangledFilenameDisplay(doc.filename)}>
+                                {fixMangledFilenameDisplay(doc.filename)}
+                              </p>
+                              {isAdminOrDj && (
+                                doc.hiddenForClient ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-full">
+                                    <EyeOff className="w-2.5 h-2.5" /> Client : Masqué
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                                    <Eye className="w-2.5 h-2.5" /> Client : Visible
+                                  </span>
+                                )
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1">Ajouté le {doc.uploaded_at ? doc.uploaded_at.substring(0,10) : ''}</p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           <button 
                             onClick={(e) => { 
                               e.stopPropagation(); 
-                              const previewUrl = `${BACKEND_URL}/api/public/contract-pdf-notes/${doc.id}/download?preview=true`;
+                              const previewUrl = `${BACKEND_URL}/api/public/dj-client/${currentRoute.eventId}/documents/${doc.id}?preview=true`;
                               setPreviewDoc({ 
-                                title: doc.title || doc.filename, 
+                                title: doc.filename, 
                                 type: 'pdf', 
                                 url: previewUrl 
                               }); 
@@ -5014,22 +5013,103 @@ function urlBase64ToUint8Array(base64String) {
                           >
                             <FileSearch className="w-4 h-4" />
                           </button>
-                          {(currentRoute.role !== 'admin' && (!isAdminOrDj || isSelected)) && (
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleDownloadPdf(doc.id); }} 
-                              className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
-                              title="Télécharger"
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDownloadEventDoc(doc.id); }} 
+                            className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                            title="Télécharger"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          {isAdminOrDj && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleToggleEventDocVisibility(doc.id); }}
+                              className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                              title={doc.hiddenForClient ? "Montrer au client (Actuellement masqué)" : "Masquer pour le client (Actuellement visible)"}
                             >
-                              <Download className="w-4 h-4" />
+                              {doc.hiddenForClient ? (
+                                <EyeOff className="w-4 h-4 text-rose-500" />
+                              ) : (
+                                <Eye className="w-4 h-4 text-emerald-600" />
+                              )}
+                            </button>
+                          )}
+                          {currentRoute.role === 'admin' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDeleteEventDoc(doc.id); }}
+                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                              title="Supprimer ce document"
+                            >
+                              <X className="w-4 h-4" />
                             </button>
                           )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                    ))}
+
+                    {/* Global Tips (Existing feature) */}
+                    {displayGlobalDocs.map((doc) => {
+                      const isSelected = selectedPdfs.includes(doc.id);
+                      return (
+                        <div 
+                          key={doc.id}
+                          onClick={() => { if (isAdminOrDj) handleTogglePdf(doc.id); }}
+                          className={`flex items-center justify-between p-4 bg-white hover:bg-slate-50/50 transition duration-150 ${isAdminOrDj ? 'cursor-pointer' : ''}`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            {isAdminOrDj && (
+                              <div className="flex items-center justify-center flex-shrink-0">
+                                <input 
+                                  type="checkbox" 
+                                  checked={isSelected} 
+                                  onChange={() => {}} 
+                                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 pointer-events-none" 
+                                />
+                              </div>
+                            )}
+                            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-indigo-50 border border-indigo-200 flex-shrink-0">
+                              <FileText className="w-5 h-5 text-indigo-500" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800 text-sm leading-tight truncate" title={fixMangledFilenameDisplay(doc.title || doc.filename)}>
+                                {fixMangledFilenameDisplay(doc.title || doc.filename)}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-1">Guide/Tips PDF</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                const previewUrl = `${BACKEND_URL}/api/public/contract-pdf-notes/${doc.id}/download?preview=true`;
+                                setPreviewDoc({ 
+                                  title: doc.title || doc.filename, 
+                                  type: 'pdf', 
+                                  url: previewUrl 
+                                }); 
+                              }} 
+                              className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition"
+                              title="Aperçu rapide"
+                            >
+                              <FileSearch className="w-4 h-4" />
+                            </button>
+                            {(currentRoute.role !== 'admin' && (!isAdminOrDj || isSelected)) && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDownloadPdf(doc.id); }} 
+                                className="p-2 text-slate-600 hover:text-emerald-600 hover:bg-slate-100 rounded-lg transition"
+                                title="Télécharger"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       );
@@ -6898,6 +6978,8 @@ function urlBase64ToUint8Array(base64String) {
       );
     };
 
+
+
     return (
       <div className="space-y-6 text-slate-900">
         {!isClientStandalone && (
@@ -7078,38 +7160,54 @@ function urlBase64ToUint8Array(base64String) {
           );
         })()}
 
-        {AppointmentBannerSection()}
-        {ClientTutorialVideoSection()}
-        {DjInfoSection()}
-        {ClientInfoSection()}
-        {ChatSection()}
-        {PlanningSection()}
-        {DocumentsTipsSection()}
-        {OptionsSection()}
+        {ev.isVirtual ? (
+          <>
+            {DocumentsTipsSection()}
+            <ManualEventNotesSection
+              ev={ev}
+              notes={notes}
+              setNotes={setNotes}
+              setEvents={setEvents}
+              updateContractDb={updateContractDb}
+              generateDjPDF={generateDjPDF}
+            />
+          </>
+        ) : (
+          <>
+            {AppointmentBannerSection()}
+            {ClientTutorialVideoSection()}
+            {DjInfoSection()}
+            {ClientInfoSection()}
+            {ChatSection()}
+            {PlanningSection()}
+            {DocumentsTipsSection()}
+            {OptionsSection()}
 
-        {currentRoute.role === 'admin' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-            {ScheduleSection({ canEdit: true })}
-            {PlaylistSection({ role: "admin" })}
-          </div>
+            {currentRoute.role === 'admin' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+                {ScheduleSection({ canEdit: true })}
+                {PlaylistSection({ role: "admin" })}
+              </div>
+            )}
+
+            {currentRoute.role === 'dj' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+                {ScheduleSection({ canEdit: true })}
+                {PlaylistSection({ role: "dj" })}
+              </div>
+            )}
+
+            {currentRoute.role === 'client' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+                {ScheduleSection({ canEdit: false })}
+                {PlaylistSection({ role: "client" })}
+              </div>
+            )}
+
+            {CateringSection()}
+            {VenueSection()}
+          </>
         )}
-
-        {currentRoute.role === 'dj' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-            {ScheduleSection({ canEdit: true })}
-            {PlaylistSection({ role: "dj" })}
-          </div>
-        )}
-
-        {currentRoute.role === 'client' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-            {ScheduleSection({ canEdit: false })}
-            {PlaylistSection({ role: "client" })}
-          </div>
-        )}
-
-        {CateringSection()}
-        {VenueSection()}
       </div>
     );
   };
@@ -8224,6 +8322,69 @@ function urlBase64ToUint8Array(base64String) {
           </div>
         </div>
       )}
+      </div>
+    </div>
+  );
+};
+
+const ManualEventNotesSection = ({ ev, notes, setNotes, setEvents, updateContractDb, generateDjPDF }) => {
+  const [localNotes, setLocalNotes] = useState(notes || "");
+
+  useEffect(() => {
+    setLocalNotes(notes || "");
+  }, [notes]);
+
+  const handleSave = async () => {
+    try {
+      // Update local state in parent
+      setNotes(localNotes);
+      setEvents(prev => prev.map(item => item.id === ev.id ? {
+        ...item,
+        djNotes: localNotes
+      } : item));
+      
+      await updateContractDb(ev.id, { dj_notes: localNotes });
+      toast.success("Notes de l'événement enregistrées !");
+    } catch (err) {
+      toast.error("Erreur lors de l'enregistrement des notes.");
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-lg border p-6 mb-6 mt-6 transition-all ring-1 ring-slate-100 text-slate-900">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+        <h3 className="text-xl font-bold flex items-center gap-2 text-slate-800">
+          <FileText className="w-6 h-6 text-indigo-500" />
+          Notes de l'événement
+        </h3>
+        
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => generateDjPDF(false)}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+            title="Imprimer / Télécharger le PDF de l'événement"
+          >
+            <Download className="w-4 h-4" />
+            Imprimer le PDF DJ
+          </button>
+          
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Check className="w-4 h-4" />
+            Enregistrer les notes
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <textarea
+          className="w-full min-h-[300px] p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 text-sm bg-slate-50"
+          value={localNotes}
+          onChange={(e) => setLocalNotes(e.target.value)}
+          placeholder="Saisissez ici toutes vos notes pour cet événement manuel..."
+        />
       </div>
     </div>
   );
