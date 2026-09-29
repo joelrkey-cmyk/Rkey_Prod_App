@@ -157,17 +157,17 @@ export default function PublicNfcCard() {
         <div className="absolute bottom-[-10%] right-[-5%] w-[110%] h-[35%] bg-gradient-to-t from-orange-600/5 to-transparent rounded-full blur-3xl" />
       </div>
 
-      <div className="w-full max-w-md bg-[#09090b] border border-zinc-800/80 rounded-[32px] overflow-hidden shadow-2xl relative z-10 flex flex-col items-center">
+      <div className="w-full max-w-md bg-[#09090b] border border-zinc-800/80 rounded-[32px] overflow-hidden shadow-2xl relative z-10 flex flex-col items-center pt-16">
         
-        {/* Banner with R'KEY branding */}
-        <div className="w-full h-32 bg-gradient-to-r from-[#e86405] to-[#FF7A00] relative flex items-center justify-center">
+        {/* Banner with R'KEY branding (curved floating design) */}
+        <div className="w-[calc(100%-32px)] h-28 bg-gradient-to-r from-[#e86405] to-[#FF7A00] relative flex items-center justify-center rounded-2xl overflow-hidden shadow-inner mx-4">
           <div className="absolute inset-0 bg-black/20" />
           <span className="text-white/20 font-black tracking-widest text-3xl select-none">R'KEY PROD</span>
         </div>
 
-        {/* Profile Circle & Avatar */}
-        <div className="relative -mt-16 mb-4 flex justify-center">
-          <div className="w-32 h-32 rounded-full border-4 border-[#09090b] bg-[#18181b] shadow-xl overflow-hidden flex items-center justify-center">
+        {/* Profile Circle & Avatar (extended/overlapping above top edge of the banner) */}
+        <div className="relative -mt-32 mb-4 flex justify-center z-20">
+          <div className="w-44 h-44 rounded-full border-4 border-[#09090b] bg-[#18181b] shadow-xl overflow-hidden flex items-center justify-center">
             {card.avatarUrl ? (
               <img 
                 src={card.avatarUrl} 
@@ -258,9 +258,9 @@ export default function PublicNfcCard() {
               setShowExchangeForm(!showExchangeForm);
               setExchangeSuccess(false);
             }}
-            className="w-full h-13 rounded-2xl border border-zinc-700 bg-zinc-900/40 hover:bg-zinc-900/80 text-gray-200 font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+            className="w-full h-14 rounded-2xl border-2 border-zinc-700 bg-zinc-900/60 hover:bg-zinc-900 hover:border-[#e86405]/50 text-white font-bold text-base flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all cursor-pointer"
           >
-            <UserCheck className="w-5 h-5 text-[#e86405]" />
+            <UserCheck className="w-5.5 h-5.5 text-[#e86405]" />
             Échanger nos coordonnées
           </button>
 

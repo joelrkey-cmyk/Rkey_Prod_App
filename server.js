@@ -12353,11 +12353,31 @@ api.post('/public/nfc-cards/:id/exchange', async (req, res) => {
           </div>
         `;
         
+        const vcardLines = [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          `N:${lastName || ''};${firstName || ''};;;`,
+          `FN:${firstName || ''} ${lastName || ''}`.trim(),
+        ];
+        if (company) vcardLines.push(`ORG:${company}`);
+        if (phone) vcardLines.push(`TEL;TYPE=CELL,VOICE:${phone}`);
+        if (email) vcardLines.push(`EMAIL;TYPE=PREF,INTERNET:${email}`);
+        if (note) vcardLines.push(`NOTE:${note.replace(/\n/g, '\\n')}`);
+        vcardLines.push('END:VCARD');
+        const vcardContent = vcardLines.join('\r\n');
+        
         await transporter.sendMail({
           from: `${cfg.smtp_from_name} <${cfg.smtp_from}>`,
           to: card.email,
           subject,
-          html
+          html,
+          attachments: [
+            {
+              filename: `${firstName}_${lastName}.vcf`,
+              content: vcardContent,
+              contentType: 'text/vcard; charset=utf-8'
+            }
+          ]
         });
       } catch (mailErr) {
         console.error("Failed to send lead email notification:", mailErr);

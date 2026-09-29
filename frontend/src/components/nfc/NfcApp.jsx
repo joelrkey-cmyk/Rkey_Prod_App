@@ -216,30 +216,31 @@ export default function NfcApp() {
     const img = new Image();
     img.src = originalImage;
     img.onload = () => {
-      // White background fallback
-      ctx.fillStyle = '#ffffff';
+      // Set pure black background (matches dark theme of cards)
+      ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, 400, 400);
 
-      // Draw the image scaled & translated centered
       const imgAspect = img.width / img.height;
-      let drawWidth = 400;
-      let drawHeight = 400;
+      let baseWidth = 400;
+      let baseHeight = 400;
       
+      // Exact contain logic mirroring object-fit contain on 256px preview
       if (imgAspect > 1) {
-        drawHeight = 400;
-        drawWidth = 400 * imgAspect;
+        baseHeight = 400 / imgAspect;
       } else {
-        drawWidth = 400;
-        drawHeight = 400 / imgAspect;
+        baseWidth = 400 * imgAspect;
       }
 
-      // Apply zoom
-      drawWidth *= zoom;
-      drawHeight *= zoom;
+      // Apply zoom magnification
+      const drawWidth = baseWidth * zoom;
+      const drawHeight = baseHeight * zoom;
 
-      // Position centering with translations offsets
-      const dx = 200 - (drawWidth / 2) + posX;
-      const dy = 200 - (drawHeight / 2) + posY;
+      // Translate 256px screen coordinates to 400px canvas coordinates
+      const scaleFactor = 400 / 256;
+
+      // Centered positions with precise zoom translation offset mapping
+      const dx = 200 - (drawWidth / 2) + (posX * scaleFactor * zoom);
+      const dy = 200 - (drawHeight / 2) + (posY * scaleFactor * zoom);
 
       ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
 
@@ -920,13 +921,13 @@ export default function NfcApp() {
               </div>
 
               {/* Scrollable mockup content - custom styled scrollbar */}
-              <div className="w-full h-full overflow-y-auto pt-7 flex flex-col items-center pb-5 text-white text-center relative z-10 scrollbar-thin scrollbar-thumb-zinc-800 bg-black">
+              <div className="w-full h-full overflow-y-auto pt-14 flex flex-col items-center pb-5 text-white text-center relative z-10 scrollbar-thin scrollbar-thumb-zinc-800 bg-black">
                 
-                {/* Banner mockup */}
-                <div className="w-full h-20 bg-gradient-to-r from-[#e86405] to-[#FF7A00] flex-shrink-0" />
+                {/* Banner mockup (curved floating design) */}
+                <div className="w-[calc(100%-20px)] h-16 bg-gradient-to-r from-[#e86405] to-[#FF7A00] rounded-xl flex-shrink-0 mx-2.5" />
 
-                {/* Profile Circle mockup */}
-                <div className="w-20 h-20 rounded-full border-4 border-black bg-zinc-900 shadow-lg overflow-hidden flex items-center justify-center -mt-10 mb-2 flex-shrink-0">
+                {/* Profile Circle mockup (extended/overlapping above top edge of the banner) */}
+                <div className="w-28 h-28 rounded-full border-4 border-black bg-zinc-900 shadow-lg overflow-hidden flex items-center justify-center -mt-20 mb-2 flex-shrink-0 z-20">
                   {formState.avatarUrl ? (
                     <img src={formState.avatarUrl} alt="" className="w-full h-full object-cover" />
                   ) : (
@@ -985,7 +986,7 @@ export default function NfcApp() {
                   </button>
                   <button
                     type="button"
-                    className="w-full h-7 rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-300 text-[8px] font-bold flex items-center justify-center gap-1"
+                    className="w-full h-8 rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-300 text-[9px] font-bold flex items-center justify-center gap-1"
                   >
                     Échanger nos coordonnées
                   </button>
