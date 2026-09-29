@@ -45,6 +45,19 @@ export function generateVCardString(card) {
   if (socials.tiktok) lines.push(`URL;TYPE=TikTok:${socials.tiktok}`);
   if (socials.youtube) lines.push(`URL;TYPE=YouTube:${socials.youtube}`);
 
+  // Second Activity Website and Social URLs
+  if (card.hasSecondActivity) {
+    if (card.secondWebsite) {
+      lines.push(`URL;TYPE=SecondWebsite:${card.secondWebsite}`);
+    }
+    const secSocials = card.secondSocials || {};
+    if (secSocials.linkedin) lines.push(`URL;TYPE=SecondLinkedIn:${secSocials.linkedin}`);
+    if (secSocials.instagram) lines.push(`URL;TYPE=SecondInstagram:${secSocials.instagram}`);
+    if (secSocials.facebook) lines.push(`URL;TYPE=SecondFacebook:${secSocials.facebook}`);
+    if (secSocials.tiktok) lines.push(`URL;TYPE=SecondTikTok:${secSocials.tiktok}`);
+    if (secSocials.youtube) lines.push(`URL;TYPE=SecondYouTube:${secSocials.youtube}`);
+  }
+
   // Note with bio and footer
   let note = '';
   if (card.bio) {

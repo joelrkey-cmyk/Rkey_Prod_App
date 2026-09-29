@@ -12142,6 +12142,18 @@ api.get('/public/nfc-cards/vcard/:id', async (req, res) => {
     if (socials.tiktok) lines.push(`URL;TYPE=TikTok:${socials.tiktok}`);
     if (socials.youtube) lines.push(`URL;TYPE=YouTube:${socials.youtube}`);
 
+    if (card.hasSecondActivity) {
+      if (card.secondWebsite) {
+        lines.push(`URL;TYPE=SecondWebsite:${card.secondWebsite}`);
+      }
+      const secSocials = card.secondSocials || {};
+      if (secSocials.linkedin) lines.push(`URL;TYPE=SecondLinkedIn:${secSocials.linkedin}`);
+      if (secSocials.instagram) lines.push(`URL;TYPE=SecondInstagram:${secSocials.instagram}`);
+      if (secSocials.facebook) lines.push(`URL;TYPE=SecondFacebook:${secSocials.facebook}`);
+      if (secSocials.tiktok) lines.push(`URL;TYPE=SecondTikTok:${secSocials.tiktok}`);
+      if (secSocials.youtube) lines.push(`URL;TYPE=SecondYouTube:${secSocials.youtube}`);
+    }
+
     let note = '';
     if (card.bio) {
       note += card.bio.replace(/\n/g, '\\n') + '\\n';
@@ -12230,6 +12242,17 @@ api.post('/nfc-cards', authMiddleware, async (req, res) => {
         facebook: payload.socials?.facebook || '',
         tiktok: payload.socials?.tiktok || '',
         youtube: payload.socials?.youtube || ''
+      },
+      hasSecondActivity: payload.hasSecondActivity || false,
+      secondActivityLabel: payload.secondActivityLabel || '',
+      secondWebsite: payload.secondWebsite || '',
+      secondAvatarUrl: payload.secondAvatarUrl || '',
+      secondSocials: {
+        linkedin: payload.secondSocials?.linkedin || '',
+        instagram: payload.secondSocials?.instagram || '',
+        facebook: payload.secondSocials?.facebook || '',
+        tiktok: payload.secondSocials?.tiktok || '',
+        youtube: payload.secondSocials?.youtube || ''
       },
       updatedAt: new Date().toISOString()
     };

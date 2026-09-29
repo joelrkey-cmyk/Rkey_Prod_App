@@ -43,10 +43,22 @@ export default function NfcApp() {
       facebook: '',
       tiktok: '',
       youtube: ''
+    },
+    hasSecondActivity: false,
+    secondActivityLabel: '',
+    secondWebsite: '',
+    secondAvatarUrl: '',
+    secondSocials: {
+      linkedin: '',
+      instagram: '',
+      facebook: '',
+      tiktok: '',
+      youtube: ''
     }
   });
 
   const [nfcWriting, setNfcWriting] = useState(false);
+  const [croppingTarget, setCroppingTarget] = useState('avatarUrl');
 
   // Cropper states
   const [cropModalOpen, setCropModalOpen] = useState(false);
@@ -132,6 +144,17 @@ export default function NfcApp() {
         facebook: card.socials?.facebook || '',
         tiktok: card.socials?.tiktok || '',
         youtube: card.socials?.youtube || ''
+      },
+      hasSecondActivity: card.hasSecondActivity || false,
+      secondActivityLabel: card.secondActivityLabel || '',
+      secondWebsite: card.secondWebsite || '',
+      secondAvatarUrl: card.secondAvatarUrl || '',
+      secondSocials: {
+        linkedin: card.secondSocials?.linkedin || '',
+        instagram: card.secondSocials?.instagram || '',
+        facebook: card.secondSocials?.facebook || '',
+        tiktok: card.secondSocials?.tiktok || '',
+        youtube: card.secondSocials?.youtube || ''
       }
     });
   };
@@ -152,6 +175,17 @@ export default function NfcApp() {
       avatarUrl: '',
       googleReviewsUrl: '',
       socials: {
+        linkedin: '',
+        instagram: '',
+        facebook: '',
+        tiktok: '',
+        youtube: ''
+      },
+      hasSecondActivity: false,
+      secondActivityLabel: '',
+      secondWebsite: '',
+      secondAvatarUrl: '',
+      secondSocials: {
         linkedin: '',
         instagram: '',
         facebook: '',
@@ -182,6 +216,16 @@ export default function NfcApp() {
       ...prev,
       socials: {
         ...prev.socials,
+        [field]: val
+      }
+    }));
+  };
+
+  const handleSecondSocialChange = (field, val) => {
+    setFormState(prev => ({
+      ...prev,
+      secondSocials: {
+        ...prev.secondSocials,
         [field]: val
       }
     }));
@@ -267,7 +311,7 @@ export default function NfcApp() {
 
           if (res.ok) {
             const data = await res.json();
-            handleInputChange('avatarUrl', data.url);
+            handleInputChange(croppingTarget, data.url);
             toast.success("Photo de profil recadrée et enregistrée !");
           } else {
             toast.error("Erreur d'upload");
@@ -550,6 +594,7 @@ export default function NfcApp() {
                       if (!isEditing && formState.id) {
                         setIsEditing(true);
                       }
+                      setCroppingTarget('avatarUrl');
                       setTimeout(() => {
                         const elem = document.getElementById('avatar-input');
                         if (elem) elem.click();
@@ -578,7 +623,10 @@ export default function NfcApp() {
                   {(isEditing || !formState.id) && (
                     <button
                       type="button"
-                      onClick={() => document.getElementById('avatar-input').click()}
+                      onClick={() => {
+                        setCroppingTarget('avatarUrl');
+                        document.getElementById('avatar-input').click();
+                      }}
                       className="text-[10px] text-[#e86405] hover:underline font-bold"
                     >
                       {formState.avatarUrl ? "Modifier/Recadrer" : "Importer une photo"}
@@ -792,6 +840,155 @@ export default function NfcApp() {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Deuxième Activité Section */}
+              <div className="border-t pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={formState.hasSecondActivity || false}
+                      onChange={(e) => handleInputChange('hasSecondActivity', e.target.checked)}
+                      className="rounded text-[#e86405] focus:ring-[#e86405] w-4 h-4"
+                    />
+                    Ajouter une deuxième activité (séparateur + liens dédiés)
+                  </label>
+                </div>
+
+                {(formState.hasSecondActivity) && (
+                  <div className="bg-zinc-50 border border-zinc-200/80 rounded-2xl p-4 space-y-4">
+                    {/* Photo & Separator Label Row for 2nd Activity */}
+                    <div className="flex flex-col sm:flex-row gap-4 items-center border-b border-zinc-200 pb-3">
+                      
+                      {/* Photo box layout with crop click integration for 2nd activity */}
+                      <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                        <div 
+                          onClick={() => {
+                            if (!isEditing && formState.id) {
+                              setIsEditing(true);
+                            }
+                            setCroppingTarget('secondAvatarUrl');
+                            setTimeout(() => {
+                              const elem = document.getElementById('avatar-input');
+                              if (elem) elem.click();
+                            }, 50);
+                          }}
+                          className="w-16 h-16 rounded-full border-2 border-dashed border-zinc-300 hover:border-[#e86405] bg-white flex flex-col items-center justify-center overflow-hidden relative cursor-pointer group transition-all"
+                        >
+                          {formState.secondAvatarUrl ? (
+                            <img src={formState.secondAvatarUrl} alt="Avatar 2ème activité" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="flex flex-col items-center justify-center text-center p-1 text-gray-400">
+                              <Camera className="w-4 h-4 mb-0.5 text-gray-400 group-hover:text-[#e86405]" />
+                              <span className="text-[8px] font-bold group-hover:text-[#e86405]">Ajouter</span>
+                            </div>
+                          )}
+                          
+                          {/* Dark overlay on hover */}
+                          {formState.secondAvatarUrl && (isEditing || !formState.id) && (
+                            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[8px] font-bold">
+                              <Camera className="w-3.5 h-3.5 mb-0.5" />
+                              Recadrer
+                            </div>
+                          )}
+                        </div>
+                        
+                        {(isEditing || !formState.id) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCroppingTarget('secondAvatarUrl');
+                              document.getElementById('avatar-input').click();
+                            }}
+                            className="text-[9px] text-[#e86405] hover:underline font-bold"
+                          >
+                            {formState.secondAvatarUrl ? "Modifier" : "Photo"}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Name of Separator */}
+                      <div className="flex-1 w-full">
+                        <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Nom du séparateur / activité</label>
+                        <input
+                          type="text"
+                          placeholder="ex: Photographie, Événementiel, Mon Autre Entreprise"
+                          value={formState.secondActivityLabel || ''}
+                          onChange={(e) => handleInputChange('secondActivityLabel', e.target.value)}
+                          className="w-full px-3 py-2 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#e86405]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Site Web (2ème activité)</label>
+                      <input
+                        type="url"
+                        placeholder="https://monautreentreprise.com"
+                        value={formState.secondWebsite || ''}
+                        onChange={(e) => handleInputChange('secondWebsite', e.target.value)}
+                        className="w-full px-3 py-2 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#e86405]"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-[10px] text-gray-500 font-bold uppercase tracking-wider">Réseaux Sociaux (2ème activité)</label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[9px] text-gray-400 font-bold mb-1">Instagram URL</label>
+                          <input
+                            type="url"
+                            placeholder="https://instagram.com/..."
+                            value={formState.secondSocials?.instagram || ''}
+                            onChange={(e) => handleSecondSocialChange('instagram', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-pink-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-gray-400 font-bold mb-1">LinkedIn URL</label>
+                          <input
+                            type="url"
+                            placeholder="https://linkedin.com/in/..."
+                            value={formState.secondSocials?.linkedin || ''}
+                            onChange={(e) => handleSecondSocialChange('linkedin', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-gray-400 font-bold mb-1">Facebook URL</label>
+                          <input
+                            type="url"
+                            placeholder="https://facebook.com/..."
+                            value={formState.secondSocials?.facebook || ''}
+                            onChange={(e) => handleSecondSocialChange('facebook', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-600"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-gray-400 font-bold mb-1">TikTok URL</label>
+                          <input
+                            type="url"
+                            placeholder="https://tiktok.com/@..."
+                            value={formState.secondSocials?.tiktok || ''}
+                            onChange={(e) => handleSecondSocialChange('tiktok', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-purple-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] text-gray-400 font-bold mb-1">YouTube URL</label>
+                          <input
+                            type="url"
+                            placeholder="https://youtube.com/..."
+                            value={formState.secondSocials?.youtube || ''}
+                            onChange={(e) => handleSecondSocialChange('youtube', e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
             </fieldset>
@@ -1101,6 +1298,73 @@ export default function NfcApp() {
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* Second Activity mockup preview */}
+                {formState.hasSecondActivity && (
+                  <div className="w-full px-4 mt-3 text-center flex-shrink-0">
+                    {/* Visual Separator */}
+                    <div className="relative flex py-1 items-center my-1">
+                      <div className="flex-grow border-t border-zinc-800/80"></div>
+                      <span className="flex-shrink mx-2 text-[7px] text-zinc-500 font-bold uppercase tracking-wider">
+                        {formState.secondActivityLabel || 'Autre Activité'}
+                      </span>
+                      <div className="flex-grow border-t border-zinc-800/80"></div>
+                    </div>
+
+                    {/* Second Profile Photo mockup inside simulator */}
+                    {formState.secondAvatarUrl && (
+                      <div className="flex justify-center mb-2">
+                        <div className="w-12 h-12 rounded-full border border-zinc-700 bg-zinc-900 overflow-hidden flex items-center justify-center shadow-md">
+                          <img src={formState.secondAvatarUrl} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Second Website */}
+                    {formState.secondWebsite && (
+                      <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg col-span-2 mb-1.5 text-left">
+                        <div className="p-1 bg-orange-500/10 text-[#e86405] rounded-md">
+                          <Globe className="w-2.5 h-2.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[6px] text-zinc-500 leading-none">Site Web (2ème)</span>
+                          <span className="block text-[7px] font-bold truncate text-[#e86405]">{formState.secondWebsite.replace(/^https?:\/\/(www\.)?/, '')}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Second Socials */}
+                    {Object.values(formState.secondSocials || {}).some(Boolean) && (
+                      <div className="flex items-center justify-center gap-1.5 flex-wrap mt-1">
+                        {formState.secondSocials?.linkedin && (
+                          <div className="w-6 h-6 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="LinkedIn">
+                            <Linkedin className="w-3 h-3 text-blue-400" />
+                          </div>
+                        )}
+                        {formState.secondSocials?.instagram && (
+                          <div className="w-6 h-6 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="Instagram">
+                            <Instagram className="w-3 h-3 text-pink-400" />
+                          </div>
+                        )}
+                        {formState.secondSocials?.facebook && (
+                          <div className="w-6 h-6 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="Facebook">
+                            <Facebook className="w-3 h-3 text-blue-500" />
+                          </div>
+                        )}
+                        {formState.secondSocials?.tiktok && (
+                          <div className="w-6 h-6 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="TikTok">
+                            <span className="font-bold text-[8px] text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-pink-500">TT</span>
+                          </div>
+                        )}
+                        {formState.secondSocials?.youtube && (
+                          <div className="w-6 h-6 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="YouTube">
+                            <Youtube className="w-3 h-3 text-red-500" />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

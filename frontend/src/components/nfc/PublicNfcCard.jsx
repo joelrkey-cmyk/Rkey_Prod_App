@@ -552,6 +552,121 @@ export default function PublicNfcCard() {
           </div>
         )}
 
+        {/* Second Activity Block (Separated beautifully with custom label indicator) */}
+        {card.hasSecondActivity && (
+          <div className="w-full px-6 mb-8 text-center animate-fade-in">
+            {/* Elegant text separator line */}
+            <div className="relative flex py-2 items-center mb-6">
+              <div className="flex-grow border-t border-zinc-800/80"></div>
+              <span className="flex-shrink mx-4 text-xs text-zinc-500 font-bold uppercase tracking-widest">
+                {card.secondActivityLabel || 'Deuxième Activité'}
+              </span>
+              <div className="flex-grow border-t border-zinc-800/80"></div>
+            </div>
+
+            {/* Secondary Profile Picture on Public Page */}
+            {card.secondAvatarUrl && (
+              <div className="flex justify-center mb-6">
+                <div className="w-24 h-24 rounded-full border-4 border-[#09090b] bg-[#18181b] shadow-xl overflow-hidden flex items-center justify-center">
+                  <img 
+                    src={card.secondAvatarUrl} 
+                    alt={card.secondActivityLabel || 'Deuxième Activité'} 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Website of Second Activity */}
+            {card.secondWebsite && (
+              <div className="mb-6">
+                <a
+                  href={formatExternalLink(card.secondWebsite)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-3.5 bg-zinc-950/80 border border-zinc-800/80 hover:border-[#e86405]/45 hover:bg-orange-950/10 rounded-2xl transition-all shadow-inner text-left"
+                >
+                  <div className="p-2 bg-orange-500/10 rounded-xl text-[#e86405]">
+                    <Globe className="w-5 h-5" />
+                  </div>
+                  <div className="text-left min-w-0 flex-1">
+                    <span className="block text-[11px] text-[#e86405] font-bold">Visiter notre Site Web (2ème)</span>
+                    <span className="block text-xs font-semibold truncate text-zinc-300">
+                      {card.secondWebsite.replace(/^https?:\/\/(www\.)?/, '')}
+                    </span>
+                  </div>
+                </a>
+              </div>
+            )}
+
+            {/* Social handles for Second Activity */}
+            {card.secondSocials && Object.values(card.secondSocials).some(Boolean) && (
+              <div className="flex items-center justify-center gap-3.5 flex-wrap">
+                {card.secondSocials.linkedin && (
+                  <a
+                    href={formatExternalLink(card.secondSocials.linkedin)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800/80 hover:border-blue-500/50 hover:bg-blue-500/10 flex items-center justify-center transition-all group"
+                    title="LinkedIn"
+                  >
+                    <Linkedin className="w-5.5 h-5.5 text-blue-400 group-hover:scale-110 transition-transform" />
+                  </a>
+                )}
+
+                {card.secondSocials.instagram && (
+                  <a
+                    href={formatExternalLink(card.secondSocials.instagram)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800/80 hover:border-pink-500/50 hover:bg-pink-500/10 flex items-center justify-center transition-all group"
+                    title="Instagram"
+                  >
+                    <Instagram className="w-5.5 h-5.5 text-pink-400 group-hover:scale-110 transition-transform" />
+                  </a>
+                )}
+
+                {card.secondSocials.facebook && (
+                  <a
+                    href={formatExternalLink(card.secondSocials.facebook)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800/80 hover:border-blue-600/50 hover:bg-blue-600/10 flex items-center justify-center transition-all group"
+                    title="Facebook"
+                  >
+                    <Facebook className="w-5.5 h-5.5 text-blue-500 group-hover:scale-110 transition-transform" />
+                  </a>
+                )}
+
+                {card.secondSocials.tiktok && (
+                  <a
+                    href={formatExternalLink(card.secondSocials.tiktok)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800/80 hover:border-teal-500/50 hover:bg-teal-500/10 flex items-center justify-center transition-all group"
+                    title="TikTok"
+                  >
+                    <span className="font-extrabold text-sm text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-pink-500 group-hover:scale-110 transition-transform">TT</span>
+                  </a>
+                )}
+
+                {card.secondSocials.youtube && (
+                  <a
+                    href={formatExternalLink(card.secondSocials.youtube)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800/80 hover:border-red-500/50 hover:bg-red-500/10 flex items-center justify-center transition-all group"
+                    title="YouTube"
+                  >
+                    <Youtube className="w-5.5 h-5.5 text-red-500 group-hover:scale-110 transition-transform" />
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="w-full border-t border-zinc-800/50 py-4 px-6 text-center bg-zinc-950/20">
           <p className="text-[10px] text-zinc-500 font-medium">
             R'KEY PROD © {new Date().getFullYear()} · Tous droits réservés
