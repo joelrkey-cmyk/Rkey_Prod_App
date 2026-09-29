@@ -27,6 +27,8 @@ import AgendaPrestationApp from "./components/AgendaPrestationApp";
 import VenueApp from "./components/VenueApp";
 import PublicVenuesApp from "./components/PublicVenuesApp";
 import PublicFormView from "./components/forms/PublicFormView";
+import NfcApp from "./components/nfc/NfcApp";
+import PublicNfcCard from "./components/nfc/PublicNfcCard";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -224,6 +226,23 @@ function App() {
                     </ErrorBoundary>
                   </>
                 </ProtectedRoute>
+              } />
+
+              <Route path="/nfc" element={
+                <ProtectedRoute>
+                  <>
+                    <Navigation />
+                    <ErrorBoundary>
+                      <NfcApp />
+                    </ErrorBoundary>
+                  </>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/card/:id" element={
+                <ErrorBoundary>
+                  <PublicNfcCard />
+                </ErrorBoundary>
               } />
 
               <Route path="/lieux-reception" element={

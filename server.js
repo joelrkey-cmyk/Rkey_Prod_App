@@ -12062,6 +12062,209 @@ api.post('/agenda/sync-all-google', authMiddleware, async (req, res) => {
   }
 });
 
+// ══════════ NFC BUSINESS CARDS MODULE ══════════
+api.get('/nfc-cards', authMiddleware, async (req, res) => {
+  try {
+    const list = await db.collection('nfc_cards').find({}).sort({ createdAt: -1 }).toArray();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.get('/public/nfc-cards/:id', async (req, res) => {
+  const param = req.params.id;
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { slug: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { $or: [{ id: param }, { slug: param }] };
+    }
+    const card = await db.collection('nfc_cards').findOne(query);
+    if (!card) return res.status(404).json({ detail: 'Carte de visite introuvable.' });
+    res.json(card);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.get('/public/nfc-cards/vcard/:id', async (req, res) => {
+  const param = req.params.id;
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { slug: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { $or: [{ id: param }, { slug: param }] };
+    }
+    const card = await db.collection('nfc_cards').findOne(query);
+    if (!card) return res.status(404).send('Contact introuvable');
+
+    const lines = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `N:${card.lastName || ''};${card.firstName || ''};;;`,
+      `FN:${card.firstName || ''} ${card.lastName || ''}`.trim(),
+    ];
+
+    if (card.company) {
+      lines.push(`ORG:${card.company}`);
+    } else {
+      lines.push("ORG:R'KEY PROD");
+    }
+
+    if (card.role) {
+      lines.push(`TITLE:${card.role}`);
+    }
+
+    if (card.phone) {
+      lines.push(`TEL;TYPE=CELL,VOICE:${card.phone}`);
+    }
+
+    if (card.email) {
+      lines.push(`EMAIL;TYPE=PREF,INTERNET:${card.email}`);
+    }
+
+    if (card.website) {
+      lines.push(`URL;TYPE=WORK:${card.website}`);
+    }
+
+    const socials = card.socials || {};
+    if (socials.linkedin) lines.push(`URL;TYPE=LinkedIn:${socials.linkedin}`);
+    if (socials.instagram) lines.push(`URL;TYPE=Instagram:${socials.instagram}`);
+    if (socials.facebook) lines.push(`URL;TYPE=Facebook:${socials.facebook}`);
+    if (socials.tiktok) lines.push(`URL;TYPE=TikTok:${socials.tiktok}`);
+    if (socials.youtube) lines.push(`URL;TYPE=YouTube:${socials.youtube}`);
+
+    let note = '';
+    if (card.bio) {
+      note += card.bio.replace(/\n/g, '\\n') + '\\n';
+    }
+    note += "Fiche contact générée via R'KEY PROD NFC.";
+    lines.push(`NOTE:${note}`);
+
+    lines.push('REV:' + new Date().toISOString());
+    lines.push('END:VCARD');
+
+    const vcfString = lines.join('\n');
+    
+    res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${card.firstName || 'contact'}_${card.lastName || 'rkey'}.vcf"`);
+    res.send(vcfString);
+  } catch (err) {
+    res.status(500).send('Erreur serveur');
+  }
+});
+
+api.post('/nfc-cards/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ detail: 'Aucun fichier photo transmis' });
+  
+  try {
+    const originalName = req.file.originalname || 'avatar.jpg';
+    const ext = path.extname(originalName).toLowerCase() || '.jpg';
+    const mimeType = req.file.mimetype || 'image/jpeg';
+    
+    const gcsBucket = getGcsBucket() || bucket;
+    if (gcsBucket) {
+      const imageId = uuidv4();
+      const gcsPath = `client-uploads/${imageId}${ext}`;
+      const file = gcsBucket.file(gcsPath);
+      await file.save(req.file.buffer, {
+        metadata: { contentType: mimeType }
+      });
+      return res.json({ url: `/api/gcs/${gcsPath}` });
+    } else {
+      const imageId = uuidv4();
+      const b64 = req.file.buffer.toString('base64');
+      const doc = { upload_id: imageId, data: b64, content_type: mimeType, created_at: new Date().toISOString() };
+      await db.collection('event_uploads').insertOne(doc);
+      return res.json({ url: `/api/uploads/events/${imageId}` });
+    }
+  } catch (err) {
+    console.error("Error uploading NFC card image:", err);
+    res.status(500).json({ detail: "Erreur lors de l'upload de la photo." });
+  }
+});
+
+api.post('/nfc-cards', authMiddleware, async (req, res) => {
+  const payload = req.body;
+  if (!payload.slug) return res.status(400).json({ detail: "Le slug d'URL est requis" });
+  
+  try {
+    const slugQuery = { slug: payload.slug };
+    if (payload.id) {
+      if (ObjectId.isValid(payload.id)) {
+        slugQuery._id = { $ne: new ObjectId(payload.id) };
+      } else {
+        slugQuery.id = { $ne: payload.id };
+      }
+    }
+    
+    const existingSlug = await db.collection('nfc_cards').findOne(slugQuery);
+    if (existingSlug) {
+      return res.status(400).json({ detail: "Ce slug d'URL est déjà utilisé par un autre profil." });
+    }
+
+    const cardData = {
+      slug: payload.slug,
+      firstName: payload.firstName || '',
+      lastName: payload.lastName || '',
+      role: payload.role || '',
+      phone: payload.phone || '',
+      email: payload.email || '',
+      website: payload.website || 'https://rkeyprod.fr',
+      company: payload.company || "R'KEY PROD",
+      location: payload.location || 'Strasbourg, France',
+      bio: payload.bio || '',
+      avatarUrl: payload.avatarUrl || '',
+      socials: {
+        linkedin: payload.socials?.linkedin || '',
+        instagram: payload.socials?.instagram || '',
+        facebook: payload.socials?.facebook || '',
+        tiktok: payload.socials?.tiktok || '',
+        youtube: payload.socials?.youtube || ''
+      },
+      updatedAt: new Date().toISOString()
+    };
+
+    if (payload.id) {
+      let query = {};
+      if (ObjectId.isValid(payload.id)) {
+        query = { _id: new ObjectId(payload.id) };
+      } else {
+        query = { id: payload.id };
+      }
+      await db.collection('nfc_cards').updateOne(query, { $set: cardData });
+      const updated = await db.collection('nfc_cards').findOne(query);
+      return res.json(updated);
+    } else {
+      cardData.id = uuidv4();
+      cardData.createdAt = new Date().toISOString();
+      await db.collection('nfc_cards').insertOne(cardData);
+      return res.json(cardData);
+    }
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.delete('/nfc-cards/:id', authMiddleware, async (req, res) => {
+  const param = req.params.id;
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { id: param };
+    }
+    await db.collection('nfc_cards').deleteOne(query);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
 // ═══════════════════════════════════════════
 // Catch unregistered API routes
 api.use((req, res) => {
