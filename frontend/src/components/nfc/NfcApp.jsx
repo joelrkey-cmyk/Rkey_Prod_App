@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, Edit3, Save, Smartphone, QrCode, Upload, Download, 
   CheckCircle, ExternalLink, Loader2, Info, Globe, Camera, RefreshCw, Eye,
-  MessageSquare, Instagram, Linkedin
+  MessageSquare, Instagram, Linkedin, Users, Calendar, Mail, Phone, Building,
+  Youtube, Facebook, MessageCircle, Star, Navigation
 } from 'lucide-react';
 import MyDjLogo from '../MyDjLogo';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,6 +18,10 @@ export default function NfcApp() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   
+  // Leads state
+  const [leads, setLeads] = useState([]);
+  const [loadingLeads, setLoadingLeads] = useState(false);
+
   // Local card form state
   const [formState, setFormState] = useState({
     id: '',
@@ -31,6 +36,7 @@ export default function NfcApp() {
     location: 'Strasbourg, France',
     bio: '',
     avatarUrl: '',
+    googleReviewsUrl: '',
     socials: {
       linkedin: '',
       instagram: '',
@@ -42,9 +48,25 @@ export default function NfcApp() {
 
   const [nfcWriting, setNfcWriting] = useState(false);
 
+  // Cropper states
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [originalImage, setOriginalImage] = useState('');
+  const [zoom, setZoom] = useState(1);
+  const [posX, setPosX] = useState(0);
+  const [posY, setPosY] = useState(0);
+  const [originalFileName, setOriginalFileName] = useState('');
+
   useEffect(() => {
     fetchCards();
   }, []);
+
+  useEffect(() => {
+    if (selectedCard) {
+      fetchLeads(selectedCard.id || selectedCard._id);
+    } else {
+      setLeads([]);
+    }
+  }, [selectedCard]);
 
   const fetchCards = async () => {
     try {
@@ -71,6 +93,24 @@ export default function NfcApp() {
     }
   };
 
+  const fetchLeads = async (cardId) => {
+    try {
+      setLoadingLeads(true);
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`/api/nfc-cards/${cardId}/leads`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLeads(data);
+      }
+    } catch (err) {
+      console.error("Error fetching leads:", err);
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
+
   const populateForm = (card) => {
     setFormState({
       id: card.id || card._id,
@@ -85,6 +125,7 @@ export default function NfcApp() {
       location: card.location || 'Strasbourg, France',
       bio: card.bio || '',
       avatarUrl: card.avatarUrl || '',
+      googleReviewsUrl: card.googleReviewsUrl || '',
       socials: {
         linkedin: card.socials?.linkedin || '',
         instagram: card.socials?.instagram || '',
@@ -109,6 +150,7 @@ export default function NfcApp() {
       location: 'Strasbourg, France',
       bio: '',
       avatarUrl: '',
+      googleReviewsUrl: '',
       socials: {
         linkedin: '',
         instagram: '',
@@ -145,35 +187,98 @@ export default function NfcApp() {
     }));
   };
 
-  const handleAvatarUpload = async (e) => {
+  // Image Selection & Cropping Modal logic
+  const handlePhotoSelected = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
+    setOriginalFileName(file.name);
+    
+    const reader = new FileReader();
+    reader.onload = () => {
+      setOriginalImage(reader.result);
+      setZoom(1);
+      setPosX(0);
+      setPosY(0);
+      setCropModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+    // Reset file input value so user can reselect the same file
+    e.target.value = '';
+  };
 
-    try {
-      setUploading(true);
-      const token = localStorage.getItem('access_token');
-      const res = await fetch('/api/nfc-cards/upload', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      });
+  const handleCropSubmit = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 400;
+    canvas.height = 400;
+    const ctx = canvas.getContext('2d');
 
-      if (res.ok) {
-        const data = await res.json();
-        handleInputChange('avatarUrl', data.url);
-        toast.success("Photo de profil enregistrée sur Google Cloud Storage");
+    const img = new Image();
+    img.src = originalImage;
+    img.onload = () => {
+      // White background fallback
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 400, 400);
+
+      // Draw the image scaled & translated centered
+      const imgAspect = img.width / img.height;
+      let drawWidth = 400;
+      let drawHeight = 400;
+      
+      if (imgAspect > 1) {
+        drawHeight = 400;
+        drawWidth = 400 * imgAspect;
       } else {
-        toast.error("Erreur de téléchargement");
+        drawWidth = 400;
+        drawHeight = 400 / imgAspect;
       }
-    } catch (err) {
-      console.error(err);
-      toast.error("Erreur d'upload");
-    } finally {
-      setUploading(false);
-    }
+
+      // Apply zoom
+      drawWidth *= zoom;
+      drawHeight *= zoom;
+
+      // Position centering with translations offsets
+      const dx = 200 - (drawWidth / 2) + posX;
+      const dy = 200 - (drawHeight / 2) + posY;
+
+      ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+
+      // Convert canvas to jpeg blob and upload
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          toast.error("Échec du recadrage.");
+          return;
+        }
+
+        const croppedFile = new File([blob], originalFileName || 'avatar.jpg', { type: 'image/jpeg' });
+        const formData = new FormData();
+        formData.append('file', croppedFile);
+
+        try {
+          setUploading(true);
+          setCropModalOpen(false);
+          const token = localStorage.getItem('access_token');
+          const res = await fetch('/api/nfc-cards/upload', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            handleInputChange('avatarUrl', data.url);
+            toast.success("Photo de profil recadrée et enregistrée !");
+          } else {
+            toast.error("Erreur d'upload");
+          }
+        } catch (err) {
+          console.error(err);
+          toast.error("Erreur réseau");
+        } finally {
+          setUploading(false);
+        }
+      }, 'image/jpeg', 0.92);
+    };
   };
 
   const handleSave = async (e) => {
@@ -234,7 +339,52 @@ export default function NfcApp() {
     }
   };
 
-  // Web NFC writing logic using standard window.NDEFReader
+  const handleDeleteLead = async (leadId) => {
+    if (!window.confirm("Voulez-vous supprimer ce contact reçu ?")) return;
+    try {
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`/api/nfc-leads/${leadId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        toast.success("Contact supprimé");
+        if (selectedCard) {
+          fetchLeads(selectedCard.id || selectedCard._id);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau");
+    }
+  };
+
+  const handleDownloadLeadVCard = (lead) => {
+    const lines = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `N:${lead.lastName || ''};${lead.firstName || ''};;;`,
+      `FN:${lead.firstName || ''} ${lead.lastName || ''}`.trim(),
+    ];
+    if (lead.company) lines.push(`ORG:${lead.company}`);
+    if (lead.phone) lines.push(`TEL;TYPE=CELL,VOICE:${lead.phone}`);
+    if (lead.email) lines.push(`EMAIL;TYPE=PREF,INTERNET:${lead.email}`);
+    if (lead.note) lines.push(`NOTE:${lead.note.replace(/\n/g, '\\n')}`);
+    lines.push('END:VCARD');
+
+    const vcardStr = lines.join('\n');
+    const blob = new Blob([vcardStr], { type: 'text/vcard;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `contact_${lead.firstName || 'client'}.vcf`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Web NFC programming using standard window.NDEFReader
   const handleWriteToNFC = async (publicUrl) => {
     if (!('NDEFReader' in window)) {
       toast.error("Le Web NFC n'est pas supporté par ce navigateur ou cet appareil. Veuillez utiliser Google Chrome sur Android.", {
@@ -281,7 +431,7 @@ export default function NfcApp() {
             NFC
           </h1>
           <p className="text-gray-500 text-sm mt-0.5">
-            Configurez vos profils de cartes de visite virtuelles et programmez vos puces NFC physiques directement depuis votre smartphone.
+            Configurez vos fiches connectées R'KEY PROD, écrivez sur vos puces NFC physiques et suivez les coordonnées partagées par vos clients.
           </p>
         </div>
         <button
@@ -369,8 +519,8 @@ export default function NfcApp() {
           </div>
         </div>
 
-        {/* CENTER COLUMN: Edit Form */}
-        <div className="lg:col-span-5">
+        {/* CENTER COLUMN: Edit Form & Tools */}
+        <div className="lg:col-span-5 space-y-6">
           <form onSubmit={handleSave} className="bg-white rounded-2xl border p-6 shadow-sm space-y-5">
             <div className="flex items-center justify-between border-b pb-3">
               <h2 className="font-bold text-gray-800 text-sm uppercase tracking-wider">
@@ -390,31 +540,57 @@ export default function NfcApp() {
             <fieldset disabled={!isEditing && formState.id} className="space-y-4 disabled:opacity-85">
               
               {/* Photo & Slug Profile Row */}
-              <div className="flex flex-col md:flex-row gap-4 items-start border-b pb-4">
-                <div className="relative group">
-                  <div className="w-20 h-20 rounded-2xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden">
+              <div className="flex flex-col md:flex-row gap-4 items-center border-b pb-4">
+                
+                {/* Photo box layout with crop click integration */}
+                <div className="flex flex-col items-center gap-2">
+                  <div 
+                    onClick={() => {
+                      if (!isEditing && formState.id) {
+                        setIsEditing(true);
+                      }
+                      setTimeout(() => {
+                        const elem = document.getElementById('avatar-input');
+                        if (elem) elem.click();
+                      }, 50);
+                    }}
+                    className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-300 hover:border-[#e86405] bg-gray-50 flex flex-col items-center justify-center overflow-hidden relative cursor-pointer group transition-all"
+                  >
                     {formState.avatarUrl ? (
                       <img src={formState.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
-                      <MyDjLogo className="w-full h-full p-2" glow={false} />
+                      <div className="flex flex-col items-center justify-center text-center p-2 text-gray-400">
+                        <Camera className="w-6 h-6 mb-1 text-gray-400 group-hover:text-[#e86405]" />
+                        <span className="text-[10px] font-bold group-hover:text-[#e86405]">Ajouter</span>
+                      </div>
+                    )}
+                    
+                    {/* Dark overlay on hover */}
+                    {formState.avatarUrl && (isEditing || !formState.id) && (
+                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-bold">
+                        <Camera className="w-4 h-4 mb-1" />
+                        Recadrer
+                      </div>
                     )}
                   </div>
-                  {isEditing && (
-                    <label className="absolute inset-0 bg-black/60 rounded-2xl flex items-center justify-center cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
-                      {uploading ? (
-                        <Loader2 className="w-5 h-5 text-white animate-spin" />
-                      ) : (
-                        <Camera className="w-5 h-5 text-white" />
-                      )}
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={handleAvatarUpload} 
-                        className="hidden" 
-                        disabled={uploading}
-                      />
-                    </label>
+                  
+                  {(isEditing || !formState.id) && (
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('avatar-input').click()}
+                      className="text-[10px] text-[#e86405] hover:underline font-bold"
+                    >
+                      {formState.avatarUrl ? "Modifier/Recadrer" : "Importer une photo"}
+                    </button>
                   )}
+                  
+                  <input 
+                    id="avatar-input"
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handlePhotoSelected} 
+                    className="hidden" 
+                  />
                 </div>
 
                 <div className="flex-1 w-full space-y-3">
@@ -536,9 +712,21 @@ export default function NfcApp() {
                 </div>
               </div>
 
+              {/* Grid: Google Reviews Link */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Lien Avis Google (Avis clients)</label>
+                <input
+                  type="url"
+                  placeholder="https://g.page/r/.../review ou lien Google Maps"
+                  value={formState.googleReviewsUrl || ''}
+                  onChange={(e) => handleInputChange('googleReviewsUrl', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#e86405]"
+                />
+              </div>
+
               {/* Bio area */}
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Biographie</label>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 font-sans">Biographie</label>
                 <textarea
                   value={formState.bio}
                   onChange={(e) => handleInputChange('bio', e.target.value)}
@@ -550,7 +738,7 @@ export default function NfcApp() {
 
               {/* Social links block */}
               <div className="border-t pt-4 space-y-3">
-                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Réseaux Sociaux</h3>
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Liens Réseaux Sociaux</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[10px] text-gray-400 font-bold mb-1">Instagram URL</label>
@@ -582,7 +770,7 @@ export default function NfcApp() {
                       className="w-full px-2 py-1.5 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-600"
                     />
                   </div>
-                  <div>
+                   <div>
                     <label className="block text-[10px] text-gray-400 font-bold mb-1">TikTok URL</label>
                     <input
                       type="url"
@@ -590,6 +778,16 @@ export default function NfcApp() {
                       value={formState.socials.tiktok}
                       onChange={(e) => handleSocialChange('tiktok', e.target.value)}
                       className="w-full px-2 py-1.5 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-400 font-bold mb-1">YouTube URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://youtube.com/..."
+                      value={formState.socials.youtube}
+                      onChange={(e) => handleSocialChange('youtube', e.target.value)}
+                      className="w-full px-2 py-1.5 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-red-500"
                     />
                   </div>
                 </div>
@@ -630,9 +828,17 @@ export default function NfcApp() {
 
           {/* NFC & QR Tools Panel */}
           {formState.id && (
-            <div className="mt-6 bg-white rounded-2xl border p-6 shadow-sm space-y-4">
-              <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
-                <QrCode className="w-4 h-4 text-[#e86405]" /> Programmation NFC & Code QR
+            <div className="bg-white rounded-2xl border p-6 shadow-sm space-y-4">
+              <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider border-b pb-2 flex items-center justify-between gap-1.5 flex-wrap">
+                <span className="flex items-center gap-1.5">
+                  <QrCode className="w-4 h-4 text-[#e86405]" /> Programmation NFC & Code QR
+                </span>
+                {selectedCard && (
+                  <span className="text-[10px] bg-orange-50 text-[#e86405] border border-orange-100 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1 select-none">
+                    <Eye className="w-3.5 h-3.5" />
+                    {selectedCard.viewsCount || 0} Scans / Visites
+                  </span>
+                )}
               </h3>
 
               <div className="flex flex-col md:flex-row gap-4 items-center">
@@ -695,15 +901,17 @@ export default function NfcApp() {
           )}
         </div>
 
-        {/* RIGHT COLUMN: Mobile Simulator Live Preview */}
-        <div className="lg:col-span-4 flex flex-col items-center">
-          <div className="w-full max-w-[320px] sticky top-6">
+        {/* RIGHT COLUMN: Mobile Simulator Live Preview & Leads list */}
+        <div className="lg:col-span-4 space-y-6 flex flex-col items-center">
+          
+          {/* Mobile Preview container */}
+          <div className="w-full max-w-[320px]">
             <h3 className="font-bold text-gray-500 text-xs uppercase tracking-widest text-center mb-3 flex items-center justify-center gap-1">
-              <Smartphone className="w-4 h-4 text-gray-400" /> Rendu Mobile Live
+              <Smartphone className="w-4 h-4 text-gray-400" /> Rendu Mobile
             </h3>
             
             {/* Phone Device container mockup */}
-            <div className="relative border-[8px] border-slate-900 rounded-[36px] shadow-2xl overflow-hidden aspect-[9/18.5] w-full bg-[#0B0F19] flex flex-col">
+            <div className="relative border-[8px] border-slate-900 rounded-[36px] shadow-2xl overflow-hidden aspect-[9/18.5] w-full bg-black flex flex-col">
               
               {/* Speaker Bar */}
               <div className="absolute top-2 left-1/2 -translate-x-1/2 w-24 h-4 bg-slate-950 rounded-full z-30 flex items-center justify-center">
@@ -711,14 +919,14 @@ export default function NfcApp() {
                 <span className="w-2 h-2 bg-gray-900 rounded-full ml-2 border border-gray-800/10" />
               </div>
 
-              {/* Scrollable mockup content */}
-              <div className="w-full h-full overflow-y-auto pt-7 flex flex-col items-center pb-5 text-white text-center relative z-10 scrollbar-none">
+              {/* Scrollable mockup content - custom styled scrollbar */}
+              <div className="w-full h-full overflow-y-auto pt-7 flex flex-col items-center pb-5 text-white text-center relative z-10 scrollbar-thin scrollbar-thumb-zinc-800 bg-black">
                 
                 {/* Banner mockup */}
                 <div className="w-full h-20 bg-gradient-to-r from-[#e86405] to-[#FF7A00] flex-shrink-0" />
 
                 {/* Profile Circle mockup */}
-                <div className="w-20 h-20 rounded-full border-4 border-[#0B0F19] bg-[#1F2937] shadow-lg overflow-hidden flex items-center justify-center -mt-10 mb-2 flex-shrink-0">
+                <div className="w-20 h-20 rounded-full border-4 border-black bg-zinc-900 shadow-lg overflow-hidden flex items-center justify-center -mt-10 mb-2 flex-shrink-0">
                   {formState.avatarUrl ? (
                     <img src={formState.avatarUrl} alt="" className="w-full h-full object-cover" />
                   ) : (
@@ -727,7 +935,7 @@ export default function NfcApp() {
                 </div>
 
                 {/* Details mockup */}
-                <div className="px-4 w-full">
+                <div className="px-4 w-full flex-shrink-0">
                   <h4 className="text-xs font-bold truncate">
                     {formState.firstName || 'Prénom'} {formState.lastName || 'Nom'}
                   </h4>
@@ -735,8 +943,8 @@ export default function NfcApp() {
                     {formState.role || "Titre / Rôle"}
                   </p>
                   
-                  <div className="flex items-center justify-center gap-1.5 text-[8px] text-gray-400 truncate">
-                    <span className="font-semibold text-gray-300">{formState.company || "R'KEY PROD"}</span>
+                  <div className="flex items-center justify-center gap-1.5 text-[8px] text-zinc-500 truncate">
+                    <span className="font-semibold text-zinc-400">{formState.company || "R'KEY PROD"}</span>
                     {formState.location && (
                       <>
                         <span>·</span>
@@ -745,62 +953,150 @@ export default function NfcApp() {
                     )}
                   </div>
 
+                  {formState.googleReviewsUrl && (
+                    <div className="mt-1 flex justify-center">
+                      <div className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/20 rounded-full text-[8px] text-yellow-500 font-bold">
+                        <div className="flex gap-0.5">
+                          <Star className="w-2 h-2 fill-yellow-500 text-yellow-500" />
+                          <Star className="w-2 h-2 fill-yellow-500 text-yellow-500" />
+                          <Star className="w-2 h-2 fill-yellow-500 text-yellow-500" />
+                          <Star className="w-2 h-2 fill-yellow-500 text-yellow-500" />
+                          <Star className="w-2 h-2 fill-yellow-500 text-yellow-500" />
+                        </div>
+                        <span>Avis Google</span>
+                      </div>
+                    </div>
+                  )}
+
                   {formState.bio && (
-                    <p className="mt-2 text-[9px] text-gray-300 bg-gray-900/50 border border-gray-800/40 p-2 rounded-xl italic leading-relaxed text-left max-h-16 overflow-y-auto">
+                    <p className="mt-2 text-[9px] text-zinc-300 bg-zinc-950/80 border border-zinc-800/60 p-2 rounded-xl italic leading-relaxed text-left max-h-16 overflow-y-auto">
                       {formState.bio}
                     </p>
                   )}
                 </div>
 
                 {/* Main Action mockup */}
-                <div className="w-full px-4 mt-3 flex-shrink-0">
+                <div className="w-full px-4 mt-3 flex-shrink-0 space-y-1.5">
                   <button
                     type="button"
-                    className="w-full h-8 rounded-xl bg-gradient-to-r from-[#e86405] to-[#FF7A00] text-white font-bold text-[10px] flex items-center justify-center gap-1"
+                    className="w-full h-8 rounded-xl bg-gradient-to-r from-[#e86405] to-[#FF7A00] text-white font-bold text-[9px] flex items-center justify-center gap-1"
                   >
-                    Ajouter aux contacts
+                    Enregistrer le contact
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full h-7 rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-300 text-[8px] font-bold flex items-center justify-center gap-1"
+                  >
+                    Échanger nos coordonnées
                   </button>
                 </div>
 
                 {/* Communication mockup */}
                 <div className="w-full px-4 mt-3 text-left flex-shrink-0">
-                  <span className="block text-[8px] font-bold text-gray-500 uppercase tracking-wider mb-1">Accès Rapide</span>
+                  <span className="block text-[8px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Accès Rapide</span>
                   <div className="grid grid-cols-2 gap-1.5">
-                    <div className="flex items-center gap-1 p-1 bg-gray-900/60 border border-gray-800/40 rounded-lg">
-                      <div className="p-1 bg-blue-500/10 text-blue-400 rounded-md">
-                        <Smartphone className="w-2.5 h-2.5" />
+                    {formState.phone && (
+                      <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg">
+                        <div className="p-1 bg-blue-500/10 text-blue-400 rounded-md">
+                          <Phone className="w-2.5 h-2.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[6px] text-zinc-500 leading-none">Appel</span>
+                          <span className="block text-[7px] font-bold truncate text-zinc-300">{formState.phone}</span>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <span className="block text-[7px] text-gray-500 leading-none">Appel</span>
-                        <span className="block text-[8px] font-bold truncate text-gray-300">{formState.phone || 'Non configuré'}</span>
-                      </div>
-                    </div>
+                    )}
 
-                    <div className="flex items-center gap-1 p-1 bg-gray-900/60 border border-gray-800/40 rounded-lg">
-                      <div className="p-1 bg-emerald-500/10 text-emerald-400 rounded-md">
-                        <MessageSquare className="w-2.5 h-2.5" />
+                    {formState.phone && (
+                      <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg">
+                        <div className="p-1 bg-yellow-500/10 text-yellow-400 rounded-md">
+                          <MessageCircle className="w-2.5 h-2.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[6px] text-zinc-500 leading-none">SMS</span>
+                          <span className="block text-[7px] font-bold truncate text-zinc-300">SMS</span>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <span className="block text-[7px] text-gray-500 leading-none">WhatsApp</span>
-                        <span className="block text-[8px] font-bold truncate text-gray-300">Envoi</span>
+                    )}
+
+                    {formState.phone && (
+                      <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg">
+                        <div className="p-1 bg-emerald-500/10 text-emerald-400 rounded-md">
+                          <MessageSquare className="w-2.5 h-2.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[6px] text-zinc-500 leading-none">WhatsApp</span>
+                          <span className="block text-[7px] font-bold truncate text-zinc-300">Message</span>
+                        </div>
                       </div>
-                    </div>
+                    )}
+
+                    {formState.email && (
+                      <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg">
+                        <div className="p-1 bg-red-500/10 text-red-400 rounded-md">
+                          <Mail className="w-2.5 h-2.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[6px] text-zinc-500 leading-none">Email</span>
+                          <span className="block text-[7px] font-bold truncate text-zinc-300">{formState.email}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {formState.website && (
+                      <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg col-span-2">
+                        <div className="p-1 bg-orange-500/10 text-[#e86405] rounded-md">
+                          <Globe className="w-2.5 h-2.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[6px] text-zinc-500 leading-none">Site Web</span>
+                          <span className="block text-[7px] font-bold truncate text-[#e86405]">{formState.website.replace(/^https?:\/\/(www\.)?/, '')}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {formState.location && (
+                      <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg col-span-2">
+                        <div className="p-1 bg-cyan-500/10 text-cyan-400 rounded-md">
+                          <Navigation className="w-2.5 h-2.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[6px] text-zinc-500 leading-none">Calculer l'itinéraire</span>
+                          <span className="block text-[7px] font-bold truncate text-cyan-400">Let's Go !</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Social media mockup */}
-                {Object.values(formState.socials).some(Boolean) && (
-                  <div className="w-full px-4 mt-3 text-left flex-1">
-                    <span className="block text-[8px] font-bold text-gray-500 uppercase tracking-wider mb-1">Réseaux</span>
-                    <div className="space-y-1">
-                      {formState.socials.instagram && (
-                        <div className="flex items-center justify-between p-1 bg-gray-900/40 border border-gray-800/30 rounded-lg text-[8px]">
-                          <span className="flex items-center gap-1 text-gray-300 font-semibold"><Instagram className="w-3 h-3 text-pink-400" /> Instagram</span>
+                {/* Social media mockup preview */}
+                {Object.values(formState.socials || {}).some(Boolean) && (
+                  <div className="w-full px-4 mt-3 text-center flex-shrink-0">
+                    <span className="block text-[8px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Réseaux</span>
+                    <div className="flex items-center justify-center gap-2 flex-wrap">
+                      {formState.socials.linkedin && (
+                        <div className="w-8 h-8 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="LinkedIn">
+                          <Linkedin className="w-4 h-4 text-blue-400" />
                         </div>
                       )}
-                      {formState.socials.linkedin && (
-                        <div className="flex items-center justify-between p-1 bg-gray-900/40 border border-gray-800/30 rounded-lg text-[8px]">
-                          <span className="flex items-center gap-1 text-gray-300 font-semibold"><Linkedin className="w-3 h-3 text-blue-400" /> LinkedIn</span>
+                      {formState.socials.instagram && (
+                        <div className="w-8 h-8 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="Instagram">
+                          <Instagram className="w-4 h-4 text-pink-400" />
+                        </div>
+                      )}
+                      {formState.socials.facebook && (
+                        <div className="w-8 h-8 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="Facebook">
+                          <Facebook className="w-4 h-4 text-blue-500" />
+                        </div>
+                      )}
+                      {formState.socials.tiktok && (
+                        <div className="w-8 h-8 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="TikTok">
+                          <span className="font-bold text-[10px] text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-pink-500">TT</span>
+                        </div>
+                      )}
+                      {formState.socials.youtube && (
+                        <div className="w-8 h-8 rounded-full bg-zinc-950 border border-zinc-800 flex items-center justify-center" title="YouTube">
+                          <Youtube className="w-4 h-4 text-red-500" />
                         </div>
                       )}
                     </div>
@@ -808,8 +1104,8 @@ export default function NfcApp() {
                 )}
 
                 {/* Footer mockup */}
-                <div className="w-full border-t border-gray-800/40 pt-2 mt-3 text-center flex-shrink-0">
-                  <span className="text-[6px] text-gray-500 font-medium block">R'KEY PROD © {new Date().getFullYear()}</span>
+                <div className="w-full border-t border-zinc-800 pt-2 mt-4 text-center flex-shrink-0">
+                  <span className="text-[6px] text-zinc-500 font-medium block">R'KEY PROD © {new Date().getFullYear()}</span>
                 </div>
 
               </div>
@@ -819,9 +1115,188 @@ export default function NfcApp() {
 
             </div>
           </div>
+
+          {/* TWO-WAY LEADS MANAGEMENT LIST PANEL */}
+          {selectedCard && (
+            <div className="w-full bg-white rounded-2xl border p-4 shadow-sm text-left">
+              <h3 className="font-bold text-gray-800 text-xs uppercase tracking-wider border-b pb-2 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#e86405]" /> Contacts Reçus (Échanges)
+              </h3>
+
+              {loadingLeads ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#e86405]" />
+                </div>
+              ) : leads.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-6">Aucun contact reçu pour le moment via cette carte.</p>
+              ) : (
+                <div className="mt-3 space-y-3 max-h-[300px] overflow-y-auto">
+                  {leads.map(lead => (
+                    <div key={lead.id} className="p-3 bg-slate-50 border rounded-xl relative group text-xs text-slate-700 space-y-1.5">
+                      <button
+                        onClick={() => handleDeleteLead(lead.id)}
+                        className="absolute top-2 right-2 text-gray-400 hover:text-red-500 transition-colors p-1"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <div className="font-bold text-gray-800 text-sm pr-6">
+                        {lead.firstName} {lead.lastName}
+                      </div>
+
+                      {lead.company && (
+                        <div className="flex items-center gap-1.5 text-gray-500 text-[11px]">
+                          <Building className="w-3.5 h-3.5 flex-shrink-0" /> {lead.company}
+                        </div>
+                      )}
+
+                      {lead.phone && (
+                        <div className="flex items-center gap-1.5 text-gray-600 font-mono text-[11px]">
+                          <Phone className="w-3.5 h-3.5 flex-shrink-0" /> {lead.phone}
+                        </div>
+                      )}
+
+                      {lead.email && (
+                        <div className="flex items-center gap-1.5 text-gray-600 text-[11px] truncate">
+                          <Mail className="w-3.5 h-3.5 flex-shrink-0" /> {lead.email}
+                        </div>
+                      )}
+
+                      {lead.note && (
+                        <p className="p-2 bg-white border border-slate-100 rounded-lg italic text-[11px] text-slate-500">
+                          "{lead.note}"
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(lead.createdAt).toLocaleDateString('fr-FR')}
+                        </span>
+                        
+                        <button
+                          onClick={() => handleDownloadLeadVCard(lead)}
+                          className="text-[10px] text-[#e86405] font-bold hover:underline flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" /> Exporter vCard
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
 
       </div>
+
+      {/* --- PREMIUM HTML5 CLIENT-SIDE IMAGE CROPPING MODAL --- */}
+      {cropModalOpen && (
+        <div className="fixed inset-0 bg-black/85 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-[#111827] border border-zinc-800/80 rounded-[32px] max-w-md w-full p-6 text-white space-y-6 shadow-2xl text-center">
+            
+            <div>
+              <h3 className="text-lg font-black tracking-tight text-white">Recadrer la photo</h3>
+              <p className="text-xs text-gray-400 mt-1">Ajustez le zoom et déplacez l'image pour un cadrage parfait.</p>
+            </div>
+
+            {/* Visual crop masking circle viewport */}
+            <div className="relative w-64 h-64 mx-auto rounded-full border-2 border-[#e86405] overflow-hidden bg-zinc-950 flex items-center justify-center">
+              <img
+                src={originalImage}
+                alt="Crop Target"
+                style={{
+                  transform: `scale(${zoom}) translate(${posX}px, ${posY}px)`,
+                  transition: 'transform 0.05s ease-out',
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain'
+                }}
+                className="pointer-events-none select-none"
+              />
+              <div className="absolute inset-0 bg-black/25 pointer-events-none" />
+            </div>
+
+            {/* Sizing & Translation Sliders */}
+            <div className="space-y-4">
+              
+              {/* Zoom Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  <span>Grossissement</span>
+                  <span>{Math.round(zoom * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="4"
+                  step="0.05"
+                  value={zoom}
+                  onChange={(e) => setZoom(parseFloat(e.target.value))}
+                  className="w-full accent-[#e86405] bg-zinc-800 rounded-lg appearance-none h-2 cursor-pointer"
+                />
+              </div>
+
+              {/* Translation X Axis */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  <span>Axe Horizontal (Gauche/Droite)</span>
+                  <span>{posX}px</span>
+                </div>
+                <input
+                  type="range"
+                  min="-150"
+                  max="150"
+                  step="1"
+                  value={posX}
+                  onChange={(e) => setPosX(parseInt(e.target.value, 10))}
+                  className="w-full accent-[#e86405] bg-zinc-800 rounded-lg appearance-none h-2 cursor-pointer"
+                />
+              </div>
+
+              {/* Translation Y Axis */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  <span>Axe Vertical (Haut/Bas)</span>
+                  <span>{posY}px</span>
+                </div>
+                <input
+                  type="range"
+                  min="-150"
+                  max="150"
+                  step="1"
+                  value={posY}
+                  onChange={(e) => setPosY(parseInt(e.target.value, 10))}
+                  className="w-full accent-[#e86405] bg-zinc-800 rounded-lg appearance-none h-2 cursor-pointer"
+                />
+              </div>
+
+            </div>
+
+            {/* Validation & Revert buttons */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCropSubmit}
+                className="flex-1 h-11 bg-gradient-to-r from-[#e86405] to-[#FF7A00] text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-md shadow-[#e86405]/15 active:scale-95 transition-all cursor-pointer"
+              >
+                <CheckCircle className="w-4 h-4" /> Appliquer et Sauvegarder
+              </button>
+              <button
+                type="button"
+                onClick={() => setCropModalOpen(false)}
+                className="px-4 h-11 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold rounded-xl text-xs transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

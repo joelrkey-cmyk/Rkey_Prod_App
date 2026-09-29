@@ -33,6 +33,10 @@ export function generateVCardString(card) {
     lines.push(`URL;TYPE=WORK:${card.website}`);
   }
 
+  if (card.googleReviewsUrl) {
+    lines.push(`URL;TYPE=GoogleReviews:${card.googleReviewsUrl}`);
+  }
+
   // Social URLs
   const socials = card.socials || {};
   if (socials.linkedin) lines.push(`URL;TYPE=LinkedIn:${socials.linkedin}`);

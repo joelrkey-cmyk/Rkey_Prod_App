@@ -12083,6 +12083,11 @@ api.get('/public/nfc-cards/:id', async (req, res) => {
     }
     const card = await db.collection('nfc_cards').findOne(query);
     if (!card) return res.status(404).json({ detail: 'Carte de visite introuvable.' });
+    
+    // Automatically increment scan/view metrics
+    await db.collection('nfc_cards').updateOne({ _id: card._id }, { $inc: { viewsCount: 1 } });
+    card.viewsCount = (card.viewsCount || 0) + 1;
+
     res.json(card);
   } catch (err) {
     res.status(500).json({ detail: err.message });
@@ -12218,6 +12223,7 @@ api.post('/nfc-cards', authMiddleware, async (req, res) => {
       location: payload.location || 'Strasbourg, France',
       bio: payload.bio || '',
       avatarUrl: payload.avatarUrl || '',
+      googleReviewsUrl: payload.googleReviewsUrl || '',
       socials: {
         linkedin: payload.socials?.linkedin || '',
         instagram: payload.socials?.instagram || '',
@@ -12259,6 +12265,123 @@ api.delete('/nfc-cards/:id', authMiddleware, async (req, res) => {
       query = { id: param };
     }
     await db.collection('nfc_cards').deleteOne(query);
+    // Cleanup associated leads
+    await db.collection('nfc_leads').deleteMany({ cardId: param });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.post('/public/nfc-cards/:id/exchange', async (req, res) => {
+  const param = req.params.id;
+  const { firstName, lastName, phone, email, company, note } = req.body;
+  if (!firstName || !lastName) {
+    return res.status(400).json({ detail: "Le nom et le prénom sont requis." });
+  }
+  
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { slug: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { $or: [{ id: param }, { slug: param }] };
+    }
+    const card = await db.collection('nfc_cards').findOne(query);
+    if (!card) return res.status(404).json({ detail: 'Carte de visite introuvable.' });
+
+    const lead = {
+      id: uuidv4(),
+      cardId: card.id || card._id.toString(),
+      firstName,
+      lastName,
+      phone: phone || '',
+      email: email || '',
+      company: company || '',
+      note: note || '',
+      createdAt: new Date().toISOString()
+    };
+
+    await db.collection('nfc_leads').insertOne(lead);
+
+    // Send email notification to card owner
+    if (card.email) {
+      try {
+        const cfg = await getSmtpConfig();
+        const transporter = createTransporter(cfg);
+        const subject = `Nouveau contact partagé avec vous - R'KEY PROD NFC`;
+        const html = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <span style="font-size: 24px; font-weight: 900; color: #e86405; letter-spacing: -1px;">R'KEY PROD NFC</span>
+            </div>
+            <h2 style="color: #333333; border-bottom: 2px solid #e86405; padding-bottom: 8px;">Nouveau contact reçu !</h2>
+            <p style="color: #555555; font-size: 14px; line-height: 1.6;">
+              Un client a partagé ses coordonnées après avoir scanné votre carte de visite NFC connectée <strong>${card.firstName} ${card.lastName}</strong>.
+            </p>
+            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <table style="width: 100%; font-size: 14px; color: #444444;">
+                <tr>
+                  <td style="padding: 5px 0; font-weight: bold; width: 130px;">Prénom / Nom :</td>
+                  <td style="padding: 5px 0;">${firstName} ${lastName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 5px 0; font-weight: bold;">Téléphone :</td>
+                  <td style="padding: 5px 0;">${phone || '<span style="color: #aaa; font-style: italic;">Non renseigné</span>'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 5px 0; font-weight: bold;">E-mail :</td>
+                  <td style="padding: 5px 0;">${email || '<span style="color: #aaa; font-style: italic;">Non renseigné</span>'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 5px 0; font-weight: bold;">Entreprise :</td>
+                  <td style="padding: 5px 0;">${company || '<span style="color: #aaa; font-style: italic;">Non renseigné</span>'}</td>
+                </tr>
+                ${note ? `
+                <tr>
+                  <td style="padding: 5px 0; font-weight: bold; vertical-align: top;">Note / Message :</td>
+                  <td style="padding: 5px 0; font-style: italic; color: #666;">"${note}"</td>
+                </tr>` : ''}
+              </table>
+            </div>
+            <p style="color: #555555; font-size: 13px; line-height: 1.6;">
+              Vous pouvez retrouver ce contact, l'exporter au format vCard et l'enregistrer dans votre téléphone depuis votre tableau de bord d'administration NFC.
+            </p>
+            <div style="text-align: center; margin-top: 30px; font-size: 11px; color: #999999;">
+              R'KEY PROD © ${new Date().getFullYear()} · Service de Carte de Visite Connectée
+            </div>
+          </div>
+        `;
+        
+        await transporter.sendMail({
+          from: `${cfg.smtp_from_name} <${cfg.smtp_from}>`,
+          to: card.email,
+          subject,
+          html
+        });
+      } catch (mailErr) {
+        console.error("Failed to send lead email notification:", mailErr);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.get('/nfc-cards/:cardId/leads', authMiddleware, async (req, res) => {
+  try {
+    const list = await db.collection('nfc_leads').find({ cardId: req.params.cardId }).sort({ createdAt: -1 }).toArray();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.delete('/nfc-leads/:leadId', authMiddleware, async (req, res) => {
+  try {
+    await db.collection('nfc_leads').deleteOne({ id: req.params.leadId });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ detail: err.message });
