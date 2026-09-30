@@ -29,6 +29,7 @@ import PublicVenuesApp from "./components/PublicVenuesApp";
 import PublicFormView from "./components/forms/PublicFormView";
 import NfcApp from "./components/nfc/NfcApp";
 import PublicNfcCard from "./components/nfc/PublicNfcCard";
+import VehiculeApp from "./components/VehiculeApp";
 
 const SmartHomePage = () => {
   const savedUser = localStorage.getItem('user');
@@ -234,6 +235,17 @@ function App() {
                     <Navigation />
                     <ErrorBoundary>
                       <NfcApp />
+                    </ErrorBoundary>
+                  </>
+                </ProtectedRoute>
+              } />
+
+              <Route path="/vehicules" element={
+                <ProtectedRoute>
+                  <>
+                    <Navigation />
+                    <ErrorBoundary>
+                      <VehiculeApp />
                     </ErrorBoundary>
                   </>
                 </ProtectedRoute>

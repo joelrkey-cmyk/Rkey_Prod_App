@@ -6,7 +6,7 @@ import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw, FileSpreadsheet, Flame, GripVertical, Nfc } from 'lucide-react';
+import { FileText, FileCheck, Package, Users, Calendar, Bell, Building2, ArrowRight, Plus, Edit, Trash2, StickyNote, Ticket, User, Send, Clock, LayoutDashboard, CreditCard, Settings, Handshake, Truck, Smile, FileSignature, Headphones, CalendarDays, MapPin, ClipboardList, Check, RefreshCw, FileSpreadsheet, Flame, GripVertical, Nfc, Car } from 'lucide-react';
 import axios from '../services/axiosConfig';
 import { toast } from 'sonner';
 import ProjectsBinder from './ProjectsBinder';
@@ -448,6 +448,7 @@ const HomePage = () => {
             { name: 'Fichier Client', icon: <Building2 className="w-7 h-7" />, color: 'bg-green-500', route: '/crm', key: 'crm' },
             { name: 'Événements', icon: <Ticket className="w-7 h-7" />, color: 'bg-gray-800', route: '/billetterie', key: 'billetterie' },
             { name: 'Formulaires', icon: <FileText className="w-7 h-7" />, color: 'bg-orange-400', route: '/formulaires', key: 'formulaires' },
+            { name: 'Véhicules', icon: <Car className="w-7 h-7" />, color: 'bg-indigo-600', route: '/vehicules', key: 'vehicules' },
             { name: 'NFC', icon: <Nfc className="w-7 h-7" />, color: 'bg-orange-600', route: '/nfc', key: 'nfc' },
             { name: 'Paramètres', icon: <Settings className="w-7 h-7" />, color: 'bg-slate-600', route: '/parametres', key: 'parametres' },
           ].filter(app => {

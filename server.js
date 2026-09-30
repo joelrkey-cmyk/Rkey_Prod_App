@@ -12431,6 +12431,261 @@ api.delete('/nfc-leads/:leadId', authMiddleware, async (req, res) => {
   }
 });
 
+// ══════════ VEHICLES FLEET MANAGEMENT MODULE ══════════
+api.get('/vehicles', authMiddleware, async (req, res) => {
+  try {
+    const list = await db.collection('vehicles').find({}).sort({ brand: 1, model: 1 }).toArray();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.post('/vehicles', authMiddleware, async (req, res) => {
+  const payload = req.body;
+  if (!payload.brand || !payload.model || !payload.licensePlate) {
+    return res.status(400).json({ detail: "La marque, le modèle et la plaque d'immatriculation sont requis" });
+  }
+
+  try {
+    const vData = {
+      brand: payload.brand,
+      model: payload.model,
+      licensePlate: payload.licensePlate.toUpperCase().trim(),
+      year: payload.year || '',
+      mileage: Number(payload.mileage || 0),
+      fuelType: payload.fuelType || 'Diesel',
+      tollBadgeNumber: payload.tollBadgeNumber || '',
+      insuranceCompany: payload.insuranceCompany || '',
+      insurancePolicyNumber: payload.insurancePolicyNumber || '',
+      nextCtDate: payload.nextCtDate || '',
+      nextOilChangeMileage: payload.nextOilChangeMileage ? Number(payload.nextOilChangeMileage) : '',
+      status: payload.status || 'En service',
+      notes: payload.notes || '',
+      updatedAt: new Date().toISOString()
+    };
+
+    if (payload.id) {
+      let query = {};
+      if (ObjectId.isValid(payload.id)) {
+        query = { _id: new ObjectId(payload.id) };
+      } else {
+        query = { id: payload.id };
+      }
+      
+      // Merge with existing arrays to avoid wiping maintenance or fuel records
+      const existing = await db.collection('vehicles').findOne(query);
+      vData.maintenanceRecords = existing?.maintenanceRecords || [];
+      vData.fuelRecords = existing?.fuelRecords || [];
+
+      await db.collection('vehicles').updateOne(query, { $set: vData });
+      const updated = await db.collection('vehicles').findOne(query);
+      res.json(updated);
+    } else {
+      vData.id = uuidv4();
+      vData.maintenanceRecords = [];
+      vData.fuelRecords = [];
+      vData.createdAt = new Date().toISOString();
+      await db.collection('vehicles').insertOne(vData);
+      res.json(vData);
+    }
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.delete('/vehicles/:id', authMiddleware, async (req, res) => {
+  const param = req.params.id;
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { id: param };
+    }
+    await db.collection('vehicles').deleteOne(query);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// Append maintenance record to a vehicle
+api.post('/vehicles/:id/maintenance', authMiddleware, async (req, res) => {
+  const param = req.params.id;
+  const { date, type, description, mileage, cost, garage, documentUrl, documentName } = req.body;
+
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { id: param };
+    }
+
+    const record = {
+      date: date || new Date().toISOString().split('T')[0],
+      type: type || 'Vidange',
+      description: description || '',
+      mileage: mileage ? Number(mileage) : '',
+      cost: cost ? Number(cost) : 0,
+      garage: garage || '',
+      documentUrl: documentUrl || '',
+      documentName: documentName || '',
+      createdAt: new Date().toISOString()
+    };
+
+    // Update vehicle's mileage if this maintenance record has a higher mileage
+    const vehicle = await db.collection('vehicles').findOne(query);
+    if (!vehicle) return res.status(404).json({ detail: "Véhicule introuvable" });
+
+    const currentMileage = Number(vehicle.mileage || 0);
+    const newMileage = mileage ? Number(mileage) : 0;
+    const finalMileage = Math.max(currentMileage, newMileage);
+
+    await db.collection('vehicles').updateOne(query, {
+      $push: { maintenanceRecords: record },
+      $set: { mileage: finalMileage }
+    });
+
+    const updated = await db.collection('vehicles').findOne(query);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// Delete maintenance record by index from vehicle
+api.delete('/vehicles/:id/maintenance/:index', authMiddleware, async (req, res) => {
+  const param = req.params.id;
+  const index = parseInt(req.params.index);
+
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { id: param };
+    }
+
+    const vehicle = await db.collection('vehicles').findOne(query);
+    if (!vehicle) return res.status(404).json({ detail: "Véhicule introuvable" });
+
+    const records = vehicle.maintenanceRecords || [];
+    if (index >= 0 && index < records.length) {
+      records.splice(index, 1);
+      await db.collection('vehicles').updateOne(query, { $set: { maintenanceRecords: records } });
+    }
+
+    const updated = await db.collection('vehicles').findOne(query);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// Append fuel record to a vehicle
+api.post('/vehicles/:id/fuel', authMiddleware, async (req, res) => {
+  const param = req.params.id;
+  const { date, liters, cost, mileage, station } = req.body;
+
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { id: param };
+    }
+
+    const record = {
+      date: date || new Date().toISOString().split('T')[0],
+      liters: liters ? Number(liters) : 0,
+      cost: cost ? Number(cost) : 0,
+      mileage: mileage ? Number(mileage) : '',
+      station: station || '',
+      createdAt: new Date().toISOString()
+    };
+
+    const vehicle = await db.collection('vehicles').findOne(query);
+    if (!vehicle) return res.status(404).json({ detail: "Véhicule introuvable" });
+
+    const currentMileage = Number(vehicle.mileage || 0);
+    const newMileage = mileage ? Number(mileage) : 0;
+    const finalMileage = Math.max(currentMileage, newMileage);
+
+    await db.collection('vehicles').updateOne(query, {
+      $push: { fuelRecords: record },
+      $set: { mileage: finalMileage }
+    });
+
+    const updated = await db.collection('vehicles').findOne(query);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// Delete fuel record by index from vehicle
+api.delete('/vehicles/:id/fuel/:index', authMiddleware, async (req, res) => {
+  const param = req.params.id;
+  const index = parseInt(req.params.index);
+
+  try {
+    let query = {};
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { _id: new ObjectId(param) }] };
+    } else {
+      query = { id: param };
+    }
+
+    const vehicle = await db.collection('vehicles').findOne(query);
+    if (!vehicle) return res.status(404).json({ detail: "Véhicule introuvable" });
+
+    const records = vehicle.fuelRecords || [];
+    if (index >= 0 && index < records.length) {
+      records.splice(index, 1);
+      await db.collection('vehicles').updateOne(query, { $set: { fuelRecords: records } });
+    }
+
+    const updated = await db.collection('vehicles').findOne(query);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+// File upload endpoint for vehicles documents (PDF invoice, assurance contract, etc.) to Google Cloud Storage (GCS)
+api.post('/vehicles/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ detail: 'Aucun fichier transmis' });
+
+  try {
+    const originalName = req.file.originalname || 'document.pdf';
+    const ext = path.extname(originalName).toLowerCase() || '.pdf';
+    const mimeType = req.file.mimetype || 'application/pdf';
+
+    const gcsBucket = getGcsBucket() || bucket;
+    if (gcsBucket) {
+      const docId = uuidv4();
+      const gcsPath = `fleet-uploads/${docId}${ext}`;
+      const file = gcsBucket.file(gcsPath);
+      await file.save(req.file.buffer, {
+        metadata: { contentType: mimeType }
+      });
+      return res.json({ url: `/api/gcs/${gcsPath}` });
+    } else {
+      // Local fallback in base64 if GCS is missing
+      const docId = uuidv4();
+      const b64 = req.file.buffer.toString('base64');
+      const doc = { upload_id: docId, data: b64, content_type: mimeType, created_at: new Date().toISOString() };
+      await db.collection('event_uploads').insertOne(doc);
+      return res.json({ url: `/api/uploads/events/${docId}` });
+    }
+  } catch (err) {
+    console.error("Error uploading fleet document:", err);
+    res.status(500).json({ detail: "Erreur d'import de document" });
+  }
+});
+
 // ═══════════════════════════════════════════
 // Catch unregistered API routes
 api.use((req, res) => {

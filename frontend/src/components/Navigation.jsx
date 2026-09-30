@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from './ui/button';
-import { Home, FileSignature, FileCheck, Package, Users, Ticket, User, Send, LogOut, FileText, Handshake, Truck, CreditCard, Settings, ChevronDown, Building2, Smile, Headphones, Calendar, MapPin, ClipboardList, FileSpreadsheet, Download, Nfc } from 'lucide-react';
+import { Home, FileSignature, FileCheck, Package, Users, Ticket, User, Send, LogOut, FileText, Handshake, Truck, CreditCard, Settings, ChevronDown, Building2, Smile, Headphones, Calendar, MapPin, ClipboardList, FileSpreadsheet, Download, Nfc, Car } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const NAV_ITEMS = [
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { key: 'crm', path: '/crm', icon: Building2, label: 'Fichier Client', activeClass: 'bg-green-600 text-white hover:bg-green-700', inactiveClass: 'text-green-600 hover:bg-green-50' },
   { key: 'billetterie', path: '/billetterie', icon: Ticket, label: 'Événements', activeClass: 'bg-gray-800 text-white hover:bg-gray-900', inactiveClass: 'text-gray-800 hover:bg-gray-100' },
   { key: 'formulaires', path: '/formulaires', icon: FileText, label: 'Formulaires', activeClass: 'bg-orange-500 text-white hover:bg-orange-600', inactiveClass: 'text-orange-500 hover:bg-orange-50' },
+  { key: 'vehicules', path: '/vehicules', icon: Car, label: 'Véhicules', activeClass: 'bg-indigo-600 text-white hover:bg-indigo-700', inactiveClass: 'text-indigo-600 hover:bg-indigo-50' },
   { key: 'nfc', path: '/nfc', icon: Nfc, label: 'NFC', activeClass: 'bg-orange-600 text-white hover:bg-orange-700', inactiveClass: 'text-orange-600 hover:bg-orange-50' },
   { key: 'parametres', path: '/parametres', icon: Settings, label: 'Paramètres', activeClass: 'bg-slate-600 text-white hover:bg-slate-700', inactiveClass: 'text-slate-500 hover:bg-slate-50' },
 ];
@@ -121,6 +122,7 @@ const Navigation = () => {
     if (location.pathname.startsWith('/devis')) return 'devis';
     if (location.pathname.startsWith('/agenda-prestation')) return 'agenda-prestation';
     if (location.pathname.startsWith('/formulaires')) return 'formulaires';
+    if (location.pathname.startsWith('/vehicules')) return 'vehicules';
     if (location.pathname.startsWith('/nfc')) return 'nfc';
     if (location.pathname.startsWith('/abonnements')) return 'abonnements';
     if (location.pathname.startsWith('/parametres')) return 'parametres';

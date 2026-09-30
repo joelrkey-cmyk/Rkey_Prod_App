@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Handshake, Truck, LogOut, Plus, ArrowLeft, Edit, Trash2, Send, FileCheck, Package, Users as UsersIcon, Ticket, FileText, User, CreditCard, Settings, Nfc } from 'lucide-react';
+import { Handshake, Truck, LogOut, Plus, ArrowLeft, Edit, Trash2, Send, FileCheck, Package, Users as UsersIcon, Ticket, FileText, User, CreditCard, Settings, Nfc, Car } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { useAuth } from '../../contexts/AuthContext';
@@ -44,7 +44,6 @@ const MobileHome = () => {
 
       <main className="flex-1 flex flex-col items-center justify-center px-5 gap-5 max-w-md mx-auto w-full">
         {(() => {
-          const allowedApps = user?.allowed_apps || ['rental', 'delivery'];
           const MOBILE_APPS = [
             { key: 'devis', route: '/devis', label: 'Envoi de Devis', desc: 'Envoyer des devis', icon: Send, bg: 'bg-orange-500 hover:bg-orange-600' },
             { key: 'contracts', route: '/contracts2', label: 'Contrats' , desc: 'Contrats artistiques', icon: FileCheck, bg: 'bg-blue-500 hover:bg-blue-600' },
@@ -54,11 +53,20 @@ const MobileHome = () => {
             { key: 'crm', route: '/crm', label: 'Fichier Client', desc: 'Gestion des clients', icon: UsersIcon, bg: 'bg-green-500 hover:bg-green-600' },
             { key: 'billetterie', route: '/billetterie', label: 'Événements', desc: 'Billetterie et événements', icon: Ticket, bg: 'bg-gray-800 hover:bg-gray-700' },
             { key: 'formulaires', route: '/formulaires', label: 'Formulaires', desc: 'Formulaires personnalisés', icon: FileText, bg: 'bg-orange-400 hover:bg-orange-500' },
+            { key: 'vehicules', route: '/vehicules', label: 'Véhicules', desc: 'Suivi de la flotte & entretiens', icon: Car, bg: 'bg-indigo-600 hover:bg-indigo-700' },
             { key: 'nfc', route: '/nfc', label: 'NFC', desc: 'Gestion de Carte NFC', icon: Nfc, bg: 'bg-orange-600 hover:bg-orange-700' },
             { key: 'abonnements', route: '/abonnements', label: 'Abonnements', desc: 'Gestion des abonnements', icon: CreditCard, bg: 'bg-teal-500 hover:bg-teal-600' },
             { key: 'parametres', route: '/parametres', label: 'Paramètres', desc: 'Configuration', icon: Settings, bg: 'bg-slate-600 hover:bg-slate-700' },
           ];
-          return MOBILE_APPS.filter(a => allowedApps.includes(a.key)).map(app => {
+
+          const isMobileAppAllowed = (appKey) => {
+            if (user?.role === 'admin') return true;
+            const allowed = user?.allowed_apps;
+            if (!allowed || allowed.length === 0) return true;
+            return allowed.includes(appKey);
+          };
+
+          return MOBILE_APPS.filter(a => isMobileAppAllowed(a.key)).map(app => {
             const Icon = app.icon;
             return (
               <button
