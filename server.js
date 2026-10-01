@@ -12237,6 +12237,7 @@ api.post('/nfc-cards', authMiddleware, async (req, res) => {
       bio: payload.bio || '',
       avatarUrl: payload.avatarUrl || '',
       googleReviewsUrl: payload.googleReviewsUrl || '',
+      newsletterUrl: payload.newsletterUrl || '',
       socials: {
         linkedin: payload.socials?.linkedin || '',
         instagram: payload.socials?.instagram || '',

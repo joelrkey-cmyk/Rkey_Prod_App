@@ -37,6 +37,7 @@ export default function NfcApp() {
     bio: '',
     avatarUrl: '',
     googleReviewsUrl: '',
+    newsletterUrl: '',
     socials: {
       linkedin: '',
       instagram: '',
@@ -46,6 +47,7 @@ export default function NfcApp() {
     },
     hasSecondActivity: false,
     secondActivityLabel: '',
+    secondActivityName: '',
     secondWebsite: '',
     secondAvatarUrl: '',
     secondSocials: {
@@ -138,6 +140,7 @@ export default function NfcApp() {
       bio: card.bio || '',
       avatarUrl: card.avatarUrl || '',
       googleReviewsUrl: card.googleReviewsUrl || '',
+      newsletterUrl: card.newsletterUrl || '',
       socials: {
         linkedin: card.socials?.linkedin || '',
         instagram: card.socials?.instagram || '',
@@ -147,6 +150,7 @@ export default function NfcApp() {
       },
       hasSecondActivity: card.hasSecondActivity || false,
       secondActivityLabel: card.secondActivityLabel || '',
+      secondActivityName: card.secondActivityName || '',
       secondWebsite: card.secondWebsite || '',
       secondAvatarUrl: card.secondAvatarUrl || '',
       secondSocials: {
@@ -174,6 +178,7 @@ export default function NfcApp() {
       bio: '',
       avatarUrl: '',
       googleReviewsUrl: '',
+      newsletterUrl: '',
       socials: {
         linkedin: '',
         instagram: '',
@@ -183,6 +188,7 @@ export default function NfcApp() {
       },
       hasSecondActivity: false,
       secondActivityLabel: '',
+      secondActivityName: '',
       secondWebsite: '',
       secondAvatarUrl: '',
       secondSocials: {
@@ -773,6 +779,21 @@ export default function NfcApp() {
                 />
               </div>
 
+              {/* Newsletter Link */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 flex items-center gap-1">
+                  Lien Newsletter (Hostinger Reach)
+                  <span className="text-[10px] text-gray-400 font-normal normal-case">(Lien de partage du formulaire)</span>
+                </label>
+                <input
+                  type="url"
+                  placeholder="https://reach-forms.hostingerusercontent.com/form/..."
+                  value={formState.newsletterUrl || ''}
+                  onChange={(e) => handleInputChange('newsletterUrl', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#e86405]"
+                />
+              </div>
+
               {/* Bio area */}
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1 font-sans">Biographie</label>
@@ -908,16 +929,28 @@ export default function NfcApp() {
                         )}
                       </div>
 
-                      {/* Name of Separator */}
-                      <div className="flex-1 w-full">
-                        <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Nom du séparateur / activité</label>
-                        <input
-                          type="text"
-                          placeholder="ex: Photographie, Événementiel, Mon Autre Entreprise"
-                          value={formState.secondActivityLabel || ''}
-                          onChange={(e) => handleInputChange('secondActivityLabel', e.target.value)}
-                          className="w-full px-3 py-2 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#e86405]"
-                        />
+                      {/* Nom et Activité fields */}
+                      <div className="flex-1 w-full space-y-3">
+                        <div>
+                          <label className="block text-[10px] text-gray-500 font-bold uppercase mb-0.5">Nom / Artiste (2ème activité)</label>
+                          <input
+                            type="text"
+                            placeholder="ex: Joël R'Key, Nom de scène..."
+                            value={formState.secondActivityName || ''}
+                            onChange={(e) => handleInputChange('secondActivityName', e.target.value)}
+                            className="w-full px-3 py-2 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#e86405]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-gray-500 font-bold uppercase mb-0.5">Rôle / Activité (2ème activité)</label>
+                          <input
+                            type="text"
+                            placeholder="ex: Photographie, Événementiel, Hypnotiseur..."
+                            value={formState.secondActivityLabel || ''}
+                            onChange={(e) => handleInputChange('secondActivityLabel', e.target.value)}
+                            className="w-full px-3 py-2 bg-white border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#e86405]"
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -1301,36 +1334,57 @@ export default function NfcApp() {
                   </div>
                 )}
 
+                {/* Newsletter mockup preview */}
+                {formState.newsletterUrl && (
+                  <div className="w-full px-4 mt-3 text-center flex-shrink-0">
+                    <div className="w-full h-9 rounded-xl border border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/20 flex items-center justify-center gap-1.5 text-orange-400 text-[9px] font-bold transition-all shadow-xs shadow-orange-500/5">
+                      <Mail className="w-3.5 h-3.5 text-orange-500 animate-pulse" />
+                      S'abonner à la Newsletter
+                    </div>
+                  </div>
+                )}
+
                 {/* Second Activity mockup preview */}
                 {formState.hasSecondActivity && (
-                  <div className="w-full px-4 mt-3 text-center flex-shrink-0">
-                    {/* Visual Separator */}
-                    <div className="relative flex py-1 items-center my-1">
-                      <div className="flex-grow border-t border-zinc-800/80"></div>
-                      <span className="flex-shrink mx-2 text-[7px] text-zinc-500 font-bold uppercase tracking-wider">
+                  <div className="w-full px-4 mt-10 text-center flex-shrink-0">
+                    {/* Visual Red Bandeau behind photo */}
+                    <div className="w-full h-11 bg-gradient-to-r from-red-600 to-rose-700 relative flex items-center justify-center rounded-lg overflow-hidden shadow-inner">
+                      <div className="absolute inset-0 bg-black/10" />
+                      <span className="text-white/10 font-black tracking-widest text-[7px] select-none uppercase">
                         {formState.secondActivityLabel || 'Autre Activité'}
                       </span>
-                      <div className="flex-grow border-t border-zinc-800/80"></div>
                     </div>
 
-                    {/* Second Profile Photo mockup inside simulator */}
+                    {/* Second Profile Photo mockup overlapping the banner */}
                     {formState.secondAvatarUrl && (
-                      <div className="flex justify-center mb-2">
-                        <div className="w-12 h-12 rounded-full border border-zinc-700 bg-zinc-900 overflow-hidden flex items-center justify-center shadow-md">
+                      <div className="flex justify-center -mt-[64px] mb-2 z-20 relative">
+                        <div className="w-[84px] h-[84px] rounded-full border-2 border-[#09090b] bg-[#18181b] overflow-hidden flex items-center justify-center shadow-md">
                           <img src={formState.secondAvatarUrl} alt="" className="w-full h-full object-cover" />
                         </div>
                       </div>
                     )}
 
+                    {/* Second Activity Name and Role / Title below mockup photo */}
+                    <div className="mb-3 mt-1.5 text-center flex-shrink-0">
+                      {formState.secondActivityName && (
+                        <h4 className="text-[10px] font-bold truncate text-white uppercase">
+                          {formState.secondActivityName}
+                        </h4>
+                      )}
+                      <p className="text-[8px] text-red-500 font-bold uppercase tracking-wider mb-1 truncate leading-tight">
+                        {formState.secondActivityLabel || "Deuxième Activité"}
+                      </p>
+                    </div>
+
                     {/* Second Website */}
                     {formState.secondWebsite && (
-                      <div className="flex items-center gap-1 p-1 bg-zinc-950 border border-zinc-800 rounded-lg col-span-2 mb-1.5 text-left">
-                        <div className="p-1 bg-orange-500/10 text-[#e86405] rounded-md">
+                      <div className="flex items-center gap-1.5 p-1.5 bg-zinc-950 border border-zinc-800/85 hover:border-red-500/30 rounded-lg col-span-2 mb-2 text-left">
+                        <div className="p-1 bg-red-500/10 text-red-500 rounded-md">
                           <Globe className="w-2.5 h-2.5" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <span className="block text-[6px] text-zinc-500 leading-none">Site Web (2ème)</span>
-                          <span className="block text-[7px] font-bold truncate text-[#e86405]">{formState.secondWebsite.replace(/^https?:\/\/(www\.)?/, '')}</span>
+                          <span className="block text-[7px] font-bold truncate text-red-400">{formState.secondWebsite.replace(/^https?:\/\/(www\.)?/, '')}</span>
                         </div>
                       </div>
                     )}

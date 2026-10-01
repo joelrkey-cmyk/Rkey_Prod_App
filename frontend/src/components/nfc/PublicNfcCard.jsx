@@ -16,6 +16,7 @@ export default function PublicNfcCard() {
 
   // Exchange contact form state
   const [showExchangeForm, setShowExchangeForm] = useState(false);
+  const [showNewsletterDrawer, setShowNewsletterDrawer] = useState(false);
   const [exchanging, setExchanging] = useState(false);
   const [exchangeSuccess, setExchangeSuccess] = useState(false);
   const [exchangeForm, setExchangeForm] = useState({
@@ -257,6 +258,7 @@ export default function PublicNfcCard() {
             onClick={() => {
               setShowExchangeForm(!showExchangeForm);
               setExchangeSuccess(false);
+              setShowNewsletterDrawer(false);
             }}
             className="w-full h-14 rounded-2xl border-2 border-zinc-700 bg-zinc-900/60 hover:bg-zinc-900 hover:border-[#e86405]/50 text-white font-bold text-base flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all cursor-pointer"
           >
@@ -342,15 +344,17 @@ export default function PublicNfcCard() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] text-zinc-400 font-bold mb-1 uppercase tracking-wider">Entreprise</label>
-                    <input
-                      type="text"
-                      value={exchangeForm.company}
-                      onChange={(e) => handleExchangeInputChange('company', e.target.value)}
-                      className="w-full h-9 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 text-xs text-white focus:outline-none focus:border-[#e86405]"
-                      placeholder="ex: Ma Société"
-                    />
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-zinc-400 font-bold mb-1 uppercase tracking-wider">Entreprise</label>
+                      <input
+                        type="text"
+                        value={exchangeForm.company}
+                        onChange={(e) => handleExchangeInputChange('company', e.target.value)}
+                        className="w-full h-9 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 text-xs text-white focus:outline-none focus:border-[#e86405]"
+                        placeholder="ex: Ma Société"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -378,6 +382,42 @@ export default function PublicNfcCard() {
                   </button>
                 </form>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* EMBEDDED HOSTINGER REACH NEWSLETTER DRAWER */}
+        {card.newsletterUrl && showNewsletterDrawer && (
+          <div className="w-full px-6 mt-4 transition-all duration-300">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-left relative overflow-hidden">
+              <h3 className="text-sm font-bold text-white mb-1.5 flex items-center gap-1.5">
+                <Mail className="w-4 h-4 text-orange-500" />
+                S'abonner à la Newsletter
+              </h3>
+              <p className="text-xs text-zinc-400 mb-4 leading-relaxed">
+                Inscrivez-vous directement ci-dessous pour recevoir nos nouveautés, offres et événements.
+              </p>
+
+              {/* Responsive Iframe Container */}
+              <div className="w-full overflow-hidden rounded-xl border border-zinc-800 bg-white" style={{ height: '480px' }}>
+                <iframe 
+                  src={formatExternalLink(card.newsletterUrl)}
+                  title="Formulaire d'inscription à la newsletter"
+                  className="w-full h-full border-0"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                />
+              </div>
+
+              <div className="mt-4 text-center">
+                <a 
+                  href={formatExternalLink(card.newsletterUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-[#e86405] hover:underline inline-flex items-center gap-1 font-semibold"
+                >
+                  Ouvrir le formulaire dans un nouvel onglet <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
             </div>
           </div>
         )}
@@ -552,22 +592,37 @@ export default function PublicNfcCard() {
           </div>
         )}
 
+        {/* Newsletter Section (Right below Social Icons) */}
+        {card.newsletterUrl && (
+          <div className="w-full px-6 mt-4 mb-6 text-center animate-fade-in">
+            <button
+              onClick={() => {
+                setShowNewsletterDrawer(!showNewsletterDrawer);
+                setShowExchangeForm(false);
+              }}
+              className="w-full h-14 rounded-2xl border-2 border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900 hover:border-orange-500/50 text-white font-bold text-base flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all cursor-pointer shadow-lg shadow-orange-500/5"
+            >
+              <Mail className="w-5.5 h-5.5 text-orange-500 animate-pulse" />
+              S'abonner à la Newsletter
+            </button>
+          </div>
+        )}
+
         {/* Second Activity Block (Separated beautifully with custom label indicator) */}
         {card.hasSecondActivity && (
-          <div className="w-full px-6 mb-8 text-center animate-fade-in">
-            {/* Elegant text separator line */}
-            <div className="relative flex py-2 items-center mb-6">
-              <div className="flex-grow border-t border-zinc-800/80"></div>
-              <span className="flex-shrink mx-4 text-xs text-zinc-500 font-bold uppercase tracking-widest">
+          <div className="w-full px-6 mt-20 mb-8 text-center animate-fade-in">
+            {/* Beautiful visual red banner behind the photo */}
+            <div className="w-full h-24 bg-gradient-to-r from-red-600 to-rose-700 relative flex items-center justify-center rounded-2xl overflow-hidden shadow-inner">
+              <div className="absolute inset-0 bg-black/20" />
+              <span className="text-white/20 font-black tracking-widest text-lg select-none uppercase">
                 {card.secondActivityLabel || 'Deuxième Activité'}
               </span>
-              <div className="flex-grow border-t border-zinc-800/80"></div>
             </div>
 
-            {/* Secondary Profile Picture on Public Page */}
+            {/* Secondary Profile Picture on Public Page overlapping the banner */}
             {card.secondAvatarUrl && (
-              <div className="flex justify-center mb-6">
-                <div className="w-24 h-24 rounded-full border-4 border-[#09090b] bg-[#18181b] shadow-xl overflow-hidden flex items-center justify-center">
+              <div className="relative -mt-[156px] mb-6 flex justify-center z-20">
+                <div className="w-[216px] h-[216px] rounded-full border-4 border-[#09090b] bg-[#18181b] shadow-xl overflow-hidden flex items-center justify-center">
                   <img 
                     src={card.secondAvatarUrl} 
                     alt={card.secondActivityLabel || 'Deuxième Activité'} 
@@ -578,20 +633,32 @@ export default function PublicNfcCard() {
               </div>
             )}
 
-            {/* Website of Second Activity */}
+            {/* Second Activity Name and Role / Title below the photo */}
+            <div className="mb-6 mt-2 text-center">
+              {card.secondActivityName && (
+                <h3 className="text-lg font-bold tracking-tight text-white mb-1 uppercase font-sans">
+                  {card.secondActivityName}
+                </h3>
+              )}
+              <p className="text-red-500 text-xs font-black uppercase tracking-widest leading-relaxed">
+                {card.secondActivityLabel || 'Deuxième Activité'}
+              </p>
+            </div>
+
+            {/* Website of Second Activity - Red Theme */}
             {card.secondWebsite && (
               <div className="mb-6">
                 <a
                   href={formatExternalLink(card.secondWebsite)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-3 p-3.5 bg-zinc-950/80 border border-zinc-800/80 hover:border-[#e86405]/45 hover:bg-orange-950/10 rounded-2xl transition-all shadow-inner text-left"
+                  className="flex items-center gap-3 p-3.5 bg-zinc-950/80 border border-zinc-800/80 hover:border-red-500/50 hover:bg-red-950/10 rounded-2xl transition-all shadow-inner text-left"
                 >
-                  <div className="p-2 bg-orange-500/10 rounded-xl text-[#e86405]">
+                  <div className="p-2 bg-red-500/10 rounded-xl text-red-500">
                     <Globe className="w-5 h-5" />
                   </div>
                   <div className="text-left min-w-0 flex-1">
-                    <span className="block text-[11px] text-[#e86405] font-bold">Visiter notre Site Web (2ème)</span>
+                    <span className="block text-[11px] text-red-500 font-bold">Visiter notre Site Web (2ème)</span>
                     <span className="block text-xs font-semibold truncate text-zinc-300">
                       {card.secondWebsite.replace(/^https?:\/\/(www\.)?/, '')}
                     </span>
