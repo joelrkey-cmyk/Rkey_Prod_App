@@ -258,7 +258,6 @@ export default function PublicNfcCard() {
             onClick={() => {
               setShowExchangeForm(!showExchangeForm);
               setExchangeSuccess(false);
-              setShowNewsletterDrawer(false);
             }}
             className="w-full h-14 rounded-2xl border-2 border-zinc-700 bg-zinc-900/60 hover:bg-zinc-900 hover:border-[#e86405]/50 text-white font-bold text-base flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all cursor-pointer"
           >
@@ -382,42 +381,6 @@ export default function PublicNfcCard() {
                   </button>
                 </form>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* EMBEDDED HOSTINGER REACH NEWSLETTER DRAWER */}
-        {card.newsletterUrl && showNewsletterDrawer && (
-          <div className="w-full px-6 mt-4 transition-all duration-300">
-            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-left relative overflow-hidden">
-              <h3 className="text-sm font-bold text-white mb-1.5 flex items-center gap-1.5">
-                <Mail className="w-4 h-4 text-orange-500" />
-                S'abonner à la Newsletter
-              </h3>
-              <p className="text-xs text-zinc-400 mb-4 leading-relaxed">
-                Inscrivez-vous directement ci-dessous pour recevoir nos nouveautés, offres et événements.
-              </p>
-
-              {/* Responsive Iframe Container */}
-              <div className="w-full overflow-hidden rounded-xl border border-zinc-800 bg-white" style={{ height: '480px' }}>
-                <iframe 
-                  src={formatExternalLink(card.newsletterUrl)}
-                  title="Formulaire d'inscription à la newsletter"
-                  className="w-full h-full border-0"
-                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-                />
-              </div>
-
-              <div className="mt-4 text-center">
-                <a 
-                  href={formatExternalLink(card.newsletterUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-[#e86405] hover:underline inline-flex items-center gap-1 font-semibold"
-                >
-                  Ouvrir le formulaire dans un nouvel onglet <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
             </div>
           </div>
         )}
@@ -595,16 +558,15 @@ export default function PublicNfcCard() {
         {/* Newsletter Section (Right below Social Icons) */}
         {card.newsletterUrl && (
           <div className="w-full px-6 mt-4 mb-6 text-center animate-fade-in">
-            <button
-              onClick={() => {
-                setShowNewsletterDrawer(!showNewsletterDrawer);
-                setShowExchangeForm(false);
-              }}
-              className="w-full h-14 rounded-2xl border-2 border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900 hover:border-orange-500/50 text-white font-bold text-base flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all cursor-pointer shadow-lg shadow-orange-500/5"
+            <a
+              href={formatExternalLink(card.newsletterUrl)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full h-14 rounded-2xl border-2 border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900 hover:border-orange-500/50 text-white font-bold text-base flex items-center justify-center gap-2.5 active:scale-[0.98] transition-all cursor-pointer shadow-lg shadow-orange-500/5 decoration-0 no-underline"
             >
               <Mail className="w-5.5 h-5.5 text-orange-500 animate-pulse" />
               S'abonner à la Newsletter
-            </button>
+            </a>
           </div>
         )}
 
