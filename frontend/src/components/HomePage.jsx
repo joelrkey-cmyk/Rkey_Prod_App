@@ -409,6 +409,7 @@ const HomePage = () => {
     if (key === 'location') return dashboardStats.location_pending || 0;
     if (key === 'crm') return upcomingRelances.length || 0;
     if (key === 'dj-client') return unreadNotifications || 0;
+    if (key === 'devis') return dashboardStats.devis_envoi_to_follow_up || 0;
     return 0;
   };
 
@@ -417,17 +418,13 @@ const HomePage = () => {
       {/* Header noir élégant */}
       <div className="bg-black border-b border-gray-800 shadow-lg">
         <div className="max-w-6xl mx-auto px-6 py-8">
-          <div className="flex flex-col items-center justify-center gap-2">
+          <div className="flex justify-center">
             {/* Logo centré et agrandi */}
             <img 
               src="https://customer-assets.emergentagent.com/job_dj-quote-system/artifacts/5vzuk33z_R%E2%80%99KEY%20PROD%20%284%29.png" 
               alt="R'KEY PROD" 
               className="h-24 object-contain"
             />
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-orange-600/10 border border-orange-600/20 text-[#e86405] text-[10px] font-black tracking-widest uppercase rounded-full select-none">
-              <Nfc className="w-3.5 h-3.5 animate-pulse" />
-              <span>NFC ACTIF</span>
-            </div>
           </div>
         </div>
       </div>

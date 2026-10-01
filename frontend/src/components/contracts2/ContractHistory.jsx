@@ -56,24 +56,38 @@ export const ContractHistory = ({
   };
 
   const getContractTotal = (contract) => {
-    const optionsTotal = contract.selected_options?.filter(option => option.selected).reduce((sum, option) => sum + option.price, 0) || 0;
-    const isDir = (() => {
-      const p = contract.dj_profile_data || {};
-      return p.nom_artistique?.toLowerCase().includes("r'key") || 
-             p.nom_artistique?.toLowerCase().includes("rkey") || 
-             p.titre?.includes("Gérant") || 
-             p.statut_artiste === 'dirigeant';
-    })();
+    const p = contract.dj_profile_data || {};
+    const isDir = p.nom_artistique?.toLowerCase().includes("r'key") || 
+                  p.nom_artistique?.toLowerCase().includes("rkey") || 
+                  p.titre?.includes("Gérant") || 
+                  p.statut_artiste === 'dirigeant' ||
+                  p.nom_artistique?.toLowerCase() === "joël" ||
+                  p.nom_artistique?.toLowerCase() === "joel";
+
+    const basePrice = contract.base_price || 0;
+    const discountAmount = contract.discount_amount || 0;
+    const contractMode = contract.contract_mode || 'entreprise';
+    const fraisMandat = contract.frais_mandat || 0;
+    const cachetArtiste = contract.cachet_artiste || 0;
+
+    // Sum options from contract.selected_options. Since they are saved in selected_options,
+    // they are already the selected options. We also check if option.selected is not explicitly false
+    const optionsTotal = contract.selected_options?.reduce((sum, option) => {
+      const isSelected = option.selected !== false;
+      if (isSelected) {
+        return sum + (option.included_in_formula ? 0 : (option.price || 0));
+      }
+      return sum;
+    }, 0) || 0;
 
     if (isDir) {
-      return Math.max(0, (contract.base_price || 0) + optionsTotal - (contract.discount_amount || 0));
+      return Math.max(0, basePrice + optionsTotal - discountAmount);
     }
-    if (contract.contract_mode === 'entreprise') {
-      return Math.max(0, (contract.base_price || 0) + optionsTotal - (contract.discount_amount || 0));
+    if (contractMode === 'entreprise') {
+      return Math.max(0, basePrice + optionsTotal - discountAmount);
     }
-    const mandataireRate = (contract.frais_mandat || 0) + (contract.cachet_artiste || 0);
-    const baseRate = (mandataireRate === 0 && (contract.base_price || 0) > 0) ? contract.base_price : mandataireRate;
-    return Math.max(0, baseRate + optionsTotal - (contract.discount_amount || 0));
+    const baseRate = (fraisMandat + cachetArtiste === 0 && basePrice > 0) ? basePrice : (fraisMandat + cachetArtiste);
+    return Math.max(0, baseRate + optionsTotal - discountAmount);
   };
 
   const archiveYears = useMemo(() => {

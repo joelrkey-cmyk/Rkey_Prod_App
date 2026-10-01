@@ -3362,8 +3362,9 @@ api.get('/home/dashboard', authMiddleware, async (req, res) => {
   const dayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1; // Monday=0
   const startOfWeek = new Date(today); startOfWeek.setDate(today.getDate() - dayOfWeek);
   const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(startOfWeek.getDate() + 6);
-  const [devis_envoi_pending, location_pending, location_accepted_total, contracts_pending_signature] = await Promise.all([
+  const [devis_envoi_pending, devis_envoi_to_follow_up, location_pending, location_accepted_total, contracts_pending_signature] = await Promise.all([
     db.collection('devis2_sent').countDocuments({ status: 'en_attente' }),
+    db.collection('devis2_sent').countDocuments({ status: 'a_relancer' }),
     db.collection('location_quotes').countDocuments({ status: 'En attente', is_archived: { $ne: true } }),
     db.collection('location_quotes').countDocuments({ status: 'Accepté', is_archived: { $ne: true } }),
     db.collection('contracts2').countDocuments({ status: 'sent' }),
@@ -3377,7 +3378,7 @@ api.get('/home/dashboard', authMiddleware, async (req, res) => {
     start_date: { $gte: startOfWeek.toISOString().slice(0,10), $lte: endOfWeek.toISOString().slice(0,10) },
     $or: [{ delivery_cost: { $gt: 0 } }, { delivery_zone: { $exists: true, $ne: '' } }]
   });
-  res.json({ devis_envoi_pending, location_pending, location_accepted_week, location_accepted_total, location_to_deliver_week, contracts_pending_signature });
+  res.json({ devis_envoi_pending, devis_envoi_to_follow_up, location_pending, location_accepted_week, location_accepted_total, location_to_deliver_week, contracts_pending_signature });
 });
 
 api.get('/home-notes', authMiddleware, async (req, res) => {

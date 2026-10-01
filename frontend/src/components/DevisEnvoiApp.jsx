@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from 'sonner';
 import { 
   FileText, Send, Eye, Euro, Mail, Plus, Trash2, Edit2, Save, Star, Loader2,
-  CheckCircle, Image as ImageIcon, Settings2, ChevronUp, ChevronDown, XCircle
+  CheckCircle, Image as ImageIcon, Settings2, ChevronUp, ChevronDown, XCircle, History
 } from 'lucide-react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
@@ -24,8 +24,9 @@ import { useEmailSignature } from '../hooks/useEmailSignature';
 import { quillModules, quillFormats, categoryLabels } from './devis/constants';
 import {
   PdfPreviewDialog, TemplateDialog, EditPageDialog, AddPageDialog,
-  PagePreviewDialog
+  PagePreviewDialog, RelanceDialog, NotesDialog, ManualQuoteDialog
 } from './devis/DevisDialogs';
+import { SuiviTab } from './devis/SuiviTab';
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -93,6 +94,187 @@ const DevisEnvoiApp = () => {
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const quillRef = useRef(null);
   const subjectInputRef = useRef(null);
+
+  // Sent quotes tracking states
+  const [activeAppTab, setActiveAppTab] = useState('creation'); // 'creation' | 'suivi'
+  const [sentQuotes, setSentQuotes] = useState([]);
+  const [loadingSentQuotes, setLoadingSentQuotes] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [searchFilter, setSearchFilter] = useState('');
+  
+  // Relance dialog state
+  const [showRelanceDialog, setShowRelanceDialog] = useState(false);
+  const [selectedQuoteForRelance, setSelectedQuoteForRelance] = useState(null);
+  const [relanceNote, setRelanceNote] = useState('');
+  
+  // Notes dialog state
+  const [showNotesDialog, setShowNotesDialog] = useState(false);
+  const [selectedQuoteForNotes, setSelectedQuoteForNotes] = useState(null);
+  const [notesText, setNotesText] = useState('');
+
+  // Manual Quote dialog state
+  const [showAddManualDialog, setShowAddManualDialog] = useState(false);
+  const [savingManualQuote, setSavingManualQuote] = useState(false);
+  const manualFileInputRef = useRef(null);
+  const initialManualFormValues = {
+    recipient_email: '',
+    recipient_name: '',
+    price_amount: '',
+    price_type: 'TTC',
+    event_date: '',
+    notes: ''
+  };
+  const [manualQuoteForm, setManualQuoteForm] = useState(initialManualFormValues);
+  const [manualQuoteFile, setManualQuoteFile] = useState(null);
+
+  useEffect(() => {
+    if (activeAppTab === 'suivi') {
+      fetchSentQuotes();
+    }
+  }, [activeAppTab]);
+
+  const fetchSentQuotes = async () => {
+    try {
+      setLoadingSentQuotes(true);
+      const response = await api.get('/devis2/sent');
+      setSentQuotes(response.data.quotes || []);
+    } catch (err) {
+      console.error('Error fetching sent quotes:', err);
+      toast.error('Erreur lors du chargement de l\'historique');
+    } finally {
+      setLoadingSentQuotes(false);
+    }
+  };
+
+  const updateQuoteStatus = async (quoteId, status) => {
+    try {
+      await api.put(`/devis2/sent/${quoteId}`, { status });
+      toast.success('Statut mis à jour');
+      fetchSentQuotes();
+    } catch (err) {
+      console.error('Error updating status:', err);
+      toast.error('Erreur lors de la mise à jour');
+    }
+  };
+
+  const addRelance = async () => {
+    if (!selectedQuoteForRelance || !relanceNote.trim()) return;
+    try {
+      await api.post(`/devis2/sent/${selectedQuoteForRelance.id}/relances`, { note: relanceNote });
+      toast.success('Relance ajoutée');
+      setShowRelanceDialog(false);
+      setRelanceNote('');
+      setSelectedQuoteForRelance(null);
+      fetchSentQuotes();
+    } catch (err) {
+      console.error('Error adding relance:', err);
+      toast.error('Erreur lors de l\'ajout de la relance');
+    }
+  };
+
+  const saveNotes = async () => {
+    if (!selectedQuoteForNotes) return;
+    try {
+      await api.put(`/devis2/sent/${selectedQuoteForNotes.id}`, { notes: notesText });
+      toast.success('Notes enregistrées');
+      setShowNotesDialog(false);
+      setNotesText('');
+      setSelectedQuoteForNotes(null);
+      fetchSentQuotes();
+    } catch (err) {
+      console.error('Error saving notes:', err);
+      toast.error('Erreur lors de la sauvegarde des notes');
+    }
+  };
+
+  const deleteQuote = async (quoteId) => {
+    if (!window.confirm('Voulez-vous vraiment supprimer ce devis de l\'historique ?')) return;
+    try {
+      await api.delete(`/devis2/sent/${quoteId}`);
+      toast.success('Devis supprimé de l\'historique');
+      fetchSentQuotes();
+    } catch (err) {
+      console.error('Error deleting quote:', err);
+      toast.error('Erreur de suppression');
+    }
+  };
+
+  const downloadQuoteFile = async (quoteId, filename) => {
+    try {
+      const response = await api.get(`/devis2/sent/${quoteId}/file`);
+      if (response.data.pdf_data) {
+        const byteCharacters = atob(response.data.pdf_data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename || `devis_${quoteId}.pdf`;
+        link.click();
+        URL.revokeObjectURL(url);
+      } else {
+        toast.error('Fichier non trouvé pour ce devis');
+      }
+    } catch (err) {
+      console.error('Error downloading quote file:', err);
+      toast.error('Erreur de téléchargement du document');
+    }
+  };
+
+  const addManualQuote = async () => {
+    if (!manualQuoteForm.recipient_email) {
+      toast.error('L\'adresse email est obligatoire');
+      return;
+    }
+    try {
+      setSavingManualQuote(true);
+      
+      let base64File = null;
+      let filename = null;
+      
+      if (manualQuoteFile) {
+        filename = manualQuoteFile.name;
+        const reader = new FileReader();
+        base64File = await new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.readAsDataURL(manualQuoteFile);
+        });
+      }
+
+      await api.post('/devis2/sent/manual', {
+        ...manualQuoteForm,
+        pdf_data: base64File,
+        file_name: filename
+      });
+
+      toast.success('Devis ajouté manuellement');
+      setShowAddManualDialog(false);
+      setManualQuoteForm(initialManualFormValues);
+      setManualQuoteFile(null);
+      fetchSentQuotes();
+    } catch (err) {
+      console.error('Error adding manual quote:', err);
+      toast.error('Erreur lors de l\'ajout du devis');
+    } finally {
+      setSavingManualQuote(false);
+    }
+  };
+
+  // Filter sent quotes
+  const filteredSentQuotes = sentQuotes.filter(q => {
+    const matchesStatus = statusFilter === 'all' || q.status === statusFilter;
+    const searchLower = searchFilter.toLowerCase();
+    const matchesSearch = !searchFilter || 
+      (q.recipient_email || '').toLowerCase().includes(searchLower) ||
+      (q.recipient_name || '').toLowerCase().includes(searchLower) ||
+      (q.email_subject || '').toLowerCase().includes(searchLower) ||
+      (q.notes || '').toLowerCase().includes(searchLower);
+    return matchesStatus && matchesSearch;
+  });
 
   // Handle submission selection - pre-fill fields
   const handleSubmissionSelect = (fields) => {
@@ -436,255 +618,307 @@ const DevisEnvoiApp = () => {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3"><Send className="w-8 h-8 text-orange-500" />Envoi de Devis</h1>
-          <p className="text-gray-600 mt-2">Générez et envoyez des devis PDF personnalisés à vos clients</p>
+        <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
+              <Send className="w-8 h-8 text-orange-500" />
+              Envoi de Devis
+            </h1>
+            <p className="text-gray-600 mt-1">Générez et envoyez des devis PDF personnalisés à vos clients</p>
+          </div>
         </div>
 
-        {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column - Price & Page Selection */}
-          <div className="space-y-6">
-            {/* Price Configuration */}
-            <Card>
-              <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2"><Euro className="w-5 h-5 text-orange-500" />Configuration du Prix</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex flex-wrap sm:flex-nowrap gap-4 items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="price">
-                          Tarif {!isFormule && <span className="text-red-500">*</span>}
-                        </Label>
-                        <div className="flex items-center space-x-1.5 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
-                          <Checkbox 
-                            id="formule" 
-                            checked={isFormule} 
-                            onCheckedChange={(val) => setIsFormule(!!val)} 
-                            data-testid="formule-checkbox"
-                          />
-                          <Label htmlFor="formule" className="cursor-pointer text-xs font-semibold text-orange-700">Formule</Label>
-                        </div>
-                      </div>
-                      <Input 
-                        id="price" 
-                        type="text" 
-                        placeholder={isFormule ? "Optionnel (ex: Selon formule choisie)" : "Montant ou texte (ex: 1200)"} 
-                        value={priceAmount} 
-                        onChange={(e) => setPriceAmount(e.target.value)} 
-                        className={`mt-1 ${(!isFormule && !priceAmount) ? 'border-red-300' : ''}`} 
-                        data-testid="price-input" 
-                        required={!isFormule} 
-                      />
-                    </div>
-                    <div className="w-32">
-                      <Label>Mention</Label>
-                      <Select value={priceType} onValueChange={setPriceType}>
-                        <SelectTrigger className="mt-1" data-testid="price-type-select"><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="TTC">TTC</SelectItem><SelectItem value="HT">HT</SelectItem><SelectItem value="NONE">Aucune</SelectItem></SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="border-t pt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Type de date <span className="text-red-500">*</span></Label>
-                        <Select value={eventDateType} onValueChange={(val) => { setEventDateType(val); setEventDate(''); }}>
-                          <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                          <SelectContent><SelectItem value="full">Date complète</SelectItem><SelectItem value="year">Année seule</SelectItem></SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="eventDate">{eventDateType === 'full' ? "Date de l'événement" : "Année de l'événement"} <span className="text-red-500">*</span></Label>
-                        {eventDateType === 'full' ? (
-                          <Input id="eventDate" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={`mt-1 ${!eventDate ? 'border-red-300' : ''}`} data-testid="event-date-input" required />
-                        ) : (
-                          <Input id="eventDate" type="number" min="2024" max="2100" placeholder="2026" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={`mt-1 ${!eventDate ? 'border-red-300' : ''}`} data-testid="event-year-input" required />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="border-t pt-4">
+        {/* Navigation Tabs */}
+        <div className="flex space-x-1 bg-gray-200/60 p-1 rounded-xl mb-6 max-w-sm border border-gray-300/40">
+          <Button
+            variant={activeAppTab === 'creation' ? 'default' : 'ghost'}
+            onClick={() => setActiveAppTab('creation')}
+            className={`flex-1 rounded-lg text-xs font-bold py-2 transition-all cursor-pointer ${
+              activeAppTab === 'creation' ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            <Send className="w-3.5 h-3.5 mr-1.5" />
+            Création & Envoi
+          </Button>
+          <Button
+            variant={activeAppTab === 'suivi' ? 'default' : 'ghost'}
+            onClick={() => setActiveAppTab('suivi')}
+            className={`flex-1 rounded-lg text-xs font-bold py-2 transition-all cursor-pointer ${
+              activeAppTab === 'suivi' ? 'bg-orange-500 hover:bg-orange-600 text-white shadow-xs' : 'text-gray-600 hover:bg-gray-100'
+            }`}
+            data-testid="suivi-tab-btn"
+          >
+            <History className="w-3.5 h-3.5 mr-1.5" />
+            Suivi & Historique
+          </Button>
+        </div>
+
+        {activeAppTab === 'creation' ? (
+          /* Main Content - Creation Form */
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column - Price & Page Selection */}
+            <div className="space-y-6">
+              {/* Price Configuration */}
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2"><Euro className="w-5 h-5 text-orange-500" />Configuration du Prix</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
                     <div className="flex flex-wrap sm:flex-nowrap gap-4 items-start">
                       <div className="flex-1">
-                        <Label htmlFor="endTime">
-                          Heure de fin {(!isFormule && !unlimitedTime) && <span className="text-red-500">*</span>}
-                        </Label>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="price">
+                            Tarif {!isFormule && <span className="text-red-500">*</span>}
+                          </Label>
+                          <div className="flex items-center space-x-1.5 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                            <Checkbox 
+                              id="formule" 
+                              checked={isFormule} 
+                              onCheckedChange={(val) => setIsFormule(!!val)} 
+                              data-testid="formule-checkbox"
+                            />
+                            <Label htmlFor="formule" className="cursor-pointer text-xs font-semibold text-orange-700">Formule</Label>
+                          </div>
+                        </div>
                         <Input 
-                          id="endTime" 
-                          type="time" 
-                          value={endTime} 
-                          onChange={(e) => setEndTime(e.target.value)} 
-                          className={`mt-1 ${(!isFormule && !unlimitedTime && !endTime) ? 'border-red-300' : ''}`}
-                          disabled={unlimitedTime}
-                          required={!isFormule && !unlimitedTime}
+                          id="price" 
+                          type="text" 
+                          placeholder={isFormule ? "Optionnel (ex: Selon formule choisie)" : "Montant ou texte (ex: 1200)"} 
+                          value={priceAmount} 
+                          onChange={(e) => setPriceAmount(e.target.value)} 
+                          className={`mt-1 ${(!isFormule && !priceAmount) ? 'border-red-300' : ''}`} 
+                          data-testid="price-input" 
+                          required={!isFormule} 
                         />
                       </div>
-                      <div className="flex items-center space-x-2 pt-6">
-                        <Checkbox 
-                          id="unlimited" 
-                          checked={unlimitedTime} 
-                          onCheckedChange={(val) => setUnlimitedTime(!!val)} 
-                          data-testid="unlimited-checkbox"
-                        />
-                        <Label htmlFor="unlimited" className="cursor-pointer text-sm">Sans limite horaire</Label>
+                      <div className="w-32">
+                        <Label>Mention</Label>
+                        <Select value={priceType} onValueChange={setPriceType}>
+                          <SelectTrigger className="mt-1" data-testid="price-type-select"><SelectValue /></SelectTrigger>
+                          <SelectContent><SelectItem value="TTC">TTC</SelectItem><SelectItem value="HT">HT</SelectItem><SelectItem value="NONE">Aucune</SelectItem></SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="border-t pt-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Type de date <span className="text-red-500">*</span></Label>
+                          <Select value={eventDateType} onValueChange={(val) => { setEventDateType(val); setEventDate(''); }}>
+                            <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                            <SelectContent><SelectItem value="full">Date complète</SelectItem><SelectItem value="year">Année seule</SelectItem></SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="eventDate">{eventDateType === 'full' ? "Date de l'événement" : "Année de l'événement"} <span className="text-red-500">*</span></Label>
+                          {eventDateType === 'full' ? (
+                            <Input id="eventDate" type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={`mt-1 ${!eventDate ? 'border-red-300' : ''}`} data-testid="event-date-input" required />
+                          ) : (
+                            <Input id="eventDate" type="number" min="2024" max="2100" placeholder="2026" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={`mt-1 ${!eventDate ? 'border-red-300' : ''}`} data-testid="event-year-input" required />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="border-t pt-4">
+                      <div className="flex flex-wrap sm:flex-nowrap gap-4 items-start">
+                        <div className="flex-1">
+                          <Label htmlFor="endTime">
+                            Heure de fin {(!isFormule && !unlimitedTime) && <span className="text-red-500">*</span>}
+                          </Label>
+                          <Input 
+                            id="endTime" 
+                            type="time" 
+                            value={endTime} 
+                            onChange={(e) => setEndTime(e.target.value)} 
+                            className={`mt-1 ${(!isFormule && !unlimitedTime && !endTime) ? 'border-red-300' : ''}`}
+                            disabled={unlimitedTime}
+                            required={!isFormule && !unlimitedTime}
+                          />
+                        </div>
+                        <div className="flex items-center space-x-2 pt-6">
+                          <Checkbox 
+                            id="unlimited" 
+                            checked={unlimitedTime} 
+                            onCheckedChange={(val) => setUnlimitedTime(!!val)} 
+                            data-testid="unlimited-checkbox"
+                          />
+                          <Label htmlFor="unlimited" className="cursor-pointer text-sm">Sans limite horaire</Label>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            {/* Page Selection */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2"><ImageIcon className="w-5 h-5 text-orange-500" />Sélection des Pages</span>
-                  <div className="flex gap-2">
-                    {orphanedPagesCount > 0 && (
-                      <Button size="sm" variant="destructive" onClick={deleteOrphanedPages} className="bg-red-500 hover:bg-red-600" title="Supprimer les pages dont les fichiers sont manquants">
-                        <Trash2 className="w-4 h-4 mr-1" />Supprimer orphelines ({orphanedPagesCount})
+              {/* Page Selection */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2"><ImageIcon className="w-5 h-5 text-orange-500" />Sélection des Pages</span>
+                    <div className="flex gap-2">
+                      {orphanedPagesCount > 0 && (
+                        <Button size="sm" variant="destructive" onClick={deleteOrphanedPages} className="bg-red-500 hover:bg-red-600" title="Supprimer les pages dont les fichiers sont manquants">
+                          <Trash2 className="w-4 h-4 mr-1" />Supprimer orphelines ({orphanedPagesCount})
+                        </Button>
+                      )}
+                      <Button size="sm" onClick={() => { setPageForm({ label: '', category: 'artiste', is_tarif: false }); setNewPageFile(null); setShowAddPageDialog(true); }} className="bg-green-600 hover:bg-green-700">
+                        <Plus className="w-4 h-4 mr-1" />Ajouter
                       </Button>
-                    )}
-                    <Button size="sm" onClick={() => { setPageForm({ label: '', category: 'artiste', is_tarif: false }); setNewPageFile(null); setShowAddPageDialog(true); }} className="bg-green-600 hover:bg-green-700">
-                      <Plus className="w-4 h-4 mr-1" />Ajouter
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {loadingPages ? (
-                  <div className="flex items-center justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /><span className="ml-2">Chargement...</span></div>
-                ) : (
-                  <div className="space-y-4">
-                    {Object.entries(categoryLabels).map(([categoryKey, categoryLabel]) => {
-                      const pagesInCategory = availablePages.filter(p => (p.category || 'artiste') === categoryKey);
-                      if (pagesInCategory.length === 0) return null;
-                      return (
-                        <div key={categoryKey} className="space-y-1.5">
-                          <h4 className="text-sm font-semibold text-gray-700 bg-gray-100 px-2 py-1 rounded">{categoryLabel}</h4>
-                          {pagesInCategory.map((page, catIndex) => {
-                            const globalIndex = availablePages.findIndex(p => p.id === page.id);
-                            return (
-                              <div key={page.id} className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ml-2 ${selectedPages.includes(page.id || page.key) ? 'bg-orange-50 border-orange-300' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}>
-                                <Checkbox id={page.id || page.key} checked={selectedPages.includes(page.id || page.key)} onCheckedChange={() => handlePageToggle(page.id || page.key)} disabled={page.exists === false} data-testid={`page-checkbox-${page.key}`} />
-                                {page.exists === false && <div className="text-red-500" title="Fichier manquant"><XCircle className="w-4 h-4" /></div>}
-                                <div className="flex flex-col gap-0.5">
-                                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => movePage(page.id, 'up')} disabled={catIndex === 0}><ChevronUp className="w-3 h-3" /></Button>
-                                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => movePage(page.id, 'down')} disabled={catIndex === pagesInCategory.length - 1}><ChevronDown className="w-3 h-3" /></Button>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingPages ? (
+                    <div className="flex items-center justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /><span className="ml-2">Chargement...</span></div>
+                  ) : (
+                    <div className="space-y-4">
+                      {Object.entries(categoryLabels).map(([categoryKey, categoryLabel]) => {
+                        const pagesInCategory = availablePages.filter(p => (p.category || 'artiste') === categoryKey);
+                        if (pagesInCategory.length === 0) return null;
+                        return (
+                          <div key={categoryKey} className="space-y-1.5">
+                            <h4 className="text-sm font-semibold text-gray-700 bg-gray-100 px-2 py-1 rounded">{categoryLabel}</h4>
+                            {pagesInCategory.map((page, catIndex) => {
+                              const globalIndex = availablePages.findIndex(p => p.id === page.id);
+                              return (
+                                <div key={page.id} className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ml-2 ${selectedPages.includes(page.id || page.key) ? 'bg-orange-50 border-orange-300' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}>
+                                  <Checkbox id={page.id || page.key} checked={selectedPages.includes(page.id || page.key)} onCheckedChange={() => handlePageToggle(page.id || page.key)} disabled={page.exists === false} data-testid={`page-checkbox-${page.key}`} />
+                                  {page.exists === false && <div className="text-red-500" title="Fichier manquant"><XCircle className="w-4 h-4" /></div>}
+                                  <div className="flex flex-col gap-0.5">
+                                    <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => movePage(page.id, 'up')} disabled={catIndex === 0}><ChevronUp className="w-3 h-3" /></Button>
+                                    <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => movePage(page.id, 'down')} disabled={catIndex === pagesInCategory.length - 1}><ChevronDown className="w-3 h-3" /></Button>
+                                  </div>
+                                  <div className="flex-1 min-w-0"><p className={`font-medium truncate text-sm ${page.exists === false ? 'text-red-500 line-through' : ''}`}>{page.label}{page.exists === false && <span className="text-xs ml-2 text-red-400">(fichier manquant)</span>}</p></div>
+                                  {selectedPages.includes(page.id || page.key) && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
+                                  <div className="flex gap-0.5 flex-shrink-0">
+                                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => previewPage(page.id)} title="Aperçu"><Eye className="w-4 h-4 text-blue-500" /></Button>
+                                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEditPage(page)} title="Modifier"><Edit2 className="w-4 h-4 text-gray-500" /></Button>
+                                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-red-50" onClick={() => deletePage(page.id)} title="Supprimer"><Trash2 className="w-4 h-4 text-red-500" /></Button>
+                                  </div>
                                 </div>
-                                <div className="flex-1 min-w-0"><p className={`font-medium truncate text-sm ${page.exists === false ? 'text-red-500 line-through' : ''}`}>{page.label}{page.exists === false && <span className="text-xs ml-2 text-red-400">(fichier manquant)</span>}</p></div>
-                                {selectedPages.includes(page.id || page.key) && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
-                                <div className="flex gap-0.5 flex-shrink-0">
-                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => previewPage(page.id)} title="Aperçu"><Eye className="w-4 h-4 text-blue-500" /></Button>
-                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEditPage(page)} title="Modifier"><Edit2 className="w-4 h-4 text-gray-500" /></Button>
-                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 hover:bg-red-50" onClick={() => deletePage(page.id)} title="Supprimer"><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Button onClick={generatePdfPreview} disabled={selectedPages.length === 0 || generatingPdf} className="w-full bg-orange-500 hover:bg-orange-600 text-white" size="lg" data-testid="generate-preview-btn">
+                {generatingPdf ? (<><Loader2 className="w-5 h-5 mr-2 animate-spin" />Génération en cours...</>) : (<><Eye className="w-5 h-5 mr-2" />Générer l'Aperçu PDF</>)}
+              </Button>
+            </div>
+
+            {/* Right Column - Email Configuration */}
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2"><Mail className="w-5 h-5 text-orange-500" />Configuration Email</span>
+                    <FormSubmissionsSelector onSelect={handleSubmissionSelect} buttonLabel="Soumissions" />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {selectedSubmission && (
+                    <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm space-y-1 relative" data-testid="selected-submission-info">
+                      <button
+                        onClick={handleClearSubmission}
+                        className="absolute top-2 right-2 text-red-400 hover:text-red-600 transition-colors"
+                        title="Annuler l'import"
+                        data-testid="clear-submission-btn"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                      <p className="font-semibold text-orange-700 pr-6">Contact importé : {selectedSubmission.nom || 'Anonyme'}</p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-orange-600">
+                        {selectedSubmission.email && <span>{selectedSubmission.email}</span>}
+                        {selectedSubmission.telephone && <span>{selectedSubmission.telephone}</span>}
+                        {selectedSubmission.date_evenement && <span>{formatDateDisplay(selectedSubmission.date_evenement)}</span>}
+                      </div>
+                    </div>
+                  )}
+                  <div><Label htmlFor="recipient">Email du destinataire</Label><Input id="recipient" type="email" value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)} className="mt-1" data-testid="recipient-email-input" /></div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="subject">Objet du mail</Label>
+                      <VariableInsertMenu onInsert={handleInsertSubjectVariable} submissionData={selectedSubmission} />
+                    </div>
+                    <Input id="subject" ref={subjectInputRef} value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} className="mt-1" data-testid="email-subject-input" />
                   </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Button onClick={generatePdfPreview} disabled={selectedPages.length === 0 || generatingPdf} className="w-full bg-orange-500 hover:bg-orange-600 text-white" size="lg" data-testid="generate-preview-btn">
-              {generatingPdf ? (<><Loader2 className="w-5 h-5 mr-2 animate-spin" />Génération en cours...</>) : (<><Eye className="w-5 h-5 mr-2" />Générer l'Aperçu PDF</>)}
-            </Button>
-          </div>
-
-          {/* Right Column - Email Configuration */}
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2"><Mail className="w-5 h-5 text-orange-500" />Configuration Email</span>
-                  <FormSubmissionsSelector onSelect={handleSubmissionSelect} buttonLabel="Soumissions" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {selectedSubmission && (
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-sm space-y-1 relative" data-testid="selected-submission-info">
-                    <button
-                      onClick={handleClearSubmission}
-                      className="absolute top-2 right-2 text-red-400 hover:text-red-600 transition-colors"
-                      title="Annuler l'import"
-                      data-testid="clear-submission-btn"
-                    >
-                      <XCircle className="w-4 h-4" />
-                    </button>
-                    <p className="font-semibold text-orange-700 pr-6">Contact importé : {selectedSubmission.nom || 'Anonyme'}</p>
-                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-orange-600">
-                      {selectedSubmission.email && <span>{selectedSubmission.email}</span>}
-                      {selectedSubmission.telephone && <span>{selectedSubmission.telephone}</span>}
-                      {selectedSubmission.date_evenement && <span>{formatDateDisplay(selectedSubmission.date_evenement)}</span>}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <Label htmlFor="body">Corps du message</Label>
+                      <VariableInsertMenu onInsert={handleInsertVariable} submissionData={selectedSubmission} />
+                    </div>
+                    <div className="mt-1 bg-white rounded-md border" data-testid="email-body-editor">
+                      <ReactQuill theme="snow" value={emailBody} onChange={setEmailBody} modules={quillModules} formats={quillFormats} style={{ minHeight: '180px' }} />
                     </div>
                   </div>
-                )}
-                <div><Label htmlFor="recipient">Email du destinataire</Label><Input id="recipient" type="email" value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)} className="mt-1" data-testid="recipient-email-input" /></div>
-                <div>
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="subject">Objet du mail</Label>
-                    <VariableInsertMenu onInsert={handleInsertSubjectVariable} submissionData={selectedSubmission} />
-                  </div>
-                  <Input id="subject" ref={subjectInputRef} value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} className="mt-1" data-testid="email-subject-input" />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <Label htmlFor="body">Corps du message</Label>
-                    <VariableInsertMenu onInsert={handleInsertVariable} submissionData={selectedSubmission} />
-                  </div>
-                  <div className="mt-1 bg-white rounded-md border" data-testid="email-body-editor">
-                    <ReactQuill theme="snow" value={emailBody} onChange={setEmailBody} modules={quillModules} formats={quillFormats} style={{ minHeight: '180px' }} />
-                  </div>
-                </div>
-                {selectedPages.length > 0 && eventDate && (
-                  <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 mt-4">
-                    <p className="text-sm text-gray-700 flex items-center gap-2"><FileText className="w-4 h-4 text-red-500" /><strong>Pièce jointe :</strong> Devis_RkeyProd_{eventDateType === 'full' ? eventDate.split('-').reverse().join('') : eventDate}.pdf</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  {selectedPages.length > 0 && eventDate && (
+                    <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 mt-4">
+                      <p className="text-sm text-gray-700 flex items-center gap-2"><FileText className="w-4 h-4 text-red-500" /><strong>Pièce jointe :</strong> Devis_RkeyProd_{eventDateType === 'full' ? eventDate.split('-').reverse().join('') : eventDate}.pdf</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2"><Settings2 className="w-5 h-5 text-orange-500" />Templates Email</span>
-                  <Button variant="outline" size="sm" onClick={() => openTemplateDialog()} data-testid="save-as-template-btn" disabled={!emailSubject && !emailBody}><Save className="w-4 h-4 mr-1" />Enregistrer comme template</Button>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {templates.length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-4">Aucun template. Créez-en un pour gagner du temps !</p>
-                ) : (
-                  <div className="space-y-2">
-                    {templates.map((template) => (
-                      <div key={template.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                        <div className="flex items-center gap-2">
-                          {template.is_default && <Star className="w-4 h-4 text-amber-500 fill-amber-500" />}
-                          <span className="font-medium">{template.name}</span>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2"><Settings2 className="w-5 h-5 text-orange-500" />Templates Email</span>
+                    <Button variant="outline" size="sm" onClick={() => openTemplateDialog()} data-testid="save-as-template-btn" disabled={!emailSubject && !emailBody}><Save className="w-4 h-4 mr-1" />Enregistrer comme template</Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {templates.length === 0 ? (
+                    <p className="text-gray-500 text-sm text-center py-4">Aucun template. Créez-en un pour gagner du temps !</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {templates.map((template) => (
+                        <div key={template.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                          <div className="flex items-center gap-2">
+                            {template.is_default && <Star className="w-4 h-4 text-amber-500 fill-amber-500" />}
+                            <span className="font-medium">{template.name}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => applyTemplate(template)} className="text-green-600 hover:text-green-700 hover:bg-green-50">Utiliser</Button>
+                            <Button variant="ghost" size="sm" onClick={() => openTemplateDialog(template)}><Edit2 className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="sm" onClick={() => deleteTemplate(template.id)} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => applyTemplate(template)} className="text-green-600 hover:text-green-700 hover:bg-green-50">Utiliser</Button>
-                          <Button variant="ghost" size="sm" onClick={() => openTemplateDialog(template)}><Edit2 className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => deleteTemplate(template.id)} className="text-red-600 hover:text-red-700 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Button onClick={sendEmail} disabled={selectedPages.length === 0 || !recipientEmail || !emailSubject || sendingEmail} className="w-full bg-green-600 hover:bg-green-700 text-white" size="lg" data-testid="send-email-btn">
-              {sendingEmail ? (<><Loader2 className="w-5 h-5 mr-2 animate-spin" />Envoi en cours...</>) : (<><Send className="w-5 h-5 mr-2" />Envoyer le Devis par Email</>)}
-            </Button>
-            <p className="text-xs text-gray-500 text-center">L'email sera envoyé depuis info@rkey-prod.fr avec une copie automatique</p>
+              <Button onClick={sendEmail} disabled={selectedPages.length === 0 || !recipientEmail || !emailSubject || sendingEmail} className="w-full bg-green-600 hover:bg-green-700 text-white" size="lg" data-testid="send-email-btn">
+                {sendingEmail ? (<><Loader2 className="w-5 h-5 mr-2 animate-spin" />Envoi en cours...</>) : (<><Send className="w-5 h-5 mr-2" />Envoyer le Devis par Email</>)}
+              </Button>
+              <p className="text-xs text-gray-500 text-center">L'email sera envoyé depuis info@rkey-prod.fr avec une copie automatique</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Main Content - Sent Quotes Seguimentation / Track */
+          <SuiviTab
+            filteredSentQuotes={filteredSentQuotes}
+            sentQuotes={sentQuotes}
+            loadingSentQuotes={loadingSentQuotes}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            searchFilter={searchFilter}
+            setSearchFilter={setSearchFilter}
+            updateQuoteStatus={updateQuoteStatus}
+            setSelectedQuoteForRelance={setSelectedQuoteForRelance}
+            setShowRelanceDialog={setShowRelanceDialog}
+            setSelectedQuoteForNotes={setSelectedQuoteForNotes}
+            setNotesText={setNotesText}
+            setShowNotesDialog={setShowNotesDialog}
+            deleteQuote={deleteQuote}
+            downloadQuoteFile={downloadQuoteFile}
+            setShowAddManualDialog={setShowAddManualDialog}
+          />
+        )}
 
         {/* Dialogs (composants extraits) */}
         <PdfPreviewDialog showPreview={showPreview} setShowPreview={setShowPreview} pdfPreview={pdfPreview} pdfBlobUrl={pdfBlobUrl} setPdfBlobUrl={setPdfBlobUrl} numPages={numPages} setNumPages={setNumPages} currentPage={currentPage} setCurrentPage={setCurrentPage} eventDate={eventDate} eventDateType={eventDateType} />
@@ -692,6 +926,38 @@ const DevisEnvoiApp = () => {
         <EditPageDialog editingPage={editingPage} setEditingPage={setEditingPage} pageForm={pageForm} setPageForm={setPageForm} savePageEdit={savePageEdit} />
         <AddPageDialog showAddPageDialog={showAddPageDialog} setShowAddPageDialog={setShowAddPageDialog} pageForm={pageForm} setPageForm={setPageForm} newPageFile={newPageFile} setNewPageFile={setNewPageFile} fileInputRef={fileInputRef} handleFileSelect={handleFileSelect} uploadNewPage={uploadNewPage} uploadingPage={uploadingPage} />
         <PagePreviewDialog showPagePreview={showPagePreview} setShowPagePreview={setShowPagePreview} pagePreviewData={pagePreviewData} />
+
+        {/* Relances, Notes & Manual Quote Dialogs */}
+        <RelanceDialog
+          showRelanceDialog={showRelanceDialog}
+          setShowRelanceDialog={setShowRelanceDialog}
+          selectedQuoteForRelance={selectedQuoteForRelance}
+          setSelectedQuoteForRelance={setSelectedQuoteForRelance}
+          relanceNote={relanceNote}
+          setRelanceNote={setRelanceNote}
+          addRelance={addRelance}
+        />
+        <NotesDialog
+          showNotesDialog={showNotesDialog}
+          setShowNotesDialog={setShowNotesDialog}
+          selectedQuoteForNotes={selectedQuoteForNotes}
+          setSelectedQuoteForNotes={setSelectedQuoteForNotes}
+          notesText={notesText}
+          setNotesText={setNotesText}
+          saveNotes={saveNotes}
+        />
+        <ManualQuoteDialog
+          showAddManualDialog={showAddManualDialog}
+          setShowAddManualDialog={setShowAddManualDialog}
+          manualQuoteForm={manualQuoteForm}
+          setManualQuoteForm={setManualQuoteForm}
+          manualQuoteFile={manualQuoteFile}
+          setManualQuoteFile={setManualQuoteFile}
+          manualFileInputRef={manualFileInputRef}
+          addManualQuote={addManualQuote}
+          savingManualQuote={savingManualQuote}
+          initialFormValues={initialManualFormValues}
+        />
       </div>
     </div>
   );
