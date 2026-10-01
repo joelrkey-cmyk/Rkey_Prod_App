@@ -78,7 +78,18 @@ export function downloadVCard(card) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.setAttribute('download', `${card.firstName || 'contact'}_${card.lastName || 'rkey'}.vcf`);
+  
+  let filename = 'contact.vcf';
+  if (card.vcardFilename && card.vcardFilename.trim()) {
+    filename = card.vcardFilename.trim();
+    if (!filename.toLowerCase().endsWith('.vcf')) {
+      filename += '.vcf';
+    }
+  } else {
+    filename = `${card.firstName || 'contact'}_${card.lastName || 'rkey'}.vcf`;
+  }
+  
+  link.setAttribute('download', filename);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

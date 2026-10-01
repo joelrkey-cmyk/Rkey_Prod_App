@@ -658,7 +658,7 @@ export default function PublicNfcCard() {
                     <Globe className="w-5 h-5" />
                   </div>
                   <div className="text-left min-w-0 flex-1">
-                    <span className="block text-[11px] text-red-500 font-bold">Visiter notre Site Web (2ème)</span>
+                    <span className="block text-[11px] text-red-500 font-bold">Visiter le Site Web</span>
                     <span className="block text-xs font-semibold truncate text-zinc-300">
                       {card.secondWebsite.replace(/^https?:\/\/(www\.)?/, '')}
                     </span>

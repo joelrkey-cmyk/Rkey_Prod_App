@@ -38,6 +38,7 @@ export default function NfcApp() {
     avatarUrl: '',
     googleReviewsUrl: '',
     newsletterUrl: '',
+    vcardFilename: '',
     socials: {
       linkedin: '',
       instagram: '',
@@ -141,6 +142,7 @@ export default function NfcApp() {
       avatarUrl: card.avatarUrl || '',
       googleReviewsUrl: card.googleReviewsUrl || '',
       newsletterUrl: card.newsletterUrl || '',
+      vcardFilename: card.vcardFilename || '',
       socials: {
         linkedin: card.socials?.linkedin || '',
         instagram: card.socials?.instagram || '',
@@ -179,6 +181,7 @@ export default function NfcApp() {
       avatarUrl: '',
       googleReviewsUrl: '',
       newsletterUrl: '',
+      vcardFilename: '',
       socials: {
         linkedin: '',
         instagram: '',
@@ -794,6 +797,21 @@ export default function NfcApp() {
                 />
               </div>
 
+              {/* Custom vCard Filename */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1 flex items-center gap-1">
+                  Nom de fichier vCard (.vcf) personnalisé
+                  <span className="text-[10px] text-gray-400 font-normal normal-case">(Téléchargement sans espaces)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="ex: joel_rkey, contact_hypnotiseur"
+                  value={formState.vcardFilename || ''}
+                  onChange={(e) => handleInputChange('vcardFilename', e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#e86405]"
+                />
+              </div>
+
               {/* Bio area */}
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase mb-1 font-sans">Biographie</label>
@@ -1383,7 +1401,7 @@ export default function NfcApp() {
                           <Globe className="w-2.5 h-2.5" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <span className="block text-[6px] text-zinc-500 leading-none">Site Web (2ème)</span>
+                          <span className="block text-[6px] text-zinc-500 leading-none">Visiter le Site Web</span>
                           <span className="block text-[7px] font-bold truncate text-red-400">{formState.secondWebsite.replace(/^https?:\/\/(www\.)?/, '')}</span>
                         </div>
                       </div>

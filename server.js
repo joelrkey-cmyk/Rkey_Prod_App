@@ -12167,8 +12167,18 @@ api.get('/public/nfc-cards/vcard/:id', async (req, res) => {
 
     const vcfString = lines.join('\n');
     
+    let filename = 'contact.vcf';
+    if (card.vcardFilename && card.vcardFilename.trim()) {
+      filename = card.vcardFilename.trim();
+      if (!filename.toLowerCase().endsWith('.vcf')) {
+        filename += '.vcf';
+      }
+    } else {
+      filename = `${card.firstName || 'contact'}_${card.lastName || 'rkey'}.vcf`;
+    }
+
     res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${card.firstName || 'contact'}_${card.lastName || 'rkey'}.vcf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(vcfString);
   } catch (err) {
     res.status(500).send('Erreur serveur');
