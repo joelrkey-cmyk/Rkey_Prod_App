@@ -2431,7 +2431,7 @@ function urlBase64ToUint8Array(base64String) {
               <p className="text-xs text-amber-700 font-medium mb-1.5">
                 Attention : tous les titres doivent se trouver dans cette playlist (tous les titres sans exception).
               </p>
-              {role === 'client' || role === 'admin' ? (
+              {role === 'client' ? (
                 <input 
                   type="url"
                   value={playlistLink}
@@ -2441,17 +2441,17 @@ function urlBase64ToUint8Array(base64String) {
                   className="w-full border p-2 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white"
                 />
               ) : (
-                <div className="flex items-center gap-2">
-                  <div className="bg-white border p-2 rounded-md flex-1 text-sm text-gray-600 truncate">
+                <div className="flex items-center gap-1.5">
+                  <div className="bg-slate-100/70 border border-gray-200 p-2 rounded-md flex-1 text-sm text-gray-600 truncate font-mono select-all" title={playlistLink || "Aucun lien fourni par le client"}>
                     {playlistLink || "Aucun lien fourni par le client"}
                   </div>
                   {playlistLink && (
                     <button 
                       onClick={handleCopy}
-                      className="p-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-md transition flex-shrink-0 flex items-center justify-center w-10 h-10 shadow-sm"
+                      className="p-2 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-md transition flex-shrink-0 flex items-center justify-center w-9 h-9 shadow-xs hover:border-gray-300 cursor-pointer"
                       title="Copier le lien"
                     >
-                      {copiedLink ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                      {copiedLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                     </button>
                   )}
                 </div>
