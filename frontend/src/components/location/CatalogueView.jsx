@@ -73,9 +73,10 @@ function CatalogueView() {
     try {
       setIsLoading(true);
       const response = await axios.get(`${BACKEND_URL}/api/location/equipment`);
-      setEquipment(response.data);
+      setEquipment(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error fetching equipment:', error);
+      setEquipment([]);
       toast.error('Erreur lors du chargement du matériel');
     } finally {
       setIsLoading(false);

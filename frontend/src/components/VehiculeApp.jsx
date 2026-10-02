@@ -870,61 +870,6 @@ export default function VehiculeApp() {
         </div>
       </div>
 
-      {/* KPI Dashboard Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white border rounded-2xl p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 flex-shrink-0">
-            <Car className="w-6 h-6" />
-          </div>
-          <div>
-            <span className="block text-[11px] text-gray-400 font-bold uppercase tracking-wider">Flotte totale</span>
-            <span className="text-2xl font-black text-gray-800 tabular-nums">{vehicles.length}</span>
-            <span className="block text-[10px] text-gray-500 mt-0.5">Véhicules enregistrés</span>
-          </div>
-        </div>
-
-        <div className="bg-white border rounded-2xl p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 flex-shrink-0">
-            <TrendingUp className="w-6 h-6" />
-          </div>
-          <div>
-            <span className="block text-[11px] text-gray-400 font-bold uppercase tracking-wider">Budget Engagé</span>
-            <span className="text-2xl font-black text-gray-800 tabular-nums">
-              {vehicles.reduce((acc, v) => {
-                const totalMaint = (v.maintenanceRecords || []).reduce((s, r) => s + Number(r.cost || 0), 0);
-                const totalFuel = (v.fuelRecords || []).reduce((s, r) => s + Number(r.cost || 0), 0);
-                return acc + totalMaint + totalFuel;
-              }, 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
-            </span>
-            <span className="block text-[10px] text-gray-500 mt-0.5">Entretien + Carburant</span>
-          </div>
-        </div>
-
-        <div className="bg-white border rounded-2xl p-5 flex items-center gap-4 shadow-sm">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${totalOverdueAlerts > 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-emerald-600'}`}>
-            <AlertTriangle className="w-6 h-6" />
-          </div>
-          <div>
-            <span className="block text-[11px] text-gray-400 font-bold uppercase tracking-wider">Alerte(s) Critique(s)</span>
-            <span className="text-2xl font-black text-gray-800 tabular-nums">{totalOverdueAlerts}</span>
-            <span className="block text-[10px] text-gray-500 mt-0.5">CT dépassé / Vidange requise</span>
-          </div>
-        </div>
-
-        <div className="bg-white border rounded-2xl p-5 flex items-center gap-4 shadow-sm">
-          <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600 flex-shrink-0">
-            <Fuel className="w-6 h-6" />
-          </div>
-          <div>
-            <span className="block text-[11px] text-gray-400 font-bold uppercase tracking-wider">Plein de Carburant</span>
-            <span className="text-2xl font-black text-gray-800 tabular-nums">
-              {totalFuelLiters.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} <span className="text-xs text-gray-500">L</span>
-            </span>
-            <span className="block text-[10px] text-gray-500 mt-0.5">Consommation cumulée</span>
-          </div>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* LEFT PANEL: LIST OF VEHICLES (3 cols) */}
@@ -1084,9 +1029,7 @@ export default function VehiculeApp() {
                 {[
                   { id: 'info', label: "Vue d'ensemble", icon: ClipboardList },
                   { id: 'maintenance', label: 'Entretiens', icon: Wrench },
-                  { id: 'fuel', label: 'Carburant', icon: Fuel },
                   { id: 'docs', label: 'Documents Flotte', icon: FileText },
-                  { id: 'pneus', label: 'Pneus', icon: Shield },
                   { id: 'photos', label: 'Photos & Notes', icon: Camera }
                 ].map(tab => {
                   const Icon = tab.icon;
@@ -1317,57 +1260,7 @@ export default function VehiculeApp() {
                   </div>
                 )}
 
-                {/* TAB 3: FUEL CONSUMPTION */}
-                {activeTab === 'fuel' && (
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-black text-gray-900 uppercase tracking-wider">Suivi des pleins & Consommation</h3>
-                      <button
-                        onClick={() => setFuelModalOpen(true)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-3 rounded-lg flex items-center gap-1 text-[11px] cursor-pointer shadow-sm"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Enregistrer un plein
-                      </button>
-                    </div>
 
-                    {getFuelHistory().length === 0 ? (
-                      <div className="text-center py-10 bg-gray-50 border rounded-2xl text-gray-400 text-xs">
-                        Aucun approvisionnement enregistré.
-                      </div>
-                    ) : (
-                      <div className="border rounded-2xl overflow-hidden divide-y text-xs bg-white">
-                        {getFuelHistory().map((record, idx) => (
-                          <div key={idx} className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50 transition-colors">
-                            <div className="space-y-1 text-left flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="font-black text-gray-800">{record.liters} Litres</span>
-                                <span className="text-[10px] bg-amber-50 border border-amber-200 text-amber-700 px-1.5 py-0.5 rounded font-bold">
-                                  {new Date(record.date).toLocaleDateString('fr-FR')}
-                                </span>
-                              </div>
-                              <div className="flex gap-3 text-[10px] text-gray-400 font-medium mt-1 truncate">
-                                <span>Kilométrage : {Number(record.mileage).toLocaleString('fr-FR')} km</span>
-                                {record.station && <span>Station : {record.station}</span>}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-4 flex-shrink-0">
-                              <span className="font-black text-gray-900 text-sm tabular-nums">
-                                {Number(record.cost || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
-                              </span>
-                              <button
-                                onClick={() => handleDeleteFuelRecord(idx)}
-                                className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-all"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* TAB 4: DOCUMENTS DRAWER */}
                 {activeTab === 'docs' && (

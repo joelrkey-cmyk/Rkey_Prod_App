@@ -6115,23 +6115,7 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
     const response = await generateContentWithRetry(ai, {
       contents: prompt,
       config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            found: { type: Type.BOOLEAN },
-            suggestedName: { type: Type.STRING },
-            suggestedAddress: { type: Type.STRING },
-            suggestedCity: { type: Type.STRING },
-            suggestedPostalCode: { type: Type.STRING },
-            suggestedDepartment: { type: Type.STRING },
-            description: { type: Type.STRING },
-            website: { type: Type.STRING },
-            googleMapsUrl: { type: Type.STRING }
-          },
-          required: ["found", "suggestedName", "suggestedAddress", "suggestedCity", "suggestedPostalCode", "suggestedDepartment", "description", "website", "googleMapsUrl"]
-        }
+        tools: [{ googleSearch: {} }]
       }
     });
 
@@ -9577,22 +9561,7 @@ Réponds obligatoirement sous la forme d'un objet JSON strict avec exactement ce
         response = await generateContentWithRetry(ai, {
           contents: prompt,
           config: {
-            tools: [{ googleSearch: {} }],
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                suggestedPrice: {
-                  type: Type.NUMBER,
-                  description: "Le prix de location suggéré par jour en Euros (nombre uniquement)."
-                },
-                explanation: {
-                  type: Type.STRING,
-                  description: "Une explication concise des tarifs concurrents constatés."
-                }
-              },
-              required: ["suggestedPrice", "explanation"]
-            }
+            tools: [{ googleSearch: {} }]
           }
         }, ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3.7-flash", "gemini-3.1-flash-lite"]);
       } catch (searchError) {
