@@ -12474,6 +12474,10 @@ api.post('/vehicles', authMiddleware, async (req, res) => {
       nextOilChangeMileage: payload.nextOilChangeMileage ? Number(payload.nextOilChangeMileage) : '',
       status: payload.status || 'En service',
       notes: payload.notes || '',
+      frontTiresRef: payload.frontTiresRef || '',
+      frontTiresDate: payload.frontTiresDate || '',
+      rearTiresRef: payload.rearTiresRef || '',
+      rearTiresDate: payload.rearTiresDate || '',
       updatedAt: new Date().toISOString()
     };
 
@@ -12485,10 +12489,12 @@ api.post('/vehicles', authMiddleware, async (req, res) => {
         query = { id: payload.id };
       }
       
-      // Merge with existing arrays to avoid wiping maintenance or fuel records
+      // Merge with existing arrays to avoid wiping maintenance, fuel, photos or tire records
       const existing = await db.collection('vehicles').findOne(query);
       vData.maintenanceRecords = existing?.maintenanceRecords || [];
       vData.fuelRecords = existing?.fuelRecords || [];
+      vData.photos = payload.photos !== undefined ? payload.photos : (existing?.photos || []);
+      vData.tireState = payload.tireState !== undefined ? payload.tireState : (existing?.tireState || {});
 
       await db.collection('vehicles').updateOne(query, { $set: vData });
       const updated = await db.collection('vehicles').findOne(query);
@@ -12497,6 +12503,8 @@ api.post('/vehicles', authMiddleware, async (req, res) => {
       vData.id = uuidv4();
       vData.maintenanceRecords = [];
       vData.fuelRecords = [];
+      vData.photos = payload.photos || [];
+      vData.tireState = payload.tireState || {};
       vData.createdAt = new Date().toISOString();
       await db.collection('vehicles').insertOne(vData);
       res.json(vData);
@@ -12695,6 +12703,44 @@ api.post('/vehicles/upload', authMiddleware, upload.single('file'), async (req, 
   } catch (err) {
     console.error("Error uploading fleet document:", err);
     res.status(500).json({ detail: "Erreur d'import de document" });
+  }
+});
+
+// Global Fleet Documents API
+api.get('/fleet-documents', authMiddleware, async (req, res) => {
+  try {
+    const list = await db.collection('fleet_documents').find({}).sort({ date: -1 }).toArray();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.post('/fleet-documents', authMiddleware, async (req, res) => {
+  try {
+    const doc = {
+      ...req.body,
+      id: uuidv4(),
+      createdAt: new Date().toISOString()
+    };
+    await db.collection('fleet_documents').insertOne(doc);
+    res.status(201).json(doc);
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
+api.delete('/fleet-documents/:id', authMiddleware, async (req, res) => {
+  const param = req.params.id;
+  try {
+    let query = { id: param };
+    if (ObjectId.isValid(param)) {
+      query = { $or: [{ id: param }, { _id: new ObjectId(param) }] };
+    }
+    await db.collection('fleet_documents').deleteOne(query);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
   }
 });
 

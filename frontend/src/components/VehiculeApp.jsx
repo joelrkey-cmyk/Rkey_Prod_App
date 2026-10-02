@@ -2,11 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { 
   Car, Plus, Trash2, Edit, FileText, Calendar, Clock, CreditCard, 
   Fuel, Wrench, Shield, ClipboardList, TrendingUp, AlertTriangle, 
-  Download, Loader2, Search, X, Check, Eye, ExternalLink, RefreshCw, BarChart2
+  Download, Loader2, Search, X, Check, Eye, ExternalLink, RefreshCw, BarChart2, Camera
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function VehiculeApp() {
+  const fetch = async (url, options = {}) => {
+    const token = localStorage.getItem('access_token');
+    const headers = { ...options.headers };
+    if (token && !headers.Authorization) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const finalOptions = { ...options, headers };
+
+    const res = await window.fetch(url, finalOptions);
+    if (res.status === 401) {
+      const isLoginPath = window.location.pathname === "/login";
+      if (!isLoginPath) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("user");
+        window.location.href = "/login";
+      }
+    }
+    return res;
+  };
+
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
@@ -20,6 +40,41 @@ export default function VehiculeApp() {
   const [vehicleModalOpen, setVehicleModalOpen] = useState(false);
   const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
   const [fuelModalOpen, setFuelModalOpen] = useState(false);
+  const [directDocModalOpen, setDirectDocModalOpen] = useState(false);
+  const [directDocVehicle, setDirectDocVehicle] = useState(null);
+  const [directDocForm, setDirectDocForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    type: 'Autre',
+    description: '',
+    cost: '',
+    documentUrl: '',
+    documentName: ''
+  });
+
+  // General Fleet Docs state
+  const [fleetDocs, setFleetDocs] = useState([]);
+  const [fleetDocsModalOpen, setFleetDocsModalOpen] = useState(false);
+  const [fleetDocForm, setFleetDocForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    type: 'Contrat Cadre',
+    name: '',
+    url: ''
+  });
+
+  // Tires Edit state
+  const [tiresEditModalOpen, setTiresEditModalOpen] = useState(false);
+  const [tiresForm, setTiresForm] = useState({
+    frontTiresRef: '',
+    frontTiresDate: '',
+    rearTiresRef: '',
+    rearTiresDate: ''
+  });
+
+  // Photos state
+  const [photoForm, setPhotoForm] = useState({
+    url: '',
+    note: ''
+  });
 
   // Loading States
   const [actionLoading, setActionLoading] = useState(false);
@@ -64,7 +119,279 @@ export default function VehiculeApp() {
 
   useEffect(() => {
     fetchVehicles();
+    fetchFleetDocs();
   }, []);
+
+  const fetchFleetDocs = async () => {
+    try {
+      const res = await fetch('/api/fleet-documents');
+      if (res.ok) {
+        const data = await res.json();
+        setFleetDocs(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleFleetDocFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      setUploading(true);
+      const res = await fetch('/api/vehicles/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setFleetDocForm(prev => ({
+          ...prev,
+          url: data.url,
+          name: prev.name || file.name.split('.').slice(0, -1).join('.')
+        }));
+        toast.success("Fichier importé avec succès !");
+      } else {
+        toast.error("Échec de l'import");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur d'import");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleAddFleetDoc = async (e) => {
+    e.preventDefault();
+    if (!fleetDocForm.url || !fleetDocForm.name) {
+      toast.error("Veuillez sélectionner un fichier avant de l'enregistrer");
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const res = await fetch('/api/fleet-documents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(fleetDocForm)
+      });
+
+      if (res.ok) {
+        toast.success("Document de flotte ajouté !");
+        setFleetDocForm({
+          date: new Date().toISOString().split('T')[0],
+          type: 'Contrat Cadre',
+          name: '',
+          url: ''
+        });
+        fetchFleetDocs();
+      } else {
+        toast.error("Échec de l'enregistrement");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteFleetDoc = async (docId) => {
+    if (!window.confirm("Voulez-vous supprimer ce document général de la flotte ?")) return;
+    try {
+      const res = await fetch(`/api/fleet-documents/${docId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        toast.success("Document supprimé");
+        fetchFleetDocs();
+      } else {
+        toast.error("Échec de la suppression");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleOpenTiresEditModal = () => {
+    if (!selectedVehicle) return;
+    setTiresForm({
+      frontTiresRef: selectedVehicle.frontTiresRef || '',
+      frontTiresDate: selectedVehicle.frontTiresDate || '',
+      rearTiresRef: selectedVehicle.rearTiresRef || '',
+      rearTiresDate: selectedVehicle.rearTiresDate || ''
+    });
+    setTiresEditModalOpen(true);
+  };
+
+  const handleSaveTiresForm = async (e) => {
+    e.preventDefault();
+    if (!selectedVehicle) return;
+
+    try {
+      setActionLoading(true);
+      const token = localStorage.getItem('access_token');
+      const res = await fetch('/api/vehicles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...selectedVehicle,
+          id: selectedVehicle.id || selectedVehicle._id,
+          frontTiresRef: tiresForm.frontTiresRef,
+          frontTiresDate: tiresForm.frontTiresDate,
+          rearTiresRef: tiresForm.rearTiresRef,
+          rearTiresDate: tiresForm.rearTiresDate
+        })
+      });
+
+      if (res.ok) {
+        const saved = await res.json();
+        setVehicles(prev => prev.map(v => (v.id || v._id) === (saved.id || saved._id) ? saved : v));
+        setSelectedVehicle(saved);
+        setTiresEditModalOpen(false);
+        toast.success("Références des pneus mises à jour !");
+      } else {
+        toast.error("Échec de l'enregistrement des pneus");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      setUploading(true);
+      const token = localStorage.getItem('access_token');
+      const res = await fetch('/api/vehicles/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setPhotoForm(prev => ({
+          ...prev,
+          url: data.url
+        }));
+        toast.success("Photo téléchargée avec succès !");
+      } else {
+        toast.error("Échec de l'upload");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur de transfert");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleAddPhotoRecord = async (e) => {
+    e.preventDefault();
+    if (!selectedVehicle || !photoForm.url) {
+      toast.error("Veuillez d'abord choisir et charger une photo");
+      return;
+    }
+
+    const currentPhotos = selectedVehicle.photos || [];
+    const updatedPhotos = [
+      ...currentPhotos,
+      {
+        id: Date.now().toString(),
+        url: photoForm.url,
+        note: photoForm.note || '',
+        date: new Date().toISOString()
+      }
+    ];
+
+    try {
+      setActionLoading(true);
+      const token = localStorage.getItem('access_token');
+      const res = await fetch('/api/vehicles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...selectedVehicle,
+          id: selectedVehicle.id || selectedVehicle._id,
+          photos: updatedPhotos
+        })
+      });
+
+      if (res.ok) {
+        const saved = await res.json();
+        setVehicles(prev => prev.map(v => (v.id || v._id) === (saved.id || saved._id) ? saved : v));
+        setSelectedVehicle(saved);
+        setPhotoForm({ url: '', note: '' });
+        toast.success("Photo ajoutée à la galerie !");
+      } else {
+        toast.error("Échec de l'ajout de la photo");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeletePhotoRecord = async (photoId) => {
+    if (!window.confirm("Supprimer cette photo de la galerie ?")) return;
+    const currentPhotos = selectedVehicle.photos || [];
+    const updatedPhotos = currentPhotos.filter(p => p.id !== photoId);
+
+    try {
+      setActionLoading(true);
+      const token = localStorage.getItem('access_token');
+      const res = await fetch('/api/vehicles', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...selectedVehicle,
+          id: selectedVehicle.id || selectedVehicle._id,
+          photos: updatedPhotos
+        })
+      });
+
+      if (res.ok) {
+        const saved = await res.json();
+        setVehicles(prev => prev.map(v => (v.id || v._id) === (saved.id || saved._id) ? saved : v));
+        setSelectedVehicle(saved);
+        toast.success("Photo supprimée.");
+      } else {
+        toast.error("Échec de la suppression");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau");
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const fetchVehicles = async () => {
     try {
@@ -225,6 +552,105 @@ export default function VehiculeApp() {
       toast.error("Erreur lors de l'upload du document");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleOpenDirectDocModal = (vehicle) => {
+    setDirectDocVehicle(vehicle);
+    setDirectDocForm({
+      date: new Date().toISOString().split('T')[0],
+      type: 'Autre',
+      description: '',
+      cost: '',
+      documentUrl: '',
+      documentName: ''
+    });
+    setDirectDocModalOpen(true);
+  };
+
+  const handleDirectDocFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      setUploading(true);
+      const token = localStorage.getItem('access_token');
+      const res = await fetch('/api/vehicles/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setDirectDocForm(prev => ({
+          ...prev,
+          documentUrl: data.url,
+          documentName: file.name,
+          description: prev.description || file.name.split('.').slice(0, -1).join('.')
+        }));
+        toast.success("Document enregistré avec succès !");
+      } else {
+        toast.error("Échec de l'import de document");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'upload du document");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSaveDirectDoc = async (e) => {
+    e.preventDefault();
+    if (!directDocVehicle || !directDocForm.documentUrl) {
+      toast.error("Veuillez sélectionner un fichier avant d'enregistrer");
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const token = localStorage.getItem('access_token');
+      const vehicleId = directDocVehicle.id || directDocVehicle._id;
+
+      const res = await fetch(`/api/vehicles/${vehicleId}/maintenance`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          date: directDocForm.date,
+          type: directDocForm.type,
+          description: directDocForm.description || directDocForm.documentName || 'Document flotte',
+          cost: directDocForm.cost || '',
+          mileage: directDocVehicle.mileage || '',
+          garage: 'Import direct depuis sommaire',
+          documentUrl: directDocForm.documentUrl,
+          documentName: directDocForm.documentName
+        })
+      });
+
+      if (res.ok) {
+        const updatedVehicle = await res.json();
+        toast.success("Document ajouté avec succès au véhicule !");
+        setDirectDocModalOpen(false);
+
+        setVehicles(prev => prev.map(v => (v.id || v._id) === (updatedVehicle.id || updatedVehicle._id) ? updatedVehicle : v));
+        if (selectedVehicle && (selectedVehicle.id || selectedVehicle._id) === (updatedVehicle.id || updatedVehicle._id)) {
+          setSelectedVehicle(updatedVehicle);
+        }
+      } else {
+        toast.error("Erreur lors de l'enregistrement du document");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur réseau");
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -428,12 +854,20 @@ export default function VehiculeApp() {
             Gérez vos véhicules d'entreprise, contrôles techniques, historique d'entretien, factures et badges télépéage.
           </p>
         </div>
-        <button
-          onClick={() => handleOpenVehicleModal()}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 transition-colors text-sm shadow-sm cursor-pointer whitespace-nowrap self-start md:self-auto"
-        >
-          <Plus className="w-4 h-4" /> Ajouter un véhicule
-        </button>
+        <div className="flex flex-col sm:flex-row gap-2.5 self-start md:self-auto w-full md:w-auto">
+          <button
+            onClick={() => setFleetDocsModalOpen(true)}
+            className="border-2 border-indigo-600 bg-white hover:bg-indigo-50 text-indigo-600 font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 transition-colors text-sm shadow-sm cursor-pointer whitespace-nowrap"
+          >
+            <FileText className="w-4 h-4" /> Documents Généraux Flotte
+          </button>
+          <button
+            onClick={() => handleOpenVehicleModal()}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 transition-colors text-sm shadow-sm cursor-pointer whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" /> Ajouter un véhicule
+          </button>
+        </div>
       </div>
 
       {/* KPI Dashboard Row */}
@@ -580,11 +1014,27 @@ export default function VehiculeApp() {
                           <TrendingUp className="w-3.5 h-3.5 text-gray-400" />
                           {Number(vehicle.mileage || 0).toLocaleString('fr-FR')} km
                         </span>
-                        {vehicle.tollBadgeNumber && (
-                          <span className="bg-blue-50 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-blue-200">
-                            Péage actif
-                          </span>
-                        )}
+                        
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {vehicle.tollBadgeNumber && (
+                            <span className="bg-blue-50 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-blue-200">
+                              Péage actif
+                            </span>
+                          )}
+                          
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenDirectDocModal(vehicle);
+                            }}
+                            className="p-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg transition-all flex items-center gap-0.5 text-[9px] font-bold border border-indigo-100 cursor-pointer shadow-xs whitespace-nowrap"
+                            title="Ajouter un document directement"
+                          >
+                            <FileText className="w-3 h-3" />
+                            + Doc
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -630,12 +1080,14 @@ export default function VehiculeApp() {
               </div>
 
               {/* Navigation Tabs */}
-              <div className="border-b flex items-center gap-1 bg-gray-50 px-4">
+              <div className="border-b flex items-center gap-1 bg-gray-50 px-4 overflow-x-auto whitespace-nowrap scrollbar-none">
                 {[
-                  { id: 'info', label: 'Vue d\'ensemble', icon: ClipboardList },
+                  { id: 'info', label: "Vue d'ensemble", icon: ClipboardList },
                   { id: 'maintenance', label: 'Entretiens', icon: Wrench },
                   { id: 'fuel', label: 'Carburant', icon: Fuel },
-                  { id: 'docs', label: 'Documents Flotte', icon: FileText }
+                  { id: 'docs', label: 'Documents Flotte', icon: FileText },
+                  { id: 'pneus', label: 'Pneus', icon: Shield },
+                  { id: 'photos', label: 'Photos & Notes', icon: Camera }
                 ].map(tab => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
@@ -727,6 +1179,61 @@ export default function VehiculeApp() {
                           <div className="flex justify-between border-b pb-1.5">
                             <span className="text-gray-400 font-medium">Statut d'utilisation</span>
                             <span className="font-semibold text-gray-700">{selectedVehicle.status}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Pneumatiques References Card */}
+                      <div className="md:col-span-2 border rounded-2xl p-5 bg-white space-y-4 text-left">
+                        <div className="flex justify-between items-center border-b pb-2">
+                          <h3 className="text-xs font-black text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <Shield className="w-4 h-4 text-indigo-600" /> Références des Pneumatiques
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTiresEditModal()}
+                            className="text-[10px] text-indigo-600 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Edit className="w-3 h-3" /> Modifier les pneus
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                          {/* Front Tires */}
+                          <div className="bg-slate-50 p-4 rounded-xl space-y-2 border">
+                            <h4 className="font-bold text-gray-800 flex items-center gap-1 text-[11px] uppercase tracking-wider text-indigo-600">
+                              Train Avant (AVG / AVD)
+                            </h4>
+                            <div className="space-y-1.5 mt-2">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400 font-medium">Référence / Dimensions</span>
+                                <span className="font-semibold text-gray-700">{selectedVehicle.frontTiresRef || 'Non renseignée'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400 font-medium">Dernier changement</span>
+                                <span className="font-semibold text-gray-700">
+                                  {selectedVehicle.frontTiresDate ? new Date(selectedVehicle.frontTiresDate).toLocaleDateString('fr-FR') : 'Non renseigné'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Rear Tires */}
+                          <div className="bg-slate-50 p-4 rounded-xl space-y-2 border">
+                            <h4 className="font-bold text-gray-800 flex items-center gap-1 text-[11px] uppercase tracking-wider text-indigo-600">
+                              Train Arrière (ARG / ARD)
+                            </h4>
+                            <div className="space-y-1.5 mt-2">
+                              <div className="flex justify-between">
+                                <span className="text-gray-400 font-medium">Référence / Dimensions</span>
+                                <span className="font-semibold text-gray-700">{selectedVehicle.rearTiresRef || 'Non renseignée'}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-400 font-medium">Dernier changement</span>
+                                <span className="font-semibold text-gray-700">
+                                  {selectedVehicle.rearTiresDate ? new Date(selectedVehicle.rearTiresDate).toLocaleDateString('fr-FR') : 'Non renseigné'}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -903,6 +1410,127 @@ export default function VehiculeApp() {
                             >
                               <ExternalLink className="w-4 h-4" />
                             </a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+
+
+                {/* TAB 6: PHOTOS & NOTES GALLERY */}
+                {activeTab === 'photos' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xs font-black text-gray-900 uppercase tracking-wider">Galerie Photos & Notes</h3>
+                        <p className="text-[10px] text-gray-500 mt-0.5">Importez des photos de l'état du véhicule, de sinistres ou de réparations avec des annotations.</p>
+                      </div>
+                    </div>
+
+                    {/* Photo Uploader Form */}
+                    <form onSubmit={handleAddPhotoRecord} className="border border-dashed border-indigo-100 bg-indigo-50/5 rounded-2xl p-5 space-y-4">
+                      <div className="flex flex-col md:flex-row gap-4 items-center">
+                        {/* File Selector */}
+                        <div className="w-full md:w-1/3 flex flex-col items-center justify-center text-center p-4 border rounded-xl bg-white relative min-h-[100px]">
+                          {photoForm.url ? (
+                            <div className="space-y-2">
+                              <img src={photoForm.url} alt="Aperçu" className="w-24 h-16 object-cover rounded-lg border shadow-sm mx-auto" />
+                              <span className="block text-[9px] text-emerald-600 font-bold flex items-center gap-0.5 justify-center">
+                                <Check className="w-3.5 h-3.5" /> Fichier chargé
+                              </span>
+                            </div>
+                          ) : (
+                            <>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                id="photo-gallery-input"
+                                className="hidden"
+                                onChange={handlePhotoUpload}
+                              />
+                              <button
+                                type="button"
+                                disabled={uploading}
+                                onClick={() => document.getElementById('photo-gallery-input').click()}
+                                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all disabled:opacity-50 cursor-pointer"
+                              >
+                                {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                                Choisir une photo
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Note area */}
+                        <div className="flex-1 w-full text-left space-y-1">
+                          <label className="block text-[10px] text-gray-500 font-bold uppercase">Note / Annotation sur la photo *</label>
+                          <textarea
+                            required
+                            rows="2"
+                            placeholder="ex: Rayure pare-chocs arrière, État pneu avant droit après réparation..."
+                            value={photoForm.note}
+                            onChange={(e) => setPhotoForm(prev => ({ ...prev, note: e.target.value }))}
+                            className="w-full px-3 py-2 bg-white border rounded-xl font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-2 border-t border-gray-100">
+                        <button
+                          type="submit"
+                          disabled={actionLoading || uploading || !photoForm.url}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-xl flex items-center gap-1.5 transition-all text-xs cursor-pointer disabled:opacity-50"
+                        >
+                          {actionLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                          Ajouter la photo annotée
+                        </button>
+                      </div>
+                    </form>
+
+                    {/* Gallery Grid */}
+                    {(!selectedVehicle.photos || selectedVehicle.photos.length === 0) ? (
+                      <div className="text-center py-12 bg-gray-50 border rounded-2xl text-gray-400 text-xs">
+                        Aucune photo dans la galerie de ce véhicule.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                        {selectedVehicle.photos.map((photo) => (
+                          <div key={photo.id} className="border rounded-2xl overflow-hidden bg-white flex flex-col group relative shadow-sm">
+                            
+                            {/* Delete Hover button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePhotoRecord(photo.id)}
+                              className="absolute top-2.5 right-2.5 p-1.5 bg-red-600/80 hover:bg-red-600 text-white rounded-lg transition-all opacity-0 group-hover:opacity-100 focus:opacity-100 z-10 cursor-pointer"
+                              title="Supprimer la photo"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Image container */}
+                            <div className="aspect-video w-full overflow-hidden bg-slate-900 border-b relative">
+                              <img src={photo.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-all duration-300" />
+                              <a
+                                href={photo.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="absolute bottom-2.5 left-2.5 p-1.5 bg-slate-950/70 hover:bg-slate-950 text-white rounded-lg transition-all text-[8px] font-black uppercase tracking-widest flex items-center gap-0.5"
+                              >
+                                <ExternalLink className="w-3 h-3" /> Plein Écran
+                              </a>
+                            </div>
+
+                            {/* Info */}
+                            <div className="p-3 text-left flex-1 flex flex-col justify-between">
+                              <p className="text-[10px] text-gray-400 font-bold mb-1">
+                                {photo.date ? new Date(photo.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Date inconnue'}
+                              </p>
+                              <p className="text-xs text-gray-700 font-medium italic bg-slate-50 border rounded-lg p-2 flex-1 mt-1 leading-relaxed">
+                                "{photo.note}"
+                              </p>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1359,6 +1987,401 @@ export default function VehiculeApp() {
                 <button
                   type="button"
                   onClick={() => setFuelModalOpen(false)}
+                  className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition-all"
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DIALOG 4: ADD DOCUMENT DIRECTLY FROM SUMMARY */}
+      {directDocModalOpen && directDocVehicle && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-scale-in text-left">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-black text-gray-900 tracking-tight text-base flex items-center gap-1.5">
+                <FileText className="w-5 h-5 text-indigo-600" />
+                Ajouter un document
+              </h3>
+              <button 
+                onClick={() => setDirectDocModalOpen(false)}
+                className="p-1.5 hover:bg-gray-100 text-gray-400 hover:text-gray-600 rounded-xl transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 bg-gray-50/50 text-xs border-b">
+              <p className="font-bold text-gray-700">Véhicule ciblé :</p>
+              <p className="text-indigo-600 font-extrabold text-sm mt-0.5">
+                {directDocVehicle.brand} {directDocVehicle.model} ({directDocVehicle.licensePlate})
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveDirectDoc} className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Date du document *</label>
+                  <input
+                    type="date"
+                    required
+                    value={directDocForm.date}
+                    onChange={(e) => setDirectDocForm(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Type de document *</label>
+                  <select
+                    value={directDocForm.type}
+                    onChange={(e) => setDirectDocForm(prev => ({ ...prev, type: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="Facture">Facture d'entretien</option>
+                    <option value="Assurance">Assurance</option>
+                    <option value="Contrôle Technique">Contrôle Technique</option>
+                    <option value="Carte Grise">Carte Grise</option>
+                    <option value="Autre">Autre document</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Description / Nom du document *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ex: Facture pneu, Attestation assurance..."
+                  value={directDocForm.description}
+                  onChange={(e) => setDirectDocForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white border rounded-xl font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Montant associé (€, optionnel)</label>
+                <input
+                  type="number"
+                  placeholder="ex: 150"
+                  value={directDocForm.cost}
+                  onChange={(e) => setDirectDocForm(prev => ({ ...prev, cost: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white border rounded-xl font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Upload field */}
+              <div className="border border-dashed border-indigo-200 bg-indigo-50/20 rounded-2xl p-5 flex flex-col items-center justify-center text-center space-y-2 relative">
+                {directDocForm.documentUrl ? (
+                  <div className="flex items-center gap-2 text-indigo-600 font-semibold text-xs">
+                    <Check className="w-5 h-5 text-emerald-500" />
+                    <span className="truncate max-w-[200px]">{directDocForm.documentName}</span>
+                    <button
+                      type="button"
+                      onClick={() => setDirectDocForm(prev => ({ ...prev, documentUrl: '', documentName: '' }))}
+                      className="p-1 hover:bg-indigo-100 rounded-lg text-indigo-700 font-bold"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-[10px] text-gray-400 font-bold">Sélectionner un justificatif (PDF, Image...)</span>
+                    <input
+                      type="file"
+                      id="direct-doc-input"
+                      className="hidden"
+                      onChange={handleDirectDocFileUpload}
+                    />
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      onClick={() => document.getElementById('direct-doc-input').click()}
+                      className="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                    >
+                      {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                      Choisir le fichier
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <div className="flex gap-3 border-t pt-4">
+                <button
+                  type="submit"
+                  disabled={actionLoading || uploading || !directDocForm.documentUrl}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-98 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Ajouter le document
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirectDocModalOpen(false)}
+                  className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition-all"
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DIALOG 5: GENERAL FLEET DOCUMENTS MODAL */}
+      {fleetDocsModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-scale-in text-left">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-black text-gray-900 tracking-tight text-base flex items-center gap-1.5">
+                <FileText className="w-5 h-5 text-indigo-600" />
+                Documents Généraux de la Flotte
+              </h3>
+              <button 
+                onClick={() => setFleetDocsModalOpen(false)}
+                className="p-1.5 hover:bg-gray-100 text-gray-400 hover:text-gray-600 rounded-xl transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 text-xs">
+              {/* Left Column: Add Doc Form (4 cols) */}
+              <form onSubmit={handleAddFleetDoc} className="lg:col-span-5 space-y-4 border-b lg:border-b-0 lg:border-r pb-6 lg:pb-0 lg:pr-6">
+                <h4 className="font-bold text-gray-800 uppercase tracking-wider text-[11px] mb-2">Ajouter un document global</h4>
+                
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Date du document *</label>
+                  <input
+                    type="date"
+                    required
+                    value={fleetDocForm.date}
+                    onChange={(e) => setFleetDocForm(prev => ({ ...prev, date: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Type de document *</label>
+                  <select
+                    value={fleetDocForm.type}
+                    onChange={(e) => setFleetDocForm(prev => ({ ...prev, type: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="Contrat Cadre">Contrat Cadre / Leasing</option>
+                    <option value="Assurances Flotte">Assurances Flotte</option>
+                    <option value="Licence de Transport">Licence de Transport</option>
+                    <option value="Kbis / Enregistrement">Kbis / Registre</option>
+                    <option value="Autre">Autre document général</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Nom / Description du document *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ex: Contrat flotte AXA 2026..."
+                    value={fleetDocForm.name}
+                    onChange={(e) => setFleetDocForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {/* Upload field */}
+                <div className="border border-dashed border-indigo-200 bg-indigo-50/20 rounded-2xl p-4 flex flex-col items-center justify-center text-center space-y-2 relative">
+                  {fleetDocForm.url ? (
+                    <div className="flex items-center gap-2 text-indigo-600 font-semibold text-xs">
+                      <Check className="w-5 h-5 text-emerald-500" />
+                      <span className="truncate max-w-[160px]">{fleetDocForm.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setFleetDocForm(prev => ({ ...prev, url: '', name: '' }))}
+                        className="p-1 hover:bg-indigo-100 rounded-lg text-indigo-700 font-bold"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-[10px] text-gray-400 font-bold">Sélectionner un justificatif (PDF, Image...)</span>
+                      <input
+                        type="file"
+                        id="fleet-doc-upload-input"
+                        className="hidden"
+                        onChange={handleFleetDocFileUpload}
+                      />
+                      <button
+                        type="button"
+                        disabled={uploading}
+                        onClick={() => document.getElementById('fleet-doc-upload-input').click()}
+                        className="px-3 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all disabled:opacity-50"
+                      >
+                        {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        Choisir le fichier
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={actionLoading || uploading || !fleetDocForm.url}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-98 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Enregistrer le document global
+                </button>
+              </form>
+
+              {/* Right Column: Docs List (8 cols) */}
+              <div className="lg:col-span-7 space-y-3">
+                <h4 className="font-bold text-gray-800 uppercase tracking-wider text-[11px] mb-2">Documents enregistrés ({fleetDocs.length})</h4>
+                
+                {fleetDocs.length === 0 ? (
+                  <div className="text-center py-12 bg-gray-50 border rounded-2xl text-gray-400 text-xs">
+                    Aucun document global enregistré pour la flotte. Utilisez le formulaire de gauche pour en ajouter.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                    {fleetDocs.map((doc) => (
+                      <div key={doc.id} className="border rounded-2xl p-4 bg-white flex items-start gap-3 justify-between">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="p-2.5 bg-indigo-50 rounded-xl text-indigo-600 flex-shrink-0">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <div className="text-left min-w-0">
+                            <span className="block text-xs font-bold text-gray-800 truncate" title={doc.name}>
+                              {doc.name}
+                            </span>
+                            <span className="block text-[10px] text-gray-400 font-semibold mt-0.5">
+                              {doc.type} · {new Date(doc.date).toLocaleDateString('fr-FR')}
+                            </span>
+                            {doc.createdAt && (
+                              <span className="block text-[9px] text-gray-400 mt-1">
+                                Ajouté le : {new Date(doc.createdAt).toLocaleDateString('fr-FR')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <a
+                            href={doc.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-all"
+                            title="Ouvrir le document"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFleetDoc(doc.id)}
+                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-all"
+                            title="Supprimer le document"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DIALOG 6: EDIT FLAT TIRES REFERENCE */}
+      {tiresEditModalOpen && selectedVehicle && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl animate-scale-in text-left">
+            <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-black text-gray-900 tracking-tight text-base flex items-center gap-1.5">
+                <Shield className="w-5 h-5 text-indigo-600" />
+                Références des Pneumatiques
+              </h3>
+              <button 
+                onClick={() => setTiresEditModalOpen(false)}
+                className="p-1.5 hover:bg-gray-100 text-gray-400 hover:text-gray-600 rounded-xl transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTiresForm} className="p-6 space-y-4 text-xs">
+              
+              {/* Train Avant */}
+              <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-gray-100">
+                <h4 className="font-extrabold text-indigo-600 text-[10px] uppercase tracking-wider">
+                  Train Avant (AVG / AVD)
+                </h4>
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Dimensions & Référence *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ex: Michelin Primacy 4 205/55 R16 91V"
+                    value={tiresForm.frontTiresRef}
+                    onChange={(e) => setTiresForm(prev => ({ ...prev, frontTiresRef: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Date du changement</label>
+                  <input
+                    type="date"
+                    value={tiresForm.frontTiresDate}
+                    onChange={(e) => setTiresForm(prev => ({ ...prev, frontTiresDate: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Train Arriere */}
+              <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-gray-100">
+                <h4 className="font-extrabold text-indigo-600 text-[10px] uppercase tracking-wider">
+                  Train Arrière (ARG / ARD)
+                </h4>
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Dimensions & Référence *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ex: Continental PremiumContact 6 205/55 R16"
+                    value={tiresForm.rearTiresRef}
+                    onChange={(e) => setTiresForm(prev => ({ ...prev, rearTiresRef: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-500 font-bold uppercase mb-1">Date du changement</label>
+                  <input
+                    type="date"
+                    value={tiresForm.rearTiresDate}
+                    onChange={(e) => setTiresForm(prev => ({ ...prev, rearTiresDate: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white border rounded-xl font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 border-t pt-4">
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 active:scale-98 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  Enregistrer les pneus
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTiresEditModalOpen(false)}
                   className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition-all"
                 >
                   Annuler
