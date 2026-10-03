@@ -6316,8 +6316,17 @@ api.post('/venues', async (req, res) => {
       has_no_limiteur_ni_detecteur: !!req.body.has_no_limiteur_ni_detecteur,
       has_wifi: !!req.body.has_wifi,
       has_4g_5g: !!req.body.has_4g_5g,
+      type_lieu: req.body.type_lieu || '',
+      capacite_min: req.body.capacite_min !== undefined && req.body.capacite_min !== '' ? (Number(req.body.capacite_min) || req.body.capacite_min) : '',
+      capacite_max: req.body.capacite_max !== undefined && req.body.capacite_max !== '' ? (Number(req.body.capacite_max) || req.body.capacite_max) : '',
+      tarif_indicatif: req.body.tarif_indicatif || '',
+      infos_annuaire: req.body.infos_annuaire || '',
+      lien_annuaire: req.body.lien_annuaire || '',
+      telephone: req.body.telephone || '',
       venue_photos: req.body.venue_photos || [],
       is_complete: req.body.is_complete !== undefined ? req.body.is_complete : false,
+      is_blacklisted: !!req.body.is_blacklisted,
+      blacklist_reason: req.body.blacklist_reason || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
@@ -6358,6 +6367,18 @@ api.delete('/venues/:id', async (req, res) => {
   try {
     await db.collection('reception_venues').deleteOne({ id: req.params.id });
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+api.post('/venues/validate-all', authMiddleware, async (req, res) => {
+  try {
+    const result = await db.collection('reception_venues').updateMany(
+      { is_complete: { $ne: true } },
+      { $set: { is_complete: true, updated_at: new Date().toISOString() } }
+    );
+    res.json({ success: true, count: result.modifiedCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -6434,6 +6455,274 @@ api.post('/venues/merge', async (req, res) => {
     res.json({ success: true, targetId: targetVenueId });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Import haute-performance et dédoublonnage pour Lieux de Réception (CSV et Excel)
+api.post('/venues/import-csv-excel', authMiddleware, async (req, res) => {
+  try {
+    const { venues = [], updateExisting = true } = req.body || {};
+    if (!Array.isArray(venues) || venues.length === 0) {
+      return res.status(400).json({ error: "Aucun lieu fourni pour l'import." });
+    }
+
+    const existingVenues = await db.collection('reception_venues').find({}).toArray();
+
+    const normalize = (s) => (s || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    for (const raw of venues) {
+      const name = (raw.name || raw.nom || raw.salle || raw.lieu || raw.nom_salle || raw.nom_lieu || raw['nom de la salle'] || raw['lieu de reception'] || raw['lieu de réception'] || raw['salle de réception'] || '').trim();
+      if (!name) {
+        skippedCount++;
+        continue;
+      }
+
+      const city = (raw.city || raw.ville || raw.commune || raw.localite || raw['ville'] || raw['commune'] || 'À préciser').trim();
+      const department = (raw.department || raw.departement || raw.dept || raw['département'] || 'À préciser').trim();
+      const notes = (raw.notes || raw.note || raw.remarques || raw.commentaires || '').trim();
+      const notes_observation = (raw.notes_observation || raw.observations || raw.observation || raw['observations générales'] || '').trim();
+      const notes_accessibilite = (raw.notes_accessibilite || raw.accessibilite || raw['accessibilité'] || '').trim();
+      const rating_accessibilite = Number(raw.rating_accessibilite || raw.note_accessibilite || raw['note accessibilité']) || 0;
+      const notes_technique = (raw.notes_technique || raw.technique || raw['fiche technique'] || '').trim();
+      const notes_lumiere = (raw.notes_lumiere || raw.lumiere || raw['lumière'] || raw.eclairage || raw['éclairage'] || '').trim();
+
+      const parseBool = (val) => {
+        if (typeof val === 'boolean') return val;
+        if (typeof val === 'number') return val > 0;
+        if (typeof val === 'string') {
+          const s = val.trim().toLowerCase();
+          return s === 'true' || s === 'oui' || s === '1' || s === 'yes' || s === 'vrai';
+        }
+        return !!val;
+      };
+
+      const has_limiteur_son = parseBool(raw.has_limiteur_son || raw.limiteur || raw['limiteur de son'] || raw.son);
+      const has_detecteur_fumee = parseBool(raw.has_detecteur_fumee || raw.detecteur || raw['détecteur de fumée'] || raw['detecteur de fumee'] || raw.fumee);
+      const has_no_limiteur_ni_detecteur = parseBool(raw.has_no_limiteur_ni_detecteur || raw['sans limiteur ni détecteur'] || raw['sans limiteur ni detecteur'] || raw['pas de limiteur']);
+      const has_wifi = parseBool(raw.has_wifi || raw.wifi || raw['wi-fi'] || raw['wifi disponible'] || raw.internet);
+      const has_4g_5g = parseBool(raw.has_4g_5g || raw.reseau_4g || raw['4g'] || raw['4g_5g'] || raw['réseau 4g / 5g'] || raw['reseau 4g / 5g'] || raw['réseau 4g'] || raw['reseau 4g']);
+
+      const type_lieu = (raw.type_lieu || raw['type de lieu'] || raw.type || raw.categorie || '').trim();
+      const capacite_min = raw.capacite_min !== undefined && raw.capacite_min !== '' 
+        ? (Number(raw.capacite_min) || raw.capacite_min) 
+        : (raw['capacité min'] || raw['capacite min'] || raw['capacité min.'] || raw['capacite min.'] || '');
+      const capacite_max = raw.capacite_max !== undefined && raw.capacite_max !== '' 
+        ? (Number(raw.capacite_max) || raw.capacite_max) 
+        : (raw['capacité max'] || raw['capacite max'] || raw['capacité max.'] || raw['capacite max.'] || raw.capacite || raw['capacité'] || '');
+      const tarif_indicatif = (raw.tarif_indicatif || raw['tarif indicatif'] || raw.tarif || raw.prix || '').trim();
+      const infos_annuaire = (raw.infos_annuaire || raw['infos annuaire'] || raw['info annuaire'] || raw.annuaire || '').trim();
+      const lien_annuaire = (raw.lien_annuaire || raw['lien fiche annuaire'] || raw['lien annuaire'] || raw.site_web || raw.url || raw.lien || '').trim();
+      const telephone = (raw.telephone || raw['téléphone'] || raw.tel || raw['contact'] || '').trim();
+
+      const rawStatut = (raw.statut || raw['statut de la fiche'] || '').toLowerCase();
+      const isCompleteFromStatut = rawStatut.includes('complète') || rawStatut.includes('complete');
+      const isComplete = raw.is_complete !== undefined ? !!raw.is_complete : (rawStatut ? isCompleteFromStatut : (department !== 'À préciser' && city !== 'À préciser' && !!name));
+
+      const isBlacklisted = parseBool(raw.is_blacklisted || raw['liste noire'] || raw.blacklist);
+      const blacklist_reason = (raw.blacklist_reason || raw['motif blacklist'] || raw['motif liste noire'] || '').trim();
+
+      const normName = normalize(name);
+      const normCity = normalize(city);
+
+      if (raw.targetAction === 'skip') {
+        skippedCount++;
+        continue;
+      }
+
+      // Recherche doublon :
+      let existing = null;
+      if (raw.targetAction === 'create') {
+        // L'utilisateur a explicitement demandé de créer un nouveau lieu distinct
+        existing = null;
+      } else {
+        // 0. Correspondance par ID si renseigné
+        if (raw.existingId || raw.existing_id) {
+          existing = existingVenues.find(v => v.id === (raw.existingId || raw.existing_id));
+        }
+        // 1. Nom normalisé identique ET ville identique (si ville renseignée)
+        if (!existing && normCity && normCity !== 'apreciser') {
+          existing = existingVenues.find(v => {
+            const vCityNorm = normalize(v.city);
+            return normalize(v.name) === normName && (vCityNorm === normCity || vCityNorm === 'apreciser');
+          });
+        }
+        // 2. Nom normalisé identique (si longueur >= 4 et même département/ville ou ville non renseignée)
+        if (!existing && normName && normName.length >= 4) {
+          existing = existingVenues.find(v => {
+            if (normalize(v.name) !== normName) return false;
+            const vCityNorm = normalize(v.city);
+            // Si l'un des deux a une ville non précisée ou la même ville
+            if (!normCity || normCity === 'apreciser' || !vCityNorm || vCityNorm === 'apreciser') return true;
+            return normCity === vCityNorm;
+          });
+        }
+        // 3. Inclusion de nom fort si même ville
+        if (!existing && normName.length >= 6 && normCity && normCity !== 'apreciser') {
+          existing = existingVenues.find(v => {
+            const vNorm = normalize(v.name);
+            const vCityNorm = normalize(v.city);
+            return (vNorm.includes(normName) || normName.includes(vNorm)) && vCityNorm === normCity;
+          });
+        }
+      }
+
+      if (!existing) {
+        // Nouveau lieu
+        const newDoc = {
+          id: uuidv4(),
+          name,
+          department,
+          city,
+          notes,
+          notes_observation,
+          notes_accessibilite,
+          rating_accessibilite,
+          notes_technique,
+          notes_lumiere,
+          has_limiteur_son,
+          has_detecteur_fumee,
+          has_no_limiteur_ni_detecteur,
+          has_wifi,
+          has_4g_5g,
+          type_lieu,
+          capacite_min,
+          capacite_max,
+          tarif_indicatif,
+          infos_annuaire,
+          lien_annuaire,
+          telephone,
+          venue_photos: Array.isArray(raw.venue_photos) ? raw.venue_photos : [],
+          is_complete: isComplete,
+          is_blacklisted: isBlacklisted,
+          blacklist_reason: blacklist_reason,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        await db.collection('reception_venues').insertOne(newDoc);
+        existingVenues.push(newDoc);
+        addedCount++;
+      } else {
+        // Lieu existant -> mise à jour / enrichissement
+        if (updateExisting) {
+          const updates = {};
+          let hasUpdates = false;
+
+          // Mettre à jour la ville ou département si vide / à préciser
+          if ((!existing.city || existing.city === 'À préciser') && city !== 'À préciser') {
+            updates.city = city;
+            hasUpdates = true;
+          }
+          if ((!existing.department || existing.department === 'À préciser') && department !== 'À préciser') {
+            updates.department = department;
+            hasUpdates = true;
+          }
+          // Enrichir notes
+          if (notes && (!existing.notes || !existing.notes.includes(notes.slice(0, 30)))) {
+            updates.notes = existing.notes ? `${existing.notes}\n${notes}` : notes;
+            hasUpdates = true;
+          }
+          if (notes_observation && (!existing.notes_observation || !existing.notes_observation.includes(notes_observation.slice(0, 30)))) {
+            updates.notes_observation = existing.notes_observation ? `${existing.notes_observation}\n${notes_observation}` : notes_observation;
+            hasUpdates = true;
+          }
+          if (notes_accessibilite && (!existing.notes_accessibilite || !existing.notes_accessibilite.includes(notes_accessibilite.slice(0, 30)))) {
+            updates.notes_accessibilite = existing.notes_accessibilite ? `${existing.notes_accessibilite}\n${notes_accessibilite}` : notes_accessibilite;
+            hasUpdates = true;
+          }
+          if (notes_technique && (!existing.notes_technique || !existing.notes_technique.includes(notes_technique.slice(0, 30)))) {
+            updates.notes_technique = existing.notes_technique ? `${existing.notes_technique}\n${notes_technique}` : notes_technique;
+            hasUpdates = true;
+          }
+          if (notes_lumiere && (!existing.notes_lumiere || !existing.notes_lumiere.includes(notes_lumiere.slice(0, 30)))) {
+            updates.notes_lumiere = existing.notes_lumiere ? `${existing.notes_lumiere}\n${notes_lumiere}` : notes_lumiere;
+            hasUpdates = true;
+          }
+          if (rating_accessibilite > 0 && !existing.rating_accessibilite) {
+            updates.rating_accessibilite = rating_accessibilite;
+            hasUpdates = true;
+          }
+          if (has_limiteur_son && !existing.has_limiteur_son) {
+            updates.has_limiteur_son = true;
+            hasUpdates = true;
+          }
+          if (has_detecteur_fumee && !existing.has_detecteur_fumee) {
+            updates.has_detecteur_fumee = true;
+            hasUpdates = true;
+          }
+          if (has_wifi && !existing.has_wifi) {
+            updates.has_wifi = true;
+            hasUpdates = true;
+          }
+          if (has_4g_5g && !existing.has_4g_5g) {
+            updates.has_4g_5g = true;
+            hasUpdates = true;
+          }
+          if (type_lieu && !existing.type_lieu) {
+            updates.type_lieu = type_lieu;
+            hasUpdates = true;
+          }
+          if (capacite_min !== '' && !existing.capacite_min) {
+            updates.capacite_min = capacite_min;
+            hasUpdates = true;
+          }
+          if (capacite_max !== '' && !existing.capacite_max) {
+            updates.capacite_max = capacite_max;
+            hasUpdates = true;
+          }
+          if (tarif_indicatif && !existing.tarif_indicatif) {
+            updates.tarif_indicatif = tarif_indicatif;
+            hasUpdates = true;
+          }
+          if (infos_annuaire && (!existing.infos_annuaire || !existing.infos_annuaire.includes(infos_annuaire.slice(0, 30)))) {
+            updates.infos_annuaire = existing.infos_annuaire ? `${existing.infos_annuaire}\n${infos_annuaire}` : infos_annuaire;
+            hasUpdates = true;
+          }
+          if (lien_annuaire && !existing.lien_annuaire) {
+            updates.lien_annuaire = lien_annuaire;
+            hasUpdates = true;
+          }
+          if (telephone && !existing.telephone) {
+            updates.telephone = telephone;
+            hasUpdates = true;
+          }
+
+          const finalCity = updates.city || existing.city;
+          const finalDept = updates.department || existing.department;
+          if (finalCity !== 'À préciser' && finalDept !== 'À préciser' && !existing.is_complete) {
+            updates.is_complete = true;
+            hasUpdates = true;
+          }
+
+          if (hasUpdates) {
+            updates.updated_at = new Date().toISOString();
+            await db.collection('reception_venues').updateOne({ id: existing.id }, { $set: updates });
+            Object.assign(existing, updates);
+            updatedCount++;
+          } else {
+            skippedCount++;
+          }
+        } else {
+          skippedCount++;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      total: venues.length,
+      addedCount,
+      updatedCount,
+      skippedCount,
+      message: `${addedCount} nouveau(x) lieu(x) ajouté(s), ${updatedCount} salle(s) existante(s) mise(s) à jour.`
+    });
+  } catch (err) {
+    console.error("[Venues Import CSV/Excel Error]:", err);
+    res.status(500).json({ error: "Erreur lors de l'import des lieux : " + err.message });
   }
 });
 
@@ -7606,6 +7895,459 @@ api.post('/crm/companies/batch', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("[CRM Batch Companies Error]:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Import direct et haute-fidélité depuis l'application Contrat
+api.post('/crm/import-from-contracts', authMiddleware, async (req, res) => {
+  try {
+    const { includeArchived = true, updateExisting = true } = req.body || {};
+
+    // 1. Récupération de tous les contrats (contracts2 et legacy contracts)
+    const baseQuery = { status: { $nin: ['trash', 'deleted'] } };
+    if (!includeArchived) {
+      baseQuery.status = { $nin: ['trash', 'deleted', 'archived', 'cancelled'] };
+    }
+
+    const contracts2List = await db.collection('contracts2').find(baseQuery).toArray();
+
+    let legacyContracts = [];
+    try {
+      legacyContracts = await db.collection('contracts').find(baseQuery).toArray();
+    } catch (e) {
+      // la collection legacy contracts peut ne pas exister
+    }
+
+    // Déduplication des contrats par id
+    const contractMap = new Map();
+    for (const c of contracts2List) {
+      if (c && c.id) contractMap.set(String(c.id), c);
+    }
+    for (const c of legacyContracts) {
+      if (c && c.id && !contractMap.has(String(c.id))) contractMap.set(String(c.id), c);
+    }
+    const allContracts = Array.from(contractMap.values());
+
+    // 2. Récupération des fiches CRM existantes
+    const existingCompanies = await db.collection('crm_companies').find({}).toArray();
+
+    const normalize = (s) => (s || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+    const cleanEmail = (e) => (e || '').toLowerCase().trim();
+    const cleanPhone = (p) => {
+      if (!p) return '';
+      const digits = String(p).replace(/\D/g, '');
+      return digits.length >= 9 ? digits.slice(-9) : digits;
+    };
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const summaries = [];
+
+    for (const contract of allContracts) {
+      // Extraction souple et robuste de client_info (objet ou chaîne JSON)
+      let info = contract.client_info;
+      if (typeof info === 'string') {
+        try { info = JSON.parse(info); } catch (e) { info = {}; }
+      }
+      info = info || {};
+
+      // Récupération des informations avec fallbacks racine
+      const rawName = (info.name || contract.client_name || '').trim();
+      const rawCompany = (info.company || contract.client_company || '').trim();
+      const rawEmail = cleanEmail(info.email || contract.client_email);
+      const rawPhone = (info.phone || contract.client_phone || '').trim();
+      const rawPhone2 = (info.phone2 || contract.client_phone2 || '').trim();
+      const rawAddress = (info.address || contract.client_address || '').trim();
+      const rawCity = (info.city || contract.client_city || '').trim();
+      const rawZip = (info.zip || info.postal_code || contract.client_zip || contract.client_postal_code || '').trim();
+
+      // Si aucune coordonnée minimale exploitable, ignorer
+      if (!rawName && !rawCompany && !rawEmail && !rawPhone) {
+        skippedCount++;
+        continue;
+      }
+
+      // Construction de l'adresse postale
+      let fullAddress = rawAddress;
+      if (rawZip || rawCity) {
+        const zipCity = [rawZip, rawCity].filter(Boolean).join(' ');
+        if (!fullAddress.includes(zipCity)) {
+          fullAddress = fullAddress ? `${fullAddress}, ${zipCity}` : zipCity;
+        }
+      }
+
+      // Détermination du nom d'affichage et du type
+      const isCompany = !!rawCompany && rawCompany.toLowerCase() !== rawName.toLowerCase();
+      const displayName = rawCompany || rawName || 'Client Inconnu';
+      const clientType = isCompany ? 'Entreprise' : 'Particulier';
+
+      // Informations sur l'événement
+      const eventDate = info.event_date || contract.event_date || '';
+      const eventType = info.event_type || info.custom_event_type || contract.event_type || '';
+      const eventLocation = info.event_location || contract.event_location || '';
+      let eventYear = '';
+      if (eventDate) {
+        const yrMatch = String(eventDate).match(/\b(20\d{2})\b/);
+        if (yrMatch) eventYear = yrMatch[1];
+      }
+
+      // Informations DJ
+      const djId = contract.dj_profile || '';
+      const djName = contract.dj_profile_data?.nom_artistique || 
+                     contract.dj_profile_data?.name || 
+                     contract.dj_profile_data?.nom_complet || 
+                     contract.dj_name || '';
+
+      const contractRef = contract.invoice_number || contract.contract_number || contract.id || '';
+      const contractPrice = contract.final_total || contract.total_price || contract.base_price || '';
+
+      // Contacts secondaires associés (ex: interlocuteur société ou second conjoint)
+      const secondaryContacts = [];
+      if (isCompany && rawName) {
+        secondaryContacts.push({
+          nom: rawName,
+          telephone: rawPhone,
+          email: rawEmail,
+          fonction: "Contact principal"
+        });
+      }
+      if (rawPhone2) {
+        secondaryContacts.push({
+          nom: "Contact secondaire / Conjoint",
+          telephone: rawPhone2,
+          email: "",
+          fonction: "Second contact"
+        });
+      }
+
+      // Recherche de doublon / client existant
+      const normName = normalize(displayName);
+      const normContact = normalize(rawName);
+      const emailMatch = rawEmail ? existingCompanies.find(c => cleanEmail(c.email) === rawEmail) : null;
+      const phoneDigits = cleanPhone(rawPhone);
+      const phoneMatch = phoneDigits && phoneDigits.length >= 9 
+        ? existingCompanies.find(c => cleanPhone(c.telephone) === phoneDigits) 
+        : null;
+      const nameMatch = normName 
+        ? existingCompanies.find(c => normalize(c.nom) === normName || normalize(c.nom) === normContact) 
+        : null;
+
+      const existing = emailMatch || phoneMatch || nameMatch;
+
+      if (!existing) {
+        // Nouveau client à créer
+        const noteLines = [
+          `Importé automatiquement depuis l'application Contrat.`,
+          contractRef ? `Contrat : ${contractRef}` : '',
+          eventDate ? `Date événement : ${eventDate}` : '',
+          eventType ? `Type : ${eventType}` : '',
+          eventLocation ? `Lieu : ${eventLocation}` : '',
+          contractPrice ? `Montant : ${contractPrice} €` : '',
+          djName ? `DJ assigné : ${djName}` : '',
+          info.event_note ? `Note : ${info.event_note}` : ''
+        ].filter(Boolean);
+
+        const newCompany = {
+          id: uuidv4(),
+          nom: displayName,
+          type_client: clientType,
+          siret: "",
+          secteur: "",
+          adresse: fullAddress,
+          telephone: rawPhone || rawPhone2 || "",
+          email: rawEmail,
+          statut: "client",
+          contacts: secondaryContacts,
+          notes: noteLines.join('\n'),
+          blacklist_tags: "",
+          annee_prestation: eventYear,
+          type_evenement: eventType,
+          date_evenement: eventDate,
+          lieu_evenement: eventLocation,
+          dj_id: djId,
+          dj_name: djName,
+          source_contrat: contract.id || "",
+          contract_ids: [contract.id].filter(Boolean),
+          created_at: new Date().toISOString()
+        };
+
+        await db.collection('crm_companies').insertOne(newCompany);
+        existingCompanies.push(newCompany);
+        addedCount++;
+        summaries.push({ nom: displayName, action: 'added' });
+      } else {
+        // Client existant déjà trouvé
+        if (updateExisting) {
+          const updates = {};
+          let hasUpdates = false;
+
+          // Enrichissement des champs vides
+          if (!existing.email && rawEmail) { updates.email = rawEmail; hasUpdates = true; }
+          if (!existing.telephone && rawPhone) { updates.telephone = rawPhone; hasUpdates = true; }
+          if (!existing.adresse && fullAddress) { updates.adresse = fullAddress; hasUpdates = true; }
+          if (!existing.date_evenement && eventDate) { updates.date_evenement = eventDate; hasUpdates = true; }
+          if (!existing.type_evenement && eventType) { updates.type_evenement = eventType; hasUpdates = true; }
+          if (!existing.lieu_evenement && eventLocation) { updates.lieu_evenement = eventLocation; hasUpdates = true; }
+          if (!existing.annee_prestation && eventYear) { updates.annee_prestation = eventYear; hasUpdates = true; }
+          if (!existing.dj_id && djId) { updates.dj_id = djId; updates.dj_name = djName; hasUpdates = true; }
+
+          // Liaison du contrat
+          const currentContractIds = Array.isArray(existing.contract_ids) 
+            ? existing.contract_ids 
+            : (existing.source_contrat ? [existing.source_contrat] : []);
+          if (contract.id && !currentContractIds.includes(contract.id)) {
+            updates.contract_ids = [...currentContractIds, contract.id];
+            hasUpdates = true;
+          }
+
+          // Ajout de la référence dans les notes
+          if (contractRef && (!existing.notes || !existing.notes.includes(contractRef))) {
+            const addedNote = `Rattaché au contrat ${contractRef}${eventDate ? ` (${eventDate})` : ''}`;
+            updates.notes = existing.notes ? `${existing.notes}\n${addedNote}` : addedNote;
+            hasUpdates = true;
+          }
+
+          // Contacts secondaires
+          if (secondaryContacts.length > 0) {
+            const currentContacts = Array.isArray(existing.contacts) ? [...existing.contacts] : [];
+            let addedSec = false;
+            for (const sec of secondaryContacts) {
+              const alreadyHas = currentContacts.some(c => 
+                (c.email && c.email.toLowerCase() === sec.email.toLowerCase()) || 
+                (c.nom && c.nom.toLowerCase() === sec.nom.toLowerCase())
+              );
+              if (!alreadyHas) {
+                currentContacts.push(sec);
+                addedSec = true;
+              }
+            }
+            if (addedSec) {
+              updates.contacts = currentContacts;
+              hasUpdates = true;
+            }
+          }
+
+          if (hasUpdates) {
+            updates.updated_at = new Date().toISOString();
+            await db.collection('crm_companies').updateOne({ id: existing.id }, { $set: updates });
+            Object.assign(existing, updates);
+            updatedCount++;
+            summaries.push({ nom: displayName, action: 'updated' });
+          } else {
+            skippedCount++;
+          }
+        } else {
+          skippedCount++;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      totalContractsAnalyzed: allContracts.length,
+      addedCount,
+      updatedCount,
+      skippedCount,
+      message: `${addedCount} nouveau(x) client(s) importé(s), ${updatedCount} client(s) existant(s) enrichi(s).`
+    });
+  } catch (err) {
+    console.error("[CRM Import From Contracts Error]:", err);
+    res.status(500).json({ error: "Erreur lors de l'import des contrats : " + err.message });
+  }
+});
+
+// Import haute-performance et dédoublonnage pour fichiers CSV et Excel
+api.post('/crm/import-csv-excel', authMiddleware, async (req, res) => {
+  try {
+    const { clients = [], updateExisting = true } = req.body || {};
+    if (!Array.isArray(clients) || clients.length === 0) {
+      return res.status(400).json({ error: "Aucun client fourni pour l'import." });
+    }
+
+    const existingCompanies = await db.collection('crm_companies').find({}).toArray();
+
+    const normalize = (s) => (s || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+    const cleanEmail = (e) => (e || '').toLowerCase().trim();
+    const cleanPhone = (p) => {
+      if (!p) return '';
+      const digits = String(p).replace(/\D/g, '');
+      return digits.length >= 9 ? digits.slice(-9) : digits;
+    };
+
+    const isBanned = (name) => {
+      if (!name) return false;
+      return /marie\s*dupont|jo[eë]l\s*ruttkay/i.test(name);
+    };
+
+    let addedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let bannedCount = 0;
+
+    for (const raw of clients) {
+      const nom = (raw.nom || raw.name || raw.client || '').trim();
+      if (!nom || isBanned(nom)) {
+        if (isBanned(nom)) bannedCount++;
+        else skippedCount++;
+        continue;
+      }
+
+      // Normalisation du type de client
+      let typeClient = "À compléter";
+      const rawType = (raw.type_client || raw.type || '').trim().toLowerCase();
+      if (rawType.includes('entrep') || rawType.includes('societ') || rawType.includes('pro') || rawType.includes('sarl') || rawType.includes('sas')) {
+        typeClient = "Entreprise";
+      } else if (rawType.includes('partic') || rawType.includes('priv')) {
+        typeClient = "Particulier";
+      } else if (rawType.includes('assoc')) {
+        typeClient = "Association";
+      } else if (rawType === "entreprise" || rawType === "particulier" || rawType === "association") {
+        typeClient = raw.type_client;
+      }
+
+      const email = cleanEmail(raw.email);
+      const phone = (raw.telephone || raw.tel || raw.phone || '').trim();
+      const adresse = (raw.adresse || raw.address || '').trim();
+      const siret = (raw.siret || '').trim();
+      const secteur = (raw.secteur || '').trim();
+      const dateEv = (raw.date_evenement || raw.date || '').trim();
+      const typeEv = (raw.type_evenement || raw.event || '').trim();
+      const lieuEv = (raw.lieu_evenement || raw.lieu || '').trim();
+      const djName = (raw.dj_name || raw.dj || '').trim();
+      const annee = raw.annee_prestation || (dateEv ? dateEv.slice(0, 4) : '');
+      const notes = (raw.notes || '').trim();
+      const statut = raw.statut || "client";
+
+      const normName = normalize(nom);
+      const clPhone = cleanPhone(phone);
+
+      // Recherche de doublon existant
+      let existing = null;
+      if (email) {
+        existing = existingCompanies.find(c => cleanEmail(c.email) === email);
+      }
+      if (!existing && clPhone && clPhone.length >= 9) {
+        existing = existingCompanies.find(c => cleanPhone(c.telephone) === clPhone);
+      }
+      if (!existing && normName && normName.length >= 3) {
+        existing = existingCompanies.find(c => normalize(c.nom) === normName);
+      }
+
+      if (!existing) {
+        // Nouveau client
+        const newDoc = {
+          id: uuidv4(),
+          nom,
+          type_client: typeClient,
+          statut,
+          email,
+          telephone: phone,
+          adresse,
+          siret,
+          secteur,
+          date_evenement: dateEv,
+          type_evenement: typeEv,
+          lieu_evenement: lieuEv,
+          annee_prestation: annee,
+          dj_name: djName,
+          dj_id: "",
+          contacts: Array.isArray(raw.contacts) ? raw.contacts : [],
+          notes,
+          blacklist_tags: "",
+          created_at: new Date().toISOString()
+        };
+
+        await db.collection('crm_companies').insertOne(newDoc);
+        existingCompanies.push(newDoc);
+        addedCount++;
+      } else {
+        // Client existant
+        if (updateExisting) {
+          const updates = {};
+          let hasUpdates = false;
+
+          // Mettre à jour le type si vide ou "À compléter" et que le nouveau est renseigné
+          if ((!existing.type_client || existing.type_client === "À compléter" || existing.type_client === "none") && typeClient !== "À compléter") {
+            updates.type_client = typeClient;
+            hasUpdates = true;
+          }
+          if (!existing.email && email) {
+            updates.email = email;
+            hasUpdates = true;
+          }
+          if (!existing.telephone && phone) {
+            updates.telephone = phone;
+            hasUpdates = true;
+          }
+          if (!existing.adresse && adresse) {
+            updates.adresse = adresse;
+            hasUpdates = true;
+          }
+          if (!existing.siret && siret) {
+            updates.siret = siret;
+            hasUpdates = true;
+          }
+          if (!existing.secteur && secteur) {
+            updates.secteur = secteur;
+            hasUpdates = true;
+          }
+          if (!existing.date_evenement && dateEv) {
+            updates.date_evenement = dateEv;
+            hasUpdates = true;
+          }
+          if (!existing.type_evenement && typeEv) {
+            updates.type_evenement = typeEv;
+            hasUpdates = true;
+          }
+          if (!existing.lieu_evenement && lieuEv) {
+            updates.lieu_evenement = lieuEv;
+            hasUpdates = true;
+          }
+          if (!existing.annee_prestation && annee) {
+            updates.annee_prestation = annee;
+            hasUpdates = true;
+          }
+          if (!existing.dj_name && djName) {
+            updates.dj_name = djName;
+            hasUpdates = true;
+          }
+          if (notes) {
+            if (!existing.notes) {
+              updates.notes = notes;
+              hasUpdates = true;
+            } else if (!existing.notes.includes(notes.slice(0, 30))) {
+              updates.notes = `${existing.notes} / ${notes}`;
+              hasUpdates = true;
+            }
+          }
+
+          if (hasUpdates) {
+            updates.updated_at = new Date().toISOString();
+            await db.collection('crm_companies').updateOne({ id: existing.id }, { $set: updates });
+            Object.assign(existing, updates);
+            updatedCount++;
+          } else {
+            skippedCount++;
+          }
+        } else {
+          skippedCount++;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      total: clients.length,
+      addedCount,
+      updatedCount,
+      skippedCount,
+      bannedCount,
+      message: `${addedCount} nouveau(x) client(s) ajouté(s), ${updatedCount} client(s) existant(s) mis à jour.`
+    });
+  } catch (err) {
+    console.error("[CRM Import CSV/Excel Error]:", err);
+    res.status(500).json({ error: "Erreur lors de l'import CSV/Excel : " + err.message });
   }
 });
 

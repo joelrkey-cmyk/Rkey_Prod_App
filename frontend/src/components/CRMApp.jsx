@@ -8,8 +8,9 @@ import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, AlertTriangle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FileSpreadsheet, Folder, Headphones } from "lucide-react";
+import { Building2, Users, Calendar, Plus, Edit, Trash2, Check, X, Search, Phone, Mail, MapPin, FileText, UserPlus, Upload, FileSignature, Sparkles, CheckCircle2, AlertCircle, AlertTriangle, FileCheck, RefreshCw, Layers, ArrowLeft, Loader2, FileUp, Paperclip, GitMerge, CopyCheck, ChevronLeft, ChevronRight, ArrowRightLeft, ShieldAlert, CheckCircle, FolderUp, FileSpreadsheet, Folder, Headphones, Download, DownloadCloud, Smartphone, Database, Copy } from "lucide-react";
 import { toast } from "sonner";
+import * as XLSX from 'xlsx';
 
 import API_BASE_URL from '../utils/apiUrl';
 const BACKEND_URL = API_BASE_URL;
@@ -147,6 +148,43 @@ function CRMApp() {
   const [djs, setDjs] = useState([]);
   const [contractsList, setContractsList] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
+
+  // ══════════ ÉTAT SECTIONS ET CLASSIFICATION CLIENTS ══════════
+  const [clientSectionFilter, setClientSectionFilter] = useState("all"); // 'all' | 'Entreprise' | 'Particulier' | 'Association' | 'needs_completion'
+
+  // ══════════ ÉTAT IMPORTATION DIRECTE CSV & EXCEL ══════════
+  const [showCsvExcelModal, setShowCsvExcelModal] = useState(false);
+  const [csvExcelStep, setCsvExcelStep] = useState('upload'); // 'upload' | 'preview'
+  const [csvImportTab, setCsvImportTab] = useState('file'); // 'file' | 'paste'
+  const [csvPastedText, setCsvPastedText] = useState("");
+  const [csvExcelParsedClients, setCsvExcelParsedClients] = useState([]);
+  const [csvExcelRawFilename, setCsvExcelRawFilename] = useState("");
+  const [isImportingCsvExcel, setIsImportingCsvExcel] = useState(false);
+  const [updateExistingInCsv, setUpdateExistingInCsv] = useState(true);
+  const [detectedHeadersList, setDetectedHeadersList] = useState([]);
+  const [rawGridData, setRawGridData] = useState([]);
+  const [showColumnMapper, setShowColumnMapper] = useState(false);
+  const [columnMapping, setColumnMapping] = useState({
+    nom: "",
+    prenom: "",
+    type: "",
+    email: "",
+    tel: "",
+    adresse: "",
+    date: "",
+    notes: ""
+  });
+
+  // ══════════ ÉTAT IMPORTATION DEPUIS L'APP CONTRAT ══════════
+  const [showImportContractsAppDialog, setShowImportContractsAppDialog] = useState(false);
+  const [isImportingFromContractsApp, setIsImportingFromContractsApp] = useState(false);
+  const [includeArchivedContracts, setIncludeArchivedContracts] = useState(true);
+  const [updateExistingFromContracts, setUpdateExistingFromContracts] = useState(true);
+  const [lastImportResult, setLastImportResult] = useState(null);
+
+  // ══════════ ÉTAT EXPORT COMPLET DES CONTACTS ══════════
+  const [showFullExportModal, setShowFullExportModal] = useState(false);
+  const [exportScope, setExportScope] = useState("all"); // 'all' | 'filtered'
 
   // ══════════ ÉTAT IMPORTATION CONTRATS (IA) ══════════
   const [showContractModal, setShowContractModal] = useState(false);
@@ -1609,14 +1647,35 @@ function CRMApp() {
     return relances.filter(r => r.statut === "active" && r.date >= today);
   };
 
+  const isCompanyIncomplete = (company) => {
+    if (!company) return false;
+    const missingEmail = !hasCompanyEmail(company);
+    const rawType = (company.type_client || "").trim().toLowerCase();
+    const missingType = !rawType || rawType === "à compléter" || rawType === "a completer" || rawType === "inconnu" || rawType === "none";
+    return missingEmail || missingType;
+  };
+
   const filteredCompanies = companies.filter(company => {
+    // Filtre par section principale (Entreprise, Particulier, Association, ou À compléter)
+    if (clientSectionFilter === "needs_completion") {
+      if (!isCompanyIncomplete(company)) return false;
+    } else if (clientSectionFilter === "Entreprise") {
+      if (company.type_client !== "Entreprise") return false;
+    } else if (clientSectionFilter === "Particulier") {
+      if (company.type_client !== "Particulier") return false;
+    } else if (clientSectionFilter === "Association") {
+      if (company.type_client !== "Association") return false;
+    }
+
     const matchesSearch = (company.nom || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (company.secteur && company.secteur.toLowerCase().includes(searchTerm.toLowerCase())) ||
                           (company.blacklist_tags && company.blacklist_tags.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStatus = statusFilter === "all" || company.statut === statusFilter;
-    const matchesType = typeFilter === "all" || 
-                        company.type_client === typeFilter || 
-                        (!company.type_client && typeFilter === "Entreprise"); // Retro-compatibilité
+    
+    const isTypeIncomplete = !company.type_client || company.type_client === "À compléter" || company.type_client === "A completer" || company.type_client.trim() === "";
+    const matchesType = typeFilter === "all" ? true :
+                        (typeFilter === "À compléter") ? isTypeIncomplete :
+                        (company.type_client === typeFilter);
 
     const matchesAnnee = anneeFilter === "all" || getCompanyYear(company) === anneeFilter;
     const matchesEvent = eventFilter === "all" || getCompanyEventType(company).toLowerCase() === eventFilter.toLowerCase();
@@ -1631,9 +1690,11 @@ function CRMApp() {
       if (!evDate || evDate > endDateFilter) matchesDateRange = false;
     }
 
-    // Filtre par présence ou absence d'email
+    // Filtre par présence ou absence d'email / statut à compléter
     const matchesEmail = emailFilter === "all" || 
+                         (emailFilter === "needs_completion" && isCompanyIncomplete(company)) ||
                          (emailFilter === "missing" && !hasCompanyEmail(company)) || 
+                         (emailFilter === "missing_type" && isTypeIncomplete) ||
                          (emailFilter === "has_email" && hasCompanyEmail(company));
 
     // Filtre par DJ / Artiste titulaire des contrats
@@ -1678,15 +1739,21 @@ function CRMApp() {
   };
 
   const getTypeBadge = (type) => {
-    if (!type) type = "Entreprise";
+    if (!type || type === "À compléter" || type === "A completer" || type === "none" || type === "Inconnu") {
+      return (
+        <Badge className="bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 font-medium">
+          ⚠️ À compléter
+        </Badge>
+      );
+    }
     const styles = {
-      "Particulier": "bg-indigo-100 text-indigo-800 hover:bg-indigo-100",
-      "Entreprise": "bg-slate-100 text-slate-800 hover:bg-slate-100",
-      "Association": "bg-purple-100 text-purple-800 hover:bg-purple-100"
+      "Particulier": "bg-indigo-100 text-indigo-800 hover:bg-indigo-100 border border-indigo-200",
+      "Entreprise": "bg-slate-100 text-slate-800 hover:bg-slate-100 border border-slate-200",
+      "Association": "bg-purple-100 text-purple-800 hover:bg-purple-100 border border-purple-200"
     };
     
     return (
-      <Badge className={styles[type] || ""}>
+      <Badge className={styles[type] || "bg-amber-100 text-amber-900 border border-amber-300"}>
         {type}
       </Badge>
     );
@@ -1700,55 +1767,582 @@ function CRMApp() {
     companies.map(c => getCompanyEventType(c)).filter(Boolean)
   )).sort();
 
-  const handleExportEmails = () => {
-    const mainEmails = filteredCompanies
-      .flatMap(c => extractEmails(c.email));
-    
-    const contactEmails = filteredCompanies
-      .flatMap(c => (c.contacts || []).flatMap(contact => extractEmails(contact.email)));
+  // ══════════ IMPORTATION DIRECTE DEPUIS L'APP CONTRAT ══════════
+  const handleImportFromContracts = async () => {
+    setIsImportingFromContractsApp(true);
+    setLastImportResult(null);
+    try {
+      const response = await axios.post(`${API}/crm/import-from-contracts`, {
+        includeArchived: includeArchivedContracts,
+        updateExisting: updateExistingFromContracts
+      });
 
-    const allEmails = Array.from(new Set([...mainEmails, ...contactEmails]));
-    
-    if (allEmails.length === 0) {
-      toast.error("Aucune adresse email trouvée pour les clients filtrés.");
-      return;
+      if (response.data && response.data.success) {
+        setLastImportResult(response.data);
+        toast.success(`🎉 ${response.data.message || "Importation terminée avec succès !"}`);
+        await loadCompanies();
+        await loadContracts();
+      } else {
+        toast.error("Erreur lors de l'importation des contrats.");
+      }
+    } catch (err) {
+      console.error("Error importing from contracts app:", err);
+      const errMsg = err.response?.data?.error || err.message || "Erreur de connexion";
+      toast.error(`Échec de l'import : ${errMsg}`);
+    } finally {
+      setIsImportingFromContractsApp(false);
     }
-    
-    setShowExportDialog(true);
   };
 
-  const handleDownloadCSV = () => {
-    const headers = ["Nom du Client", "Type de Client", "Statut", "Email Principal", "Téléphone Principal", "Adresse", "Date de prestation", "Type d'événement", "Année", "DJ Titulaire"];
-    const rows = filteredCompanies.map(c => {
-      const cleanedEmails = extractEmails(c.email).join(", ");
+  // ══════════ IMPORTATION DIRECTE CSV & EXCEL HAUTE RÉSILIENCE ══════════
+  const processRawGrid = (validRows, sourceFilename = "", overrideMapping = null) => {
+    if (!validRows || !Array.isArray(validRows) || validRows.length === 0) {
+      toast.error("Le fichier sélectionné semble vide ou illisible.");
+      return;
+    }
+
+    // Garder une copie des lignes brutes pour le re-mapping éventuel
+    setRawGridData(validRows);
+
+    // Mots-clés de notation des lignes d'en-tête
+    const headerKeywords = [
+      "nom", "prenom", "client", "entreprise", "societe", "raison", "contact",
+      "mail", "email", "courriel", "tel", "phone", "portable", "mobile",
+      "adresse", "rue", "ville", "cp", "code", "postal", "type", "secteur",
+      "statut", "date", "event", "evenement", "prestation", "dj", "siret", "note",
+      "organisme", "structure", "designation", "intitule", "interlocuteur"
+    ];
+
+    let bestHeaderIndex = -1;
+    let maxScore = 0;
+
+    for (let r = 0; r < Math.min(validRows.length, 15); r++) {
+      const row = validRows[r];
+      if (!Array.isArray(row)) continue;
+      let score = 0;
+      for (const cell of row) {
+        const str = String(cell || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        if (headerKeywords.some(k => str.includes(k))) score++;
+      }
+      if (score > maxScore) {
+        maxScore = score;
+        bestHeaderIndex = r;
+      }
+    }
+
+    let detectedHeaders = [];
+    let dataRows = [];
+
+    if (bestHeaderIndex >= 0 && maxScore >= 1) {
+      const headerRow = validRows[bestHeaderIndex] || [];
+      detectedHeaders = headerRow.map((h, i) => {
+        const s = String(h || "").trim();
+        return s || `Colonne_${i + 1}`;
+      });
+      dataRows = validRows.slice(bestHeaderIndex + 1);
+    } else {
+      const maxCols = Math.max(...validRows.map(r => r ? r.length : 0), 1);
+      for (let i = 0; i < maxCols; i++) detectedHeaders.push(`Colonne_${i + 1}`);
+      dataRows = validRows;
+    }
+
+    setDetectedHeadersList(detectedHeaders);
+
+    const normHeaders = detectedHeaders.map(h => 
+      h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "")
+    );
+
+    // Détection automatique de la meilleure colonne pour chaque champ
+    const findColName = (keywords) => {
+      for (let i = 0; i < normHeaders.length; i++) {
+        const nh = normHeaders[i];
+        if (keywords.some(k => nh.includes(k))) return detectedHeaders[i];
+      }
+      return "";
+    };
+
+    const currentMapping = overrideMapping || {
+      nom: columnMapping.nom || findColName(["raisonsoc", "nomdelentreprise", "societe", "entreprise", "nomclient", "nomduclient", "client", "denomination", "intitule", "organisme", "structure", "contact", "nom"]),
+      prenom: findColName(["prenom"]),
+      type: columnMapping.type || findColName(["typeclient", "type", "secteur", "categorie", "statutclient", "nature"]),
+      email: columnMapping.email || findColName(["email", "mail", "courriel", "adressemail", "adresseemail"]),
+      tel: columnMapping.tel || findColName(["telephone", "tel", "phone", "portable", "mobile", "gsm", "num"]),
+      adresse: columnMapping.adresse || findColName(["adressepostale", "adresse", "rue", "voie", "domicile", "siege"]),
+      cp: findColName(["codepostal", "cp", "zip"]),
+      ville: findColName(["ville", "city", "commune", "localite"]),
+      date: columnMapping.date || findColName(["dateevenement", "dateprestation", "dateevent", "datecontrat", "date"]),
+      type_event: findColName(["typeevenement", "evenement", "event", "prestation", "formule"]),
+      lieu: findColName(["lieuevenement", "lieu", "salle", "endroit"]),
+      dj: findColName(["djname", "dj", "artiste", "animateur"]),
+      siret: findColName(["siret", "siren"]),
+      notes: columnMapping.notes || findColName(["notes", "note", "remarques", "commentaires", "info", "description", "divers"])
+    };
+
+    setColumnMapping(currentMapping);
+
+    const cleanStr = (val) => {
+      if (val === null || val === undefined) return "";
+      return String(val).trim();
+    };
+
+    const isBanned = (name) => {
+      if (!name) return false;
+      return /marie\s*dupont|jo[eë]l\s*ruttkay/i.test(name);
+    };
+
+    const parsed = [];
+    let bannedFound = 0;
+
+    for (const row of dataRows) {
+      if (!Array.isArray(row) || row.every(c => !c || String(c).trim() === "")) continue;
+
+      const valByHeader = {};
+      detectedHeaders.forEach((dh, idx) => {
+        valByHeader[dh] = cleanStr(row[idx]);
+        valByHeader[normHeaders[idx]] = cleanStr(row[idx]);
+      });
+
+      // 1. Extraction Nom
+      let nom = "";
+      if (currentMapping.nom && valByHeader[currentMapping.nom]) {
+        nom = valByHeader[currentMapping.nom];
+      }
+      if (currentMapping.prenom && valByHeader[currentMapping.prenom]) {
+        const p = valByHeader[currentMapping.prenom];
+        nom = nom ? (p.toLowerCase() === nom.toLowerCase() ? nom : `${p} ${nom}`.trim()) : p;
+      }
+      // Fallback si pas de nom trouvé
+      if (!nom) {
+        for (const [k, v] of Object.entries(valByHeader)) {
+          if (!v) continue;
+          if (k.includes("nom") || k.includes("client") || k.includes("societe") || k.includes("entrep") || k.includes("raison") || k.includes("contact") || k.includes("structure") || k.includes("organisme")) {
+            nom = v;
+            break;
+          }
+        }
+      }
+      // Dernier recours : première cellule texte valide
+      if (!nom) {
+        for (const cell of row) {
+          const s = cleanStr(cell);
+          if (s && !s.includes("@") && !/^\d{9,14}$/.test(s.replace(/\D/g, "")) && !/^\d{4}-\d{2}-\d{2}$/.test(s) && isNaN(Number(s)) && s.length >= 2) {
+            nom = s;
+            break;
+          }
+        }
+      }
+
+      if (!nom || isBanned(nom)) {
+        if (isBanned(nom)) bannedFound++;
+        continue;
+      }
+
+      // 2. Extraction Type client
+      let rawType = "";
+      if (currentMapping.type && valByHeader[currentMapping.type]) {
+        rawType = valByHeader[currentMapping.type];
+      } else {
+        rawType = valByHeader["type"] || valByHeader["typeclient"] || valByHeader["secteur"] || valByHeader["categorie"] || "";
+      }
+      const rawTypeLower = rawType.toLowerCase();
+      let typeClient = "À compléter";
+      if (rawTypeLower.includes('entrep') || rawTypeLower.includes('societ') || rawTypeLower.includes('pro') || rawTypeLower.includes('sarl') || rawTypeLower.includes('sas') || rawTypeLower.includes('sa ') || rawTypeLower.includes('eurl') || rawTypeLower.includes('siren')) {
+        typeClient = "Entreprise";
+      } else if (rawTypeLower.includes('partic') || rawTypeLower.includes('priv') || rawTypeLower.includes('indiv') || rawTypeLower.includes('famill') || rawTypeLower.includes('mariage')) {
+        typeClient = "Particulier";
+      } else if (rawTypeLower.includes('assoc') || rawTypeLower.includes('club') || rawTypeLower.includes('feder') || rawTypeLower.includes('fondation') || rawTypeLower.includes('ong')) {
+        typeClient = "Association";
+      }
+
+      // 3. Extraction Email
+      let email = "";
+      if (currentMapping.email && valByHeader[currentMapping.email]) {
+        email = valByHeader[currentMapping.email];
+      }
+      if (!email) {
+        for (const cell of row) {
+          const s = cleanStr(cell);
+          if (s.includes("@") && !s.includes(" ")) {
+            email = s;
+            break;
+          }
+        }
+      }
+
+      // 4. Extraction Téléphone
+      let tel = "";
+      if (currentMapping.tel && valByHeader[currentMapping.tel]) {
+        tel = valByHeader[currentMapping.tel];
+      }
+      if (!tel) {
+        for (const cell of row) {
+          const s = cleanStr(cell);
+          const digits = s.replace(/\D/g, "");
+          if (digits.length >= 9 && digits.length <= 14 && (s.startsWith("0") || s.startsWith("+") || s.startsWith("33"))) {
+            tel = s;
+            break;
+          }
+        }
+      }
+
+      // 5. Extraction Adresse
+      let adresse = "";
+      if (currentMapping.adresse && valByHeader[currentMapping.adresse]) {
+        adresse = valByHeader[currentMapping.adresse];
+      }
+      const cp = currentMapping.cp && valByHeader[currentMapping.cp] ? valByHeader[currentMapping.cp] : (valByHeader["cp"] || valByHeader["codepostal"] || "");
+      const ville = currentMapping.ville && valByHeader[currentMapping.ville] ? valByHeader[currentMapping.ville] : (valByHeader["ville"] || valByHeader["city"] || "");
+      if (cp || ville) {
+        const cpVille = [cp, ville].filter(Boolean).join(" ");
+        if (!adresse.includes(cpVille)) {
+          adresse = adresse ? `${adresse}, ${cpVille}` : cpVille;
+        }
+      }
+
+      // 6. Prestation & Événement
+      const dateEv = currentMapping.date && valByHeader[currentMapping.date] ? valByHeader[currentMapping.date] : (valByHeader["date"] || valByHeader["dateevenement"] || "");
+      const typeEv = currentMapping.type_event && valByHeader[currentMapping.type_event] ? valByHeader[currentMapping.type_event] : (valByHeader["evenement"] || valByHeader["event"] || valByHeader["prestation"] || "");
+      const lieuEv = currentMapping.lieu && valByHeader[currentMapping.lieu] ? valByHeader[currentMapping.lieu] : (valByHeader["lieu"] || valByHeader["salle"] || "");
+      const dj = currentMapping.dj && valByHeader[currentMapping.dj] ? valByHeader[currentMapping.dj] : (valByHeader["dj"] || valByHeader["artiste"] || "");
+      const siret = currentMapping.siret && valByHeader[currentMapping.siret] ? valByHeader[currentMapping.siret] : (valByHeader["siret"] || "");
+      const notes = currentMapping.notes && valByHeader[currentMapping.notes] ? valByHeader[currentMapping.notes] : (valByHeader["notes"] || valByHeader["remarques"] || "");
+
+      // Dédoublonnage instantané avec les clients existants
+      const normNomStr = nom.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+      const cleanPhoneDigits = tel.replace(/\D/g, "");
+      const cleanEmailStr = email.toLowerCase().trim();
+
+      const existingMatch = companies.find(c => {
+        if (cleanEmailStr && c.email && c.email.toLowerCase().trim() === cleanEmailStr) return true;
+        if (cleanPhoneDigits && cleanPhoneDigits.length >= 9 && c.telephone) {
+          const cDigits = c.telephone.replace(/\D/g, "");
+          if (cDigits && cDigits.slice(-9) === cleanPhoneDigits.slice(-9)) return true;
+        }
+        if (normNomStr && normNomStr.length >= 3 && c.nom) {
+          const cNorm = c.nom.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+          if (cNorm === normNomStr) return true;
+        }
+        return false;
+      });
+
+      const isIncomplete = !cleanEmailStr || typeClient === "À compléter";
+
+      parsed.push({
+        id: `csv_${Date.now()}_${parsed.length}`,
+        nom,
+        type_client: typeClient,
+        email,
+        telephone: tel,
+        adresse,
+        siret,
+        secteur: "",
+        date_evenement: dateEv,
+        type_evenement: typeEv,
+        lieu_evenement: lieuEv,
+        dj_name: dj,
+        notes,
+        statut: "client",
+        isExisting: !!existingMatch,
+        existingNom: existingMatch ? existingMatch.nom : null,
+        isIncomplete
+      });
+    }
+
+    if (bannedFound > 0) {
+      toast.info(`🛡️ ${bannedFound} contact(s) exclu(s) automatiquement selon votre consigne (Marie Dupont / Joël Ruttkay).`);
+    }
+
+    if (parsed.length === 0) {
+      setShowColumnMapper(true);
+      toast.warning("Aucun nom de client n'a été reconnu automatiquement. Sélectionnez la colonne du Nom ci-dessous pour lancer l'analyse.");
+      return;
+    }
+
+    setCsvExcelParsedClients(parsed);
+    setCsvExcelRawFilename(sourceFilename);
+    setCsvExcelStep('preview');
+    toast.success(`📊 ${parsed.length} contacts chargés et analysés avec succès !`);
+  };
+
+  const handleCsvExcelFileSelect = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: 'array', cellDates: true });
+        
+        // Sélectionner la feuille avec le plus de lignes
+        let bestSheetName = wb.SheetNames[0];
+        let maxRowCount = 0;
+        for (const name of wb.SheetNames) {
+          const s = wb.Sheets[name];
+          const g = XLSX.utils.sheet_to_json(s, { header: 1, defval: "" });
+          if (g.length > maxRowCount) {
+            maxRowCount = g.length;
+            bestSheetName = name;
+          }
+        }
+
+        const ws = wb.Sheets[bestSheetName];
+        const rawGrid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        processRawGrid(rawGrid, file.name);
+      } catch (err) {
+        console.error("Error reading CSV/Excel file as array:", err);
+        // Fallback texte pour CSV (Windows-1252 / UTF-8)
+        try {
+          const textReader = new FileReader();
+          textReader.onload = (te) => {
+            const text = te.target.result;
+            const wbText = XLSX.read(text, { type: 'string' });
+            const wsText = wbText.Sheets[wbText.SheetNames[0]];
+            const rawGridText = XLSX.utils.sheet_to_json(wsText, { header: 1, defval: "" });
+            processRawGrid(rawGridText, file.name);
+          };
+          textReader.readAsText(file, 'utf-8');
+        } catch (fallbackErr) {
+          toast.error("Erreur de lecture du fichier : " + err.message);
+        }
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleCsvPasteSubmit = () => {
+    if (!csvPastedText || !csvPastedText.trim()) {
+      toast.error("Veuillez coller le texte de votre fichier CSV.");
+      return;
+    }
+    try {
+      const wb = XLSX.read(csvPastedText, { type: 'string', raw: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rawGrid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      if (rawGrid.length > 0) {
+        processRawGrid(rawGrid, "texte_colle.csv");
+        return;
+      }
+    } catch (e) {}
+
+    // Fallback split manuel par délimiteur
+    const lines = csvPastedText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length > 0) {
+      const sep = lines[0].includes(';') ? ';' : lines[0].includes('\t') ? '\t' : lines[0].includes('|') ? '|' : ',';
+      const rawGrid = lines.map(line => {
+        return line.split(sep).map(c => c.replace(/^["']|["']$/g, '').trim());
+      });
+      processRawGrid(rawGrid, "texte_colle.csv");
+    }
+  };
+
+  const handleConfirmCsvExcelImport = async () => {
+    if (csvExcelParsedClients.length === 0) {
+      toast.error("Aucun contact à importer.");
+      return;
+    }
+
+    setIsImportingCsvExcel(true);
+    try {
+      const CHUNK_SIZE = 100;
+      let totalAdded = 0;
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+
+      for (let i = 0; i < csvExcelParsedClients.length; i += CHUNK_SIZE) {
+        const batch = csvExcelParsedClients.slice(i, i + CHUNK_SIZE);
+        const res = await axios.post(`${API}/crm/import-csv-excel`, {
+          clients: batch,
+          updateExisting: updateExistingInCsv
+        });
+        if (res.data) {
+          totalAdded += res.data.addedCount || 0;
+          totalUpdated += res.data.updatedCount || 0;
+          totalSkipped += res.data.skippedCount || 0;
+        }
+      }
+
+      toast.success(`✨ Importation réussie ! ${totalAdded} nouveau(x) contact(s) ajouté(s), ${totalUpdated} client(s) existant(s) mis à jour.`);
+      setShowCsvExcelModal(false);
+      setCsvExcelParsedClients([]);
+      setCsvExcelStep('upload');
+      await loadCompanies();
+    } catch (err) {
+      console.error("CSV/Excel import error:", err);
+      toast.error("Erreur lors de l'import : " + (err.response?.data?.error || err.message));
+    } finally {
+      setIsImportingCsvExcel(false);
+    }
+  };
+
+  // ══════════ EXPORTATIONS MULTI-FORMATS DU FICHIER CLIENT ══════════
+  const downloadFullCSV = (targetCompanies) => {
+    if (!targetCompanies || targetCompanies.length === 0) {
+      toast.warning("Aucun contact à exporter.");
+      return;
+    }
+
+    const headers = [
+      "ID",
+      "Nom du Client / Raison Sociale",
+      "Type de Client",
+      "Statut",
+      "Email Principal",
+      "Téléphone",
+      "Adresse Complète",
+      "Date de Prestation",
+      "Type d'Événement",
+      "Lieu de Réception",
+      "Année Prestation",
+      "DJ Titulaire",
+      "SIRET",
+      "Secteur",
+      "Contacts Secondaires",
+      "Notes & Historique Contrats",
+      "Date de Création"
+    ];
+
+    const rows = targetCompanies.map(c => {
+      const secondaryStr = (c.contacts || [])
+        .map(ct => `${ct.nom || ''} (${ct.fonction || 'Contact'}: ${ct.telephone || ''} ${ct.email || ''})`.trim())
+        .join(" | ");
+
       return [
+        c.id || "",
         c.nom || "",
         c.type_client || "Particulier",
-        c.statut || "prospect",
-        cleanedEmails,
+        c.statut || "client",
+        extractEmails(c.email).join(", ") || c.email || "",
         c.telephone || "",
         c.adresse || "",
         getCompanyEventDate(c) || "",
         getCompanyEventType(c) || "",
+        c.lieu_evenement || "",
         getCompanyYear(c) || "",
-        getCompanyMainDjName(c) || ""
+        getCompanyMainDjName(c) || "",
+        c.siret || "",
+        c.secteur || "",
+        secondaryStr,
+        (c.notes || "").replace(/[\r\n]+/g, " / "),
+        c.created_at ? new Date(c.created_at).toLocaleDateString("fr-FR") : ""
       ];
     });
 
     const csvContent = [
       headers.join(";"),
       ...rows.map(row => row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(";"))
-    ].join("\n");
+    ].join("\r\n");
 
     const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `export_fichier_clients_${new Date().toISOString().split('T')[0]}.csv`);
+    link.href = url;
+    link.download = `contacts_fichier_clients_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("Fichier CSV exporté avec succès !");
+    URL.revokeObjectURL(url);
+    toast.success(`Fichier CSV de ${targetCompanies.length} contact(s) exporté avec succès !`);
+  };
+
+  const downloadVCard = (targetCompanies) => {
+    if (!targetCompanies || targetCompanies.length === 0) {
+      toast.warning("Aucun contact à exporter.");
+      return;
+    }
+
+    let vcardContent = "";
+    for (const c of targetCompanies) {
+      const displayName = c.nom || "Contact";
+      const isCompany = c.type_client === "Entreprise";
+      const email = (c.email || "").trim();
+      const phone = (c.telephone || "").trim();
+      const address = (c.adresse || "").trim();
+      const dj = getCompanyMainDjName(c);
+      const eventDate = getCompanyEventDate(c);
+      const eventType = getCompanyEventType(c);
+
+      const noteLines = [];
+      if (eventType) noteLines.push(`Événement : ${eventType}`);
+      if (eventDate) noteLines.push(`Date : ${eventDate}`);
+      if (c.lieu_evenement) noteLines.push(`Lieu : ${c.lieu_evenement}`);
+      if (dj) noteLines.push(`DJ : ${dj}`);
+      if (c.notes) noteLines.push(c.notes.replace(/[\r\n]+/g, ' '));
+
+      vcardContent += "BEGIN:VCARD\r\n";
+      vcardContent += "VERSION:3.0\r\n";
+      vcardContent += `FN:${displayName}\r\n`;
+      vcardContent += `N:${displayName};;;;\r\n`;
+      if (isCompany) {
+        vcardContent += `ORG:${displayName}\r\n`;
+      }
+      if (email) {
+        vcardContent += `EMAIL;TYPE=INTERNET,PREF:${email}\r\n`;
+      }
+      if (phone) {
+        vcardContent += `TEL;TYPE=CELL,VOICE:${phone}\r\n`;
+      }
+      if (address) {
+        vcardContent += `ADR;TYPE=WORK:;;${address.replace(/[\r\n,;]+/g, ' ')};;;;\r\n`;
+      }
+      if (noteLines.length > 0) {
+        vcardContent += `NOTE:${noteLines.join(' - ')}\r\n`;
+      }
+      vcardContent += "END:VCARD\r\n";
+    }
+
+    const blob = new Blob([vcardContent], { type: "text/vcard;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `carnet_contacts_vcard_${new Date().toISOString().split('T')[0]}.vcf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Carnet vCard (.vcf) de ${targetCompanies.length} contact(s) téléchargé !`);
+  };
+
+  const downloadJSON = (targetCompanies) => {
+    if (!targetCompanies || targetCompanies.length === 0) {
+      toast.warning("Aucun contact à exporter.");
+      return;
+    }
+
+    const jsonStr = JSON.stringify(targetCompanies, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sauvegarde_fichier_clients_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`Export JSON de ${targetCompanies.length} contact(s) téléchargé !`);
+  };
+
+  const copyAllEmails = (targetCompanies) => {
+    const emails = (targetCompanies || [])
+      .flatMap(c => [
+        ...extractEmails(c.email),
+        ...(c.contacts || []).flatMap(ct => extractEmails(ct.email))
+      ]);
+    const unique = Array.from(new Set(emails.filter(Boolean)));
+    if (unique.length === 0) {
+      toast.error("Aucune adresse email trouvée parmi les contacts sélectionnés.");
+      return;
+    }
+    navigator.clipboard.writeText(unique.join(", "));
+    toast.success(`📋 ${unique.length} adresse(s) email copiée(s) dans le presse-papier !`);
+  };
+
+  const handleExportEmails = () => {
+    setExportScope('filtered');
+    setShowFullExportModal(true);
+  };
+
+  const handleDownloadCSV = () => {
+    const target = exportScope === 'all' ? companies : filteredCompanies;
+    downloadFullCSV(target);
   };
 
   return (
@@ -1761,37 +2355,79 @@ function CRMApp() {
             </h1>
             <p className="text-gray-600">Base de données globale : particuliers, entreprises et associations</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Bouton Importation directe Contrats */}
+            <Button 
+              onClick={() => setShowImportContractsAppDialog(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-semibold flex items-center gap-2"
+            >
+              <FileSignature className="h-4 w-4 text-emerald-200" />
+              <span>Importer depuis Contrats</span>
+            </Button>
+
+            {/* Bouton Importation directe CSV / Excel */}
+            <Button 
+              onClick={() => {
+                setCsvExcelStep('upload');
+                setCsvExcelParsedClients([]);
+                setShowCsvExcelModal(true);
+              }}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-semibold flex items-center gap-2"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-indigo-200" />
+              <span>Importer CSV / Excel</span>
+            </Button>
+
+            {/* Bouton Exportation Tous Contacts */}
+            <Button 
+              onClick={() => {
+                setExportScope('all');
+                setShowFullExportModal(true);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm font-semibold flex items-center gap-2"
+            >
+              <Download className="h-4 w-4 text-blue-200" />
+              <span>Exporter mes contacts</span>
+            </Button>
+
+            {/* Bouton Dédoublonnage */}
             <Button 
               onClick={handleSearchDuplicates}
               disabled={isSearchingDuplicates}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm font-semibold flex items-center gap-2"
+              variant="outline"
+              className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 shadow-sm font-semibold flex items-center gap-2 bg-white"
             >
               {isSearchingDuplicates ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <GitMerge className="h-4 w-4 text-indigo-200" />
+                <GitMerge className="h-4 w-4 text-indigo-600" />
               )}
-              <span>Rechercher les doublons</span>
+              <span>Dédoublonnage</span>
             </Button>
+
+            {/* Bouton Importation Fichiers IA */}
             <Button 
               onClick={() => {
                 setContractModalStep('upload');
                 setShowContractModal(true);
               }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm font-semibold flex items-center gap-2"
+              variant="outline"
+              className="border-emerald-300 text-emerald-700 hover:bg-emerald-50 shadow-sm font-semibold flex items-center gap-2 bg-white"
             >
-              <Sparkles className="h-4 w-4 text-emerald-200" />
-              <span>Importer des contrats (IA)</span>
+              <Sparkles className="h-4 w-4 text-emerald-600" />
+              <span>Importer des fichiers (IA)</span>
             </Button>
+
+            {/* Bouton Importation Clients Location Matériel */}
             <Button 
               onClick={handleImportContacts}
               disabled={isImporting}
-              variant="outline"
-              className="bg-white border-blue-300 text-blue-700 hover:bg-blue-50"
+              variant="ghost"
+              className="text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              title="Importer également les clients de l'application Matériel (Location)"
             >
-              <UserPlus className="mr-2 h-4 w-4" />
-              {isImporting ? "Importation..." : "Importer depuis contacts"}
+              <UserPlus className="mr-1.5 h-4 w-4 text-slate-500" />
+              {isImporting ? "Importation..." : "Importer Location"}
             </Button>
           </div>
         </div>
@@ -1833,15 +2469,18 @@ function CRMApp() {
           </div>
           <div className="h-8 w-px bg-slate-200 hidden md:block"></div>
           <div 
-            onClick={() => setEmailFilter(prev => prev === "missing" ? "all" : "missing")}
-            className={`flex items-center gap-2 cursor-pointer px-2.5 py-1 rounded-lg transition-all select-none ${emailFilter === "missing" ? "bg-red-100 border border-red-300 ring-2 ring-red-400" : "hover:bg-red-50/70"}`}
-            title="Cliquer pour afficher uniquement les fiches sans adresse email"
+            onClick={() => {
+              setClientSectionFilter(prev => prev === "needs_completion" ? "all" : "needs_completion");
+              setEmailFilter(prev => prev === "needs_completion" ? "all" : "needs_completion");
+            }}
+            className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-xl transition-all select-none border ${clientSectionFilter === "needs_completion" || emailFilter === "needs_completion" ? "bg-amber-100 border-amber-400 ring-2 ring-amber-400 shadow-xs" : "bg-amber-50/60 border-amber-200/80 hover:bg-amber-100/70"}`}
+            title="Cliquer pour afficher la section À compléter (sans email ou sans type de client)"
           >
             <span className="text-xl">⚠️</span>
             <div>
-              <span className="text-xs text-slate-500 block font-medium uppercase tracking-wider">Sans Email</span>
-              <span className={`text-lg font-bold ${companies.filter(c => !hasCompanyEmail(c)).length > 0 ? "text-red-600" : "text-slate-700"}`}>
-                {companies.filter(c => !hasCompanyEmail(c)).length}
+              <span className="text-xs text-amber-900 block font-bold uppercase tracking-wider">À compléter</span>
+              <span className={`text-lg font-bold ${companies.filter(isCompanyIncomplete).length > 0 ? "text-amber-700" : "text-slate-700"}`}>
+                {companies.filter(isCompanyIncomplete).length}
               </span>
             </div>
           </div>
@@ -1963,17 +2602,26 @@ function CRMApp() {
                       <SelectItem value="Particulier">Particuliers</SelectItem>
                       <SelectItem value="Entreprise">Entreprises</SelectItem>
                       <SelectItem value="Association">Associations</SelectItem>
+                      <SelectItem value="À compléter" className="text-amber-700 font-medium">
+                        ⚠️ À compléter ({companies.filter(c => !c.type_client || c.type_client === "À compléter" || c.type_client.trim() === "").length})
+                      </SelectItem>
                     </SelectContent>
                   </Select>
 
                   <Select value={emailFilter} onValueChange={setEmailFilter}>
-                    <SelectTrigger className={`w-full sm:w-44 ${emailFilter === "missing" ? "border-red-400 bg-red-50 text-red-900 font-semibold" : ""}`}>
-                      <SelectValue placeholder="Email" />
+                    <SelectTrigger className={`w-full sm:w-44 ${emailFilter === "needs_completion" ? "border-amber-400 bg-amber-50 text-amber-900 font-semibold" : emailFilter === "missing" ? "border-red-400 bg-red-50 text-red-900 font-semibold" : ""}`}>
+                      <SelectValue placeholder="Complétude / Email" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Tous les emails</SelectItem>
+                      <SelectItem value="all">Tous les clients</SelectItem>
+                      <SelectItem value="needs_completion" className="text-amber-800 font-semibold">
+                        ⚠️ À compléter (email ou type) ({companies.filter(isCompanyIncomplete).length})
+                      </SelectItem>
                       <SelectItem value="missing" className="text-red-700 font-medium">
-                        ⚠️ Email manquant ({companies.filter(c => !hasCompanyEmail(c)).length})
+                        ✉️ Email manquant uniquement ({companies.filter(c => !hasCompanyEmail(c)).length})
+                      </SelectItem>
+                      <SelectItem value="missing_type" className="text-orange-700 font-medium">
+                        🏷️ Type de client manquant ({companies.filter(c => !c.type_client || c.type_client === "À compléter" || c.type_client.trim() === "").length})
                       </SelectItem>
                       <SelectItem value="has_email" className="text-green-700">
                         ✅ Avec adresse email
@@ -2004,11 +2652,15 @@ function CRMApp() {
 
                 <div className="flex gap-2 w-full md:w-auto mt-2 md:mt-0 justify-end flex-wrap">
                   <Button 
-                    onClick={handleExportEmails}
+                    onClick={() => {
+                      setExportScope('filtered');
+                      setShowFullExportModal(true);
+                    }}
                     variant="outline"
-                    className="border-green-300 text-green-700 hover:bg-green-50 h-9"
+                    className="border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50 h-9 font-medium shadow-sm flex items-center gap-1.5"
                   >
-                    📥 Exporter les adresses mail ({filteredCompanies.length})
+                    <Download className="h-4 w-4 text-emerald-600" />
+                    <span>Exporter contacts filtrés ({filteredCompanies.length})</span>
                   </Button>
 
                   <Button 
@@ -2027,25 +2679,96 @@ function CRMApp() {
           </CardContent>
         </Card>
 
-        {/* Message d'information lorsque le filtre "Email manquant" est actif */}
-        {emailFilter === "missing" && (
-          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-red-800 shadow-2xs">
+        {/* Message d'information lorsque le filtre "À compléter" ou "Email manquant" est actif */}
+        {(emailFilter === "needs_completion" || emailFilter === "missing" || emailFilter === "missing_type" || typeFilter === "À compléter") && (
+          <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-amber-900 shadow-2xs">
             <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center font-bold text-[11px] shrink-0">!</span>
+              <span className="w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center font-bold text-[11px] shrink-0">!</span>
               <span>
-                Filtre actif : <strong>{filteredCompanies.length}</strong> fiche(s) sans email. Recherchez ces noms dans votre boîte mail pour retrouver leurs adresses et compléter leurs fiches.
+                Filtre actif : <strong>{filteredCompanies.length}</strong> fiche(s) à compléter (email manquant et/ou type de client non renseigné). Cliquez sur modifier (✏️) pour compléter leurs coordonnées.
               </span>
             </div>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setEmailFilter("all")}
-              className="text-xs text-red-700 hover:text-red-900 hover:bg-red-100 h-7 px-2 font-semibold shrink-0"
+              onClick={() => {
+                setEmailFilter("all");
+                setTypeFilter("all");
+              }}
+              className="text-xs text-amber-800 hover:text-amber-950 hover:bg-amber-100 h-7 px-2 font-semibold shrink-0"
             >
               Afficher tous les clients
             </Button>
           </div>
         )}
+
+        {/* Barre de sections : Entreprise, Particulier, Association, À compléter */}
+        <div className="flex flex-wrap items-center gap-2 mb-4 bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider px-2">Secteur / Catégorie :</span>
+          <Button
+            variant={clientSectionFilter === "all" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => {
+              setClientSectionFilter("all");
+              setEmailFilter("all");
+            }}
+            className={`h-8 text-xs font-semibold ${clientSectionFilter === "all" ? "bg-slate-900 text-white hover:bg-slate-800" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"}`}
+          >
+            👥 Tous les contacts ({companies.length})
+          </Button>
+
+          <Button
+            variant={clientSectionFilter === "Entreprise" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => {
+              setClientSectionFilter("Entreprise");
+              setEmailFilter("all");
+            }}
+            className={`h-8 text-xs font-semibold ${clientSectionFilter === "Entreprise" ? "bg-blue-600 text-white hover:bg-blue-700" : "text-blue-700 hover:text-blue-900 hover:bg-blue-50"}`}
+          >
+            🏢 Entreprises ({companies.filter(c => c.type_client === "Entreprise").length})
+          </Button>
+
+          <Button
+            variant={clientSectionFilter === "Particulier" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => {
+              setClientSectionFilter("Particulier");
+              setEmailFilter("all");
+            }}
+            className={`h-8 text-xs font-semibold ${clientSectionFilter === "Particulier" ? "bg-purple-600 text-white hover:bg-purple-700" : "text-purple-700 hover:text-purple-900 hover:bg-purple-50"}`}
+          >
+            👤 Particuliers ({companies.filter(c => c.type_client === "Particulier").length})
+          </Button>
+
+          <Button
+            variant={clientSectionFilter === "Association" ? "default" : "ghost"}
+            size="sm"
+            onClick={() => {
+              setClientSectionFilter("Association");
+              setEmailFilter("all");
+            }}
+            className={`h-8 text-xs font-semibold ${clientSectionFilter === "Association" ? "bg-emerald-600 text-white hover:bg-emerald-700" : "text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50"}`}
+          >
+            🤝 Associations ({companies.filter(c => c.type_client === "Association").length})
+          </Button>
+
+          <Button
+            variant={clientSectionFilter === "needs_completion" ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setClientSectionFilter(prev => prev === "needs_completion" ? "all" : "needs_completion");
+              setEmailFilter(prev => prev === "needs_completion" ? "all" : "needs_completion");
+            }}
+            className={`h-8 text-xs font-bold transition-all ${
+              clientSectionFilter === "needs_completion" 
+                ? "bg-amber-600 text-white hover:bg-amber-700 ring-2 ring-amber-400" 
+                : "border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100"
+            }`}
+          >
+            ⚠️ Section À compléter ({companies.filter(isCompanyIncomplete).length})
+          </Button>
+        </div>
 
         {/* Liste des entreprises (Lignes compactes) */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden divide-y divide-slate-100">
@@ -2239,6 +2962,7 @@ function CRMApp() {
                     <SelectItem value="Particulier">👤 Particulier</SelectItem>
                     <SelectItem value="Entreprise">🏢 Entreprise</SelectItem>
                     <SelectItem value="Association">🤝 Association</SelectItem>
+                    <SelectItem value="À compléter">⚠️ À compléter (Non défini)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -3107,79 +3831,675 @@ function CRMApp() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog Exportation d'Emails */}
-      <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-        <DialogContent className="max-w-md">
+      {/* ══════════ DIALOG IMPORTATION DEPUIS L'APPLICATION CONTRAT ══════════ */}
+      <Dialog open={showImportContractsAppDialog} onOpenChange={setShowImportContractsAppDialog}>
+        <DialogContent className="max-w-xl">
           <DialogHeader className="border-b pb-3">
-            <DialogTitle className="text-xl font-bold flex items-center gap-2">
-              📥 Exporter les adresses email
-            </DialogTitle>
-            <DialogDescription>
-              Générez une liste des adresses email pour vos newsletters ou campagnes de communication.
-            </DialogDescription>
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
+                <FileSignature className="w-6 h-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold text-slate-900">
+                  Importer les contrats (App Contrats)
+                </DialogTitle>
+                <DialogDescription className="text-slate-500 text-xs mt-1">
+                  Synchronisez directement toutes les coordonnées de vos clients depuis l'ensemble des contrats enregistrés dans votre application Contrat.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
-          {(() => {
-            const mainEmails = filteredCompanies
-              .flatMap(c => extractEmails(c.email));
-            
-            const contactEmails = filteredCompanies
-              .flatMap(c => (c.contacts || []).flatMap(contact => extractEmails(contact.email)));
+          <div className="space-y-4 py-4">
+            <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-emerald-800 text-sm">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Ce qui est extrait automatiquement :</span>
+              </div>
+              <ul className="grid grid-cols-2 gap-x-2 gap-y-1 pl-6 list-disc text-slate-700">
+                <li>Nom / Prénom ou Société</li>
+                <li>Email principal & conjoint</li>
+                <li>Téléphone principal & conjoint</li>
+                <li>Adresse postale complète</li>
+                <li>Date & Type d'événement</li>
+                <li>Lieu de réception</li>
+                <li>DJ attribué</li>
+                <li>Rattachement du contrat aux notes</li>
+              </ul>
+            </div>
 
-            const allEmails = Array.from(new Set([...mainEmails, ...contactEmails]));
-            const emailStringList = allEmails.join(", ");
-
-            return (
-              <div className="space-y-4 py-3">
-                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-sm text-blue-800">
-                  <p className="font-semibold">Filtres actifs :</p>
-                  <p className="text-xs text-blue-600 mt-1">
-                    {startDateFilter && endDateFilter ? `Événements du ${new Date(startDateFilter).toLocaleDateString('fr-FR')} au ${new Date(endDateFilter).toLocaleDateString('fr-FR')}` : 
-                     startDateFilter ? `Événements après le ${new Date(startDateFilter).toLocaleDateString('fr-FR')}` : 
-                     endDateFilter ? `Événements avant le ${new Date(endDateFilter).toLocaleDateString('fr-FR')}` : "Tous les événements"}
-                  </p>
-                  <p className="font-medium mt-2">📊 {allEmails.length} adresse(s) email unique(s) trouvée(s)</p>
+            <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-sm">
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={includeArchivedContracts}
+                  onChange={(e) => setIncludeArchivedContracts(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                />
+                <div>
+                  <span className="font-semibold text-slate-800">Inclure également les contrats archivés et finalisés</span>
+                  <p className="text-xs text-slate-500">Permet de récupérer l'historique de tous vos anciens contrats passés.</p>
                 </div>
+              </label>
 
-                <div className="space-y-2">
-                  <Label className="text-slate-700 text-xs font-semibold uppercase tracking-wider block">Liste brute (Séparateur: Virgule)</Label>
-                  <Textarea 
-                    value={emailStringList}
-                    readOnly
-                    rows={6}
-                    className="font-mono text-xs bg-slate-50 border-slate-200 focus:ring-0 focus:border-slate-300 resize-none select-all"
-                  />
-                  <p className="text-[10px] text-slate-450 italic">Idéal pour copier-coller dans le champ Cci/Bcc de votre client mail.</p>
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={updateExistingFromContracts}
+                  onChange={(e) => setUpdateExistingFromContracts(e.target.checked)}
+                  className="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                />
+                <div>
+                  <span className="font-semibold text-slate-800">Enrichir automatiquement les fiches existantes</span>
+                  <p className="text-xs text-slate-500">Complète automatiquement les numéros, adresses ou DJ manquants sans écraser vos notes personnalisées.</p>
                 </div>
+              </label>
+            </div>
 
-                <div className="flex flex-col gap-2 pt-2 border-t">
-                  <Button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(emailStringList);
-                      toast.success("Adresses email copiées dans le presse-papiers !");
+            {lastImportResult && (
+              <div className="p-3 bg-emerald-100/70 border border-emerald-300 text-emerald-900 rounded-xl text-xs space-y-1 animate-fadeIn">
+                <p className="font-bold flex items-center gap-1.5 text-sm text-emerald-950">
+                  <CheckCircle className="w-4 h-4 text-emerald-700" />
+                  Rapport de la dernière synchronisation :
+                </p>
+                <p>• {lastImportResult.totalContractsAnalyzed} contrat(s) analysé(s)</p>
+                <p>• <strong>{lastImportResult.addedCount}</strong> nouveau(x) client(s) importé(s)</p>
+                <p>• <strong>{lastImportResult.updatedCount}</strong> client(s) existant(s) mis à jour / enrichi(s)</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 border-t pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowImportContractsAppDialog(false)}
+              disabled={isImportingFromContractsApp}
+              className="sm:w-auto w-full"
+            >
+              Fermer
+            </Button>
+            <Button
+              onClick={handleImportFromContracts}
+              disabled={isImportingFromContractsApp}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-2 sm:w-auto w-full"
+            >
+              {isImportingFromContractsApp ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Importation en cours...</span>
+                </>
+              ) : (
+                <>
+                  <DownloadCloud className="w-4 h-4" />
+                  <span>Lancer l'importation des contrats</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════ DIALOG IMPORTATION DIRECTE CSV & EXCEL ══════════ */}
+      <Dialog open={showCsvExcelModal} onOpenChange={setShowCsvExcelModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="border-b pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-100 text-indigo-700 rounded-xl">
+                <FileSpreadsheet className="w-6 h-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold text-slate-900">
+                  {csvExcelStep === 'upload' ? "Importer un fichier CSV ou Excel" : "Aperçu et validation de l'import"}
+                </DialogTitle>
+                <DialogDescription className="text-slate-500 text-xs mt-1">
+                  {csvExcelStep === 'upload' 
+                    ? "Importez votre fichier de contacts (400+ clients). Dédoublonnage automatique, enrichissement des coordonnées existantes et catégorisation instantanée."
+                    : `Vérifiez les ${csvExcelParsedClients.length} contacts détectés avant de confirmer leur intégration dans votre fichier client.`}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {csvExcelStep === 'upload' ? (
+            <div className="space-y-5 py-4">
+              {/* Onglets Choix Fichier vs Copier-Coller */}
+              <div className="flex border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setCsvImportTab('file')}
+                  className={`py-2.5 px-5 font-semibold text-xs border-b-2 transition-colors flex items-center gap-2 ${
+                    csvImportTab === 'file'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Déposer un fichier (.csv ou .xlsx)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCsvImportTab('paste')}
+                  className={`py-2.5 px-5 font-semibold text-xs border-b-2 transition-colors flex items-center gap-2 ${
+                    csvImportTab === 'paste'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>Coller le texte CSV directement</span>
+                </button>
+              </div>
+
+              {csvImportTab === 'file' ? (
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      handleCsvExcelFileSelect(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  className="border-2 border-dashed border-indigo-250 hover:border-indigo-500 bg-indigo-50/40 hover:bg-indigo-50/70 transition-all rounded-2xl p-8 text-center flex flex-col items-center justify-center gap-4 relative shadow-2xs"
+                >
+                  <input
+                    id="csv-excel-input"
+                    type="file"
+                    accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleCsvExcelFileSelect(e.target.files[0]);
+                      }
                     }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white w-full gap-2"
+                    className="hidden"
+                  />
+                  <div className="p-4 bg-white rounded-2xl shadow-sm text-indigo-600 border border-indigo-100 flex items-center gap-3">
+                    <span className="text-3xl">📊</span>
+                    <span className="text-3xl">📑</span>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">
+                      Glissez et déposez votre fichier CSV ou Excel ici
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                      Formats acceptés : <strong>.CSV</strong>, <strong>.XLSX</strong> ou <strong>.XLS</strong>.
+                      Analyse instantanée et détection de vos colonnes (Nom, Type, Email, Téléphone, Adresse, etc.).
+                    </p>
+                  </div>
+                  <label
+                    htmlFor="csv-excel-input"
+                    className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-semibold text-xs shadow-sm hover:shadow transition-all flex items-center gap-2"
                   >
-                    📋 Copier dans le presse-papiers
-                  </Button>
-                  <Button 
-                    onClick={handleDownloadCSV}
-                    variant="outline" 
-                    className="w-full gap-2 text-blue-700 border-blue-200 hover:bg-blue-50"
-                  >
-                    ⬇️ Télécharger le fichier CSV complet
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => setShowExportDialog(false)} 
-                    className="w-full text-slate-500 hover:text-slate-700"
-                  >
-                    Fermer
-                  </Button>
+                    <FolderUp className="w-4 h-4" />
+                    <span>Parcourir mes documents</span>
+                  </label>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Label htmlFor="csv-paste-area" className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                    Collez le contenu de votre fichier CSV :
+                  </Label>
+                  <Textarea
+                    id="csv-paste-area"
+                    rows={10}
+                    placeholder="Nom;Type;Email;Telephone;Adresse;Date;Lieu;DJ;Notes&#10;Société Exemple;Entreprise;contact@exemple.fr;0612345678;12 rue Principale 68000 Colmar;2025-06-14;Hôtel Europe;Joël R'Key;Soirée DJ..."
+                    value={csvPastedText}
+                    onChange={(e) => setCsvPastedText(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleCsvPasteSubmit}
+                      disabled={!csvPastedText.trim()}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-2"
+                    >
+                      <Sparkles className="w-4 h-4 text-indigo-200" />
+                      <span>Analyser le texte CSV</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Guide de mapping des colonnes et ajustement manuel */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-600 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>💡</span> Colonnes reconnues automatiquement :
+                  </p>
+                  {detectedHeadersList.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowColumnMapper(!showColumnMapper)}
+                      className="text-xs text-indigo-700 hover:text-indigo-900 h-7 px-2 font-semibold"
+                    >
+                      {showColumnMapper ? "Masquer les colonnes" : "Ajuster les colonnes manuellement ⚙️"}
+                    </Button>
+                  )}
+                </div>
+
+                {showColumnMapper && detectedHeadersList.length > 0 && (
+                  <div className="bg-white p-3.5 rounded-xl border border-indigo-200 space-y-3">
+                    <p className="text-xs text-indigo-950 font-medium">
+                      Sélectionnez la colonne de votre fichier correspondant à chaque information :
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Nom du client / Entreprise *</Label>
+                        <select
+                          value={columnMapping.nom || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, nom: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, csvExcelRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-indigo-500 font-medium"
+                        >
+                          <option value="">-- Choisir la colonne Nom --</option>
+                          {detectedHeadersList.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Type de client</Label>
+                        <select
+                          value={columnMapping.type || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, type: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, csvExcelRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="">-- Détection auto (ou À compléter) --</option>
+                          {detectedHeadersList.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Adresse Email</Label>
+                        <select
+                          value={columnMapping.email || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, email: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, csvExcelRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="">-- Détection auto (présence @) --</option>
+                          {detectedHeadersList.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Téléphone</Label>
+                        <select
+                          value={columnMapping.tel || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, tel: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, csvExcelRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="">-- Détection auto (chiffres) --</option>
+                          {detectedHeadersList.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Adresse / Ville</Label>
+                        <select
+                          value={columnMapping.adresse || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, adresse: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, csvExcelRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="">-- Détection auto adresse --</option>
+                          {detectedHeadersList.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Notes & Prestation</Label>
+                        <select
+                          value={columnMapping.notes || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, notes: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, csvExcelRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="">-- Détection auto notes --</option>
+                          {detectedHeadersList.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <div>• <strong>Nom :</strong> Nom, Nom client, Entreprise, Raison Sociale, Prénom</div>
+                  <div>• <strong>Type :</strong> Type, Secteur (Entreprise, Particulier, Association)</div>
+                  <div>• <strong>Coordonnées :</strong> Email / Courriel, Téléphone / Portable, Adresse</div>
+                  <div>• <strong>Prestation :</strong> Date, Événement, Lieu, DJ / Artiste, SIRET, Notes</div>
+                </div>
+                <div className="pt-2 border-t border-slate-200 text-[11px] text-amber-800 flex items-center gap-1.5">
+                  <span>⚠️</span>
+                  <span>Les contacts sans adresse email ou sans type de client seront automatiquement classés dans la section <strong>« À compléter »</strong>.</span>
                 </div>
               </div>
-            );
-          })()}
+            </div>
+          ) : (
+            <div className="space-y-5 py-4">
+              {/* Stats de l'aperçu */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Total contacts</span>
+                  <span className="text-xl font-bold text-slate-900">{csvExcelParsedClients.length}</span>
+                </div>
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200">
+                  <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">Nouveaux clients</span>
+                  <span className="text-xl font-bold text-emerald-800">{csvExcelParsedClients.filter(c => !c.isExisting).length}</span>
+                </div>
+                <div className="bg-blue-50 p-3 rounded-xl border border-blue-200">
+                  <span className="text-[11px] font-semibold text-blue-700 uppercase tracking-wider block">Clients à enrichir</span>
+                  <span className="text-xl font-bold text-blue-800">{csvExcelParsedClients.filter(c => c.isExisting).length}</span>
+                </div>
+                <div className="bg-amber-50 p-3 rounded-xl border border-amber-200">
+                  <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider block">À compléter</span>
+                  <span className="text-xl font-bold text-amber-800">{csvExcelParsedClients.filter(c => c.isIncomplete).length}</span>
+                </div>
+              </div>
+
+              {/* Option de mise à jour */}
+              <div className="bg-indigo-50/70 border border-indigo-200 p-3.5 rounded-xl flex items-center justify-between gap-3 text-xs text-indigo-950">
+                <label className="flex items-center gap-2.5 cursor-pointer font-medium select-none">
+                  <input
+                    type="checkbox"
+                    checked={updateExistingInCsv}
+                    onChange={(e) => setUpdateExistingInCsv(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                  />
+                  <span>Enrichir les fiches des clients existants avec les nouvelles coordonnées trouvées (sans écraser les données déjà renseignées)</span>
+                </label>
+              </div>
+
+              {/* Table d'aperçu */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 text-xs">
+                  <div className="bg-slate-100 px-4 py-2.5 font-bold text-slate-700 grid grid-cols-12 gap-2 uppercase tracking-wider text-[10px] sticky top-0 z-10">
+                    <div className="col-span-4">Nom du Client</div>
+                    <div className="col-span-2">Type</div>
+                    <div className="col-span-3">Email</div>
+                    <div className="col-span-3">Statut Import</div>
+                  </div>
+                  {csvExcelParsedClients.slice(0, 50).map((c, idx) => (
+                    <div key={idx} className="px-4 py-2 grid grid-cols-12 gap-2 items-center hover:bg-slate-50">
+                      <div className="col-span-4 font-semibold text-slate-800 truncate" title={c.nom}>
+                        {c.nom}
+                      </div>
+                      <div className="col-span-2 truncate">
+                        {c.type_client === "À compléter" ? (
+                          <Badge className="bg-amber-100 text-amber-900 border-amber-300 text-[10px]">⚠️ À compléter</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] font-normal">{c.type_client}</Badge>
+                        )}
+                      </div>
+                      <div className="col-span-3 truncate text-slate-600">
+                        {c.email ? (
+                          <span>{c.email}</span>
+                        ) : (
+                          <span className="text-red-500 italic text-[11px]">⚠️ Email manquant</span>
+                        )}
+                      </div>
+                      <div className="col-span-3 truncate">
+                        {c.isExisting ? (
+                          <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">🔄 Mise à jour existant</Badge>
+                        ) : (
+                          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]">✨ Nouveau</Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {csvExcelParsedClients.length > 50 && (
+                  <div className="p-2 text-center text-xs text-slate-400 bg-slate-50 border-t border-slate-200">
+                    ... et {csvExcelParsedClients.length - 50} autres contacts détectés
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 border-t pt-3">
+            {csvExcelStep === 'preview' ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setCsvExcelStep('upload')}
+                  disabled={isImportingCsvExcel}
+                  className="sm:w-auto w-full text-xs"
+                >
+                  ← Choisir un autre fichier
+                </Button>
+                <Button
+                  onClick={handleConfirmCsvExcelImport}
+                  disabled={isImportingCsvExcel}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-2 sm:w-auto w-full"
+                >
+                  {isImportingCsvExcel ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Intégration en cours...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Confirmer et Importer ces {csvExcelParsedClients.length} contacts</span>
+                    </>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setShowCsvExcelModal(false)}
+                className="sm:w-auto w-full text-xs"
+              >
+                Fermer
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════ DIALOG EXPORTATION COMPLÈTE DES CONTACTS ══════════ */}
+      <Dialog open={showFullExportModal} onOpenChange={setShowFullExportModal}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="border-b pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-blue-100 text-blue-700 rounded-xl">
+                <Download className="w-6 h-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold text-slate-900">
+                  Exporter mes contacts
+                </DialogTitle>
+                <DialogDescription className="text-slate-500 text-xs mt-1">
+                  Téléchargez vos coordonnées clients sous différents formats selon vos besoins (Excel, iPhone/Android, Sauvegarde ou Mailing).
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-5 py-4">
+            {/* Choix du périmètre */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+              <Label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
+                Périmètre des contacts à exporter :
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setExportScope("all")}
+                  className={`p-3 rounded-lg border text-left transition-all flex items-center justify-between ${
+                    exportScope === "all"
+                      ? "bg-blue-50 border-blue-400 text-blue-900 font-semibold shadow-sm"
+                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <div>
+                    <span className="block text-sm">Tous les contacts</span>
+                    <span className="text-xs text-slate-500 font-normal">Base complète du CRM</span>
+                  </div>
+                  <Badge variant="secondary" className="font-bold">
+                    {companies.length}
+                  </Badge>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExportScope("filtered")}
+                  className={`p-3 rounded-lg border text-left transition-all flex items-center justify-between ${
+                    exportScope === "filtered"
+                      ? "bg-blue-50 border-blue-400 text-blue-900 font-semibold shadow-sm"
+                      : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <div>
+                    <span className="block text-sm">Contacts filtrés</span>
+                    <span className="text-xs text-slate-500 font-normal">Selon vos filtres actifs</span>
+                  </div>
+                  <Badge variant="secondary" className="font-bold">
+                    {filteredCompanies.length}
+                  </Badge>
+                </button>
+              </div>
+            </div>
+
+            {/* Formats de téléchargement */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Option 1: Excel CSV */}
+              <div className="p-4 rounded-xl border border-slate-200 hover:border-emerald-400 bg-white hover:bg-emerald-50/20 transition-all flex flex-col justify-between shadow-sm">
+                <div className="space-y-1.5 mb-3">
+                  <div className="flex items-center gap-2 text-emerald-700 font-bold">
+                    <FileSpreadsheet className="w-5 h-5" />
+                    <span>Tableau Excel / CSV Complet</span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Idéal pour Excel, LibreOffice et Google Sheets. Inclut toutes les colonnes : nom, téléphone, adresse, date d'événement, DJ, notes...
+                  </p>
+                </div>
+                <Button
+                  onClick={() => {
+                    const target = exportScope === "all" ? companies : filteredCompanies;
+                    downloadFullCSV(target);
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Télécharger en Excel (.csv)</span>
+                </Button>
+              </div>
+
+              {/* Option 2: vCard .vcf */}
+              <div className="p-4 rounded-xl border border-slate-200 hover:border-indigo-400 bg-white hover:bg-indigo-50/20 transition-all flex flex-col justify-between shadow-sm">
+                <div className="space-y-1.5 mb-3">
+                  <div className="flex items-center gap-2 text-indigo-700 font-bold">
+                    <Smartphone className="w-5 h-5" />
+                    <span>Carnet Téléphonique vCard (.vcf)</span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Idéal pour importer directement dans vos contacts sur iPhone, Android, Mac Contacts, Google Contacts ou Outlook.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => {
+                    const target = exportScope === "all" ? companies : filteredCompanies;
+                    downloadVCard(target);
+                  }}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Télécharger le carnet (.vcf)</span>
+                </Button>
+              </div>
+
+              {/* Option 3: Sauvegarde JSON */}
+              <div className="p-4 rounded-xl border border-slate-200 hover:border-amber-400 bg-white hover:bg-amber-50/20 transition-all flex flex-col justify-between shadow-sm">
+                <div className="space-y-1.5 mb-3">
+                  <div className="flex items-center gap-2 text-amber-700 font-bold">
+                    <Database className="w-5 h-5" />
+                    <span>Sauvegarde Brute JSON</span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Export technique complet de l'ensemble des fiches et structures de données pour sauvegarde ou archivage.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => {
+                    const target = exportScope === "all" ? companies : filteredCompanies;
+                    downloadJSON(target);
+                  }}
+                  variant="outline"
+                  className="w-full border-amber-300 text-amber-800 hover:bg-amber-50 font-semibold text-xs gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Sauvegarde JSON (.json)</span>
+                </Button>
+              </div>
+
+              {/* Option 4: Copie emails */}
+              <div className="p-4 rounded-xl border border-slate-200 hover:border-blue-400 bg-white hover:bg-blue-50/20 transition-all flex flex-col justify-between shadow-sm">
+                <div className="space-y-1.5 mb-3">
+                  <div className="flex items-center gap-2 text-blue-700 font-bold">
+                    <Mail className="w-5 h-5" />
+                    <span>Mailing / Liste des Emails</span>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Copie instantanée de toutes les adresses email uniques pour vos envois groupés (champ Cci/Bcc de votre boîte mail).
+                  </p>
+                </div>
+                <Button
+                  onClick={() => {
+                    const target = exportScope === "all" ? companies : filteredCompanies;
+                    copyAllEmails(target);
+                  }}
+                  variant="outline"
+                  className="w-full border-blue-300 text-blue-800 hover:bg-blue-50 font-semibold text-xs gap-1.5"
+                >
+                  <CopyCheck className="w-3.5 h-3.5" />
+                  <span>Copier les adresses email</span>
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t pt-3 flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setShowFullExportModal(false)}
+            >
+              Fermer
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

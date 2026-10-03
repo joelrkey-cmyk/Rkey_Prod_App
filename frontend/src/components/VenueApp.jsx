@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import axios from '../services/axiosConfig';
 import { toast } from 'sonner';
 import { 
@@ -6,7 +7,8 @@ import {
   CheckCircle2, Image, Wifi, Smartphone, VolumeX, Flame, 
   ChevronLeft, HelpCircle, Check, Combine, FolderOpen, Info,
   ExternalLink, Calendar, PlusCircle, CheckSquare, X, ArrowUpRight, Star, Camera,
-  ChevronRight, Download, Eye
+  ChevronRight, Download, Eye, FileSpreadsheet, Upload, Copy, FolderUp, Sparkles, Loader2, FileDown,
+  Users, Phone, Globe, DollarSign, Tag, Link2, Clock, Volume2, ShieldCheck
 } from 'lucide-react';
 
 import { Button } from './ui/button';
@@ -76,6 +78,13 @@ export default function VenueApp() {
     has_no_limiteur_ni_detecteur: false,
     has_wifi: false,
     has_4g_5g: false,
+    type_lieu: '',
+    capacite_min: '',
+    capacite_max: '',
+    tarif_indicatif: '',
+    infos_annuaire: '',
+    lien_annuaire: '',
+    telephone: '',
     venue_photos: [],
     is_complete: true,
     is_blacklisted: false,
@@ -110,6 +119,49 @@ export default function VenueApp() {
     setLightboxIndex(index);
     setLightboxOpen(true);
   };
+
+  // ══════════ ÉTAT EXPORTATION EXCEL (.xlsx) ══════════
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportScope, setExportScope] = useState('all'); // 'all' | 'filtered'
+
+  // ══════════ ÉTAT IMPORTATION DIRECTE CSV & EXCEL (.xlsx, .csv) ══════════
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importStep, setImportStep] = useState('upload'); // 'upload' | 'preview'
+  const [importTab, setImportTab] = useState('file'); // 'file' | 'paste'
+  const [importPastedText, setImportPastedText] = useState('');
+  const [parsedVenues, setParsedVenues] = useState([]);
+  const [importRawFilename, setImportRawFilename] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [updateExistingInVenues, setUpdateExistingInVenues] = useState(true);
+  const [importPreviewFilter, setImportPreviewFilter] = useState('all'); // 'all' | 'new' | 'update' | 'doubt'
+  const [showColumnMapper, setShowColumnMapper] = useState(false);
+  const [detectedHeaders, setDetectedHeaders] = useState([]);
+  const [rawGridData, setRawGridData] = useState([]);
+  const [columnMapping, setColumnMapping] = useState({
+    nom: '',
+    ville: '',
+    departement: '',
+    statut: '',
+    notes: '',
+    observations: '',
+    accessibilite: '',
+    rating_access: '',
+    technique: '',
+    lumiere: '',
+    limiteur: '',
+    detecteur: '',
+    sans_limiteur: '',
+    wifi: '',
+    reseau: '',
+    blacklist: '',
+    type_lieu: '',
+    capacite_min: '',
+    capacite_max: '',
+    tarif_indicatif: '',
+    infos_annuaire: '',
+    lien_annuaire: '',
+    telephone: ''
+  });
 
   const [departmentCities, setDepartmentCities] = useState([]);
   const [loadingCities, setLoadingCities] = useState(false);
@@ -325,6 +377,13 @@ export default function VenueApp() {
         has_no_limiteur_ni_detecteur: !!venue.has_no_limiteur_ni_detecteur,
         has_wifi: !!venue.has_wifi,
         has_4g_5g: !!venue.has_4g_5g,
+        type_lieu: venue.type_lieu || '',
+        capacite_min: venue.capacite_min !== undefined && venue.capacite_min !== null ? venue.capacite_min : '',
+        capacite_max: venue.capacite_max !== undefined && venue.capacite_max !== null ? venue.capacite_max : '',
+        tarif_indicatif: venue.tarif_indicatif || '',
+        infos_annuaire: venue.infos_annuaire || '',
+        lien_annuaire: venue.lien_annuaire || '',
+        telephone: venue.telephone || '',
         venue_photos: venue.venue_photos || [],
         is_complete: venue.is_complete !== undefined ? venue.is_complete : true,
         is_blacklisted: !!venue.is_blacklisted,
@@ -359,6 +418,13 @@ export default function VenueApp() {
         has_no_limiteur_ni_detecteur: false,
         has_wifi: false,
         has_4g_5g: false,
+        type_lieu: '',
+        capacite_min: '',
+        capacite_max: '',
+        tarif_indicatif: '',
+        infos_annuaire: '',
+        lien_annuaire: '',
+        telephone: '',
         venue_photos: [],
         is_complete: true,
         is_blacklisted: false,
@@ -438,11 +504,11 @@ export default function VenueApp() {
 
   const handleSaveVenue = async (e) => {
     e.preventDefault();
-    const finalDept = formDeptKey === 'Autre' ? manualDept : (formDeptKey ? (formDeptKey.includes(' - ') ? formDeptKey.split(' - ')[1] : formDeptKey.split(' (')[0]) : '');
-    const finalCity = (formDeptKey !== 'Autre' && formCityKey !== 'Autre') ? formCityKey : manualCity;
+    const finalDept = (formDeptKey === 'Autre' ? manualDept : (formDeptKey ? (formDeptKey.includes(' - ') ? formDeptKey.split(' - ')[1] : formDeptKey.split(' (')[0]) : '')) || venueForm.department || '';
+    const finalCity = (formDeptKey !== 'Autre' && formCityKey && formCityKey !== 'Autre') ? formCityKey : (manualCity || venueForm.city || '');
 
     if (!venueForm.name || !finalDept || !finalCity) {
-      toast.error('Veuillez remplir le département, la ville et le nom de la salle.');
+      toast.error('Veuillez remplir le nom de la salle, la ville et le département.');
       return;
     }
 
@@ -453,8 +519,10 @@ export default function VenueApp() {
         city: finalCity
       };
 
-      // Check if it has notes or photos to decide if complete
-      if (
+      // Respect explicitly chosen is_complete if set, otherwise auto-calculate
+      if (venueForm.is_complete !== undefined) {
+        payload.is_complete = !!venueForm.is_complete;
+      } else if (
         payload.venue_photos?.length > 0 || 
         payload.notes?.trim() || 
         payload.notes_observation?.trim() || 
@@ -503,6 +571,526 @@ export default function VenueApp() {
     } catch (err) {
       console.error('Error validating venue:', err);
       toast.error('Erreur lors de la validation.');
+    }
+  };
+
+  const handleValidateAllVenues = async () => {
+    if (!window.confirm('Voulez-vous passer toutes les salles à compléter en validées ?')) return;
+    try {
+      const res = await axios.post(`${API_BASE_URL}/venues/validate-all`);
+      toast.success(`${res.data.count} salle(s) validée(s) avec succès !`);
+      loadData();
+    } catch (err) {
+      console.error('Error validating all venues:', err);
+      toast.error('Erreur lors de la validation.');
+    }
+  };
+
+  // ══════════ EXPORTATION EXCEL (.xlsx) ══════════
+  const handleExportVenuesToExcel = (scope = 'all') => {
+    const target = scope === 'all' ? resolvedVenues : filteredVenues;
+    if (!target || target.length === 0) {
+      toast.warning("Aucune salle de réception à exporter.");
+      return;
+    }
+
+    try {
+      const rows = target.map(v => {
+        return {
+          "Nom de la Salle / Lieu": v.name || "",
+          "Ville": v.city || "À préciser",
+          "Département": v.department || "À préciser",
+          "Statut de la Fiche": (v.is_complete && (v.venue_photos?.length > 0 || v.notes)) ? "Complète" : "À compléter",
+          "Limiteur de Son": v.has_limiteur_son ? "Oui" : "Non",
+          "Détecteur de Fumée": v.has_detecteur_fumee ? "Oui" : "Non",
+          "Sans Limiteur ni Détecteur": v.has_no_limiteur_ni_detecteur ? "Oui" : "Non",
+          "Wifi Disponible": v.has_wifi ? "Oui" : "Non",
+          "Réseau 4G / 5G": v.has_4g_5g ? "Oui" : "Non",
+          "Note Accessibilité (/5)": v.rating_accessibilite > 0 ? v.rating_accessibilite : "",
+          "Accessibilité & PMR": v.notes_accessibilite || "",
+          "Observations Générales": v.notes_observation || "",
+          "Spécificités Techniques": v.notes_technique || "",
+          "Éclairage & Lumière": v.notes_lumiere || "",
+          "Autres Notes & Remarques": v.notes || "",
+          "Liste Noire": v.is_blacklisted ? `Oui (${v.blacklist_reason || 'Raison non spécifiée'})` : "Non",
+          "Type de lieu": v.type_lieu || "",
+          "Capacité min": v.capacite_min !== undefined && v.capacite_min !== null ? v.capacite_min : "",
+          "Capacité max": v.capacite_max !== undefined && v.capacite_max !== null ? v.capacite_max : "",
+          "Tarif indicatif": v.tarif_indicatif || "",
+          "Infos annuaire": v.infos_annuaire || "",
+          "Lien fiche annuaire": v.lien_annuaire || "",
+          "Téléphone": v.telephone || ""
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+
+      // Auto-taille et largeurs de colonnes professionnelles correspondant aux 23 colonnes
+      ws['!cols'] = [
+        { wch: 32 }, // 1. Nom de la Salle / Lieu
+        { wch: 20 }, // 2. Ville
+        { wch: 18 }, // 3. Département
+        { wch: 18 }, // 4. Statut de la Fiche
+        { wch: 16 }, // 5. Limiteur de Son
+        { wch: 18 }, // 6. Détecteur de Fumée
+        { wch: 24 }, // 7. Sans Limiteur ni Détecteur
+        { wch: 16 }, // 8. Wifi Disponible
+        { wch: 16 }, // 9. Réseau 4G / 5G
+        { wch: 22 }, // 10. Note Accessibilité (/5)
+        { wch: 35 }, // 11. Accessibilité & PMR
+        { wch: 40 }, // 12. Observations Générales
+        { wch: 35 }, // 13. Spécificités Techniques
+        { wch: 35 }, // 14. Éclairage & Lumière
+        { wch: 35 }, // 15. Autres Notes & Remarques
+        { wch: 18 }, // 16. Liste Noire
+        { wch: 22 }, // 17. Type de lieu
+        { wch: 15 }, // 18. Capacité min
+        { wch: 15 }, // 19. Capacité max
+        { wch: 20 }, // 20. Tarif indicatif
+        { wch: 35 }, // 21. Infos annuaire
+        { wch: 35 }, // 22. Lien fiche annuaire
+        { wch: 18 }  // 23. Téléphone
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Lieux de Réception");
+
+      const today = new Date().toISOString().split('T')[0];
+      const filename = `lieux_reception_rkey_${scope === 'all' ? 'tous' : 'selection'}_${today}.xlsx`;
+      XLSX.writeFile(wb, filename);
+
+      toast.success(`Fichier Excel de ${target.length} salle(s) exporté avec succès !`);
+      setShowExportModal(false);
+    } catch (err) {
+      console.error("Erreur lors de l'export Excel:", err);
+      toast.error("Erreur lors de la génération du fichier Excel : " + err.message);
+    }
+  };
+
+  // ══════════ IMPORTATION DIRECTE CSV & EXCEL ══════════
+  const processRawGrid = (rawGrid, sourceFilename = "fichier_importe", manualMapping = null) => {
+    if (!rawGrid || rawGrid.length < 2) {
+      toast.error("Le fichier semble vide ou ne contient aucune ligne de données.");
+      return;
+    }
+
+    setRawGridData(rawGrid);
+
+    // Trouver la ligne d'en-tête (première ligne contenant au moins 2 cellules non vides)
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(rawGrid.length, 10); i++) {
+      const nonEmpties = (rawGrid[i] || []).filter(c => c !== null && c !== undefined && String(c).trim() !== "");
+      if (nonEmpties.length >= 2) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+
+    const rawHeaders = (rawGrid[headerRowIdx] || []).map(h => String(h || "").trim());
+    const validHeaders = rawHeaders.filter(Boolean);
+    setDetectedHeaders(validHeaders);
+
+    const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+
+    const findBestHeader = (keywords) => {
+      for (const kw of keywords) {
+        const normKw = norm(kw);
+        const match = rawHeaders.find(h => {
+          const normH = norm(h);
+          return normH === normKw || normH.includes(normKw) || normKw.includes(normH);
+        });
+        if (match) return match;
+      }
+      return "";
+    };
+
+    const currentMapping = manualMapping || {
+      nom: findBestHeader(["nom de la salle / lieu", "nom de la salle", "nom du lieu", "nom salle", "lieu de reception", "salle de reception", "salle", "nom", "lieu", "etablissement", "titre"]),
+      ville: findBestHeader(["ville", "commune", "city", "localite", "village", "agglomeration"]),
+      departement: findBestHeader(["departement", "département", "dept", "dpt", "cp", "codepostal", "code postal", "code_postal"]),
+      statut: findBestHeader(["statut de la fiche", "statut fiche", "statut"]),
+      limiteur: findBestHeader(["limiteur de son", "limiteur", "sonometre", "decibel", "db"]),
+      detecteur: findBestHeader(["detecteur de fumee", "détecteur de fumée", "detecteur", "fumee", "fumée", "incendie"]),
+      sans_limiteur: findBestHeader(["sans limiteur ni détecteur", "sans limiteur ni detecteur", "sans limiteur", "pas de limiteur", "aucun limiteur"]),
+      wifi: findBestHeader(["wifi disponible", "wifi", "wi-fi", "internet"]),
+      reseau: findBestHeader(["réseau 4g / 5g", "reseau 4g / 5g", "réseau 4g", "reseau 4g", "4g", "5g", "mobile", "couverture 4g"]),
+      rating_access: findBestHeader(["note accessibilité (/5)", "note accessibilite (/5)", "note accessibilité", "note accessibilite", "note acces", "rating", "etoiles"]),
+      accessibilite: findBestHeader(["accessibilité & pmr", "accessibilite & pmr", "accessibilite", "accessibilité", "acces", "pmr", "escalier", "entree"]),
+      observations: findBestHeader(["observations générales", "observations generales", "observations", "observation", "remarques generales", "avis"]),
+      technique: findBestHeader(["spécificités techniques", "specificites techniques", "technique", "fiche technique", "puissance", "electricite", "sonorisation"]),
+      lumiere: findBestHeader(["éclairage & lumière", "eclairage & lumiere", "lumiere", "lumière", "eclairage", "éclairage", "light"]),
+      notes: findBestHeader(["autres notes & remarques", "autres notes", "notes", "note", "commentaires", "commentaire", "remarques", "remarque", "infos", "divers"]),
+      blacklist: findBestHeader(["liste noire", "blacklist", "liste_noire"]),
+      type_lieu: findBestHeader(["type de lieu", "type lieu", "type", "categorie"]),
+      capacite_min: findBestHeader(["capacité min", "capacite min", "capacité min.", "capacite min.", "min personnes", "min pers"]),
+      capacite_max: findBestHeader(["capacité max", "capacite max", "capacité max.", "capacite max.", "max personnes", "max pers", "capacité", "capacite"]),
+      tarif_indicatif: findBestHeader(["tarif indicatif", "tarif", "prix indicatif", "prix", "budget"]),
+      infos_annuaire: findBestHeader(["infos annuaire", "info annuaire", "description annuaire", "annuaire"]),
+      lien_annuaire: findBestHeader(["lien fiche annuaire", "lien annuaire", "fiche annuaire", "site web", "site internet", "url", "lien"]),
+      telephone: findBestHeader(["téléphone", "telephone", "tel", "contact téléphone", "contact"])
+    };
+
+    setColumnMapping(currentMapping);
+
+    const parseBool = (val) => {
+      if (typeof val === 'boolean') return val;
+      if (typeof val === 'number') return val > 0;
+      if (typeof val === 'string') {
+        const s = val.trim().toLowerCase();
+        return s === 'true' || s === 'oui' || s === '1' || s === 'yes' || s === 'vrai';
+      }
+      return !!val;
+    };
+
+    const parsed = [];
+
+    for (let r = headerRowIdx + 1; r < rawGrid.length; r++) {
+      const row = rawGrid[r];
+      if (!row || row.length === 0) continue;
+
+      const valByHeader = {};
+      rawHeaders.forEach((h, colIdx) => {
+        if (h) {
+          const cellVal = row[colIdx];
+          valByHeader[h] = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : "";
+        }
+      });
+
+      // 1. Extraction Nom
+      let name = "";
+      if (currentMapping.nom && valByHeader[currentMapping.nom]) {
+        name = valByHeader[currentMapping.nom];
+      } else {
+        for (let colIdx = 0; colIdx < row.length; colIdx++) {
+          const val = String(row[colIdx] || "").trim();
+          if (val.length >= 2 && !/^\d+$/.test(val) && !val.includes("@")) {
+            name = val;
+            break;
+          }
+        }
+      }
+
+      if (!name || name.length < 2) continue;
+
+      // 2. Extraction Ville
+      let city = "";
+      if (currentMapping.ville && valByHeader[currentMapping.ville]) {
+        city = valByHeader[currentMapping.ville];
+      }
+
+      // 3. Extraction Département
+      let dept = "";
+      if (currentMapping.departement && valByHeader[currentMapping.departement]) {
+        dept = valByHeader[currentMapping.departement];
+      }
+
+      // Normalisation du département si code postal ou numéro
+      if (dept) {
+        const resolvedDept = detectDeptKey(dept);
+        if (resolvedDept && resolvedDept !== 'Autre') {
+          dept = resolvedDept;
+        } else if (/^\d{2}/.test(dept)) {
+          const code = dept.substring(0, 2);
+          for (const d of FRENCH_DEPARTMENTS) {
+            if (d.code === code) {
+              dept = d.name;
+              break;
+            }
+          }
+        }
+      }
+
+      // 4. Extraction autres champs
+      const notes = currentMapping.notes && valByHeader[currentMapping.notes] ? valByHeader[currentMapping.notes] : "";
+      const notes_observation = currentMapping.observations && valByHeader[currentMapping.observations] ? valByHeader[currentMapping.observations] : "";
+      const notes_accessibilite = currentMapping.accessibilite && valByHeader[currentMapping.accessibilite] ? valByHeader[currentMapping.accessibilite] : "";
+      const rating_accessibilite = currentMapping.rating_access && valByHeader[currentMapping.rating_access] ? (Number(valByHeader[currentMapping.rating_access]) || 0) : 0;
+      const notes_technique = currentMapping.technique && valByHeader[currentMapping.technique] ? valByHeader[currentMapping.technique] : "";
+      const notes_lumiere = currentMapping.lumiere && valByHeader[currentMapping.lumiere] ? valByHeader[currentMapping.lumiere] : "";
+
+      const has_limiteur_son = parseBool(currentMapping.limiteur ? valByHeader[currentMapping.limiteur] : false);
+      const has_detecteur_fumee = parseBool(currentMapping.detecteur ? valByHeader[currentMapping.detecteur] : false);
+      const has_no_limiteur_ni_detecteur = parseBool(currentMapping.sans_limiteur ? valByHeader[currentMapping.sans_limiteur] : false);
+      const has_wifi = parseBool(currentMapping.wifi ? valByHeader[currentMapping.wifi] : false);
+      const has_4g_5g = parseBool(currentMapping.reseau ? valByHeader[currentMapping.reseau] : false);
+
+      const type_lieu = currentMapping.type_lieu && valByHeader[currentMapping.type_lieu] ? valByHeader[currentMapping.type_lieu] : "";
+      const capacite_min = currentMapping.capacite_min && valByHeader[currentMapping.capacite_min] ? (Number(valByHeader[currentMapping.capacite_min]) || valByHeader[currentMapping.capacite_min]) : "";
+      const capacite_max = currentMapping.capacite_max && valByHeader[currentMapping.capacite_max] ? (Number(valByHeader[currentMapping.capacite_max]) || valByHeader[currentMapping.capacite_max]) : "";
+      const tarif_indicatif = currentMapping.tarif_indicatif && valByHeader[currentMapping.tarif_indicatif] ? valByHeader[currentMapping.tarif_indicatif] : "";
+      const infos_annuaire = currentMapping.infos_annuaire && valByHeader[currentMapping.infos_annuaire] ? valByHeader[currentMapping.infos_annuaire] : "";
+      const lien_annuaire = currentMapping.lien_annuaire && valByHeader[currentMapping.lien_annuaire] ? valByHeader[currentMapping.lien_annuaire] : "";
+      const telephone = currentMapping.telephone && valByHeader[currentMapping.telephone] ? valByHeader[currentMapping.telephone] : "";
+      const is_blacklisted = parseBool(currentMapping.blacklist ? valByHeader[currentMapping.blacklist] : false);
+
+      const rawStatut = (currentMapping.statut && valByHeader[currentMapping.statut] ? valByHeader[currentMapping.statut] : "").toLowerCase();
+      const isCompleteFromStatut = rawStatut.includes('complète') || rawStatut.includes('complete');
+      const isComplete = rawStatut ? isCompleteFromStatut : ((city && city !== 'À préciser') && (dept && dept !== 'À préciser'));
+
+      // 5. Dédoublonnage intelligent & Détection des doutes
+      const normName = norm(name);
+      const normCity = norm(city);
+
+      let existingMatch = null;
+      let hasDoubt = false;
+      let doubtReason = '';
+      let candidates = [];
+
+      const GENERIC_VENUE_TERMS = ['salledesfetes', 'sallepolyvalente', 'foyerrural', 'complexe', 'restaurant', 'hotel', 'auberge', 'domaine', 'chateau', 'mairie'];
+
+      // A. Match certain 100% : Nom normalisé identique ET Ville identique
+      if (normCity && normCity !== 'apreciser') {
+        const exactCityMatch = venues.find(v => {
+          const vCityNorm = norm(v.city);
+          return norm(v.name) === normName && (vCityNorm === normCity || vCityNorm === 'apreciser');
+        });
+        if (exactCityMatch) {
+          existingMatch = exactCityMatch;
+        }
+      }
+
+      // B. Si non trouvé : Nom identique exact
+      if (!existingMatch && normName.length >= 4) {
+        const sameNameVenues = venues.filter(v => norm(v.name) === normName);
+        if (sameNameVenues.length === 1) {
+          const v = sameNameVenues[0];
+          const vCityNorm = norm(v.city);
+          const isGeneric = GENERIC_VENUE_TERMS.some(term => normName.includes(term));
+          if (normCity && normCity !== 'apreciser' && vCityNorm && vCityNorm !== 'apreciser' && normCity !== vCityNorm) {
+            existingMatch = v;
+            hasDoubt = true;
+            doubtReason = `Même nom mais ville différente (${city} vs ${v.city})`;
+            candidates = sameNameVenues;
+          } else if (isGeneric && (!normCity || normCity === 'apreciser' || !vCityNorm || vCityNorm === 'apreciser')) {
+            existingMatch = v;
+            hasDoubt = true;
+            doubtReason = `Nom générique fréquent sans ville précise`;
+            candidates = sameNameVenues;
+          } else {
+            existingMatch = v;
+          }
+        } else if (sameNameVenues.length > 1) {
+          const matchedByCity = sameNameVenues.find(v => norm(v.city) === normCity);
+          if (matchedByCity) {
+            existingMatch = matchedByCity;
+          } else {
+            existingMatch = sameNameVenues[0];
+            hasDoubt = true;
+            doubtReason = `Plusieurs lieux portent ce nom (${sameNameVenues.map(c => c.city).join(', ')})`;
+            candidates = sameNameVenues;
+          }
+        }
+      }
+
+      // C. Match partiel / inclusion forte dans la même ville
+      if (!existingMatch && normCity && normCity !== 'apreciser') {
+        const sameCityVenues = venues.filter(v => norm(v.city) === normCity);
+        for (const v of sameCityVenues) {
+          const vNorm = norm(v.name);
+          if (vNorm.length >= 5 && normName.length >= 5) {
+            if (vNorm.includes(normName) || normName.includes(vNorm)) {
+              existingMatch = v;
+              const lenDiff = Math.abs(vNorm.length - normName.length);
+              if (lenDiff > 4) {
+                hasDoubt = true;
+                doubtReason = `Nom proche dans la même ville ("${v.name}")`;
+                candidates.push(v);
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      // D. Forte ressemblance de mots-clés
+      if (!existingMatch && normName.length >= 7) {
+        for (const v of venues) {
+          const vNorm = norm(v.name);
+          const vCityNorm = norm(v.city);
+          const wordsName = normName.split(/\s+/).filter(w => w.length >= 4 && !['salle', 'fetes', 'reception', 'domaine', 'chateau'].includes(w));
+          const wordsV = vNorm.split(/\s+/).filter(w => w.length >= 4 && !['salle', 'fetes', 'reception', 'domaine', 'chateau'].includes(w));
+          if (wordsName.length > 0 && wordsV.length > 0) {
+            const shared = wordsName.filter(w => wordsV.includes(w));
+            if (shared.length >= 2 || (shared.length === 1 && wordsName.length === 1 && wordsV.length === 1 && shared[0].length >= 6)) {
+              existingMatch = v;
+              hasDoubt = true;
+              doubtReason = `Forte ressemblance avec "${v.name}" (${v.city})`;
+              candidates.push(v);
+              break;
+            }
+          }
+        }
+      }
+
+      parsed.push({
+        id: `venue_import_${Date.now()}_${parsed.length}`,
+        name,
+        city: city || 'À préciser',
+        department: dept || 'À préciser',
+        notes,
+        notes_observation,
+        notes_accessibilite,
+        rating_accessibilite,
+        notes_technique,
+        notes_lumiere,
+        has_limiteur_son,
+        has_detecteur_fumee,
+        has_no_limiteur_ni_detecteur,
+        has_wifi,
+        has_4g_5g,
+        type_lieu,
+        capacite_min,
+        capacite_max,
+        tarif_indicatif,
+        infos_annuaire,
+        lien_annuaire,
+        telephone,
+        is_complete: isComplete,
+        is_blacklisted,
+        isExisting: !!existingMatch,
+        hasDoubt,
+        doubtReason,
+        candidates,
+        existingVenue: existingMatch ? { id: existingMatch.id, name: existingMatch.name, city: existingMatch.city, department: existingMatch.department } : null,
+        userAction: existingMatch ? 'update' : 'create',
+        selectedExistingId: existingMatch ? existingMatch.id : '',
+        isIncomplete: !isComplete
+      });
+    }
+
+    if (parsed.length === 0) {
+      setShowColumnMapper(true);
+      toast.warning("Aucune salle n'a pu être extraite. Vérifiez les colonnes et sélectionnez la colonne du Nom ci-dessous.");
+      return;
+    }
+
+    setParsedVenues(parsed);
+    setImportRawFilename(sourceFilename);
+    setImportStep('preview');
+    toast.success(`📊 ${parsed.length} salles détectées et analysées avec succès !`);
+  };
+
+  const handleFileSelect = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: 'array', cellDates: true });
+        
+        let bestSheetName = wb.SheetNames[0];
+        let maxRowCount = 0;
+        for (const name of wb.SheetNames) {
+          const s = wb.Sheets[name];
+          const g = XLSX.utils.sheet_to_json(s, { header: 1, defval: "" });
+          if (g.length > maxRowCount) {
+            maxRowCount = g.length;
+            bestSheetName = name;
+          }
+        }
+
+        const ws = wb.Sheets[bestSheetName];
+        const rawGrid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        processRawGrid(rawGrid, file.name);
+      } catch (err) {
+        console.error("Error reading file as array:", err);
+        try {
+          const textReader = new FileReader();
+          textReader.onload = (te) => {
+            const text = te.target.result;
+            const wbText = XLSX.read(text, { type: 'string' });
+            const wsText = wbText.Sheets[wbText.SheetNames[0]];
+            const rawGridText = XLSX.utils.sheet_to_json(wsText, { header: 1, defval: "" });
+            processRawGrid(rawGridText, file.name);
+          };
+          textReader.readAsText(file, 'utf-8');
+        } catch (fallbackErr) {
+          toast.error("Erreur de lecture du fichier : " + err.message);
+        }
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handlePasteSubmit = () => {
+    if (!importPastedText || !importPastedText.trim()) {
+      toast.error("Veuillez coller le texte de votre fichier CSV.");
+      return;
+    }
+    try {
+      const wb = XLSX.read(importPastedText, { type: 'string', raw: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rawGrid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      if (rawGrid.length > 0) {
+        processRawGrid(rawGrid, "texte_colle.csv");
+        return;
+      }
+    } catch (e) {
+      console.warn("XLSX string parse failed, attempting split fallback:", e);
+    }
+
+    const lines = importPastedText.trim().split(/\r?\n/).filter(Boolean);
+    if (lines.length === 0) return;
+    const delimiter = lines[0].includes(";") ? ";" : lines[0].includes("\t") ? "\t" : ",";
+    const rawGrid = lines.map(line => line.split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim()));
+    processRawGrid(rawGrid, "texte_colle.csv");
+  };
+
+  const handleConfirmImport = async () => {
+    if (!parsedVenues || parsedVenues.length === 0) {
+      toast.warning("Aucune salle à importer.");
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      const payload = {
+        venues: parsedVenues.map(v => ({
+          name: v.name,
+          city: v.city,
+          department: v.department,
+          notes: v.notes,
+          notes_observation: v.notes_observation,
+          notes_accessibilite: v.notes_accessibilite,
+          rating_accessibilite: v.rating_accessibilite,
+          notes_technique: v.notes_technique,
+          notes_lumiere: v.notes_lumiere,
+          has_limiteur_son: v.has_limiteur_son,
+          has_detecteur_fumee: v.has_detecteur_fumee,
+          has_no_limiteur_ni_detecteur: v.has_no_limiteur_ni_detecteur,
+          has_wifi: v.has_wifi,
+          has_4g_5g: v.has_4g_5g,
+          type_lieu: v.type_lieu,
+          capacite_min: v.capacite_min,
+          capacite_max: v.capacite_max,
+          tarif_indicatif: v.tarif_indicatif,
+          infos_annuaire: v.infos_annuaire,
+          lien_annuaire: v.lien_annuaire,
+          telephone: v.telephone,
+          is_complete: v.is_complete,
+          is_blacklisted: v.is_blacklisted,
+          existingId: v.selectedExistingId || v.existingVenue?.id,
+          targetAction: v.userAction || (v.isExisting ? 'update' : 'create')
+        })),
+        updateExisting: updateExistingInVenues
+      };
+
+      const res = await axios.post(`${API_BASE_URL}/venues/import-csv-excel`, payload);
+      if (res.data && res.data.success) {
+        toast.success(res.data.message || `${res.data.addedCount} nouveaux lieux ajoutés, ${res.data.updatedCount} salles existantes mises à jour !`);
+        setShowImportModal(false);
+        setImportStep('upload');
+        setParsedVenues([]);
+        setImportPastedText('');
+        await loadData();
+      } else {
+        toast.error("Une erreur est survenue lors de l'enregistrement des lieux.");
+      }
+    } catch (err) {
+      console.error("Error confirming venues import:", err);
+      toast.error(err.response?.data?.error || "Erreur lors de l'import : " + err.message);
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -653,10 +1241,28 @@ export default function VenueApp() {
           </div>
           
           <div className="flex flex-wrap gap-3">
+            <Button
+              onClick={() => {
+                setShowImportModal(true);
+                setImportStep('upload');
+                setParsedVenues([]);
+              }}
+              className="bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30 font-bold px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4 text-emerald-400" />
+              Importer CSV / Excel
+            </Button>
+            <Button
+              onClick={() => setShowExportModal(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-amber-500/30 font-bold px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-amber-400" />
+              Exporter en Excel
+            </Button>
             <Button 
               onClick={handleImportFromContracts}
               disabled={importingFromContracts}
-              className="bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30 font-bold px-5 py-2.5 rounded-xl shadow-lg flex items-center gap-2"
+              className="bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30 font-bold px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2"
             >
               {importingFromContracts ? (
                 <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
@@ -793,6 +1399,19 @@ export default function VenueApp() {
               </span>
             )}
           </button>
+
+          {activeTab === 'incomplete' && incompleteVenues.length > 0 && (
+            <div className="ml-auto pb-2 flex items-center">
+              <Button
+                size="sm"
+                onClick={handleValidateAllVenues}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs h-8 px-3 rounded-lg shadow-sm flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Tout valider ({incompleteVenues.length})
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Loading Spinner */}
@@ -863,6 +1482,17 @@ export default function VenueApp() {
                                         <AlertTriangle className="w-2.5 h-2.5" /> Blacklisté
                                       </Badge>
                                     )}
+                                    {venue.type_lieu && (
+                                      <Badge className="bg-indigo-50 text-indigo-700 border-indigo-200 text-[10px] py-0 px-1.5 font-medium">
+                                        {venue.type_lieu}
+                                      </Badge>
+                                    )}
+                                    {(venue.capacite_max || venue.capacite_min) && (
+                                      <Badge className="bg-slate-100 text-slate-700 border-slate-200 text-[10px] py-0 px-1.5 font-medium flex items-center gap-1">
+                                        <Users className="w-2.5 h-2.5 text-slate-500" />
+                                        {venue.capacite_min && venue.capacite_max ? `${venue.capacite_min} - ${venue.capacite_max} pers.` : `${venue.capacite_max || venue.capacite_min} pers.`}
+                                      </Badge>
+                                    )}
                                     {venue.has_potential_duplicate && (
                                       <Badge 
                                         onClick={() => handleOpenMergeModal(venue)}
@@ -872,10 +1502,22 @@ export default function VenueApp() {
                                       </Badge>
                                     )}
                                   </div>
-                                  <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1 font-medium">
-                                    <MapPin className="w-3 h-3 text-slate-400" /> {venue.city} ({venue.department})
-                                    {venueContracts.length > 0 && (
+                                  <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5 font-medium flex-wrap">
+                                    <span className="flex items-center gap-1">
+                                      <MapPin className="w-3 h-3 text-slate-400" /> {venue.city} ({venue.department})
+                                    </span>
+                                    {venue.telephone && (
+                                      <span className="text-slate-400 flex items-center gap-1">
+                                        • <Phone className="w-2.5 h-2.5" /> {venue.telephone}
+                                      </span>
+                                    )}
+                                    {venue.tarif_indicatif && (
                                       <span className="text-slate-400">
+                                        • {venue.tarif_indicatif}
+                                      </span>
+                                    )}
+                                    {venueContracts.length > 0 && (
+                                      <span className="text-indigo-600 font-semibold">
                                         • {venueContracts.length} Prestation{venueContracts.length > 1 ? 's' : ''}
                                       </span>
                                     )}
@@ -946,34 +1588,136 @@ export default function VenueApp() {
 
       {/* Slide-over / Modal for Venue Creation & Editing */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold flex items-center gap-2">
               <Building2 className="w-6 h-6 text-indigo-600" />
-              {editingVenue ? 'Modifier la fiche technique' : 'Nouveau lieu de réception'}
+              {editingVenue ? 'Modifier la fiche du lieu de réception' : 'Ajouter un lieu de réception'}
             </DialogTitle>
             <DialogDescription>
-              Renseignez les détails géographiques et techniques du lieu.
+              Fiche technique complète du lieu structurée dans l'ordre d'importation standard (23 rubriques).
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSaveVenue} className="space-y-6 py-4">
-            {/* 1. Département Selection (Tous départements de France / Autre) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="form-dept-select" className="text-xs font-bold text-slate-700">Département (France) *</Label>
+          <form onSubmit={handleSaveVenue} className="space-y-4 py-3">
+            {/* 1. Nom de la Salle / Lieu */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <div className="flex justify-between items-center">
+                <Label htmlFor="venue-name" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">1</span>
+                  Nom de la Salle / Lieu *
+                </Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSearchAI}
+                  disabled={searchingAI || !venueForm.name}
+                  className="h-7 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold flex items-center gap-1.5"
+                >
+                  {searchingAI ? (
+                    <span className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <Sparkles className="w-3 h-3 text-indigo-500" />
+                  )}
+                  Compléter par IA
+                </Button>
+              </div>
+              <Input
+                id="venue-name"
+                placeholder="Ex: Domaine de l'Île, Château du Grand-Rupt, Salle Polyvalente..."
+                value={venueForm.name}
+                onChange={(e) => setVenueForm(prev => ({ ...prev, name: e.target.value }))}
+                required
+                className="h-10 text-sm font-medium bg-white"
+              />
+            </div>
+
+            {/* 2. Ville */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <div className="flex justify-between items-center">
+                <Label htmlFor="form-city-input" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">2</span>
+                  Ville *
+                </Label>
+                {loadingCities && (
+                  <span className="text-[10px] text-indigo-600 animate-pulse flex items-center gap-1 font-medium">
+                    <span className="w-2.5 h-2.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
+                    Chargement des communes...
+                  </span>
+                )}
+              </div>
+              <div className="relative" ref={cityDropdownRef}>
+                <Input
+                  id="form-city-input"
+                  placeholder="Tapez le nom de la ville ou commune..."
+                  value={formCityKey && formCityKey !== 'Autre' ? formCityKey : (manualCity || venueForm.city || citySearchQuery)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCitySearchQuery(val);
+                    setManualCity(val);
+                    setVenueForm(prev => ({ ...prev, city: val }));
+                    if (formDeptKey && formDeptKey !== 'Autre') {
+                      setIsCityDropdownOpen(true);
+                    }
+                  }}
+                  onFocus={() => {
+                    if (formDeptKey && formDeptKey !== 'Autre') {
+                      setIsCityDropdownOpen(true);
+                    }
+                  }}
+                  className="w-full pr-10 h-10 font-medium text-slate-700 bg-white"
+                  required
+                  autoComplete="off"
+                />
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+                  <MapPin className="w-4 h-4" />
+                </div>
+
+                {isCityDropdownOpen && filteredCities.length > 0 && (
+                  <div className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl divide-y divide-slate-100 animate-fadeIn">
+                    {filteredCities.map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => {
+                          setFormCityKey(c);
+                          setCitySearchQuery(c);
+                          setManualCity(c);
+                          setVenueForm(prev => ({ ...prev, city: c }));
+                          setIsCityDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-slate-50 flex justify-between items-center ${formCityKey === c ? 'bg-indigo-50/60 text-indigo-600 font-semibold' : 'text-slate-700'}`}
+                      >
+                        <span>{c}</span>
+                        {formCityKey === c && <Check className="w-4 h-4 text-indigo-600" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 3. Département */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="form-dept-select" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">3</span>
+                Département *
+              </Label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <select
                   id="form-dept-select"
-                  value={formDeptKey}
+                  value={formDeptKey || detectDeptKey(venueForm.department) || (venueForm.department ? 'Autre' : '')}
                   onChange={(e) => {
                     const val = e.target.value;
                     setFormDeptKey(val);
                     if (val === 'Autre') {
-                      setFormCityKey('Autre');
+                      setVenueForm(prev => ({ ...prev, department: manualDept || '' }));
                     } else if (val) {
-                      setFormCityKey('');
+                      setVenueForm(prev => ({ ...prev, department: val }));
+                      setManualDept('');
                     } else {
-                      setFormCityKey('');
+                      setVenueForm(prev => ({ ...prev, department: '' }));
                     }
                   }}
                   className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 h-10 font-medium text-slate-700 cursor-pointer"
@@ -985,192 +1729,159 @@ export default function VenueApp() {
                   ))}
                   <option value="Autre">Autre département (Saisie manuelle)...</option>
                 </select>
-              </div>
 
-              {/* Manual Department Text Input if 'Autre' is selected */}
-              {formDeptKey === 'Autre' && (
-                <div className="space-y-1.5 animate-fadeIn">
-                  <Label htmlFor="manual-dept-input" className="text-xs font-bold text-slate-700">Nom du département *</Label>
+                {(formDeptKey === 'Autre' || (!FRENCH_DEPARTMENTS.some(d => d.name === venueForm.department) && venueForm.department)) && (
                   <Input
                     id="manual-dept-input"
-                    placeholder="Ex: Paris, Gironde..."
-                    value={manualDept}
-                    onChange={(e) => setManualDept(e.target.value)}
+                    placeholder="Préciser le département (ex: Paris, Gironde...)"
+                    value={manualDept || venueForm.department || ''}
+                    onChange={(e) => {
+                      setManualDept(e.target.value);
+                      setVenueForm(prev => ({ ...prev, department: e.target.value }));
+                    }}
                     required
+                    className="h-10 text-sm font-medium bg-white"
                   />
-                </div>
-              )}
-            </div>
-
-            {/* 2. Ville Selection (Grand Est Cities / Autre) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {formDeptKey && formDeptKey !== 'Autre' ? (
-                <div className="space-y-1.5 relative" ref={cityDropdownRef}>
-                  <div className="flex justify-between items-center">
-                    <Label htmlFor="form-city-search" className="text-xs font-bold text-slate-700">Ville *</Label>
-                    {loadingCities && (
-                      <span className="text-[10px] text-indigo-600 animate-pulse flex items-center gap-1 font-medium">
-                        <span className="w-2.5 h-2.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-                        Chargement...
-                      </span>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Input
-                      id="form-city-search"
-                      placeholder={loadingCities ? 'Chargement...' : 'Tapez pour rechercher une ville...'}
-                      value={citySearchQuery}
-                      onChange={(e) => {
-                        setCitySearchQuery(e.target.value);
-                        setIsCityDropdownOpen(true);
-                      }}
-                      onFocus={() => setIsCityDropdownOpen(true)}
-                      className="w-full pr-10 h-10 font-medium text-slate-700"
-                      disabled={loadingCities}
-                      required
-                      autoComplete="off"
-                    />
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
-                      <Search className="w-4 h-4" />
-                    </div>
-
-                    {isCityDropdownOpen && (
-                      <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl divide-y divide-slate-100 animate-fadeIn">
-                        {filteredCities.length > 0 ? (
-                          filteredCities.map(c => (
-                            <button
-                              key={c}
-                              type="button"
-                              onClick={() => {
-                                setFormCityKey(c);
-                                setCitySearchQuery(c);
-                                setIsCityDropdownOpen(false);
-                              }}
-                              className={`w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-slate-50 flex justify-between items-center ${formCityKey === c ? 'bg-indigo-50/50 text-indigo-600 font-semibold' : 'text-slate-700'}`}
-                            >
-                              <span>{c}</span>
-                              {formCityKey === c && <Check className="w-4 h-4 text-indigo-600" />}
-                            </button>
-                          ))
-                        ) : (
-                          <div className="px-3 py-2 text-xs text-slate-500 italic">
-                            Aucune ville correspondante
-                          </div>
-                        )}
-                        
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormCityKey('Autre');
-                            setCitySearchQuery('Autre');
-                            setIsCityDropdownOpen(false);
-                          }}
-                          className={`w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-slate-50 flex justify-between items-center border-t border-slate-100 font-medium ${formCityKey === 'Autre' ? 'bg-indigo-50/50 text-indigo-600 font-bold' : 'text-slate-500'}`}
-                        >
-                          <span>Autre (Saisie manuelle)...</span>
-                          {formCityKey === 'Autre' && <Check className="w-4 h-4 text-indigo-600" />}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Manual City input if 'Autre' department is chosen OR 'Autre' city option is chosen */}
-              {(formDeptKey === 'Autre' || formCityKey === 'Autre') && (
-                <div className="space-y-1.5 animate-fadeIn">
-                  <Label htmlFor="manual-city-input" className="text-xs font-bold text-slate-700">Nom de la ville *</Label>
-                  <Input
-                    id="manual-city-input"
-                    placeholder="Ex: Mussig, Bordeaux..."
-                    value={manualCity}
-                    onChange={(e) => setManualCity(e.target.value)}
-                    required
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* 3. Nom de la salle */}
-            <div className="space-y-1.5">
-              <Label htmlFor="venue-name" className="text-xs font-bold text-slate-700">Nom de la salle / Lieu de réception *</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="venue-name"
-                  placeholder="Ex: Domaine de l'Île, Château du Grand-Rupt..."
-                  value={venueForm.name}
-                  onChange={(e) => setVenueForm(prev => ({ ...prev, name: e.target.value }))}
-                  required
-                  className="flex-1"
-                />
+                )}
               </div>
             </div>
 
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-              <h4 className="font-bold text-sm text-slate-800">Spécifications Techniques</h4>
+            {/* 4. Statut de la Fiche */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">4</span>
+                Statut de la Fiche
+              </Label>
               <div className="grid grid-cols-2 gap-3">
-                <label className="flex items-center gap-2 cursor-pointer select-none text-xs">
-                  <input
-                    type="checkbox"
-                    checked={venueForm.has_wifi}
-                    onChange={(e) => setVenueForm(prev => ({ ...prev, has_wifi: e.target.checked }))}
-                    className="rounded text-indigo-600"
-                  />
-                  <span>Wi-Fi disponible</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none text-xs">
-                  <input
-                    type="checkbox"
-                    checked={venueForm.has_4g_5g}
-                    onChange={(e) => setVenueForm(prev => ({ ...prev, has_4g_5g: e.target.checked }))}
-                    className="rounded text-indigo-600"
-                  />
-                  <span>Réseau 4G/5G</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none text-xs">
+                <button
+                  type="button"
+                  onClick={() => setVenueForm(prev => ({ ...prev, is_complete: true }))}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                    venueForm.is_complete
+                      ? 'bg-emerald-50 border-emerald-400 text-emerald-800 shadow-xs ring-1 ring-emerald-300'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <CheckCircle2 className={`w-4 h-4 ${venueForm.is_complete ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  Fiche Complète
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVenueForm(prev => ({ ...prev, is_complete: false }))}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-bold transition-all ${
+                    !venueForm.is_complete
+                      ? 'bg-amber-50 border-amber-400 text-amber-800 shadow-xs ring-1 ring-amber-300'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Clock className={`w-4 h-4 ${!venueForm.is_complete ? 'text-amber-600' : 'text-slate-400'}`} />
+                  À compléter
+                </button>
+              </div>
+            </div>
+
+            {/* 5, 6, 7. Limiteur de Son, Détecteur de Fumée, Sans Limiteur ni Détecteur */}
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-2.5">
+              <Label className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">5-7</span>
+                Contraintes Sonores & Détecteurs
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* 5. Limiteur de Son */}
+                <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer select-none text-xs transition-all ${venueForm.has_limiteur_son ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 font-bold shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                  <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center shrink-0">5</span>
                   <input
                     type="checkbox"
                     checked={venueForm.has_limiteur_son}
                     onChange={(e) => setVenueForm(prev => ({ ...prev, has_limiteur_son: e.target.checked, has_no_limiteur_ni_detecteur: false }))}
-                    className="rounded text-indigo-600"
+                    className="rounded text-indigo-600 shrink-0"
                   />
-                  <span>Limiteur de son</span>
+                  <Volume2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>Limiteur de Son</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer select-none text-xs">
+
+                {/* 6. Détecteur de Fumée */}
+                <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer select-none text-xs transition-all ${venueForm.has_detecteur_fumee ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 font-bold shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                  <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center shrink-0">6</span>
                   <input
                     type="checkbox"
                     checked={venueForm.has_detecteur_fumee}
                     onChange={(e) => setVenueForm(prev => ({ ...prev, has_detecteur_fumee: e.target.checked, has_no_limiteur_ni_detecteur: false }))}
-                    className="rounded text-indigo-600"
+                    className="rounded text-indigo-600 shrink-0"
                   />
-                  <span>Détecteur de fumée</span>
+                  <Flame className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>Détecteur de Fumée</span>
+                </label>
+
+                {/* 7. Sans Limiteur ni Détecteur */}
+                <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer select-none text-xs transition-all ${venueForm.has_no_limiteur_ni_detecteur ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-bold shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                  <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center shrink-0">7</span>
+                  <input
+                    type="checkbox"
+                    checked={venueForm.has_no_limiteur_ni_detecteur}
+                    onChange={(e) => setVenueForm(prev => ({
+                      ...prev,
+                      has_no_limiteur_ni_detecteur: e.target.checked,
+                      has_limiteur_son: e.target.checked ? false : prev.has_limiteur_son,
+                      has_detecteur_fumee: e.target.checked ? false : prev.has_detecteur_fumee
+                    }))}
+                    className="rounded text-emerald-600 shrink-0"
+                  />
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Sans Limiteur ni Détecteur</span>
                 </label>
               </div>
             </div>
 
-            {/* Observations */}
-            <div className="space-y-1.5">
-              <Label htmlFor="venue-notes-observation" className="text-xs font-bold text-slate-700">Observations (champ libre)</Label>
-              <Textarea
-                id="venue-notes-observation"
-                placeholder="Ex: Stationnement facile, à proximité de l'église, propriétaire sympa..."
-                value={venueForm.notes_observation}
-                onChange={(e) => setVenueForm(prev => ({ ...prev, notes_observation: e.target.value }))}
-                rows={3}
-              />
+            {/* 8 & 9. Wifi Disponible & Réseau 4G / 5G */}
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-2.5">
+              <Label className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">8-9</span>
+                Connectivité & Réseaux
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* 8. Wifi Disponible */}
+                <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer select-none text-xs transition-all ${venueForm.has_wifi ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 font-bold shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                  <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center shrink-0">8</span>
+                  <input
+                    type="checkbox"
+                    checked={venueForm.has_wifi}
+                    onChange={(e) => setVenueForm(prev => ({ ...prev, has_wifi: e.target.checked }))}
+                    className="rounded text-indigo-600 shrink-0"
+                  />
+                  <Wifi className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>Wifi Disponible</span>
+                </label>
+
+                {/* 9. Réseau 4G / 5G */}
+                <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer select-none text-xs transition-all ${venueForm.has_4g_5g ? 'bg-indigo-50/80 border-indigo-400 text-indigo-950 font-bold shadow-xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                  <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center shrink-0">9</span>
+                  <input
+                    type="checkbox"
+                    checked={venueForm.has_4g_5g}
+                    onChange={(e) => setVenueForm(prev => ({ ...prev, has_4g_5g: e.target.checked }))}
+                    className="rounded text-indigo-600 shrink-0"
+                  />
+                  <Smartphone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>Réseau 4G / 5G</span>
+                </label>
+              </div>
             </div>
 
-            {/* Accessibilité */}
-            <div className="space-y-2 p-3 bg-slate-50 border rounded-xl">
+            {/* 10. Note Accessibilité (/5) */}
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold text-slate-700">Accessibilité (Note 1 à 5 ★)</Label>
-                <div className="flex items-center gap-1">
+                <Label className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">10</span>
+                  Note Accessibilité (/5)
+                </Label>
+                <div className="flex items-center gap-1.5">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       type="button"
-                      onClick={() => setVenueForm(prev => ({ ...prev, rating_accessibilite: star }))}
-                      className="focus:outline-none transition-transform active:scale-95 p-0.5"
+                      onClick={() => setVenueForm(prev => ({ ...prev, rating_accessibilite: prev.rating_accessibilite === star ? 0 : star }))}
+                      className="focus:outline-none transition-transform active:scale-90 p-0.5"
                     >
                       <Star
                         className={`w-5 h-5 ${
@@ -1181,51 +1892,289 @@ export default function VenueApp() {
                       />
                     </button>
                   ))}
-                  {venueForm.rating_accessibilite > 0 && (
-                    <span className="text-xs font-extrabold text-amber-600 ml-1.5 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                      {venueForm.rating_accessibilite} / 5
-                    </span>
-                  )}
+                  <span className="text-xs font-extrabold text-amber-700 ml-2 bg-amber-100/80 px-2 py-0.5 rounded border border-amber-200">
+                    {venueForm.rating_accessibilite > 0 ? `${venueForm.rating_accessibilite} / 5` : 'Non noté'}
+                  </span>
                 </div>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="venue-notes-accessibilite" className="text-[10px] font-bold text-slate-500">Détails de l'accessibilité (champ libre)</Label>
-                <Textarea
-                  id="venue-notes-accessibilite"
-                  placeholder="Ex: Accès PMR de plain-pied, rampe d'accès, ascenseur..."
-                  value={venueForm.notes_accessibilite}
-                  onChange={(e) => setVenueForm(prev => ({ ...prev, notes_accessibilite: e.target.value }))}
-                  rows={2}
-                  className="bg-white"
-                />
               </div>
             </div>
 
-            {/* Note technique */}
-            <div className="space-y-1.5">
-              <Label htmlFor="venue-notes-technique" className="text-xs font-bold text-slate-700">Note technique (champ libre)</Label>
+            {/* 11. Accessibilité & PMR */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-notes-accessibilite" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">11</span>
+                Accessibilité & PMR
+              </Label>
               <Textarea
-                id="venue-notes-technique"
-                placeholder="Ex: Puissance électrique disponible (32A Triphasé), hauteur sous plafond..."
-                value={venueForm.notes_technique}
-                onChange={(e) => setVenueForm(prev => ({ ...prev, notes_technique: e.target.value }))}
-                rows={3}
+                id="venue-notes-accessibilite"
+                placeholder="Ex: Accès PMR de plain-pied, rampe d'accès, ascenseur, sanitaires adaptés PMR..."
+                value={venueForm.notes_accessibilite}
+                onChange={(e) => setVenueForm(prev => ({ ...prev, notes_accessibilite: e.target.value }))}
+                rows={2}
+                className="bg-white text-xs"
               />
             </div>
 
-            {/* Lumière salle */}
-            <div className="space-y-1.5">
-              <Label htmlFor="venue-notes-lumiere" className="text-xs font-bold text-slate-700">Lumière salle (champ libre)</Label>
+            {/* 12. Observations Générales */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-notes-observation" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">12</span>
+                Observations Générales
+              </Label>
+              <Textarea
+                id="venue-notes-observation"
+                placeholder="Ex: Stationnement facile, à proximité de l'église, propriétaire agréable, parc arboré..."
+                value={venueForm.notes_observation}
+                onChange={(e) => setVenueForm(prev => ({ ...prev, notes_observation: e.target.value }))}
+                rows={2}
+                className="bg-white text-xs"
+              />
+            </div>
+
+            {/* 13. Spécificités Techniques */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-notes-technique" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">13</span>
+                Spécificités Techniques
+              </Label>
+              <Textarea
+                id="venue-notes-technique"
+                placeholder="Ex: Puissance électrique disponible (32A Triphasé), hauteur sous plafond, scène, accès traiteur..."
+                value={venueForm.notes_technique}
+                onChange={(e) => setVenueForm(prev => ({ ...prev, notes_technique: e.target.value }))}
+                rows={2}
+                className="bg-white text-xs"
+              />
+            </div>
+
+            {/* 14. Éclairage & Lumière */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-notes-lumiere" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">14</span>
+                Éclairage & Lumière
+              </Label>
               <Textarea
                 id="venue-notes-lumiere"
-                placeholder="Ex: Lumières réglables en intensité, éclairage indirect, projecteurs de scène intégrés..."
+                placeholder="Ex: Lumières réglables en intensité (variateurs), éclairage indirect, projecteurs de scène intégrés..."
                 value={venueForm.notes_lumiere}
                 onChange={(e) => setVenueForm(prev => ({ ...prev, notes_lumiere: e.target.value }))}
                 rows={2}
+                className="bg-white text-xs"
               />
             </div>
 
-            {/* History of Prestations associated with this venue */}
+            {/* 15. Autres Notes & Remarques */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-notes" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">15</span>
+                Autres Notes & Remarques
+              </Label>
+              <Textarea
+                id="venue-notes"
+                placeholder="Ex: Tarifs traiteurs, contacts régisseurs, code portail, consignes de fin de soirée, ménage..."
+                value={venueForm.notes}
+                onChange={(e) => setVenueForm(prev => ({ ...prev, notes: e.target.value }))}
+                rows={2}
+                className="bg-white text-xs"
+              />
+            </div>
+
+            {/* 16. Liste Noire */}
+            <div className={`p-3.5 rounded-xl border transition-all ${
+              venueForm.is_blacklisted 
+                ? 'bg-rose-50 border-rose-300 shadow-xs' 
+                : 'bg-slate-50/70 border-slate-200/80'
+            } space-y-2.5`}>
+              <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-slate-800">
+                <span className="w-5 h-5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-extrabold flex items-center justify-center shrink-0">16</span>
+                <input
+                  type="checkbox"
+                  checked={venueForm.is_blacklisted}
+                  onChange={(e) => setVenueForm(prev => ({ 
+                    ...prev, 
+                    is_blacklisted: e.target.checked,
+                    blacklist_reason: e.target.checked ? prev.blacklist_reason : ''
+                  }))}
+                  className="rounded text-rose-600 focus:ring-rose-500 border-slate-300 shrink-0"
+                />
+                <AlertTriangle className={`w-4 h-4 ${venueForm.is_blacklisted ? 'text-rose-600' : 'text-slate-400'}`} />
+                <span className={venueForm.is_blacklisted ? 'text-rose-950 font-extrabold' : 'text-slate-700'}>
+                  Liste Noire (Blacklist)
+                </span>
+              </label>
+
+              {venueForm.is_blacklisted && (
+                <div className="space-y-1.5 animate-fadeIn pl-7">
+                  <Label htmlFor="venue-blacklist-reason" className="text-[11px] font-bold text-rose-900">
+                    Motif de la mise sur liste noire *
+                  </Label>
+                  <Textarea
+                    id="venue-blacklist-reason"
+                    placeholder="Précisez la raison détaillée de la blacklist de ce lieu..."
+                    value={venueForm.blacklist_reason}
+                    onChange={(e) => setVenueForm(prev => ({ ...prev, blacklist_reason: e.target.value }))}
+                    required={venueForm.is_blacklisted}
+                    rows={2}
+                    className="bg-white border-rose-200 text-rose-900 placeholder:text-rose-300 text-xs"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 17. Type de lieu */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-type-lieu" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">17</span>
+                Type de lieu
+              </Label>
+              <Input
+                id="venue-type-lieu"
+                placeholder="Ex: Domaine, Château, Salle des fêtes, Grange rénovée, Restaurant, Hôtel..."
+                value={venueForm.type_lieu}
+                onChange={(e) => setVenueForm(prev => ({ ...prev, type_lieu: e.target.value }))}
+                list="types-lieux-suggestions"
+                className="h-10 text-sm font-medium bg-white"
+              />
+              <datalist id="types-lieux-suggestions">
+                <option value="Domaine" />
+                <option value="Château" />
+                <option value="Salle des fêtes" />
+                <option value="Grange rénovée" />
+                <option value="Restaurant" />
+                <option value="Hôtel" />
+                <option value="Auberge" />
+                <option value="Salle polyvalente" />
+                <option value="Péniche" />
+                <option value="Manoir" />
+                <option value="Chapiteau / Barnum" />
+              </datalist>
+            </div>
+
+            {/* 18 & 19. Capacité min et Capacité max */}
+            <div className="p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* 18. Capacité min */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="venue-capacite-min" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">18</span>
+                    Capacité min
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="venue-capacite-min"
+                      type="number"
+                      min="0"
+                      placeholder="Ex: 50"
+                      value={venueForm.capacite_min}
+                      onChange={(e) => setVenueForm(prev => ({ ...prev, capacite_min: e.target.value }))}
+                      className="h-10 text-sm font-medium bg-white pr-12"
+                    />
+                    <span className="absolute right-3 top-2.5 text-xs text-slate-400 pointer-events-none">pers.</span>
+                  </div>
+                </div>
+
+                {/* 19. Capacité max */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="venue-capacite-max" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">19</span>
+                    Capacité max
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="venue-capacite-max"
+                      type="number"
+                      min="0"
+                      placeholder="Ex: 250"
+                      value={venueForm.capacite_max}
+                      onChange={(e) => setVenueForm(prev => ({ ...prev, capacite_max: e.target.value }))}
+                      className="h-10 text-sm font-medium bg-white pr-12"
+                    />
+                    <span className="absolute right-3 top-2.5 text-xs text-slate-400 pointer-events-none">pers.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 20. Tarif indicatif */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-tarif-indicatif" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">20</span>
+                Tarif indicatif
+              </Label>
+              <Input
+                id="venue-tarif-indicatif"
+                placeholder="Ex: 1 500 €, 2 800 € / weekend, Sur devis..."
+                value={venueForm.tarif_indicatif}
+                onChange={(e) => setVenueForm(prev => ({ ...prev, tarif_indicatif: e.target.value }))}
+                className="h-10 text-sm font-medium bg-white"
+              />
+            </div>
+
+            {/* 21. Infos annuaire */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-infos-annuaire" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">21</span>
+                Infos annuaire
+              </Label>
+              <Textarea
+                id="venue-infos-annuaire"
+                placeholder="Ex: Informations publiques destinées à l'annuaire, formule clé en main, hébergements sur place..."
+                value={venueForm.infos_annuaire}
+                onChange={(e) => setVenueForm(prev => ({ ...prev, infos_annuaire: e.target.value }))}
+                rows={2}
+                className="bg-white text-xs"
+              />
+            </div>
+
+            {/* 22. Lien fiche annuaire */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-lien-annuaire" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">22</span>
+                Lien fiche annuaire
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="venue-lien-annuaire"
+                  type="url"
+                  placeholder="Ex: https://mariages.net/... ou https://domaine-exemple.com"
+                  value={venueForm.lien_annuaire}
+                  onChange={(e) => setVenueForm(prev => ({ ...prev, lien_annuaire: e.target.value }))}
+                  className="h-10 text-sm font-medium bg-white flex-1"
+                />
+                {venueForm.lien_annuaire && (
+                  <a
+                    href={venueForm.lien_annuaire.startsWith('http') ? venueForm.lien_annuaire : `https://${venueForm.lien_annuaire}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 h-10 bg-white hover:bg-slate-100 text-indigo-600 rounded-lg flex items-center justify-center transition-colors border border-slate-200"
+                    title="Ouvrir le lien"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* 23. Téléphone */}
+            <div className="space-y-1.5 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
+              <Label htmlFor="venue-telephone" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold flex items-center justify-center shadow-xs">23</span>
+                Téléphone
+              </Label>
+              <div className="relative">
+                <Input
+                  id="venue-telephone"
+                  type="tel"
+                  placeholder="Ex: 03 88 00 00 00 ou 06 12 34 56 78"
+                  value={venueForm.telephone}
+                  onChange={(e) => setVenueForm(prev => ({ ...prev, telephone: e.target.value }))}
+                  className="h-10 text-sm font-medium bg-white pl-9"
+                />
+                <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+              </div>
+            </div>
+
+            {/* History of Prestations associated with this venue (if editing) */}
             {editingVenue && (
               <div className="space-y-2.5 p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl">
                 <div className="flex items-center justify-between">
@@ -1240,7 +2189,7 @@ export default function VenueApp() {
                       const clientName = c.client_info?.name || c.client_name || "Client";
                       const eventDate = c.client_info?.event_date || "—";
                       return (
-                        <div key={c.id} className="flex justify-between items-center text-xs bg-white border border-slate-100 p-2.5 rounded-lg shadow-sm">
+                        <div key={c.id} className="flex justify-between items-center text-xs bg-white border border-slate-100 p-2.5 rounded-lg shadow-xs">
                           <span className="font-semibold text-slate-800">{clientName}</span>
                           <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                             {eventDate}
@@ -1255,49 +2204,8 @@ export default function VenueApp() {
               </div>
             )}
 
-            {/* Blacklist block */}
-            <div className={`p-4 rounded-xl border transition-all ${
-              venueForm.is_blacklisted 
-                ? 'bg-rose-50/70 border-rose-200 shadow-inner' 
-                : 'bg-slate-50/50 border-slate-200'
-            } space-y-3`}>
-              <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-extrabold text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={venueForm.is_blacklisted}
-                  onChange={(e) => setVenueForm(prev => ({ 
-                    ...prev, 
-                    is_blacklisted: e.target.checked,
-                    blacklist_reason: e.target.checked ? prev.blacklist_reason : ''
-                  }))}
-                  className="rounded text-rose-600 focus:ring-rose-500 border-slate-300"
-                />
-                <span className="flex items-center gap-1.5 text-rose-950 font-extrabold uppercase tracking-wide text-[10px]">
-                  <AlertTriangle className="w-4 h-4 text-rose-500" />
-                  Mettre ce lieu sur liste noire (Blacklist)
-                </span>
-              </label>
-
-              {venueForm.is_blacklisted && (
-                <div className="space-y-1.5 animate-fadeIn">
-                  <Label htmlFor="venue-blacklist-reason" className="text-[10px] font-extrabold text-rose-900 uppercase tracking-wide">
-                    Motif de la blacklist *
-                  </Label>
-                  <Textarea
-                    id="venue-blacklist-reason"
-                    placeholder="Précisez la raison détaillée de la blacklist de ce lieu..."
-                    value={venueForm.blacklist_reason}
-                    onChange={(e) => setVenueForm(prev => ({ ...prev, blacklist_reason: e.target.value }))}
-                    required={venueForm.is_blacklisted}
-                    rows={2}
-                    className="bg-white border-rose-200 focus-visible:ring-rose-500 text-rose-900 placeholder:text-rose-300 text-xs"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Gallery Uploader */}
-            <div className="space-y-3">
+            {/* Gallery Photos */}
+            <div className="space-y-3 p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl">
               <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                 <Image className="w-4 h-4 text-slate-500" /> Galerie Photos
               </Label>
@@ -1327,7 +2235,7 @@ export default function VenueApp() {
                 ))}
                 
                 {/* Multiple Photos Upload Trigger */}
-                <label className="border-2 border-dashed border-slate-300 rounded-lg aspect-video flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-indigo-400 transition-colors">
+                <label className="border-2 border-dashed border-slate-300 rounded-lg aspect-video flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-indigo-400 transition-colors bg-white">
                   <input
                     type="file"
                     accept="image/*"
@@ -1347,7 +2255,7 @@ export default function VenueApp() {
                 </label>
 
                 {/* Direct Camera Capture Trigger */}
-                <label className="border-2 border-dashed border-slate-300 rounded-lg aspect-video flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-emerald-400 transition-colors">
+                <label className="border-2 border-dashed border-slate-300 rounded-lg aspect-video flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 hover:border-emerald-400 transition-colors bg-white">
                   <input
                     type="file"
                     accept="image/*"
@@ -1531,6 +2439,583 @@ export default function VenueApp() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════ DIALOG EXPORTATION EXCEL ══════════ */}
+      <Dialog open={showExportModal} onOpenChange={setShowExportModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader className="border-b pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-100 text-amber-800 rounded-xl">
+                <FileSpreadsheet className="w-6 h-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold text-slate-900">
+                  Exporter les salles en fichier Excel
+                </DialogTitle>
+                <DialogDescription className="text-slate-500 text-xs mt-1">
+                  Téléchargez la base complète de vos salles et lieux de réception au format Microsoft Excel (.xlsx).
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 py-3">
+            <div className="space-y-2">
+              <Label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                Périmètre des salles à exporter :
+              </Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setExportScope("all")}
+                  className={`p-3.5 rounded-xl border text-left transition-all flex flex-col gap-1 ${
+                    exportScope === "all"
+                      ? "border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20"
+                      : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm text-slate-900">Toutes les salles</span>
+                    <Badge className="bg-amber-100 text-amber-900 border-amber-300 font-bold text-xs">
+                      {resolvedVenues.length}
+                    </Badge>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    L'intégralité du répertoire des lieux et fiches techniques
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setExportScope("filtered")}
+                  className={`p-3.5 rounded-xl border text-left transition-all flex flex-col gap-1 ${
+                    exportScope === "filtered"
+                      ? "border-amber-500 bg-amber-50/50 ring-2 ring-amber-500/20"
+                      : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sm text-slate-900">Salles filtrées</span>
+                    <Badge className="bg-slate-100 text-slate-800 border-slate-300 font-bold text-xs">
+                      {filteredVenues.length}
+                    </Badge>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    Seules les salles correspondant à votre recherche ou filtre actif
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-xs text-slate-600 space-y-2">
+              <span className="font-semibold text-slate-800 block">
+                📋 Colonnes incluses dans le fichier Excel :
+              </span>
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                Nom du lieu, Ville, Département, Statut de la fiche, Limiteur de son, Détecteur de fumée, Sans limiteur, Wifi, Réseau 4G/5G, Note d'accessibilité PMR, Observations générales, Fiche technique, Éclairage, Notes diverses, Nombre de photos, Date d'ajout.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 border-t pt-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowExportModal(false)}
+              className="text-xs sm:w-auto w-full"
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={() => handleExportVenuesToExcel(exportScope)}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs flex items-center justify-center gap-2 sm:w-auto w-full shadow-sm"
+            >
+              <Download className="w-4 h-4" />
+              <span>Télécharger le fichier Excel (.xlsx)</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══════════ DIALOG IMPORTATION CSV / EXCEL (.xlsx, .csv) ══════════ */}
+      <Dialog open={showImportModal} onOpenChange={setShowImportModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="border-b pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
+                <FileSpreadsheet className="w-6 h-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-bold text-slate-900">
+                  {importStep === 'upload' ? "Importer des salles (CSV ou Excel)" : "Aperçu et gestion des doublons"}
+                </DialogTitle>
+                <DialogDescription className="text-slate-500 text-xs mt-1">
+                  {importStep === 'upload' 
+                    ? "Importez un fichier de salles de réception (.xlsx, .xls ou .csv). Dédoublonnage intelligent et mise à jour automatique des fiches existantes."
+                    : `Vérifiez les ${parsedVenues.length} salles détectées et confirmez le traitement des doublons avant l'importation.`}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {importStep === 'upload' ? (
+            <div className="space-y-5 py-4">
+              {/* Onglets Fichier vs Copier-Coller */}
+              <div className="flex border-b border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setImportTab('file')}
+                  className={`py-2.5 px-5 font-semibold text-xs border-b-2 transition-colors flex items-center gap-2 ${
+                    importTab === 'file'
+                      ? 'border-emerald-600 text-emerald-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Déposer un fichier (.xlsx ou .csv)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportTab('paste')}
+                  className={`py-2.5 px-5 font-semibold text-xs border-b-2 transition-colors flex items-center gap-2 ${
+                    importTab === 'paste'
+                      ? 'border-emerald-600 text-emerald-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>Coller le texte CSV directement</span>
+                </button>
+              </div>
+
+              {importTab === 'file' ? (
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      handleFileSelect(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  className="border-2 border-dashed border-emerald-250 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/70 transition-all rounded-2xl p-8 text-center flex flex-col items-center justify-center gap-4 relative shadow-2xs"
+                >
+                  <input
+                    id="venue-csv-excel-input"
+                    type="file"
+                    accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleFileSelect(e.target.files[0]);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <div className="p-4 bg-white rounded-2xl shadow-sm text-emerald-600 border border-emerald-100 flex items-center gap-3">
+                    <span className="text-3xl">🏛️</span>
+                    <span className="text-3xl">📑</span>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">
+                      Glissez et déposez votre fichier de salles ici
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                      Formats acceptés : <strong>.XLSX</strong>, <strong>.XLS</strong> ou <strong>.CSV</strong>.
+                      Détection automatique de vos colonnes (Nom de la salle, Ville, Département, Limiteur, etc.).
+                    </p>
+                  </div>
+                  <label
+                    htmlFor="venue-csv-excel-input"
+                    className="cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-semibold text-xs shadow-sm hover:shadow transition-all flex items-center gap-2"
+                  >
+                    <FolderUp className="w-4 h-4" />
+                    <span>Parcourir mes documents</span>
+                  </label>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <Label htmlFor="venue-csv-paste-area" className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                    Collez le contenu de vos salles au format CSV :
+                  </Label>
+                  <Textarea
+                    id="venue-csv-paste-area"
+                    rows={10}
+                    placeholder="Nom;Ville;Departement;Limiteur;Detecteur;Wifi;Notes&#10;Château de l'Ill;La Wantzenau;Bas-Rhin;Non;Oui;Oui;Superbe salle avec parc..."
+                    value={importPastedText}
+                    onChange={(e) => setImportPastedText(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handlePasteSubmit}
+                      disabled={!importPastedText.trim()}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-2"
+                    >
+                      <Sparkles className="w-4 h-4 text-emerald-200" />
+                      <span>Analyser le texte CSV</span>
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Guide de mapping des colonnes et ajustement manuel */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-600 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>💡</span> Colonnes reconnues automatiquement :
+                  </p>
+                  {detectedHeaders.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowColumnMapper(!showColumnMapper)}
+                      className="text-xs text-emerald-700 hover:text-emerald-900 h-7 px-2 font-semibold"
+                    >
+                      {showColumnMapper ? "Masquer les colonnes" : "Ajuster les colonnes manuellement ⚙️"}
+                    </Button>
+                  )}
+                </div>
+
+                {showColumnMapper && detectedHeaders.length > 0 && (
+                  <div className="bg-white p-3.5 rounded-xl border border-emerald-200 space-y-3">
+                    <p className="text-xs text-emerald-950 font-medium">
+                      Associez les colonnes de votre fichier aux champs de l'application :
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Nom de la salle / Lieu *</Label>
+                        <select
+                          value={columnMapping.nom || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, nom: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, importRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-emerald-500 font-medium"
+                        >
+                          <option value="">-- Choisir la colonne Nom --</option>
+                          {detectedHeaders.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Ville</Label>
+                        <select
+                          value={columnMapping.ville || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, ville: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, importRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="">-- Choisir la colonne Ville --</option>
+                          {detectedHeaders.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <Label className="text-[11px] font-bold text-slate-700 block mb-1">Département</Label>
+                        <select
+                          value={columnMapping.departement || ""}
+                          onChange={(e) => {
+                            const updated = { ...columnMapping, departement: e.target.value };
+                            setColumnMapping(updated);
+                            if (rawGridData.length > 0) processRawGrid(rawGridData, importRawFilename, updated);
+                          }}
+                          className="w-full text-xs h-8 rounded-lg border border-slate-300 bg-white px-2 focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="">-- Choisir la colonne Département --</option>
+                          {detectedHeaders.map((h, i) => (
+                            <option key={i} value={h}>{h}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Étape Aperçu & Validation */
+            <div className="space-y-4 py-3">
+              {/* Bannière de réassurance et d'explication */}
+              <div className="bg-indigo-50/80 border border-indigo-200 p-3.5 rounded-xl flex items-start gap-3 text-xs text-indigo-950">
+                <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="font-bold text-indigo-950 text-xs">
+                    Dédoublonnage intelligent & Protection intégrale de vos données
+                  </p>
+                  <p className="text-indigo-800 text-[11px] leading-relaxed">
+                    Les lieux déjà enregistrés sont <strong>automatiquement mis à jour et enrichis</strong> (vos photos, vos notes et réglages existants ne sont jamais effacés, et aucun doublon n'est créé). En cas d'hésitation ou de doute, l'application vous le signale ci-dessous pour que vous puissiez confirmer l'action d'un clic.
+                  </p>
+                </div>
+              </div>
+
+              {/* Synthèse KPI & Filtres cliquables */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
+                <button
+                  type="button"
+                  onClick={() => setImportPreviewFilter('all')}
+                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                    importPreviewFilter === 'all'
+                      ? 'bg-slate-200/90 border-slate-400 ring-2 ring-slate-400'
+                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total détecté</span>
+                  <span className="text-lg font-extrabold text-slate-900">{parsedVenues.length}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setImportPreviewFilter('new')}
+                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                    importPreviewFilter === 'new'
+                      ? 'bg-emerald-100 border-emerald-400 ring-2 ring-emerald-400'
+                      : 'bg-emerald-50/70 border-emerald-200 hover:bg-emerald-100/50'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">Nouvelles salles</span>
+                  <span className="text-lg font-extrabold text-emerald-800">{parsedVenues.filter(v => v.userAction === 'create' && !v.hasDoubt).length}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setImportPreviewFilter('update')}
+                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                    importPreviewFilter === 'update'
+                      ? 'bg-blue-100 border-blue-400 ring-2 ring-blue-400'
+                      : 'bg-blue-50/70 border-blue-200 hover:bg-blue-100/50'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">Mises à jour auto</span>
+                  <span className="text-lg font-extrabold text-blue-800">{parsedVenues.filter(v => v.userAction === 'update' && !v.hasDoubt).length}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setImportPreviewFilter('doubt')}
+                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer relative ${
+                    importPreviewFilter === 'doubt'
+                      ? 'bg-amber-100 border-amber-500 ring-2 ring-amber-500'
+                      : parsedVenues.some(v => v.hasDoubt)
+                      ? 'bg-amber-50 border-amber-300 hover:bg-amber-100/60 shadow-xs'
+                      : 'bg-slate-50 border-slate-200 opacity-60'
+                  }`}
+                >
+                  <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center justify-center gap-1">
+                    {parsedVenues.some(v => v.hasDoubt) && <AlertTriangle className="w-3.5 h-3.5 text-amber-600 animate-bounce" />}
+                    Doutes à valider
+                  </span>
+                  <span className="text-lg font-extrabold text-amber-950">{parsedVenues.filter(v => v.hasDoubt).length}</span>
+                </button>
+              </div>
+
+              {/* Barre de filtre d'affichage */}
+              <div className="flex items-center justify-between text-xs text-slate-600 pt-1">
+                <span className="font-medium text-[11px] text-slate-500">
+                  Affichage : {importPreviewFilter === 'all' ? 'Toutes les salles' : importPreviewFilter === 'new' ? 'Uniquement les nouvelles salles' : importPreviewFilter === 'update' ? 'Uniquement les mises à jour automatiques' : 'Uniquement les doutes à confirmer'} ({parsedVenues.filter(v => {
+                    if (importPreviewFilter === 'new') return v.userAction === 'create' && !v.hasDoubt;
+                    if (importPreviewFilter === 'update') return v.userAction === 'update' && !v.hasDoubt;
+                    if (importPreviewFilter === 'doubt') return v.hasDoubt;
+                    return true;
+                  }).length})
+                </span>
+                {importPreviewFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setImportPreviewFilter('all')}
+                    className="text-indigo-600 hover:underline font-semibold text-[11px]"
+                  >
+                    Voir toutes les salles
+                  </button>
+                )}
+              </div>
+
+              {/* Table d'aperçu */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs bg-white">
+                <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 text-xs">
+                  <div className="bg-slate-100 px-3.5 py-2.5 font-bold text-slate-700 grid grid-cols-12 gap-2 uppercase tracking-wider text-[10px] sticky top-0 z-10 border-b">
+                    <div className="col-span-3">Nom dans le fichier</div>
+                    <div className="col-span-3">Ville & Département</div>
+                    <div className="col-span-2">Équipements & Capacité</div>
+                    <div className="col-span-4">Traitement Dédoublonnage</div>
+                  </div>
+
+                  {parsedVenues
+                    .filter(v => {
+                      if (importPreviewFilter === 'new') return v.userAction === 'create' && !v.hasDoubt;
+                      if (importPreviewFilter === 'update') return v.userAction === 'update' && !v.hasDoubt;
+                      if (importPreviewFilter === 'doubt') return v.hasDoubt;
+                      return true;
+                    })
+                    .slice(0, 80)
+                    .map((v) => {
+                      const realIndex = parsedVenues.findIndex(pv => pv.id === v.id);
+                      return (
+                        <div 
+                          key={v.id} 
+                          className={`px-3.5 py-2.5 grid grid-cols-12 gap-2 items-center transition-colors ${
+                            v.hasDoubt 
+                              ? 'bg-amber-50/50 hover:bg-amber-50' 
+                              : v.userAction === 'skip'
+                              ? 'bg-slate-50/60 opacity-60'
+                              : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          {/* 1. Nom */}
+                          <div className="col-span-3 font-semibold text-slate-900 truncate" title={v.name}>
+                            <span className="block truncate">{v.name}</span>
+                            {v.type_lieu && (
+                              <span className="text-[10px] text-indigo-600 font-medium">{v.type_lieu}</span>
+                            )}
+                          </div>
+
+                          {/* 2. Ville & Dép */}
+                          <div className="col-span-3 text-slate-600 truncate">
+                            <span className="font-medium text-slate-800">{v.city}</span>
+                            {v.department && v.department !== 'À préciser' && (
+                              <span className="text-slate-400 text-[10px] block truncate">{v.department}</span>
+                            )}
+                          </div>
+
+                          {/* 3. Équipements & Capacité */}
+                          <div className="col-span-2 flex flex-col gap-0.5">
+                            {(v.capacite_max || v.capacite_min) && (
+                              <span className="text-[10px] font-bold text-slate-700">
+                                {v.capacite_max ? `${v.capacite_max} pers.` : `${v.capacite_min} pers.`}
+                              </span>
+                            )}
+                            <div className="flex flex-wrap gap-1">
+                              {v.has_wifi && <Badge variant="outline" className="text-[8px] px-1 py-0 bg-blue-50 text-blue-700">Wifi</Badge>}
+                              {v.has_4g_5g && <Badge variant="outline" className="text-[8px] px-1 py-0 bg-purple-50 text-purple-700">4G</Badge>}
+                              {v.has_limiteur_son && <Badge variant="outline" className="text-[8px] px-1 py-0 bg-rose-50 text-rose-700">Limiteur</Badge>}
+                              {v.has_no_limiteur_ni_detecteur && <Badge variant="outline" className="text-[8px] px-1 py-0 bg-emerald-50 text-emerald-700">Libre</Badge>}
+                            </div>
+                          </div>
+
+                          {/* 4. Action & Dédoublonnage */}
+                          <div className="col-span-4">
+                            {v.hasDoubt ? (
+                              <div className="space-y-1 bg-white p-2 rounded-lg border border-amber-300 shadow-2xs">
+                                <div className="flex items-center gap-1 text-[10px] font-extrabold text-amber-900">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                  <span>Doute : {v.doubtReason}</span>
+                                </div>
+                                <select
+                                  value={v.userAction}
+                                  onChange={(e) => {
+                                    const action = e.target.value;
+                                    setParsedVenues(prev => prev.map((item, idx) => idx === realIndex ? { ...item, userAction: action } : item));
+                                  }}
+                                  className="w-full text-[11px] font-bold h-7 rounded border border-amber-300 bg-amber-50 text-amber-950 px-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                >
+                                  {v.existingVenue && (
+                                    <option value="update">
+                                      🔄 Mettre à jour : {v.existingVenue.name} ({v.existingVenue.city})
+                                    </option>
+                                  )}
+                                  <option value="create">✨ Créer comme nouveau lieu séparé</option>
+                                  <option value="skip">⛔ Ne pas importer cette ligne</option>
+                                </select>
+                              </div>
+                            ) : v.isExisting ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <Badge className="bg-blue-100 text-blue-900 border-blue-200 text-[10px] font-bold py-0.5">
+                                    🔄 Mise à jour auto
+                                  </Badge>
+                                  <span className="text-[10px] text-slate-500 truncate" title={`Lieu existant : ${v.existingVenue?.name} (${v.existingVenue?.city})`}>
+                                    sur « {v.existingVenue?.name} »
+                                  </span>
+                                </div>
+                                <select
+                                  value={v.userAction}
+                                  onChange={(e) => {
+                                    const action = e.target.value;
+                                    setParsedVenues(prev => prev.map((item, idx) => idx === realIndex ? { ...item, userAction: action } : item));
+                                  }}
+                                  className="w-full text-[10px] h-6 rounded border border-slate-200 bg-white text-slate-700 px-1 font-medium"
+                                >
+                                  <option value="update">Mettre à jour ce lieu existant (automatique)</option>
+                                  <option value="create">Créer plutôt un nouveau lieu distinct</option>
+                                  <option value="skip">Ne pas importer cette ligne</option>
+                                </select>
+                              </div>
+                            ) : (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5">
+                                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] font-bold py-0.5">
+                                    ✨ Nouveau lieu
+                                  </Badge>
+                                  <span className="text-[10px] text-emerald-700 font-medium">Sera créé</span>
+                                </div>
+                                <select
+                                  value={v.userAction}
+                                  onChange={(e) => {
+                                    const action = e.target.value;
+                                    setParsedVenues(prev => prev.map((item, idx) => idx === realIndex ? { ...item, userAction: action } : item));
+                                  }}
+                                  className="w-full text-[10px] h-6 rounded border border-slate-200 bg-white text-slate-700 px-1 font-medium"
+                                >
+                                  <option value="create">Créer cette nouvelle salle (automatique)</option>
+                                  <option value="skip">Ne pas importer cette ligne</option>
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 border-t pt-3">
+            {importStep === 'preview' ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setImportStep('upload')}
+                  disabled={isImporting}
+                  className="sm:w-auto w-full text-xs"
+                >
+                  ← Choisir un autre fichier
+                </Button>
+                <Button
+                  onClick={handleConfirmImport}
+                  disabled={isImporting}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-2 sm:w-auto w-full"
+                >
+                  {isImporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Intégration en cours...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Confirmer et importer ces {parsedVenues.length} salles</span>
+                    </>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => setShowImportModal(false)}
+                className="sm:w-auto w-full text-xs"
+              >
+                Fermer
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
